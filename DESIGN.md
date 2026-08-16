@@ -732,8 +732,14 @@ variants declaring `lang:` inconsistent with their filename.
 **Identity is the permalink.** Two files are versions of the same article iff they resolve to the same
 permalink. That resolution happens two ways:
 
-1. **Implicitly**, by *(directory, order, title)* — i.e. the same base name in the same numbered
+1. **Implicitly**, by *(directory, order, base name)* — the same base name in the same numbered
    directory. This covers the normal case and requires nothing from the author.
+   **"Base name" means the title parsed from the *filename*, never the `title:` in front matter.**
+   The distinction is load-bearing and was proved so by the Phase 1 implementation: a translation
+   almost always sets a translated `title:`, so keying identity on the display title gives every
+   translated file its own identity and its own minted permalink — silently defeating the entire i18n
+   design while every individual page still renders fine. The filename is the stable half; `title:`
+   is presentation, and §6.1 already lists it as an override for *display*, not for identity.
 2. **Explicitly**, by writing the same `permalink:` in the front matter of both files. This covers the
    awkward cases: a translation with a different title, or one that has to live elsewhere in the tree.
 
@@ -1107,7 +1113,9 @@ implementation must honour:
 - `:langs :locales` **must** carry a `:giscus` value for every configured language, and that value
   **must** be one of giscus's `availableLanguages`. Config validation rejects a locale whose `:giscus`
   is missing or unknown, naming the offending language — a build-time error, because the failure is
-  otherwise invisible until someone loads a Tamil page and sees an empty box.
+  otherwise invisible until someone loads a Tamil page and sees an empty box. (Implementation
+  precision: *presence* is required only when `:comments :provider` is `:giscus`, since a site with
+  comments off has nothing to route; an unroutable *value* is an error whenever one is present.)
 - The default `:langs` map in §5.6 already encodes `:ms → "en"` and `:ta → "en"` for exactly this
   reason; the comment there is not editorial, it is the constraint.
 
@@ -1638,7 +1646,7 @@ the document). D-9 through D-15 are new, surfaced by v2's design work.
 | Chroma quirks (e.g. `--html-styles` ignores `--html-prefix`, observed) | Low | One string transform in bb; CSS output is checked in, so breakage is visible in diff. |
 | Pagefind/Chroma binary supply chain | Low | Pinned versions + sha256 in config; both have 4-platform coverage; each replaceable behind a one-function seam. |
 | GitHub Pages CDN cache (10 min, not configurable) | Low | Fingerprinted assets so HTML/CSS can't pair mismatched. |
-| **CJK + Tamil edge cases** (heading slugs, search, line wrapping) | **Medium (grown from v1)** | Heading slugs come from nextjournal/markdown (GitHub-style; **CJK and Tamil slug behaviour still untested** — covered by the five-language fixture corpus from Phase 1). Pagefind's zh handling is verified from source (§6.7) but a five-language index build is a Phase 3 acceptance test, not a completed verification. |
+| **CJK + Tamil edge cases** (heading slugs, search, line wrapping) | **Low-medium (downgraded — slugs now measured)** | **Heading slugs: settled in Phase 1, and the news is good.** nextjournal/markdown preserves CJK and Tamil **verbatim** in heading ids — `你好世界` → `你好世界`, `வணக்கம் உலகம்` → `வணக்கம்-உலகம்`, with Tamil grapheme clusters intact. What the measurement *did* overturn is the description: the slugger is **not** GitHub-style — it lower-cases and hyphenates whitespace but does **not** strip punctuation (`Hello, World!` → `hello,-world!`, `100% Done` → `100%-done`), and a tab inside a heading survives into the id, which is invalid HTML. Handled by one uniform repair (whitespace → `-`) applied to both heading ids and the TOC, plus percent-encoding on the href side; recorded as characterization tests so a babashka bump that changes the bundled parser breaks a test instead of silently rewriting every anchor. Pagefind's zh handling is verified from source (§6.7); a five-language index build remains a Phase 3 acceptance test. Line wrapping is still a Phase 3 typography pass. |
 | Scale: full rebuild too slow for very large KBs (>1–2k pages) | Low now | Measured baseline in CI; content-hash caching is the designed-but-deferred answer; Chroma cache already amortizes the expensive part. |
 | Solo-maintainer sustainability | Medium | The stack *is* the mitigation: zero-to-two Clojure deps, two pinned binaries, everything else is the best-maintained artifact in the ecosystem (babashka itself). The repo split adds one seam to maintain, but removes a credential and a whole class of deploy bug. |
 
@@ -1858,9 +1866,21 @@ v2 and are no longer:
     iframe rather than degrading — which is why the `ms`/`ta` → `en` mapping is mandatory and
     config-validated. (§6.8)
 
-Explicitly **still not** verified: CJK/Tamil heading-slug behaviour in nextjournal/markdown (scheduled
-as Phase 1 characterization tests over the five-language fixture corpus, which record whatever the
-library actually does rather than asserting a hoped-for answer); release *dates* for the Pages action
+Settled during the **Phase 1 implementation**, by measurement under bb 1.13.219:
+
+18. **CJK and Tamil heading slugs are preserved verbatim** — the risk the design carried from v1 does
+    not materialize. `你好世界` → `你好世界`; `வணக்கம் உலகம்` → `வணக்கம்-உலகம்` with grapheme
+    clusters intact; `你好 World 123` → `你好-world-123`. **But the slugger is not GitHub-style**:
+    punctuation is preserved (`Hello, World!` → `hello,-world!`, `100% Done` → `100%-done`), space
+    runs are not collapsed, and a tab survives into the id — invalid HTML, and the one genuine defect.
+    Recorded as characterization tests in `test/clogem/markdown_test.clj`; see the risk table.
+19. **`bb --config <other>/bb.edn <task>` keeps the working directory** while resolving `:paths`
+    against the other bb.edn — the mechanism §7.3's workflow depends on, exercised on every CI run.
+20. **The fswatcher pod's absence degrades cleanly to `--poll`.** Reproduced again in this session
+    (the pod download fails behind the sandbox proxy), and the polling watcher was verified
+    end-to-end: file change → detected → rebuild in ~30 ms → served.
+
+Explicitly **still not** verified: release *dates* for the Pages action
 majors (the session's proxy blocks `api.github.com`, and a summarized read of the releases page gave
 conflicting years, so no date is asserted); whether `EchoJustus.github.io`'s branch protection would
 reject a `github-actions[bot]` push; and the five-language Pagefind build itself, which remains a

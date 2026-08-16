@@ -1,0 +1,187 @@
+;; Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).
+(ns clogem.markdown
+  "nextjournal/markdown wrapper (DESIGN.md §5.2 step 4).
+
+  Four renderer overrides matter in Phase 1:
+
+    :html-block / :html-inline  raw passthrough — REQUIRED. Without it the
+                                default renderer emits a red \"Unknown type\"
+                                box instead of the author's HTML.
+    :heading                    anchor link built from the pre-computed slug
+    :link                       permalink-aware rewriting with dead-link warnings
+    :code                       plain fenced output (Chroma arrives in Phase 4)
+
+  ## Heading slugs: what nextjournal/markdown actually does
+
+  DESIGN.md called these \"GitHub-style\" and flagged CJK/Tamil behaviour as
+  untested. Measured under bb 1.13.219 (nextjournal/markdown 0.7.225), the real
+  algorithm is: strip inline markup to text, trim, lower-case (Unicode-aware),
+  replace each space with `-`, replace `_` with `-`, and **leave everything else
+  alone** — then de-duplicate within a document with `-2`, `-3` suffixes.
+
+  Consequences, all verified:
+
+    \"Hello World\"        → \"hello-world\"      (as expected)
+    \"你好世界\"            → \"你好世界\"          CJK preserved verbatim
+    \"வணக்கம் உலகம்\"      → \"வணக்கம்-உலகம்\"    Tamil preserved, space → hyphen
+    \"Hello, World!\"      → \"hello,-world!\"    punctuation NOT stripped
+    \"100% Done\"          → \"100%-done\"        — unlike GitHub, which strips it
+    \"Hello  World\"       → \"hello--world\"     runs are not collapsed
+
+  So the good news is that the scripts we care about survive intact — the risk
+  the design flagged does not materialize. The bad news is the punctuation
+  handling, which produces ids that are legal HTML but need percent-encoding to
+  appear in an href, and one genuine defect: a tab inside a heading survives into
+  the id, and whitespace in an `id` attribute is invalid HTML.
+
+  `anchor-id` therefore applies one deterministic repair — collapse any residual
+  Unicode whitespace to `-` — and is used by BOTH the heading renderer and the
+  TOC, so the two can never disagree. `clogem.util/url-encode-fragment` handles
+  the href side."
+  (:require [clojure.string :as str]
+            [hiccup2.core :as h]
+            [nextjournal.markdown :as md]
+            [clogem.diag :as diag]
+            [clogem.util :as u]))
+
+(defn anchor-id
+  "The pre-computed slug, repaired so it is a valid HTML id.
+
+  The only repair is whitespace → `-`; everything else is passed through, so the
+  id still matches what the AST's :toc carries for every heading that does not
+  contain a tab."
+  [slug]
+  (when slug
+    (-> (str slug)
+        (str/replace #"\s+" "-")
+        (str/replace #"^-+|-+$" ""))))
+
+(defn- node-text
+  "The raw text of an html-block / html-inline node. The parser stores the
+  markup as :text children rather than on the node itself."
+  [node]
+  (or (:text node)
+      (apply str (map :text (:content node)))))
+
+(defn- children
+  [ctx node]
+  (map #(md/->hiccup ctx %) (:content node)))
+
+;; ---------------------------------------------------------------------------
+;; Link rewriting (§5.2 step 4, §6.3)
+
+(defn- external? [href]
+  (boolean (re-find #"^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|//|#|mailto:|tel:)" (str href))))
+
+(defn rewrite-href
+  "Resolve a link to its destination URL.
+
+  Three cases are rewritten; everything else passes through untouched:
+
+    `/pages/xxxxxx/`  → the identity URL, resolved to the reader's own language
+                        variant when the article has one (§6.3)
+    `other.md`        → the article that file belongs to, same resolution
+    `#frag`           → percent-encoded, since heading ids may be non-ASCII
+
+  A `.md` or `/pages/` target that resolves to nothing is a dead link and warns
+  (the design's requirement); the original href is left in place so the page
+  still renders."
+  [{:keys [cfg articles by-rel-path lang from-path url-for]} href]
+  (let [href (str href)]
+    (cond
+      (str/blank? href) href
+
+      (str/starts-with? href "#")
+      (str "#" (u/url-encode-fragment (subs href 1)))
+
+      (external? href) href
+
+      ;; a permalink, with or without a fragment
+      (re-find #"^/pages/" href)
+      (let [[path frag] (str/split href #"#" 2)
+            group (get articles (u/clean-url path))]
+        (if group
+          (str (url-for group lang) (when frag (str "#" (u/url-encode-fragment frag))))
+          (do (diag/warn! from-path (str "link to unknown permalink: " href))
+              href)))
+
+      ;; a relative .md link
+      (re-find #"\.md(#.*)?$" href)
+      (let [[path frag] (str/split href #"#" 2)
+            group (get by-rel-path (u/lower path))]
+        (if group
+          (str (url-for group lang) (when frag (str "#" (u/url-encode-fragment frag))))
+          (do (diag/warn! from-path (str "dead link: " href " does not resolve to a page"))
+              href)))
+
+      :else href)))
+
+;; ---------------------------------------------------------------------------
+;; Renderers
+
+(defn renderers
+  [link-ctx]
+  (assoc md/default-hiccup-renderers
+
+         :html-block  (fn [_ctx node] (h/raw (node-text node)))
+         :html-inline (fn [_ctx node] (h/raw (node-text node)))
+
+         :heading
+         (fn [ctx node]
+           (let [id (anchor-id (get-in node [:attrs :id]))]
+             (into [(keyword (str "h" (:heading-level node)))
+                    (cond-> {} id (assoc :id id))
+                    (when id
+                      [:a.header-anchor {:href (str "#" (u/url-encode-fragment id))
+                                         :aria-hidden "true"} "#"])]
+                   (children ctx node))))
+
+         :link
+         (fn [ctx node]
+           (let [href (rewrite-href link-ctx (get-in node [:attrs :href]))
+                 ext? (external? href)]
+             (into [:a (cond-> {:href href}
+                         (:title (:attrs node)) (assoc :title (:title (:attrs node)))
+                         (and ext? (str/starts-with? (str href) "http"))
+                         (assoc :target "_blank" :rel "noopener noreferrer"))]
+                   (children ctx node))))
+
+         ;; Phase 1 emits plain fenced code. Phase 4 swaps in Chroma behind the
+         ;; same seam, which is why the class name already follows the
+         ;; `language-x` convention highlighters expect.
+         :code
+         (fn [_ctx node]
+           (let [lang (some-> (:info node) (str/split #"\s+") first u/blank->nil)
+                 text (apply str (map :text (:content node)))]
+             [:pre {:class (str "clogem-code" (when lang (str " language-" lang)))}
+              [:code (cond-> {} lang (assoc :class (str "language-" lang)))
+               text]]))))
+
+;; ---------------------------------------------------------------------------
+;; Public API
+
+(defn parse
+  [source]
+  (md/parse source))
+
+(defn ->hiccup
+  [ast link-ctx]
+  (md/->hiccup (renderers link-ctx) ast))
+
+(defn render
+  "Markdown source → hiccup."
+  [source link-ctx]
+  (->hiccup (parse source) link-ctx))
+
+(defn toc-entries
+  "Flatten the AST's :toc into [{:level :id :text}] with repaired ids, so the
+  right-hand TOC bar (Phase 2) and the heading anchors agree by construction."
+  [ast]
+  (letfn [(walk [node]
+            (concat
+             (when-let [lvl (:heading-level node)]
+               [{:level lvl
+                 :id    (anchor-id (get-in node [:attrs :id]))
+                 :text  (md/node->text node)}])
+             (mapcat walk (:children node))))]
+    (vec (mapcat walk (:children (:toc ast))))))
