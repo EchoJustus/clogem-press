@@ -1,13 +1,14 @@
-# clogem-press — Design Proposal (v2)
+# clogem-press — Design Proposal (v2.1)
 
 **A vdoing-class knowledge base + blog + docs generator for the Clojure ecosystem, with a babashka CLI.**
 
-> Research and design proposal. **v1 August 2026** (initial proposal); **v2 August 2026** (this
-> revision). Reimplements the functionality of
+> Research and design proposal. **v1 August 2026** (initial proposal); **v2 August 2026**;
+> **v2.1 August 2026** (this revision — an independent verification pass; see the
+> [v2.1 changelog](#111-v21-changelog-verification-pass)). Reimplements the functionality of
 > [vuepress-theme-vdoing](https://github.com/xugaoyi/vuepress-theme-vdoing) on a Clojure/babashka
 > stack.
 >
-> **v2 changes three things structurally** — see the [v2 changelog](#11-v2-changelog) for the full
+> **v2 changed four things structurally** — see the [v2 changelog](#11-v2-changelog) for the full
 > list and the reasoning:
 > 1. **Repo split.** `clogem-press` becomes a pure open-source generator (bb library + default theme
 >    + `examples/` demo site + user docs). All real content moves to `EchoJustus.github.io`.
@@ -18,6 +19,9 @@
 > 3. **Internationalization** moves out of "deferred" and into the plan: primary content language
 >    **English**, UI switchable across **en / zh-Hans / zh-Hant / ms / ta**, with per-article
 >    language versions sharing one identity.
+> 4. **China-oriented tooling removed** (Baidu push + cron, Baidu tongji, `baidu-autopush`,
+>    iconfont.cn, the unimplemented twikoo/waline/artalk providers), replaced by sitemap +
+>    Search Console/Bing, an optional IndexNow task, and a config-driven analytics slot (§6.10).
 >
 > Every library version, maintenance date, and compatibility claim was verified against primary
 > sources (GitHub, Clojars, npm/PyPI registries, vendor docs) in August 2026, and the load-bearing
@@ -248,9 +252,11 @@ Clojure-native MkDocs/vdoing equivalent. clogem-press targets a real gap.
   runs for the branch source). Verified bonus, from GitHub's docs source: "GitHub Pages sites have a
   _soft_ limit of 10 builds per hour. This limit does not apply if you build and publish your site
   with a custom GitHub Actions workflow." Constraints that do bind: published sites ≤ 1 GB,
-  deployments time out at 10 minutes, the artifact tar must contain "only files and directories" with
-  "no symbolic or hard links", and `upload-pages-artifact` excludes dotfiles unless
-  `include-hidden-files: true`. Pages responses remain `cache-control: max-age=600` (not
+  deployments time out at 10 minutes, and `upload-pages-artifact` excludes dotfiles unless
+  `include-hidden-files: true`. The README's "only files and directories … no symbolic or hard links"
+  wording describes the *tar's contents*, not a restriction on `dist/`: the action tars with
+  `--dereference --hard-dereference`, so links are materialized into real files on the way in — see
+  §7.1. Pages responses remain `cache-control: max-age=600` (not
   configurable) — asset fingerprinting still recommended. Full detail and version table:
   [research/13](research/13-pages-actions-deploy.md).
 
@@ -306,8 +312,10 @@ helper downloading the right platform artifact into `.cache/tools/` on first use
 `babashka.process`. CI runs them with no setup (musl static binaries, verified on a plain Linux
 container). Neither touches the content pipeline: Chroma transforms code blocks during render;
 Pagefind post-processes the finished HTML directory. If either disappeared, the replacement cost is
-one function. **v2 note:** the tool cache must live *outside* the published output directory, because
-the Pages artifact may not contain symlinks and every byte in it counts against the 1 GB site limit.
+one function. **v2 note (amended in v2.1):** the tool cache must live *outside* the published output
+directory, because every byte in it counts against the 1 GB site limit — a ~58 MB Pagefind binary
+symlinked into `dist/` would be **dereferenced into the artifact as 58 real megabytes**, not skipped.
+Symlinks themselves are not forbidden (§7.1); shipping their targets by accident is the actual hazard.
 
 ---
 
@@ -325,10 +333,13 @@ only "If your secondary repository is private or internal".
 
 ```
 clogem-press/
-├── bb.edn                     ; tasks: build, dev, clean, doctor, fm-fix, new, edit-fm,
-│                              ;        migrate, theme, indexnow
+├── bb.edn                     ; tasks: build, dev, serve, clean, doctor, fm-fix, test, new,
+│                              ;        edit-fm, migrate, theme, indexnow
+│                              ;        (`serve` = static preview of an existing dist/, §7.4)
 ├── config.example.edn         ; annotated reference config (the schema, documented)
 ├── src/clogem/
+│   ├── version.edn            ; the generator's own version, asserted against :generator
+│   │                          ;   :min-version from site.edn (D-14)
 │   ├── cli.clj                ; babashka.cli dispatch (quickblog spec pattern)
 │   ├── config.clj             ; load + validate + deep-merge (theme < site < CLI overrides)
 │   ├── scan.clj               ; content tree scanner (numbered-dir + language-suffix convention)
@@ -387,7 +398,8 @@ continuously.
 
 ```
 EchoJustus.github.io/
-├── site.edn                   ; site config incl. :generator {:repo … :ref "v0.3.0"}
+├── site.edn                   ; site config incl. :generator {:repo … :min-version "0.3.0"}
+│                              ;   (the version PIN itself lives in publish.yml's `ref:` — D-14)
 ├── content/                   ; the real knowledge base (vdoing docs/ equivalent)
 │   ├── index.md
 │   ├── 01.<Category>/10.<Sub>/01.<article>.md
@@ -427,8 +439,9 @@ Build phases in detail:
 1. **Scan** (`scan.clj`) — walk `content/`, applying vdoing's exact rules **as amended in §6.1**:
    strip the extension, strip a recognized language suffix, then parse `NN.name` (number = before
    first dot; title = between first and last dot for files, everything after the first dot for
-   directories), skip invalid numbers with a warning, **error on duplicate numbers** (improving on
-   vdoing's warn-and-overwrite — see D-3), exclude `_posts/`, `@pages/`, `index.md`, dotfiles.
+   directories), skip invalid numbers with a warning, **error on duplicate numbers that belong to
+   different identities** — same number *and* same title in one directory is the language-variant
+   case and is legal (§6.1, D-3) — exclude `_posts/`, `@pages/`, `index.md`, dotfiles.
    Produces a raw tree of `{:order :title :path :lang :children}`.
 2. **Front matter** (`frontmatter.clj`) — for each `.md`: split `---` fences, parse with clj-yaml (EDN
    maps also accepted). Fill missing keys following vdoing's algorithm (title/date/permalink/
@@ -558,8 +571,10 @@ any more). Note what arrived: `:generator`, `:langs`, `:i18n`, `:analytics`, `:s
          :url "https://echojustus.github.io" :base "/"
          :author {:name "…" :link "…"}}
 
- ;; Which generator build produces this site (D-14). Public repo → plain checkout, no credentials.
- :generator {:repo "EchoJustus/clogem-press" :ref "v0.3.0"}
+ ;; Documentation + a compatibility floor only. The AUTHORITATIVE pin is publish.yml's `ref:` —
+ ;; site.edn deliberately carries NO :ref, so there is exactly one place to bump (D-14).
+ ;; :min-version, if present, hard-fails the build when the checked-out generator is older.
+ :generator {:repo "EchoJustus/clogem-press" :min-version "0.3.0"}
 
  :langs {:default  :en
          :priority [:en :zh-Hans :zh-Hant :ms :ta]   ; per-article default-version order
@@ -692,8 +707,24 @@ Three deliberate choices, each with its reason:
   misparse costs both a wrong title *and* a lost translation link — two bugs that surface far from
   their cause. Failing at scan time is cheaper.
 
+**Duplicate numbers are scoped to identity (v2.1).** vdoing warns-and-overwrites when two entries in a
+directory share a number; D-3 upgrades that to an error. That upgrade must be **scoped to the identity
+group**, because the variant convention *guarantees* number collisions: `02.conventions.md` and
+`02.conventions.zh-Hans.md` parse to the same `order` **and** the same `title` by design. The rule:
+
+```
+group the directory's entries by [order, title]      ; = the implicit identity key of §6.2
+one group  → one sidebar entry, one article, N language variants   ; legal, the normal case
+two groups sharing an `order` but differing in identity → ERROR    ; a genuine collision
+```
+
+So `01.Setup.md` + `01.Setup.ta.md` is one entry; `01.Setup.md` + `01.Teardown.md` is an error naming
+both paths. Directories are grouped the same way on `order` alone, since directories are never
+language-suffixed.
+
 `bb doctor` additionally reports: variants whose stripped suffix leaves them with no same-identity
-sibling (the `01.Timing.ms.md` accident), identity groups whose members disagree on `permalink`, and
+sibling (the `01.Timing.ms.md` accident), identity groups whose members disagree on `permalink`,
+identity groups whose members disagree on directory path (the mechanism-2 case — see §6.2), and
 variants declaring `lang:` inconsistent with their filename.
 
 ### 6.2 Article identity: one permalink, many variants
@@ -725,11 +756,23 @@ written as `01.foo.ta.md` with no unsuffixed sibling — legal, and handled by �
 | Fact | Source | Why |
 |---|---|---|
 | permalink / identity | shared | definitional |
-| categories | the directory path (identical for all variants) | derived from the shared location |
+| categories | the **primary** variant's directory path, with a `doctor` warning if variants' paths disagree | usually identical for all variants (mechanism 1 puts them in one directory) — but mechanism 2 lets a variant live elsewhere, so the group needs a single named source rather than "the path" |
+| sidebar position (tree slot, `order`) | the **primary** variant's path and `order`, same `doctor` warning | one article is one sidebar entry; a mechanism-2 variant must not create a second slot elsewhere in the tree |
 | tags | union of all variants' tags, deduped | a tag added on one version shouldn't hide the article from that tag's index |
 | `date`, `sticky` | the **primary** variant | so every language's index sorts identically |
 | `title` | per variant (displayed per §6.8) | that's the point |
 | `article: false`, `pageComponent`, `comment: false` | the primary variant, with a `doctor` warning if variants disagree | these change what a page *is*; disagreement is a content bug |
+
+**Why "primary variant's path" and not "the directory path" (v2.1).** The two identity mechanisms
+above disagree about location: mechanism 1 *derives* identity from `(directory, order, title)`, so all
+variants necessarily share a directory and "the directory path" is unambiguous. Mechanism 2 derives
+identity from an explicitly written `permalink:`, and exists precisely so a variant *can* live
+elsewhere in the tree — at which point "the directory path" names two different paths and the model
+would have to pick one anyway. Naming the primary variant makes the pick explicit, keeps it consistent
+with `date`/`sticky`/`article:`, and makes the categories and the sidebar slot agree with each other by
+construction. The disagreement is still almost always a mistake, so `doctor` reports it (listing every
+variant's path); it is a warning rather than an error because a deliberate mechanism-2 relocation is
+legal and the build has a well-defined answer.
 
 ### 6.3 URL scheme
 
@@ -850,8 +893,8 @@ the default.
 
 ### 6.5 Localized UI strings
 
-**Format.** One EDN map per language, `resources/i18n/<lang>.edn` in the theme, deep-merged with
-`i18n/<lang>.edn` from the content repo (site wins). Namespaced keywords, `{{var}}` interpolation —
+**Format.** One EDN map per language, `src/clogem/theme/resources/i18n/<lang>.edn` in the theme,
+deep-merged with `i18n/<lang>.edn` from the content repo (site wins). Namespaced keywords, `{{var}}` interpolation —
 Eden's `strings.edn` / `:eden/t` model, which is the best Clojure-side precedent
 ([research/05](research/05-eden-fabricate.md)).
 
@@ -956,13 +999,43 @@ Verified against Pagefind's docs **and source** ([research/12](research/12-i18n-
   its own `ms` strings from the same i18n map that powers the theme — the gap becomes wiring, not a
   missing feature. **Explicitly do not** map `ms` → `id` to borrow the Indonesian stemmer: they are
   different languages, and a wrong stemmer produces *wrong* matches rather than merely fewer.
-- **Accepted trade-off:** a reader searching from a `zh-Hans` page will not find an article that exists
-  only in `zh-Hant`. The blunt fix, `--force-language`, merges everything into one index and destroys
-  per-language stemming, segmentation correctness, and UI language — a much larger loss than the
-  problem. Recorded in the risk table (§10) rather than "solved".
-- **Unverified:** whether Pagefind's browser JS API exposes an explicit language override, which would
-  allow a "search other languages too" affordance. The docs describe only automatic detection. Flagged,
-  not assumed.
+- **`zh-Hant` needs the same wiring as `ms`, for a different reason (v2.1) — and this one is a
+  correctness bug if skipped.** Pagefind's *index* selection uses the full lowercased `<html lang>`
+  (so `zh-hant` is its own index, as above), but its *UI-string* resolution is a separate lookup with
+  **no language-script key**: the translation files are keyed by primary subtag, so
+  `<html lang="zh-Hant">` resolves to `zh.json` — which contains **Simplified** strings — even though a
+  `zh-tw.json` ships in the same directory and is never reached by that path. A Traditional Chinese
+  page would therefore render Traditional content under a Simplified search UI. The fix is the wiring
+  already built for `ms`: pass Traditional strings explicitly through the Default UI's `translations`
+  option (that **is** the verified option name — `new PagefindUI({ translations: {…} })`; the
+  Component UI equivalent is `instance.setTranslations()` alongside `instance.setLanguage()`). So
+  clogem-press supplies its own strings for **both** `ms` (no entry at all) and `zh-Hant` (wrong entry
+  reached), from the same theme i18n map, and only `en`/`zh-Hans`/`ta` ride on Pagefind's built-ins.
+- **Default trade-off:** a reader searching from a `zh-Hans` page does not, by default, find an article
+  that exists only in `zh-Hant`. The blunt fix, `--force-language`, merges everything into one index at
+  *build* time and destroys per-language stemming, segmentation correctness, and UI language — a much
+  larger loss than the problem, and still rejected.
+- **Cross-language search is nevertheless possible, and this is now settled rather than open (v2.1).**
+  Pagefind's JS API exposes **`pagefind.mergeIndex(bundleUrl, {language: "…"})`** — documented on the
+  multisite page — which loads a second index *at query time* alongside the primary one, with each
+  index keeping its own stemmer and segmenter. That is strictly better than `--force-language`: the
+  per-language indexes stay intact and the merge is a reader-facing affordance ("search other languages
+  too") rather than a build-wide decision. Two facts constrain the wiring, both load-bearing:
+  - **The primary index's language cannot be overridden.** It is chosen by `<html lang>` detection,
+    hardcoded; only *merged* indexes take an explicit `{language: …}`. So the page's own language
+    always leads, which is the behaviour we want anyway.
+  - **Merging the same site's bundle path is silently skipped.** Pagefind guards with a
+    `basePath.startsWith` check intended to stop a site merging itself, and it fails *quietly* — no
+    error, just no extra results. **Pass the absolute URL** (`https://…/pagefind/pagefind.js`) to defeat
+    the guard. The documented alternative is to mutate `document.documentElement.lang` and then
+    `destroy()` / `init()`, which re-runs detection; it works but throws away the loaded index, so the
+    absolute-URL form is the recommendation.
+  - Note what this is *not*: the Component UI's `lang` attribute swaps **UI strings only**, never the
+    index. Reaching for it to change what is searched is the obvious wrong turn here.
+
+  This moves from Phase 3's "accepted limitation" to a Phase 3 *feature* — an opt-in
+  `:search {:cross-language true}` toggle rendering a "search all languages" checkbox. The risk-table
+  row (§10) is downgraded accordingly.
 
 ### 6.8 Indexes, comments, and which title is shown
 
@@ -1006,9 +1079,40 @@ identity also decouples the thread from the URL scheme, so a future change to th
 cannot orphan existing discussions. `data-strict="1"` prevents fuzzy title matching from merging
 unrelated threads.
 
+**What `data-strict="1"` costs, and it bites exactly once (v2.1).** Strict mode does not search
+discussion *titles* — it matches on a marker the giscus bot writes into the discussion **body** when it
+creates a thread: an HTML comment `<!-- sha1: <hex> -->` holding the SHA-1 of the term. A discussion
+that giscus did not create has no such marker, so under strict mode it is **invisible to the widget**:
+the page renders as if no thread existed, and a first comment silently opens a *second* discussion
+beside the original. Retitling the old discussion to the permalink is therefore **not sufficient** — a
+migration of pre-existing threads must do both:
+
+1. retitle the discussion to the term (`/pages/a1b2c3/`), and
+2. append `<!-- sha1: <sha1-of-the-term> -->` to the discussion **body**.
+
+`clogem migrate` (Phase 5) emits the exact per-thread body line to paste, since the hash is a pure
+function of the term. New sites are unaffected — every thread is bot-created. Turning strict mode
+*off* to dodge this is the wrong trade: fuzzy matching is what merges unrelated threads, which is worse
+and harder to undo.
+
 `data-lang` is mapped through `:langs :locales`, because giscus's `availableLanguages` (verified from
-`lib/i18n.tsx`) includes `en`, `zh-CN`, `zh-TW`, `zh-HK` but **not `ms` or `ta`** — those fall back to
-`en`.
+`lib/i18n.tsx`) includes `en`, `zh-CN`, `zh-TW`, `zh-HK` but **not `ms` or `ta`**.
+
+**The `ms`/`ta` → `en` mapping is mandatory, not a cosmetic fallback (v2.1).** `data-lang` is not a
+hint that giscus degrades gracefully on — it is routed into the widget's iframe URL, so an unroutable
+value **404s the iframe and the comment widget does not render at all**. On a Tamil or Malay page that
+is the difference between English-labelled comments and *no comments*. Two consequences the
+implementation must honour:
+
+- `:langs :locales` **must** carry a `:giscus` value for every configured language, and that value
+  **must** be one of giscus's `availableLanguages`. Config validation rejects a locale whose `:giscus`
+  is missing or unknown, naming the offending language — a build-time error, because the failure is
+  otherwise invisible until someone loads a Tamil page and sees an empty box.
+- The default `:langs` map in §5.6 already encodes `:ms → "en"` and `:ta → "en"` for exactly this
+  reason; the comment there is not editorial, it is the constraint.
+
+The same reasoning covers the pluggable `:comments` seam generally: a provider's language parameter is
+validated against that provider's own list, never passed through from `:langs`.
 
 ### 6.9 Typography: Tamil, Malay, and the two Chinese scripts
 
@@ -1087,8 +1191,8 @@ are one decision, not two.
 
 | Constraint (verified) | Design response |
 |---|---|
-| Published site ≤ 1 GB; deployments time out at 10 minutes | Measure `dist/` size in CI and warn at 500 MB. Self-hosted fonts subsetted, images the owner's responsibility. |
-| Artifact tar must contain "only files and directories", "no symbolic or hard links" | The exporter **copies**, never symlinks; the `.cache/tools/` binary cache lives outside `dist/`. |
+| Published site ≤ 1 GB; deployments time out at 10 minutes | Measure `dist/` size in CI and **hard-fail** above 500 MB with a clear error naming the limit, the measured size, and the 1 GB platform cap (§7.3). A warning would be the wrong instrument: the cap is hard, the failure mode past it is a *deploy* failure that costs a full build cycle to discover, and a warning in a green log is not read. Self-hosted fonts subsetted, images the owner's responsibility. |
+| `upload-pages-artifact` tars with `--dereference --hard-dereference` | Symlinks in `dist/` are **materialized into real files** by the upload step, so they are not a platform constraint. clogem-press keeps "the exporter copies, never symlinks" as a **house rule** anyway — a dereferenced symlink silently duplicates its target's bytes against the 1 GB cap, and a broken one fails the tar — and keeps the `.cache/tools/` binary cache outside `dist/` regardless. |
 | `upload-pages-artifact` `include-hidden-files` defaults to `false` (and always excludes `.git`/`.github`) | We emit no dotfiles by design. If that ever changes (e.g. `.well-known/`), the input must be flipped — noted in the workflow comments. |
 | `retention-days` defaults to `1` | Fine: the artifact is an intermediate, not a backup. |
 | Pages responses are `cache-control: max-age=600`, not configurable | Fingerprinted asset filenames (unchanged from v1) so HTML and CSS can never be served as a mismatched pair. |
@@ -1193,7 +1297,9 @@ jobs:
       - uses: actions/checkout@v7
         with: { path: site, fetch-depth: 0 }
 
-      # clogem-press is public → plain checkout, no credentials (D-14 pins the ref)
+      # clogem-press is public → plain checkout, no credentials.
+      # THIS `ref:` is the authoritative generator pin (D-14). site.edn carries no :ref;
+      # its optional :generator :min-version is a compatibility floor the build asserts.
       - uses: actions/checkout@v7
         with:
           repository: EchoJustus/clogem-press
@@ -1222,8 +1328,16 @@ jobs:
         working-directory: site
         run: bb --config ../generator/bb.edn build --out ../dist
 
+      # Hard failure, not a warning: the 1 GB published-site cap is a hard platform limit and
+      # blowing it fails at deploy time, a whole build cycle later. See §7.1.
       - name: Check output size
-        run: du -sh dist && test "$(du -sm dist | cut -f1)" -lt 500
+        run: |
+          size=$(du -sm dist | cut -f1)
+          echo "dist/ is ${size} MB"
+          if [ "$size" -ge 500 ]; then
+            echo "::error::dist/ is ${size} MB, over the 500 MB budget (GitHub Pages caps published sites at 1 GB)."
+            exit 1
+          fi
 
       - uses: actions/upload-pages-artifact@v3
         with: { path: dist }
@@ -1275,6 +1389,13 @@ Design points worth stating:
 7. Local development is now `bb dev` against a local checkout of the generator; there is no `bb deploy`
    task any more, because there is no branch of HTML to push to. `bb build && bb serve dist` is the
    local preview.
+8. **If any giscus discussions already exist**, migrate them before switching the mapping to
+   `specific` + `data-strict="1"` (§6.8). For each existing thread: retitle it to the article's
+   permalink (`/pages/a1b2c3/`) **and** append `<!-- sha1: <sha1-of-that-permalink> -->` to the
+   discussion body. Strict mode matches that body marker, not the title, so a retitle alone leaves the
+   thread invisible and lets the next comment open a duplicate. Verify by loading one migrated article
+   and confirming the existing comments appear before announcing the switch. `clogem migrate` prints
+   the marker line per thread. Nothing to do for a site with no prior discussions.
 
 ---
 
@@ -1294,7 +1415,7 @@ to the stated total.)*
 Deliberately first: it de-risks the only part with external configuration (Pages settings, permissions,
 the bot push) and produces a live URL before any real code exists.
 
-- Reshape `clogem-press`: `examples/demo-site/`, `doc/`, `resources/theme/`, EPL-2.0 headers; remove content (0.5 d)
+- Reshape `clogem-press`: `examples/demo-site/`, `doc/`, `src/clogem/theme/resources/`, EPL-2.0 headers; remove content (0.5 d)
 - Reshape `EchoJustus.github.io`: `content/`, `site.edn`, `assets/`; delete `docs/` + "Hello, World"; Pages source → GitHub Actions (0.5 d)
 - `publish.yml` end-to-end with a stub build that emits one HTML file: two checkouts, pinned ref, normalize job, artifact flow, concurrency, per-job permissions (1 d)
 - **Exit criterion:** a commit to `content/` publishes a page to `https://echojustus.github.io/`, and a bot normalization commit demonstrably does *not* start a second run.
@@ -1424,6 +1545,15 @@ the document). D-9 through D-15 are new, surfaced by v2's design work.
   **error** instead of vdoing's warn-and-overwrite, and front-matter write-back is surgical. v2 adds a
   third, backward-compatible extension: the language suffix (§6.1), which is a no-op for any existing
   vdoing tree because no vdoing site configures `:langs` variants.
+  **v2.1 scopes the duplicate-number error to *identity groups*.** Because language variants are
+  sibling files in the same directory, `02.conventions.md` and `02.conventions.zh-Hans.md` share both
+  number and title by construction — they are one sidebar entry, not a collision. The rule is
+  therefore: two entries in one directory that share a number **and** their parsed identity
+  *(order, title)* are variants of one article and produce **one** sidebar entry; two entries that
+  share a number but differ in identity are a genuine collision and are a **hard error**. Applying
+  vdoing's unscoped rule here would make every translated article fail the build — the reason this
+  correction is load-bearing rather than cosmetic. (`bb doctor` still reports the near-collision case
+  where numbering gaps have been exhausted.)
 - **D-4. Execution modes.** ▶ bb-only for v1. nextjournal/markdown is cross-platform and the core is
   pure functions, so a JVM mode (flexmark extensions, image processing, Datomic indexing) stays an open
   escape hatch, not a day-one cost.
@@ -1443,9 +1573,11 @@ the document). D-9 through D-15 are new, surfaced by v2's design work.
 - **D-10. Per-article primary-variant URLs.** ▶ `:i18n {:prefix-default? false}` — the primary variant
   lives at the bare `/pages/xxxxxx/`, and only non-primary variants get a `/<lang>/` prefix (§6.3).
   This keeps legacy URLs valid and every article reachable at its identity URL, at the cost of a mild
-  irregularity in the URL space. Setting it `true` gives full regularity (every variant prefixed, bare
-  URL becomes a redirect stub) at the cost of breaking existing `/pages/…/` links. Say the word if you
-  prefer regularity over compatibility.
+  irregularity in the URL space. Setting it `true` gives full regularity: every variant gets a
+  `/<lang>/` prefix and the bare `/pages/…/` URL becomes a **redirect stub** (`<meta http-equiv=
+  "refresh">` + `rel=canonical`, the same machinery D-15 uses for tombstones) pointing at the primary
+  variant. So existing `/pages/…/` links are **redirected, not broken** — the cost is one extra hop and
+  one extra file per article, not a dead URL. Say the word if you prefer regularity over directness.
 - **D-11. What a stored language preference does on a canonical URL.** ▶ `:banner` — show a dismissible
   "Also available in …" link, never auto-redirect (§6.4, with the three reasons). Alternatives:
   `:redirect` (respects an explicit reader choice more aggressively, at the cost of URLs that don't
@@ -1467,6 +1599,17 @@ the document). D-9 through D-15 are new, surfaced by v2's design work.
   is the paranoid alternative (tags are movable); a branch (`main`) is the "always latest" option and is
   **not** recommended, since a generator change would then alter your published site with no commit in
   your repo to explain it.
+  **v2.1: `publish.yml`'s `ref:` is the single authoritative pin.** v2 also wrote the version into
+  `site.edn` as `:generator {:ref "v0.3.0"}`, which created two sources of truth for one fact — and
+  `site.edn` is the one that *cannot* win, because the checkout has already happened by the time the
+  generator reads it. `:ref` is therefore **removed from `site.edn`**. What remains there is
+  documentation (`:repo`, used for edit links and the doctor report) plus an optional **compatibility
+  floor**, `:generator {:min-version "0.3.0"}`: the generator knows its own version (baked into
+  `src/clogem/version.edn` at release, falling back to `bb.edn`'s `:version` in a dev checkout) and
+  **hard-fails the build with a clear error** when it is older than the floor. That is a genuine
+  assertion rather than a duplicated pin — it catches "content started using a convention the pinned
+  generator doesn't have yet", which is the actual skew this project can suffer, and it stays correct
+  whether the workflow pins a tag, a branch, or a sha.
 - **D-15. Retired permalinks.** When an article is deleted or its permalink changes, `permalinks.edn`'s
   tombstone ledger can emit a redirect stub (`<meta http-equiv="refresh">` + `rel=canonical`) at the old
   URL. ▶ Emit them, for the same reason permalinks are random in the first place — URLs are promises.
@@ -1481,8 +1624,10 @@ the document). D-9 through D-15 are new, surfaced by v2's design work.
 | **Owning the code**: from-scratch means no upstream fixes for us | Medium | Scope is genuinely small (~3–4k lines over bb built-ins); vdoing's conventions are frozen (stable target); quickblog/babashka.org prove the maintenance load of this pattern is low. |
 | **i18n complexity** — five languages multiplying every template, index, and URL | **Medium-high (new)** | Contained by one rule: identity-by-permalink. Indexes hold article ids, so dedupe is structural (§5.2). Build cost is per *variant that exists*, not per language, so a mostly-English site pays almost nothing. Chrome language ≡ content language (§6.4) removes the entire class of "which language is this widget in" bugs. The five-language fixture corpus exists from Phase 1, not Phase 3. |
 | **CI front-matter write-back**: bot pushes to `main`, loops, races, protected branches | **Medium (new)** | Three independent loop guards, any one sufficient (§7.2). Race handled by rebase-before-push with a non-fatal failure (site stays correct; repo catches up). Protected-branch behaviour is a documented one-time check (D-9). Auto-fill is surgical and covered by golden-file tests. |
-| **Artifact-flow constraints**: 1 GB site cap, 10-minute deploy timeout, no symlinks, dotfiles excluded by default, deploy is same-repo only | **Low-medium (new)** | Size check in CI at 500 MB; exporter copies rather than symlinks; tool cache outside `dist/`; no dotfiles emitted by design. The same-repo restriction is not a mitigation target — it is the reason the repo split happened. |
-| **Pagefind index fragmentation across languages** — a zh-Hans reader can't find a zh-Hant-only article | Low (new) | Accepted deliberately: `--force-language` would merge indexes but destroy segmentation, stemming, and per-language UI. Articles that matter in both scripts should have both variants; `doctor` can report zh-Hans articles lacking a zh-Hant sibling if that becomes a real gap. |
+| **Artifact-flow constraints**: 1 GB site cap, 10-minute deploy timeout, dotfiles excluded by default, deploy is same-repo only | **Low-medium (new; symlink row corrected in v2.1)** | CI **hard-fails** above 500 MB (§7.3); tool cache outside `dist/`; no dotfiles emitted by design. Symlinks are *not* a platform constraint — `upload-pages-artifact` tars with `--dereference --hard-dereference` — but the exporter copies rather than symlinks as a house rule, since a dereferenced link ships its target's full bytes against the 1 GB cap. The same-repo restriction is not a mitigation target — it is the reason the repo split happened. |
+| **Pagefind index fragmentation across languages** — a zh-Hans reader can't find a zh-Hant-only article | Low (new; **downgraded in v2.1**) | No longer an accepted limitation: `pagefind.mergeIndex(absoluteBundleUrl, {language: …})` adds other languages' indexes at query time with their stemmers intact (§6.7), so this becomes an opt-in "search all languages" affordance rather than a wall. `--force-language` stays rejected. Articles that matter in both scripts should still have both variants; `doctor` can report zh-Hans articles lacking a zh-Hant sibling. |
+| **Pagefind UI strings for `zh-Hant` silently render Simplified** — UI-string resolution has no language-script key, so `zh-Hant` reaches `zh.json` | Low (**new in v2.1**) | Wiring, not a missing feature: pass Traditional strings via the Default UI `translations` option, the same path already planned for `ms` (§6.7). Caught in the Phase 3 acceptance test by asserting on rendered UI strings, not just on index file names. |
+| **giscus strict mode hides pre-existing discussions** — threads not created by the giscus bot carry no `<!-- sha1: … -->` body marker, so under `data-strict="1"` the widget shows nothing and the next comment opens a duplicate thread | Low, one-time (**new in v2.1**) | Only affects sites with discussions predating the switch. Migration retitles **and** appends the marker (§6.8, §7.4 step 8); `clogem migrate` computes it. Verified on one article before the switch is announced. Not mitigated by disabling strict mode — that reintroduces fuzzy title merging, which is worse. |
 | **Translation drift** — variants silently diverge as the English original is edited | Medium (new) | A staleness check (variant mtime/commit-date vs primary) is designed but deferred; in the meantime the fallback notice (§6.8) at least tells readers when they're seeing an untranslated page. |
 | **Review capacity for ta/ms** — the owner may not read all five languages, so a wrong or garbled translation could ship unnoticed | Medium (new, non-technical) | Keep the Tamil/Malay surface small and deliberate; `doctor` catches structural problems (orphan variants, missing keys) but cannot catch bad prose. Worth deciding up front which languages get *content* vs only *UI*. |
 | **Generator/content version skew** after the split — the pinned tag drifts, or a convention change needs a coordinated bump | Low-medium (new) | Tag pinning (D-14) makes the version explicit and diffable; CI builds `examples/demo-site` on every generator commit, so convention regressions surface in the generator repo before any bump; `CHANGELOG.md` flags convention changes. |
@@ -1575,6 +1720,79 @@ in light of the new requirements and found nothing that needed to move.
 
 ---
 
+## 11.1 v2.1 changelog (verification pass)
+
+An independent verification pass re-checked every external claim in v2 against primary sources. **All
+of them held.** What it found instead were internal defects — places where v2 contradicted itself, was
+imprecise, or under-specified a consequence of its own rules. Fifteen corrections, no reversals of any
+v2 decision.
+
+**Correctness (would have broken the build or the site):**
+
+1. **Duplicate-number errors are scoped to identity groups (§5.2 step 1, §6.1, D-3).** D-3's
+   "duplicate numbers are an error" was written before the variant convention existed, and the two
+   collide head-on: `02.conventions.md` and `02.conventions.zh-Hans.md` share a number *and* a title by
+   design. Unscoped, the rule fails the build on every translated article. Now: same number + same
+   identity = one sidebar entry with N variants; same number + different identity = a hard error.
+2. **Group-level facts name the primary variant, not "the directory" (§6.2).** The group-facts table
+   said categories come from "the directory path (identical for all variants)" — true under mechanism 1,
+   false under mechanism 2, which exists precisely so a variant can live elsewhere. Categories **and**
+   the sidebar slot now come from the primary variant's path, with a `doctor` warning when variants
+   disagree. This also makes the two facts agree with each other by construction.
+3. **One authoritative generator pin (§5.6, §7.3, D-14).** v2 pinned the generator version in both
+   `publish.yml`'s `ref:` and `site.edn`'s `:generator :ref` — two sources of truth for one fact, and
+   `site.edn` cannot win, since the checkout already happened. `:ref` is removed from `site.edn`;
+   what remains is `:min-version`, a compatibility floor the build asserts against its own baked-in
+   version and **hard-fails** on.
+
+**Verification findings folded in (all newly settled, none contradicting v2):**
+
+4. **giscus strict mode needs a body marker, not just a title (§6.8, §7.4 step 8, risk table).**
+   `data-strict="1"` matches `<!-- sha1: <hash-of-term> -->` in the discussion *body*. Discussions the
+   giscus bot did not create are therefore invisible until that marker is added — so migrating
+   pre-existing threads must retitle to the permalink **and** append the hash. v2 described the retitle
+   only, which would have silently produced duplicate threads.
+5. **`ms`/`ta` → `data-lang="en"` is mandatory (§6.8).** giscus routes `data-lang` into the widget's
+   iframe URL, so an unroutable value **404s the iframe** — no comments at all, rather than
+   English-labelled comments. Now config-validated at build time.
+6. **`zh-Hant` needs explicit Pagefind UI translations (§6.7, risk table).** Pagefind's *index* key is
+   the full lowercased `<html lang>`, but its *UI-string* lookup has no language-script key, so
+   `zh-Hant` resolves to `zh.json` — **Simplified strings under Traditional content** — even though
+   `zh-tw.json` ships. Fixed by the same `translations` wiring already planned for `ms`. The Default UI
+   option name is verified as `translations`; the Component UI equivalent is `setTranslations()`.
+7. **Cross-language search is possible after all (§6.7, risk table).** v2 flagged "does the JS API
+   expose a language override?" as unverified and recorded index fragmentation as an accepted loss.
+   `pagefind.mergeIndex(bundleUrl, {language: …})` is documented and does the job at query time with
+   stemmers intact. Two gotchas recorded: the primary index's language is **not** overridable, and
+   merging the same site's bundle path is **silently skipped** by a `basePath.startsWith` guard unless
+   an absolute URL is passed. The risk row is downgraded and an opt-in affordance replaces it.
+8. **Symlinks in `dist/` are not a platform constraint (§2.3, §4, §7.1, risk table).**
+   `upload-pages-artifact` tars with `--dereference --hard-dereference`, so links are materialized. v2
+   read the README's description of the *tar's contents* as a restriction on the *input*. "The exporter
+   copies, never symlinks" survives as a house rule with a better reason: a dereferenced symlink ships
+   its target's full bytes against the 1 GB cap.
+
+**Consistency and precision:**
+
+9. **Size check: hard-fail everywhere (§7.1, §7.3).** §7.1 said "warn at 500 MB" while §7.3's snippet
+   already exited non-zero. Both now hard-fail with an error naming the measured size and the 1 GB cap
+   — correct, because the cap is hard and the failure otherwise surfaces a whole build cycle later.
+10. **D-10: existing `/pages/…/` links are redirected, not broken.** With `:prefix-default? true` the
+    bare URL becomes a redirect stub (§6.3 already said so); D-10's prose called it "breaking".
+11. **`serve` added to §5.1's bb.edn task list** — §7.4 step 7 already told users to run it.
+12. **Phase 0's `resources/theme/`** corrected to the layout's actual path,
+    `src/clogem/theme/resources/` (also tightened in §6.5).
+13. **Header said "three things structurally", the changelog lists four** — the header now lists the
+    China-tooling removal too.
+14. **research/12 §2's pseudocode gained its near-miss error branch** — its own worked table asserts
+    `zh-Hanz` → error, but the pseudocode fell through to "default language".
+15. **research/12 §9 and research/13 §7 aligned with DESIGN.md** — the five-language Pagefind build is
+    a **Phase 3** acceptance test (§9 said Phase 1, contradicting Appendix A and the risk table), and
+    research/13's workflow listing gained the `i18n/**` path filter and the size-check step that §7.3
+    already had.
+
+---
+
 ## Appendix A — Empirically validated claims
 
 Run in the v1 research session on babashka **v1.13.219** (Linux, sandboxed container):
@@ -1617,12 +1835,36 @@ five-language build was performed — that is a Phase 3 acceptance test, not a c
     and excludes `ms`/`ta`.
 12. **Noto Sans Tamil is SIL OFL 1.1** — `notofonts/tamil` `OFL.txt`.
 
-Explicitly **not** verified, and flagged as such in the research reports: Pagefind's browser JS API
-language-override surface; the exact option name for Pagefind Component UI custom translations;
-CJK/Tamil heading-slug behaviour in nextjournal/markdown; release *dates* for the Pages action majors
-(the session's proxy blocks `api.github.com`, and a summarized read of the releases page gave
-conflicting years, so no date is asserted); and whether `EchoJustus.github.io`'s branch protection
-would reject a `github-actions[bot]` push.
+Settled in the **v2.1 verification pass**, from vendor documentation and source — these were open in
+v2 and are no longer:
+
+13. **Pagefind's browser JS API does expose a cross-language path** — `pagefind.mergeIndex(bundleUrl,
+    {language: "…"})`, documented on the multisite page. The *primary* index's language is not
+    overridable (hardcoded `<html lang>` detection); merging the same site's own bundle path is
+    silently skipped by a `basePath.startsWith` guard, so the absolute URL must be passed. The
+    Component UI's `lang` attribute swaps UI strings only, never the index. (§6.7)
+14. **Pagefind UI custom translations: the Default UI option is `translations`**; the Component UI
+    equivalent is `instance.setTranslations()` / `instance.setLanguage()`. Also established: UI-string
+    resolution has **no language-script key**, so `<html lang="zh-Hant">` resolves to `zh.json`
+    (Simplified) despite `zh-tw.json` shipping — `zh-Hant` needs explicit `translations` exactly as
+    `ms` does. (§6.7)
+15. **`upload-pages-artifact` tars with `--dereference --hard-dereference`**, so symlinks in `dist/`
+    are materialized rather than rejected. "No symbolic or hard links" describes the resulting tar,
+    not an input constraint. (§7.1)
+16. **giscus strict mode matches a `<!-- sha1: <hash-of-term> -->` marker in the discussion body**, not
+    the title, so discussions not created by the giscus bot are invisible under `data-strict="1"` until
+    the marker is added. (§6.8, §7.4)
+17. **giscus `data-lang` is routed into the widget's iframe URL**, so an unroutable value 404s the
+    iframe rather than degrading — which is why the `ms`/`ta` → `en` mapping is mandatory and
+    config-validated. (§6.8)
+
+Explicitly **still not** verified: CJK/Tamil heading-slug behaviour in nextjournal/markdown (scheduled
+as Phase 1 characterization tests over the five-language fixture corpus, which record whatever the
+library actually does rather than asserting a hoped-for answer); release *dates* for the Pages action
+majors (the session's proxy blocks `api.github.com`, and a summarized read of the releases page gave
+conflicting years, so no date is asserted); whether `EchoJustus.github.io`'s branch protection would
+reject a `github-actions[bot]` push; and the five-language Pagefind build itself, which remains a
+**Phase 3** acceptance test.
 
 ## Appendix B — Primary research reports
 

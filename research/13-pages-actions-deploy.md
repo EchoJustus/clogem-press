@@ -165,8 +165,23 @@ Cross-checked against the Pages limits doc source: source repos have "a recommen
 "Published GitHub Pages sites may be no larger than 1 GB", "GitHub Pages deployments will timeout if
 they take longer than 10 minutes", and there is "a _soft_ bandwidth limit of 100 GB per month".
 
-**"No symbolic links" is a live constraint for us:** the build must copy assets into `dist/`, never
-symlink them, and the Pagefind/Chroma tool cache must live outside the published directory.
+**"No symbolic links" describes the tar, not `dist/` — corrected in the v2.1 pass.** The README's
+bullets are constraints on the *uploaded archive*, and the action satisfies the symlink one itself:
+its tar step runs with `--dereference --hard-dereference`, so any symlink under the upload path is
+**materialized into a real file** on the way in. A symlink in `dist/` is therefore not a build error
+and not a deploy error.
+
+Two things nevertheless remain true, and they are the reasons clogem-press keeps "the exporter copies,
+never symlinks" as a **house rule** rather than dropping the guidance:
+
+- **Dereferencing bills you for the target.** A symlink to the ~58 MB Pagefind binary does not cost a
+  few bytes in the artifact — it ships 58 real megabytes against the 1 GB published-site cap and the
+  10-minute deployment timeout. So the Pagefind/Chroma tool cache must still live **outside** the
+  published directory; that half of the original advice stands, with a better reason behind it.
+- **A broken symlink fails the tar** rather than being skipped, turning a stale link into a build
+  failure at the very last step.
+
+Copying is also simply the honest thing for a static exporter to do: what is on disk is what ships.
 
 ---
 
@@ -298,6 +313,7 @@ on:
     paths:
       - 'content/**'
       - 'assets/**'
+      - 'i18n/**'            # site-level UI string overrides — a change here changes every page
       - 'overrides/**'
       - 'site.edn'
       - 'permalinks.edn'
@@ -346,6 +362,18 @@ jobs:
       - name: Build
         working-directory: site
         run: bb --config ../generator/bb.edn build --out ../dist
+
+      # Hard failure, not a warning: the 1 GB published-site cap is a hard platform limit and
+      # exceeding it fails at deploy time, a whole build cycle later.
+      - name: Check output size
+        run: |
+          size=$(du -sm dist | cut -f1)
+          echo "dist/ is ${size} MB"
+          if [ "$size" -ge 500 ]; then
+            echo "::error::dist/ is ${size} MB, over the 500 MB budget (GitHub Pages caps published sites at 1 GB)."
+            exit 1
+          fi
+
       - uses: actions/upload-pages-artifact@v3
         with: { path: dist }
 

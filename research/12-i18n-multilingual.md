@@ -191,11 +191,22 @@ body ← segs[0 .. n-2]                         ; drop extension
 if (count(body) ≥ 2) and (lower(last(body)) ∈ lower(configured lang codes)):
     lang ← canonical spelling of that code    ; e.g. "zh-hans" → :zh-Hans
     body ← drop-last(body)
+else if (count(body) ≥ 2) and near-miss?(last(body)):
+    ERROR with a suggestion                   ; "unknown language `zh-Hanz` — did you mean `zh-Hans`?"
+                                              ; near-miss? = contains a hyphen and matches
+                                              ;   ^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})+$
+                                              ;   OR ∈ confusables(:langs) = {zh, zh-CN, zh-TW,
+                                              ;      zh-HK, en-US, …}
 else:
     lang ← :default-for-this-article
 order ← parseInt(first(body))                 ; NaN or <0 → warn + skip
 title ← join(rest(body), ".")                 ; "" → warn + skip
 ```
+
+The near-miss branch is not optional decoration — the worked table below asserts that
+`01.article.zh-Hanz.md` **errors**, and without this branch it would fall through to the `else` and
+parse as an article titled `article.zh-Hanz` in the default language. Choice 3 below is where the
+branch's shape is argued.
 
 Worked examples, all consistent with vdoing for the non-variant cases:
 
@@ -345,14 +356,38 @@ that a `lang="zh-CN"` corpus produced `index/zh-cn_*.pf_index` files.
    not** map `ms` → `id` to borrow the Indonesian stemmer: they are different languages, and a wrong
    stemmer produces wrong matches rather than no matches.
 4. **`ta` is fully supported** — UI translations and a Snowball stemmer.
-5. **Accepted trade-off:** a reader searching from a `zh-Hans` page will not find an article that
-   exists only in `zh-Hant`. The alternative, `--force-language`, merges everything into one index and
-   destroys per-language stemming, per-language UI, and result relevance — a much larger loss.
-   Recorded in DESIGN.md's risk table rather than "fixed".
-6. **Not verified:** whether Pagefind's browser JS API exposes an explicit language override (to offer
-   a "search other languages too" affordance). The docs describe only automatic detection from
-   `<html lang>`, and I did not read the JS API surface. DESIGN.md marks this as unverified rather
-   than assuming it.
+5. **Default trade-off:** a reader searching from a `zh-Hans` page does not, by default, find an
+   article that exists only in `zh-Hant`. The build-time alternative, `--force-language`, merges
+   everything into one index and destroys per-language stemming, per-language UI, and result
+   relevance — a much larger loss, and still rejected.
+6. **`zh-Hant` UI strings need explicit wiring — a correctness bug if skipped.** Index selection uses
+   the full lowercased tag (so `zh-hant` is genuinely its own index, per §3 above), but the UI's
+   *translation* lookup is a separate mechanism with **no language-script key**: the shipped
+   translation files are keyed by primary subtag, so `<html lang="zh-Hant">` resolves to `zh.json`,
+   which holds **Simplified** strings — while `zh-tw.json` sits unused in the same directory. Left
+   alone, a Traditional Chinese page renders Traditional content wrapped in a Simplified search UI.
+   The fix is the same wiring §3.3 already prescribes for `ms`: supply strings through the Default
+   UI's **`translations`** option (verified option name — `new PagefindUI({ translations: {…} })`);
+   the Component UI equivalent is `instance.setTranslations()`, paired with `instance.setLanguage()`.
+   So clogem-press supplies its own strings for **both** `ms` and `zh-Hant`, and only `en`/`zh-Hans`/
+   `ta` ride on Pagefind's built-in translations.
+7. **Cross-language search — settled, not open.** Pagefind's browser API exposes
+   **`pagefind.mergeIndex(bundleUrl, {language: "…"})`** (documented on the multisite page), which
+   loads an additional index at *query* time alongside the primary one, each keeping its own stemmer
+   and segmenter. That makes a "search other languages too" affordance real, and strictly better than
+   `--force-language`, which is a build-wide loss. Three constraints, all load-bearing:
+   - **The primary index's language cannot be overridden** — it comes from hardcoded `<html lang>`
+     detection. Only *merged* indexes accept an explicit `{language: …}`.
+   - **Merging the same site's own bundle path is silently skipped**, by a `basePath.startsWith`
+     guard meant to stop a site merging itself. It fails quietly — no error, just no extra results —
+     so the **absolute URL** must be passed (`https://…/pagefind/pagefind.js`). The documented
+     alternative is mutating `document.documentElement.lang` and then `destroy()`/`init()` to re-run
+     detection; it works, but discards the loaded index, so the absolute-URL form is preferred.
+   - **The Component UI's `lang` attribute swaps UI strings only, never the index.** Reaching for it
+     to change *what* is searched is the obvious wrong turn.
+
+   (Earlier revisions listed this as "not verified: whether the JS API exposes a language override".
+   It does, with the caveats above. DESIGN.md §6.7 and its risk table are updated accordingly.)
 
 Current version is unchanged from v1: Pagefind **1.5.2 (April 12, 2026)** is still the newest entry
 in `CHANGELOG.md`, with an empty `## Unreleased` section above it.
@@ -448,6 +483,23 @@ Every variant of an article emits the same `data-term`, so the group shares one 
 thread identity independent of the URL scheme, so a later change to the language-prefix layout cannot
 orphan existing discussions.
 
+**What strict mode actually matches — and the migration trap in it.** Strict mode does not search
+discussion titles. It looks for a marker the giscus bot writes into the discussion **body** at
+creation time: an HTML comment `<!-- sha1: <hex> -->` carrying the SHA-1 of the term. A discussion
+that giscus did not create carries no such marker and is therefore **invisible to the widget under
+strict mode** — the page renders as though no thread existed, and the first comment posted opens a
+*second* discussion beside the original.
+
+So migrating pre-existing threads takes **two** steps, not one:
+
+1. retitle the discussion to the term (`/pages/a1b2c3/`), **and**
+2. append `<!-- sha1: <sha1-of-that-term> -->` to the discussion **body**.
+
+The hash is a pure function of the term, so `clogem migrate` can print the exact line per thread
+(DESIGN.md §7.4 step 8). New sites are unaffected — every thread is bot-created. Disabling strict mode
+to sidestep this is the wrong trade: fuzzy title matching is what merges unrelated threads, which is a
+worse failure and harder to undo.
+
 **`data-lang` support.** From `giscus/giscus` `lib/i18n.tsx`, `availableLanguages` contains 35 entries
 including `en`, `zh-CN`, `zh-TW`, `zh-HK`, `id`, `th`, `vi`, `ko`, `ja` — and **neither `ms` nor
 `ta`**. So the mapping is:
@@ -457,8 +509,15 @@ including `en`, `zh-CN`, `zh-TW`, `zh-HK`, `id`, `th`, `vi`, `ko`, `ja` — and 
 | `en` | `en` |
 | `zh-Hans` | `zh-CN` |
 | `zh-Hant` | `zh-TW` |
-| `ms` | `en` (fallback) |
-| `ta` | `en` (fallback) |
+| `ms` | `en` (**mandatory** — see below) |
+| `ta` | `en` (**mandatory** — see below) |
+
+**The fallback is mandatory, not cosmetic.** `data-lang` is routed into the widget's iframe URL, so an
+unroutable value does not degrade to English chrome — it **404s the iframe and the widget does not
+render at all**. On a Tamil or Malay page that is the difference between English-labelled comments and
+*no comments*. clogem-press therefore validates at build time that every configured locale carries a
+`:giscus` value drawn from giscus's own `availableLanguages`, and fails the build naming the offending
+language rather than shipping an invisible failure.
 
 giscus remains available from Singapore (the China-reachability caveat from research/09 no longer
 applies to the audience), so it stays the primary provider — see DESIGN.md D-6.
@@ -554,11 +613,13 @@ personal KB gains little over sitemap-based discovery, and it adds a key file to
 
 ## 9. Not verified / open questions
 
-- **Pagefind JS API language override** — see §3.6. Not read; not claimed.
-- **Pagefind UI custom translations for `ms`** — the docs state custom translations are supported
-  (research/08 §Pagefind details, sourced from `pagefind.app/docs/ui-usage/`), but I did not verify
-  the exact option name or shape for the new Component UI. Treated as a small implementation task,
-  not a verified API.
+- ~~**Pagefind JS API language override**~~ — **resolved**, see §3.6 item 7: `mergeIndex(bundleUrl,
+  {language: …})`, with the primary index non-overridable and the same-site `basePath.startsWith`
+  guard requiring an absolute URL.
+- ~~**Pagefind UI custom translations**~~ — **resolved**, see §3.6 items 6–7: the Default UI option is
+  **`translations`**; the Component UI equivalent is `setTranslations()` / `setLanguage()`. The pass
+  also turned up a defect this was hiding: `zh-Hant` reaches `zh.json` (Simplified) because UI-string
+  resolution has no language-script key, so Traditional needs the same explicit wiring as `ms`.
 - **CJK/Tamil heading-slug behaviour in nextjournal/markdown** — still untested, carried forward as
   an open risk from v1. Now larger in scope: five languages of headings instead of two.
 - **Charabia's Traditional→Simplified normalization.** charabia's `chinese` feature is known to
@@ -567,7 +628,10 @@ personal KB gains little over sitemap-based discovery, and it adds a key file to
   indexes. Flagged so nobody assumes cross-script matching works.
 - **No empirical multilingual Pagefind run** was performed in this session (the v1 report's run was
   `zh-CN` only). The `should_segment` source line is strong evidence for `zh-Hant`, but a five-language
-  fixture build is a Phase 1 acceptance test, not a completed verification.
+  fixture build is a **Phase 3** acceptance test, not a completed verification — matching DESIGN.md
+  Appendix A and the CJK/Tamil risk-table row. (Earlier revisions of this section said "Phase 1",
+  which conflicted with both; the five-language *fixture corpus* exists from Phase 1, the *Pagefind
+  build over it* is Phase 3.)
 - **Real-world Tamil/Malay proofreading capacity** is a project risk, not a technical one — recorded
   in DESIGN.md's risk table.
 
