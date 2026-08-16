@@ -1,0 +1,6 @@
+;; The generator's own version, asserted against site.edn's
+;; :generator {:min-version "..."} compatibility floor (DESIGN.md D-14).
+;;
+;; The authoritative *pin* is the content repo's publish.yml `ref:` — this file
+;; is what the running generator knows about itself, so the floor can be checked.
+{:version "0.1.0-phase1"}

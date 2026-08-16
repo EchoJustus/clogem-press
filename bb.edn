@@ -1,0 +1,33 @@
+;; clogem-press — a vdoing-class knowledge base + blog + docs generator.
+;; Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).
+;;
+;; Tasks are thin wrappers over `clogem.cli`; every task's option spec lives in
+;; the target var's :org.babashka/cli metadata (quickblog's ns-metadata pattern),
+;; so `bb <task> --help` and programmatic defaults come from one definition.
+;;
+;; This bb.edn is designed to be invoked from ANOTHER directory:
+;;
+;;     cd my-site && bb --config /path/to/clogem-press/bb.edn build
+;;
+;; :paths resolve relative to this file, while the working directory stays the
+;; site's — which is what lets the content repo's publish.yml run a pinned
+;; generator checkout against local content (DESIGN.md §7.3).
+
+{:paths ["src" "test"]
+
+ ;; Zero resolved dependencies: nextjournal/markdown, clj-yaml, hiccup2,
+ ;; http-kit, cheshire and clojure.data.xml are all built into babashka.
+ :deps {}
+
+ :min-bb-version "1.13.0"
+
+ :tasks
+ {:requires ([clogem.cli])
+
+  build   {:doc "Render the site to dist/."                    :task (exec 'clogem.cli/build)}
+  dev     {:doc "Build, serve, and rebuild on change."         :task (exec 'clogem.cli/dev)}
+  serve   {:doc "Serve an already-built output directory."     :task (exec 'clogem.cli/serve)}
+  clean   {:doc "Remove the output directory."                 :task (exec 'clogem.cli/clean)}
+  doctor  {:doc "Report content problems without building."    :task (exec 'clogem.cli/doctor)}
+  fm-fix  {:doc "Write missing front matter into source files."  :task (exec 'clogem.cli/fm-fix)}
+  test    {:doc "Run the test suite."                          :task (exec 'clogem.cli/test-cmd)}}}

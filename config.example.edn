@@ -1,0 +1,116 @@
+;; clogem-press — annotated reference config.
+;;
+;; Copy to `site.edn` in your content repo. Every key shown here has the value
+;; clogem-press would use if you omitted it, so this file doubles as the schema
+;; and as the documentation of the defaults. Section references are to DESIGN.md.
+;;
+;; Any string-valued key may be either a plain string (same in all languages) or
+;; a map keyed by language code. The §6.5 fallback chain applies uniformly:
+;;
+;;     requested lang → :langs :default → :en → the key itself
+;;
+;; so there is exactly one rule to learn.
+
+{;; ---------------------------------------------------------------- site ----
+ :site {:title       {:en "My knowledge base" :zh-Hans "我的知识库"}
+        :description {:en "Notes, guides, and a blog."}
+        :url         "https://example.github.io"   ; no trailing slash; used for
+                                                   ; canonical/hreflang/feeds
+        :base        "/"                           ; "/project/" for a project site
+        :author      {:name "Your Name" :link "https://github.com/you"}}
+
+ ;; ----------------------------------------------------------- generator ----
+ ;; D-14, as amended in v2.1: the AUTHORITATIVE version pin is the `ref:` in
+ ;; your publish.yml, because the checkout has already happened by the time the
+ ;; generator reads this file. What lives here is documentation plus an optional
+ ;; compatibility FLOOR, which the build asserts against its own baked-in
+ ;; version and HARD-FAILS on. That catches the real skew — "content started
+ ;; using a convention the pinned generator does not have yet" — and stays
+ ;; correct whether the workflow pins a tag, a branch, or a sha.
+ :generator {:repo "EchoJustus/clogem-press"
+             ;; :min-version "0.3.0"
+             }
+
+ ;; --------------------------------------------------------------- langs ----
+ :langs {:default  :en
+         ;; Per-article default-version order. The bare /pages/xxxxxx/ URL
+         ;; serves the first language in this list that the article ACTUALLY
+         ;; HAS — not a site-wide default (§6.3). That is the one point where
+         ;; this design diverges from every generator surveyed, and it exists so
+         ;; an article with no English version is still reachable at its
+         ;; identity URL.
+         :priority [:en :zh-Hans :zh-Hant :ms :ta]
+         :locales
+         {:en      {:label "English"       :html-lang "en"      :giscus "en"    :dir :ltr}
+          :zh-Hans {:label "简体中文"       :html-lang "zh-Hans" :giscus "zh-CN" :dir :ltr}
+          :zh-Hant {:label "繁體中文"       :html-lang "zh-Hant" :giscus "zh-TW" :dir :ltr}
+          ;; :giscus for ms/ta MUST be "en". giscus has no locale for either,
+          ;; and data-lang is routed into the widget's iframe URL — an
+          ;; unroutable value 404s the iframe and NO comment widget renders.
+          ;; Validated at build time (§6.8, v2.1 V12).
+          :ms      {:label "Bahasa Melayu" :html-lang "ms"      :giscus "en"    :dir :ltr}
+          :ta      {:label "தமிழ்"          :html-lang "ta"      :giscus "en"    :dir :ltr}}}
+
+ ;; ---------------------------------------------------------------- i18n ----
+ :i18n {:strings-dir   "i18n"     ; <lang>.edn, deep-merged over theme defaults
+        ;; false → the primary variant lives at the bare /pages/xxxxxx/ and only
+        ;; non-primary variants get a /<lang>/ prefix. true → every variant is
+        ;; prefixed and the bare URL becomes a redirect stub, so existing links
+        ;; are REDIRECTED, not broken (D-10).
+        :prefix-default? false
+        :missing-key   :warn      ; :warn in dev, :silent in prod
+        :category-labels {}       ; e.g. {"Basics" {:zh-Hans "基础"}}   (D-12)
+        :show-fallback-notice true}
+
+ ;; ------------------------------------------------------------- content ----
+ :content {:dir "content"
+           :assets-dir "assets"
+           :category true :tag true :archive true
+           :category-text "Notes"        ; category for _posts/ with no subfolder
+           :extend-frontmatter {}        ; extra keys auto-fill should write
+           :permalink-prefix "/pages/"
+           :permalink-length 6           ; vdoing's 6 hex chars; older vdoing
+                                         ; emitted 16, so treat permalinks as opaque
+           ;; true → the build writes missing front matter into your source
+           ;; files (vdoing's behaviour, and what makes `git mv` URL-safe).
+           ;; false → a purely read-only build; URLs then come from
+           ;; permalinks.edn, falling back to a deterministic hash (§7.2).
+           :write-front-matter true
+           :permalinks-file "permalinks.edn"}
+
+ ;; --------------------------------------------------------------- theme ----
+ :theme {:default-mode :auto          ; :auto | :light | :dark | :read
+         :page-style   :card          ; :card | :line
+         :sidebar-open true
+         :fonts {:tamil :system}      ; :system | :self-hosted  (§6.9)
+         :html-modules {}}            ; raw HTML injected into named regions
+
+ :nav [{:text {:en "Home" :zh-Hans "首页"} :link "/"}]
+
+ ;; -------------------------------------------------------------- search ----
+ :search {:provider :none}   ; :pagefind {:binary :extended} — Phase 3
+                             ; :cross-language true adds a "search all
+                             ; languages" affordance via pagefind.mergeIndex
+                             ; (§6.7; pass the ABSOLUTE bundle URL — the
+                             ;  same-site basePath guard fails silently)
+
+ ;; ------------------------------------------------------------ comments ----
+ :comments {:provider :none}
+ ;; :comments {:provider :giscus
+ ;;            :mapping :permalink        ; → data-mapping="specific" +
+ ;;                                       ;   data-term=<the identity permalink>,
+ ;;                                       ;   so all languages share one thread
+ ;;            :repo "you/your.github.io" :repo-id "…" :category-id "…"}
+ ;;
+ ;; Migrating discussions that predate giscus? Strict mode matches a
+ ;; `<!-- sha1: <hash-of-term> -->` marker in the discussion BODY, not the
+ ;; title, so retitling alone leaves the thread invisible and lets the next
+ ;; comment open a duplicate. See §6.8 / §7.4 step 8.
+
+ :analytics {:provider :none}   ; :ga4 | :plausible | :umami   (D-13)
+
+ :seo {:sitemap true :hreflang true :x-default :primary
+       :indexnow {:enabled false :key nil}}
+
+ ;; --------------------------------------------------------------- build ----
+ :build {:out "dist"}}
