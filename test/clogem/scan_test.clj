@@ -1,0 +1,135 @@
+;; Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).
+(ns clogem.scan-test
+  "Table tests for the §6.1 parsing algorithm.
+
+  The first block reproduces DESIGN.md §6.1's worked-example table row for row —
+  if the design table and this test ever disagree, one of them is wrong and the
+  build says so."
+  (:require [clojure.test :refer [deftest is testing]]
+            [clogem.config :as config]
+            [clogem.diag :as diag]
+            [clogem.scan :as scan]))
+
+(def cfg
+  "Built-in defaults: all five languages, :en default. No site.edn is read."
+  (first (diag/collecting (config/load-config "test/fixtures/__no_such_site__"))))
+
+(defn- parse [fname] (scan/parse-filename cfg fname))
+
+(deftest design-6-1-worked-examples
+  (testing "DESIGN.md §6.1's worked-example table, row for row"
+    (doseq [[fname order title lang]
+          [["01.article.md"          1  "article"     nil]
+           ["01.Vue.js 入门.md"       1  "Vue.js 入门"  nil]
+           ["01.Vue.js.md"           1  "Vue.js"      nil]
+           ["01.article.zh-Hans.md"  1  "article"     :zh-Hans]
+           ["10.article.ZH-HANS.md"  10 "article"     :zh-Hans]
+           ;; case-insensitive match, canonical storage — every spelling of the
+           ;; tag resolves to the one configured keyword
+           ["01.a.zh-hans.md"        1  "a"           :zh-Hans]
+           ["01.a.ZH-hAnS.md"        1  "a"           :zh-Hans]
+           ["01.a.ta.md"             1  "a"           :ta]
+           ["01.a.TA.md"             1  "a"           :ta]
+           ;; numbers need not be consecutive, and gaps are recommended
+           ["30.deep.md"             30 "deep"        nil]
+           ;; a dotted title survives intact
+           ["05.a.b.c.md"            5  "a.b.c"       nil]]]
+      (let [r (parse fname)]
+        (is (= order (:order r)) (str fname " → order"))
+        (is (= title (:title r)) (str fname " → title"))
+        (is (= lang  (:lang r))  (str fname " → lang"))))))
+
+(deftest skipped-with-a-warning
+  (testing "vdoing's warn-and-skip cases, unchanged"
+    (doseq [fname ["hello.md" "notes.md" "README.md"]]
+      (is (:skip (parse fname)) (str fname " should be skipped")))
+    (is (:skip (parse "01..md")) "number but no title")
+    (is (:skip (parse "notes.txt")) "not markdown")))
+
+(deftest near-miss-is-a-hard-error
+  (testing "§6.1: a near-miss language tag errors with a suggestion"
+    (let [r (parse "01.article.zh-Hanz.md")]
+      (is (:error r))
+      (is (re-find #"zh-Hanz" (:error r)))
+      (is (re-find #"did you mean `zh-Hans`" (:hint r))
+          "the suggestion is the whole point — a bare error would be worse than a warning")))
+
+  (testing "the confusables set derived from :langs (no hyphen needed)"
+    (is (:error (parse "01.article.zh.md"))
+        "`zh` is ambiguous between the two configured Chinese scripts")
+    (is (:error (parse "01.article.zh-CN.md")))
+    (is (:error (parse "01.article.en-US.md"))))
+
+  (testing "the hyphen requirement is what keeps dotted titles safe"
+    (is (nil? (:error (parse "01.Vue.js.md")))
+        "`js` has no hyphen and is not confusable, so it is part of the title")
+    (is (nil? (:error (parse "01.Notes.v2.md"))))
+    (is (nil? (:error (parse "01.config.yaml.md"))))))
+
+(deftest configured-language-wins-over-near-miss
+  (testing "a configured code is a match, never a near miss"
+    (is (= :en (:lang (parse "01.a.en.md"))))
+    (is (= :ms (:lang (parse "01.a.ms.md"))))))
+
+(deftest single-segment-body-is-never-a-language
+  (testing "count(body) ≥ 2 guard: a file named after a language alone is not a variant"
+    ;; body = ["ta"], count 1 → the lang branch is skipped entirely, and
+    ;; parseInt("ta") is NaN, so it skips with a warning like any unnumbered file
+    (is (:skip (parse "ta.md")))))
+
+(deftest directory-parsing-unchanged
+  (testing "directories are never language-suffixed"
+    (is (= {:order 1 :title "Guide" :numbered? true} (scan/parse-dirname "01.Guide")))
+    (is (= {:order 25 :title "JavaScript" :numbered? true} (scan/parse-dirname "25.JavaScript")))
+    (is (= {:order 1 :title "前端.进阶" :numbered? true} (scan/parse-dirname "01.前端.进阶"))
+        "everything after the FIRST dot is the directory title")
+    (is (= {:order nil :title "Guide" :numbered? false} (scan/parse-dirname "Guide")))))
+
+(deftest parse-int-semantics
+  (testing "vdoing parses the number with JS parseInt, and we reproduce it"
+    (is (= 1 (scan/parse-order "01")))
+    (is (= 1 (scan/parse-order "01abc")))
+    (is (= 10 (scan/parse-order "10")))
+    (is (nil? (scan/parse-order "abc")))
+    (is (nil? (scan/parse-order "")))))
+
+;; ---------------------------------------------------------------------------
+;; M1 — the identity-scoped duplicate-number rule
+
+(defn- dup-errors [entries]
+  (let [[_ ds] (diag/collecting (scan/check-duplicate-numbers! entries))]
+    (diag/errors ds)))
+
+(defn- entry [dir order title & [lang]]
+  {:kind :tree :dir-key dir :order order :base-title title :title title
+   :lang lang :path (str dir "/" order "." title (when lang (str "." (name lang))) ".md")})
+
+(deftest m1-variants-are-not-a-duplicate
+  (testing "same number + same title = language variants of ONE article, which is legal"
+    (is (empty? (dup-errors [(entry "/01.Guide" 2 "conventions")
+                             (entry "/01.Guide" 2 "conventions" :zh-Hans)
+                             (entry "/01.Guide" 2 "conventions" :zh-Hant)]))
+        "applying vdoing's unscoped rule here would fail the build on every
+         translated article — this is exactly what v2.1's M1 corrects")))
+
+(deftest m1-different-identities-are-an-error
+  (testing "same number + different titles = a genuine collision"
+    (let [errs (dup-errors [(entry "/01.Guide" 1 "Setup")
+                            (entry "/01.Guide" 1 "Teardown")])]
+      (is (= 1 (count errs)))
+      (is (re-find #"duplicate sidebar number 1" (:message (first errs))))
+      (is (re-find #"Setup" (:message (first errs))))
+      (is (re-find #"Teardown" (:message (first errs)))))))
+
+(deftest m1-scoped-per-directory
+  (testing "the same number in different directories is not a collision"
+    (is (empty? (dup-errors [(entry "/01.Guide" 1 "Setup")
+                             (entry "/02.Notes" 1 "Teardown")])))))
+
+(deftest m1-mixed-case
+  (testing "a variant group and a colliding article in one directory"
+    (let [errs (dup-errors [(entry "/01.Guide" 2 "conventions")
+                            (entry "/01.Guide" 2 "conventions" :ta)
+                            (entry "/01.Guide" 2 "something-else")])]
+      (is (= 1 (count errs))
+          "one error for the directory, not one per file"))))

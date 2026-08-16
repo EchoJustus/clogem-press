@@ -1,0 +1,6 @@
+---
+title: Confusable
+---
+
+`zh-CN` is not configured (the site uses `zh-Hans`), but it is in the confusables
+set derived from `:langs`, so it errors rather than becoming part of the title.

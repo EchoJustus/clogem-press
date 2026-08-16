@@ -1,0 +1,2 @@
+;; Site-level UI string overrides, deep-merged over the theme defaults (site wins).
+{:index/recent "Latest from the demo"}

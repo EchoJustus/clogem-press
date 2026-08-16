@@ -1,0 +1,48 @@
+;; clogem-press demo site — the executable specification of the conventions.
+;;
+;; CI builds this on every push (the convention-regression tripwire from
+;; DESIGN.md §10). It is deliberately multilingual and deliberately contains an
+;; article with NO English version, so the priority-fallback path of §6.3 is
+;; exercised continuously rather than only when someone remembers to.
+{:site {:title {:en      "clogem-press demo"
+                :zh-Hans "clogem-press 演示"
+                :zh-Hant "clogem-press 示範"
+                :ms      "Demo clogem-press"
+                :ta      "clogem-press விளக்கம்"}
+        :description {:en "A five-language fixture exercising every content convention."
+                      :zh-Hans "覆盖全部内容约定的五语言示例。"}
+        :url  "https://echojustus.github.io"
+        :base "/"}
+
+ ;; D-14 / v2.1 M3: no :ref here. publish.yml's `ref:` is the authoritative pin;
+ ;; what site.edn carries is a compatibility floor the build asserts.
+ :generator {:repo "EchoJustus/clogem-press"}
+
+ :langs {:default  :en
+         :priority [:en :zh-Hans :zh-Hant :ms :ta]
+         :locales
+         {:en      {:label "English"        :html-lang "en"      :giscus "en"    :dir :ltr}
+          :zh-Hans {:label "简体中文"        :html-lang "zh-Hans" :giscus "zh-CN" :dir :ltr}
+          :zh-Hant {:label "繁體中文"        :html-lang "zh-Hant" :giscus "zh-TW" :dir :ltr}
+          ;; giscus has no ms/ta locale, and data-lang is routed into the widget
+          ;; iframe URL — an unroutable value 404s it. Mapping to "en" is
+          ;; mandatory, not cosmetic (DESIGN.md §6.8, v2.1 V12).
+          :ms      {:label "Bahasa Melayu"  :html-lang "ms"      :giscus "en"    :dir :ltr}
+          :ta      {:label "தமிழ்"           :html-lang "ta"      :giscus "en"    :dir :ltr}}}
+
+ :i18n {:strings-dir "i18n"
+        :prefix-default? false          ; D-10: primary variant at the bare /pages/…/
+        :missing-key :warn
+        :show-fallback-notice true}
+
+ :content {:dir "content"
+           :permalink-prefix "/pages/"
+           :write-front-matter true
+           :permalinks-file "permalinks.edn"
+           :assets-dir "assets"}
+
+ :nav [{:text {:en "Home" :zh-Hans "首页" :zh-Hant "首頁" :ms "Laman utama" :ta "முகப்பு"} :link "/"}]
+
+ :theme {:default-mode :auto :page-style :card}
+ :search   {:provider :none}
+ :comments {:provider :none}}
