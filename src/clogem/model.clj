@@ -142,11 +142,25 @@
 (defn- deterministic-permalink
   "Mechanism (c) (§7.2): the read-only fallback. Derived from the identity key so
   it is reproducible within and across `--no-write` builds. Never persisted and
-  never deployed as canonical."
-  [cfg ikey]
+  never deployed as canonical.
+
+  Checked against `taken` like any other candidate, and re-derived from a salted
+  key when it is not free. A hash is not a reservation: six hex characters is a
+  16.7-million space, which a few hundred articles make a real birthday risk,
+  and the ledger may already own the hash of a *different* article. Salting
+  keeps the escape reproducible, which is the only property mechanism (c) has."
+  [cfg ikey taken]
   (let [prefix (get-in cfg [:content :permalink-prefix])
         len    (get-in cfg [:content :permalink-length])]
-    (u/clean-url (str prefix (subs (u/sha256-hex ikey) 0 len)))))
+    (loop [n 0]
+      (let [candidate (u/clean-url
+                       (str prefix (subs (u/sha256-hex (if (zero? n) ikey (str ikey "#" n)))
+                                         0 len)))]
+        (cond
+          (not (taken candidate)) candidate
+          (> n 1000) (throw (ex-info "could not derive a free deterministic permalink"
+                                     {:babashka/exit 1 :key ikey}))
+          :else (recur (inc n)))))))
 
 (defn resolve-permalinks
   "Assign every entry a permalink, and return [entries taken].
@@ -166,18 +180,29 @@
         tombstoned    (set (keys (:tombstones ledger)))
         priority      (config/lang-keys cfg)
         rank          (into {} (map-indexed (fn [i l] [l i])) priority)
-        groups        (group-by implicit-key entries)
-        taken         (atom (into declared tombstoned))
+        ;; Sorted, so assignment does not depend on the order a hash map
+        ;; happened to yield: with two candidates colliding, *which* one keeps
+        ;; the base value would otherwise vary between runs, and mechanism (c)
+        ;; is worth nothing if it does not reproduce.
+        groups        (sort-by key (group-by implicit-key entries))
+        ;; Seeded with every permalink anyone already owns. The ledger's were
+        ;; missing, so a fresh mint could land on a permalink the ledger assigns
+        ;; to a *different* article in the same build. Stale ledger entries stay
+        ;; in the set deliberately: a permalink that used to belong to something
+        ;; is a URL that was promised, and handing it to unrelated content is
+        ;; worse than a 404.
+        taken         (atom (into (into declared tombstoned)
+                                  (keys (:permalinks ledger))))
         group-permalink
         (fn [ikey members]
           (let [decls (distinct (keep :declared-permalink members))]
             (case (count decls)
               0 (or (get ledger-by-key ikey)
-                    (if read-only?
-                      (deterministic-permalink cfg ikey)
-                      (let [p (mint-permalink cfg @taken)]
-                        (swap! taken conj p)
-                        p)))
+                    (let [p (if read-only?
+                              (deterministic-permalink cfg ikey @taken)
+                              (mint-permalink cfg @taken))]
+                      (swap! taken conj p)
+                      p))
               1 (first decls)
               ;; >1: a hard error (§6.2 as amended). Members of one implicit
               ;; group share a directory, a number and a base name; declaring

@@ -4,7 +4,8 @@
   (:require [clojure.test :refer [deftest is testing]]
             [clogem.config :as config]
             [clogem.diag :as diag]
-            [clogem.model :as model]))
+            [clogem.model :as model]
+            [clogem.util :as u]))
 
 (def cfg (first (diag/collecting (config/load-config "test/fixtures/__no_such_site__"))))
 
@@ -253,3 +254,66 @@
         [[entries _taken] _ds] (diag/collecting
                                 (model/resolve-permalinks cfg' [e] ledger))]
     (is (= "/pages/fromledger/" (:permalink (first entries))))))
+
+;; ---------------------------------------------------------------------------
+;; Permalink collision avoidance (§7.2)
+
+(deftest a-fresh-mint-never-collides-with-a-ledger-permalink
+  (testing "`taken` was seeded from declared permalinks and tombstones only, so
+            a mint could land on a permalink the LEDGER assigns to a different
+            article in the same build — two articles, one URL, silently"
+    (let [e      (entry {:base "brand-new"})
+          ledger {:version 1
+                  :permalinks {"/pages/aaaaaa/" {:key "/02.Notes/10.Local|9|something-else"}}
+                  :tombstones {}}
+          hexes  (atom ["aaaaaa" "bbbbbb"])]
+      (with-redefs [u/random-hex (fn [_] (let [h (first @hexes)] (swap! hexes rest) h))]
+        (let [[[entries taken] _] (diag/collecting (model/resolve-permalinks cfg [e] ledger))]
+          (is (= "/pages/bbbbbb/" (:permalink (first entries)))
+              "the RNG offered the ledger's permalink first and was refused")
+          (is (contains? taken "/pages/aaaaaa/"))
+          (is (contains? taken "/pages/bbbbbb/")))))))
+
+(deftest a-fresh-mint-never-collides-with-a-tombstone
+  (testing "a retired URL must not be handed to a new article — that is the
+            whole point of keeping the ledger (D-15)"
+    (let [e      (entry {:base "brand-new"})
+          ledger {:version 1 :permalinks {} :tombstones {"/pages/aaaaaa/" {:reason "deleted"}}}
+          hexes  (atom ["aaaaaa" "cccccc"])]
+      (with-redefs [u/random-hex (fn [_] (let [h (first @hexes)] (swap! hexes rest) h))]
+        (let [[[entries _] _] (diag/collecting (model/resolve-permalinks cfg [e] ledger))]
+          (is (= "/pages/cccccc/" (:permalink (first entries)))))))))
+
+(deftest the-read-only-fallback-is-checked-against-taken-too
+  (testing "mechanism (c) hashes the identity key, and nothing checked the
+            result against anything — so a --no-write build could serve two
+            articles at one URL while the real build would not"
+    (let [cfg'   (assoc-in cfg [:content :write-front-matter] false)
+          e      (entry {:base "brand-new"})
+          ikey   (model/implicit-key (assoc e :base-title "brand-new"))
+          clash  (u/clean-url (str "/pages/" (subs (u/sha256-hex ikey) 0 6)))
+          ledger {:version 1
+                  :permalinks {clash {:key "/02.Notes/10.Local|9|something-else"}}
+                  :tombstones {}}
+          run    #(first (diag/collecting
+                          (first (model/resolve-permalinks cfg' [e] ledger))))
+          a (run) b (run)]
+      (is (not= clash (:permalink (first a)))
+          "the hash landed on a permalink the ledger already owns")
+      (is (re-matches #"/pages/[0-9a-f]{6}/" (:permalink (first a))))
+      (is (= (map :permalink a) (map :permalink b))
+          "and the escape is itself deterministic — §7.2 mechanism (c) is only
+           worth anything if it reproduces"))))
+
+(deftest permalink-assignment-does-not-depend-on-group-iteration-order
+  (testing "a 6-hex space and a few hundred articles is a real birthday risk, so
+            which of two colliding groups gets the base hash must not depend on
+            the order a hash map happened to yield"
+    (let [cfg'    (assoc-in cfg [:content :write-front-matter] false)
+          entries [(entry {:base "alpha" :order 1})
+                   (entry {:base "beta"  :order 2})
+                   (entry {:base "gamma" :order 3})]
+          run     (fn [es] (into {} (map (juxt :implicit-key :permalink))
+                                 (first (first (diag/collecting
+                                                (model/resolve-permalinks cfg' es model/empty-ledger))))))]
+      (is (= (run entries) (run (reverse entries)) (run (shuffle entries)))))))
