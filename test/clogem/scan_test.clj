@@ -260,3 +260,24 @@
           (is (= 1 (count entries)))
           (is (empty? (diag/errors ds))))
         (finally (fs/delete-tree dir))))))
+
+(deftest leading-zeros-do-not-hide-a-directory-collision
+  (testing "`010.Basics` and `10.Basics` both parse to order 10 and both collapse
+            to the same category name — the case most likely to regress if the
+            grouping key is ever changed from `order` to something name-derived"
+    (let [[_ ds] (analyse-temp {"01.Guide/010.Basics/01.a.md" post-body
+                                "01.Guide/10.Basics/01.b.md"  post-body})
+          errs (diag/errors ds)]
+      (is (= 1 (count errs)) (pr-str (map :message errs)))
+      (is (re-find #"duplicate sidebar number 10" (:message (first errs)))))))
+
+(deftest excluded-and-unnumbered-directories-are-exempt-in-a-real-tree
+  (testing "the marker is consed after the cond that drops `_posts`/`@pages`/
+            dot-dirs, and the rule skips `:order nil` — both are load-bearing
+            orderings that nothing else pins"
+    (let [[_ ds] (analyse-temp {"01.Guide/10.Basics/01.a.md"  post-body
+                                "_posts/2026-01-01-p.md"      post-body
+                                "@pages/categoriesPage.md"    post-body
+                                ".hidden/01.x.md"             post-body})]
+      (is (empty? (diag/errors ds)) (pr-str (map :message (diag/errors ds))))
+      (is (empty? (diag/warnings ds)) (pr-str (map :message (diag/warnings ds)))))))
