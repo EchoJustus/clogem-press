@@ -537,8 +537,19 @@ bb dev
 ```
 
 `--poll` flag switches watching to a `babashka.fs/modified-since` loop — **required in practice**:
-this session demonstrated a container where fsnotify registers but never fires. `bb dev` should detect
-zero-event environments and suggest the flag.
+this session demonstrated a container where fsnotify registers but never fires. `bb dev` detects such
+environments and falls back to polling **automatically**, rather than suggesting a flag the user has
+no way to know they need.
+
+Detection has to be a *probe*, because whether events fire is a property of the container and not of
+the pod: `load-pod` succeeds and `watch` returns a watcher id in exactly the environment that then
+delivers nothing. So after registering, `bb dev` touches a temp file inside a watched directory and
+waits for its event; on silence it unwatches and polls, saying which of the two happened. The probe's
+own event is swallowed so startup does not rebuild twice, and registration is on the same clock as
+delivery — `watch` is a synchronous call into a subprocess and has been observed to block
+indefinitely, which hangs `bb dev` before it prints anything, a strictly worse failure than the one
+the probe exists to catch. `--probe-ms` tunes the window; see Appendix A item 5 for why the default
+is three seconds and not the single-digit milliseconds real inotify takes.
 
 The one i18n-specific subtlety: editing *one* variant invalidates *all* siblings, because the variant
 bar and the hreflang set are shared. Re-rendering a whole identity group is still a handful of pages,
@@ -1847,6 +1858,18 @@ Run in the v1 research session on babashka **v1.13.219** (Linux, sandboxed conta
 5. **fswatcher pod** — loads and registers under bb, but **inotify events never fire in this
    container** (reproduced twice, tmpfs and home dir) — the concrete justification for the `--poll`
    fallback.
+
+   **Re-measured in the Phase 1 defect-fix pass, in a different container, and the numbers matter
+   for the probe's design (§5.4):** there, events *do* arrive — consistently ~2000 ms after the
+   write, on ext4 and on tmpfs alike, for hidden and visible files. Two seconds is `notify`'s
+   `PollWatcher` default interval, so what that container provides is not inotify at all but
+   notify's own polling fallback. Consequences, both load-bearing: a probe window of 2000 ms would
+   sit exactly on that interval and return a coin flip, which is why the default is **3000 ms**; and
+   a "working" watcher may be an order of magnitude slower than clogem-press's own 500 ms poller, so
+   the environments worth distinguishing are three, not two — events fast, events slow, no events.
+   Separately observed there: `watch` itself sometimes never returns, so the probe budgets
+   registration as well as delivery. The original claim stands for the container it was made in;
+   what it cannot support is treating "fswatcher works" as a property of babashka.
 6. **Pagefind CJK** — indexed two `lang="zh-CN"` pages; emitted the chunked `pagefind/` bundle, with the
    standalone `pagefind_extended` binary producing per-language `zh-cn` index files, no Node.
 

@@ -10,11 +10,18 @@
 
   §5.4 specifies the fswatcher pod with a `--poll` fallback, and Appendix A
   item 5 records why: inotify events silently never fire in some sandboxed
-  containers. This container is one of them, so the polling path is what has
-  actually been exercised here. The pod path is attempted first and falls back
-  automatically — a zero-event environment does not need the user to know the
-  flag exists, it just needs the build to keep working."
+  containers. The pod path is attempted first and falls back automatically — a
+  zero-event environment does not need the user to know the flag exists, it
+  just needs the build to keep working.
+
+  \"Automatically\" is the load-bearing word, and it is why `probe-watch!`
+  exists. Whether events fire is a property of the *container*, not of the pod,
+  so it cannot be decided by loading the pod or by reading its return value: the
+  only way to know is to cause an event and see whether it arrives. Registration
+  reported as success is the worst outcome available, because the dev server
+  then comes up, announces that it is watching, and silently never rebuilds."
   (:require [babashka.fs :as fs]
+            [babashka.pods :as pods]
             [clojure.string :as str]
             [clogem.config :as config]
             [org.httpkit.server :as http])
@@ -168,24 +175,127 @@ var u=new URL(l.href);u.searchParams.set('t',Date.now());l.href=u.toString();});
             (on-change changed)))
         (recur now)))))
 
+(def default-probe-ms
+  "How long to wait for the watcher to prove itself.
+
+  Real inotify delivers in single-digit milliseconds, so this looks generous —
+  but it is sized against a measurement, not against inotify. In the container
+  this was developed in, the pod registers and events *do* arrive, consistently
+  ~2000 ms later: notify has fallen back to its own `PollWatcher`, whose default
+  interval is two seconds. A window at 2000 ms would sit exactly on that and
+  answer a coin flip. Three seconds clears it, so the answer is stable, and the
+  cost is paid only in an environment that is already degraded — where three
+  seconds buys a correct decision. `--probe-ms` tunes it."
+  3000)
+
+(defn probe-watch!
+  "Register `watch` over every watched path, then **prove** the watcher delivers.
+
+  Registration is not evidence. §5.4 and Appendix A item 5 both record the
+  environment this exists for: the fswatcher pod loads, `watch` returns a
+  watcher id, and no event ever arrives. Reporting success there is the worst
+  outcome available — the dev server comes up, announces that it is watching,
+  and then silently never rebuilds, which reads to the user as a caching bug
+  somewhere else entirely.
+
+  So: touch a temp file inside a watched directory and wait for its event. On
+  silence, unwatch everything, say so, and let the caller fall back to polling.
+  The probe's own event is swallowed rather than forwarded, or starting
+  `bb dev` would rebuild twice.
+
+  **Registration is on the clock too.** `watch` is a synchronous call into a
+  subprocess, and it was observed here to block indefinitely — which hung
+  `bb dev` before it had printed anything at all, a strictly worse failure than
+  the dead-watcher one this function exists to prevent. It therefore runs on
+  its own thread against the same budget; if it overruns we abandon it (there
+  is nothing to unwatch — the call never returned) and poll. The callback
+  checks `abandoned?` so a late registration cannot start driving rebuilds
+  behind the poll loop's back.
+
+  `watch`/`unwatch` are injected so both outcomes are testable without the pod
+  — and so the zero-event case, which by definition cannot be reproduced where
+  events do fire, is covered anyway."
+  [cfg on-change {:keys [watch unwatch timeout-ms]
+                  :or   {timeout-ms default-probe-ms}}]
+  (let [paths (watched-paths cfg)
+        dirs  (filterv fs/directory? paths)]
+    (if (empty? dirs)
+      (do (println "clogem-press: no watchable directory to probe; using polling")
+          false)
+      (let [probe     (fs/path (first dirs) (str ".clogem-watch-probe-" (System/nanoTime)))
+            probe-s   (str probe)
+            seen      (promise)
+            abandoned? (atom false)
+            callback  (fn [ev]
+                        (let [p (str (:path ev))]
+                          (cond
+                            (= p probe-s)  (deliver seen true)
+                            @abandoned?    nil
+                            :else          (on-change [p]))))
+            reg       (promise)]
+        (future
+          (deliver reg (try {:watchers (mapv #(watch (str %) callback {:recursive true}) paths)}
+                            (catch Throwable e {:error (or (ex-message e) (str e))}))))
+        (let [{:keys [watchers error] :as r} (deref reg timeout-ms ::timeout)]
+          (cond
+            (= ::timeout r)
+            (do (reset! abandoned? true)
+                (println (format (str "clogem-press: the fswatcher pod did not finish registering "
+                                      "in %d ms; falling back to polling.")
+                                 timeout-ms))
+                false)
+
+            error
+            (do (reset! abandoned? true)
+                (println "clogem-press: fswatcher could not watch —" error)
+                false)
+
+            :else
+            (try
+              (let [t0 (System/currentTimeMillis)]
+                (spit (fs/file probe) "clogem-press watch probe\n")
+                (if (deref seen timeout-ms false)
+                  (do (println (format "clogem-press: fswatcher delivered a probe event in %d ms"
+                                       (- (System/currentTimeMillis) t0)))
+                      true)
+                  (do (reset! abandoned? true)
+                      (println
+                       (format (str "clogem-press: fswatcher registered but delivered no event in "
+                                    "%d ms — this environment does not deliver filesystem events "
+                                    "(DESIGN.md Appendix A item 5). Falling back to polling.")
+                               timeout-ms))
+                      (doseq [w watchers] (try (unwatch w) (catch Throwable _ nil)))
+                      false)))
+              (finally
+                (try (fs/delete-if-exists probe) (catch Throwable _ nil))))))))))
+
 (defn try-pod-watch!
-  "Attempt the fswatcher pod. Returns true if it registered *and* delivered at
-  least one event within the probe window, false otherwise — registration alone
-  is not evidence that inotify works here."
-  [cfg on-change]
+  "Load the fswatcher pod and probe it. Returns true only if it registered *and*
+  delivered an event within the probe window."
+  [cfg on-change & [{:keys [timeout-ms]}]]
   (try
-    (let [load-pod (requiring-resolve 'babashka.pods/load-pod)]
-      (load-pod 'org.babashka/fswatcher "0.0.7")
-      (let [watch (requiring-resolve 'pod.babashka.fswatcher/watch)]
-        (doseq [p (watched-paths cfg)]
-          (watch (str p) (fn [ev] (on-change [(:path ev)])) {:recursive true}))
-        true))
+    ;; `babashka.pods` is required in the ns form on purpose. Resolving it
+    ;; lazily here — `(requiring-resolve 'babashka.pods/load-pod)` — deadlocks:
+    ;; by the time `dev!` reaches this point the http-kit server threads are
+    ;; running and `clogem.cli` has itself been pulled in by `requiring-resolve`,
+    ;; and the load never returns. Silently: no watcher, no fallback, no message.
+    ;; Reproduced deterministically and fixed by loading it up front, which costs
+    ;; nothing — it is a babashka built-in (Appendix A item 1).
+    ;;
+    ;; `pod.babashka.fswatcher` still has to be resolved late: it does not exist
+    ;; until load-pod has run.
+    (pods/load-pod 'org.babashka/fswatcher "0.0.7")
+    (probe-watch! cfg on-change
+                  (cond-> {:watch   (requiring-resolve 'pod.babashka.fswatcher/watch)
+                           :unwatch (requiring-resolve 'pod.babashka.fswatcher/unwatch)}
+                    timeout-ms (assoc :timeout-ms timeout-ms)))
     (catch Throwable e
       (println "clogem-press: fswatcher pod unavailable —" (ex-message e))
       false)))
 
 (defn dev!
-  [{:keys [port poll interval] :or {port 1888 interval 500} :as opts}]
+  [{:keys [port poll interval probe-ms]
+    :or {port 1888 interval 500 probe-ms default-probe-ms} :as opts}]
   (let [cfg   (assoc (config/load-config (:site-dir opts) (:config-file opts)
                                          (cond-> {} (:out opts) (assoc-in [:build :out] (:out opts))))
                      :clogem/dev? true)
@@ -207,9 +317,8 @@ var u=new URL(l.href);u.searchParams.set('t',Date.now());l.href=u.toString();});
     (rebuild [])
     (http/run-server (make-handler (fs/absolutize out) {:inject-reload? true}) {:port port})
     (println (format "clogem-press: dev server at http://localhost:%d/" port))
-    (if (or poll (not (try-pod-watch! cfg rebuild)))
-      (do (println (format "clogem-press: watching by polling every %d ms%s"
-                           interval (if poll "" " (fswatcher unavailable)")))
+    (if (or poll (not (try-pod-watch! cfg rebuild {:timeout-ms probe-ms})))
+      (do (println (format "clogem-press: watching by polling every %d ms" interval))
           (poll-watch! cfg interval rebuild))
       (do (println "clogem-press: watching via fswatcher")
           @(promise)))))

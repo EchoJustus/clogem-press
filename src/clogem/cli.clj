@@ -159,7 +159,9 @@
                        :port     {:desc "Port." :default 1888 :coerce :long :alias :p}
                        :poll     {:desc "Poll the filesystem instead of using inotify."
                                   :coerce :boolean}
-                       :interval {:desc "Poll interval in ms." :default 500 :coerce :long}})}}
+                       :interval {:desc "Poll interval in ms." :default 500 :coerce :long}
+                       :probe-ms {:desc "How long to wait for the watcher to prove it delivers events."
+                                  :default 3000 :coerce :long}})}}
   dev
   [opts]
   ((requiring-resolve 'clogem.dev/dev!) opts))
