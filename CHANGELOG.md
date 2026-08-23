@@ -128,8 +128,11 @@ Recorded in DESIGN.md in the same commit:
   site it describes.
 - **`bb dev` detects a dead watcher by probing it**, not by trusting
   registration, and falls back to polling automatically (§5.4). Appendix A
-  item 5 records the re-measurement behind the 3 s default: some containers
-  deliver events via notify's own 2 s `PollWatcher`, so there are three cases to
-  tell apart — fast, slow, and none — not two.
+  item 5 records the measurements: the pod's default two-second event latency is
+  its own debounce (anchored to the write, not to a poll clock), so clogem-press
+  passes `:delay-ms 100` — §5.4's own debounce — and both the probe and the dev
+  rebuild loop drop from ~2 s to ~0.1 s. The probe budget is one deadline shared
+  by registration and delivery, sized for registration, which intermittently
+  never returns.
 - **D-3's duplicate-number rule covers sibling directories**, grouped on the
   number alone since directories are never language-suffixed.

@@ -548,8 +548,11 @@ waits for its event; on silence it unwatches and polls, saying which of the two 
 own event is swallowed so startup does not rebuild twice, and registration is on the same clock as
 delivery — `watch` is a synchronous call into a subprocess and has been observed to block
 indefinitely, which hangs `bb dev` before it prints anything, a strictly worse failure than the one
-the probe exists to catch. `--probe-ms` tunes the window; see Appendix A item 5 for why the default
-is three seconds and not the single-digit milliseconds real inotify takes.
+the probe exists to catch. `--probe-ms` tunes the window, which is a single deadline shared by registration and delivery
+rather than one each. Delivery is the cheap half — about 100 ms, because clogem-press passes the pod
+an explicit `:delay-ms` equal to this section's own debounce instead of accepting its two-second
+default; the budget is sized for registration, which intermittently never returns. See Appendix A
+item 5 for the measurements.
 
 The one i18n-specific subtlety: editing *one* variant invalidates *all* siblings, because the variant
 bar and the hreflang set are shared. Re-rendering a whole identity group is still a handful of pages,
@@ -1865,17 +1868,23 @@ Run in the v1 research session on babashka **v1.13.219** (Linux, sandboxed conta
    container** (reproduced twice, tmpfs and home dir) — the concrete justification for the `--poll`
    fallback.
 
-   **Re-measured in the Phase 1 defect-fix pass, in a different container, and the numbers matter
-   for the probe's design (§5.4):** there, events *do* arrive — consistently ~2000 ms after the
-   write, on ext4 and on tmpfs alike, for hidden and visible files. Two seconds is `notify`'s
-   `PollWatcher` default interval, so what that container provides is not inotify at all but
-   notify's own polling fallback. Consequences, both load-bearing: a probe window of 2000 ms would
-   sit exactly on that interval and return a coin flip, which is why the default is **3000 ms**; and
-   a "working" watcher may be an order of magnitude slower than clogem-press's own 500 ms poller, so
-   the environments worth distinguishing are three, not two — events fast, events slow, no events.
-   Separately observed there: `watch` itself sometimes never returns, so the probe budgets
-   registration as well as delivery. The original claim stands for the container it was made in;
-   what it cannot support is treating "fswatcher works" as a property of babashka.
+   **Re-measured in the Phase 1 defect-fix pass, in a different container, and three of the numbers
+   are load-bearing for the probe (§5.4):**
+
+   - *Events do arrive there*, on ext4 and tmpfs alike, for hidden and visible files — so "fswatcher
+     works" is a property of the container, not of babashka, and the original claim licenses a
+     fallback but never a conclusion.
+   - *The pod's default event latency is its own debounce, not the filesystem's.* Events landed
+     **exactly 2002 ms after the write**, invariant to how long the watcher had been registered
+     (gaps of 200/900/1800 ms all gave 2002 ms). A poll clock is anchored to its own interval, so a
+     write-anchored constant is not one; it is `watch`'s event-coalescing window. Passing
+     `:delay-ms` tracks it one-for-one — 100 → 101 ms, 500 → 501 ms — and clogem-press now passes
+     100 ms, the same debounce §5.4 already specifies for the dev loop. Both the probe and the dev
+     rebuild loop went from ~2 s to ~0.1 s as a result.
+   - *`watch` intermittently never returns.* Reproduced with the bare pod and no clogem-press code,
+     so it is the pod or the container; under load it stalled a noticeable fraction of starts. The
+     probe therefore budgets registration and delivery against one shared deadline, and abandons a
+     registration that overruns it rather than letting `bb dev` hang before printing anything.
 6. **Pagefind CJK** — indexed two `lang="zh-CN"` pages; emitted the chunked `pagefind/` bundle, with the
    standalone `pagefind_extended` binary producing per-language `zh-cn` index files, no Node.
 

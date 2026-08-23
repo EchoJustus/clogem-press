@@ -231,3 +231,40 @@
         (when-let [cb @late] (cb {:type :write :path (str (fs/path dir "content" "index.md"))}))
         (is (empty? @changed) "the abandoned watcher is inert")
         (finally (fs/delete-tree dir))))))
+
+(deftest the-probe-asks-for-a-coalescing-window-inside-its-own
+  (testing "the pod's debounce defaults to two seconds — measured, write-anchored
+            — so without an explicit :delay-ms the probe is racing a delay it
+            never asked for. The property that matters is not the number but
+            the ordering: the coalescing window must fit strictly inside the
+            probe budget, or a healthy watcher gets written off."
+    (let [dir  (watch-site)
+          opts (atom nil)]
+      (try
+        (dev/probe-watch! (cfg-for dir) (fn [_] nil)
+                          {:watch   (fn [_p _cb o] (reset! opts o) {:id 1})
+                           :unwatch (fn [w] w)
+                           :timeout-ms 400})
+        (is (some? (:delay-ms @opts)) "the option is passed at all")
+        (is (< (:delay-ms @opts) 400)
+            (str ":delay-ms " (:delay-ms @opts) " must fit inside the probe budget"))
+        (is (true? (:recursive @opts)))
+        (finally (fs/delete-tree dir))))))
+
+(deftest the-probe-budget-is-shared-not-per-stage
+  (testing "registration and delivery used to get a full timeout each, so the
+            advertised window was half of a worst case twice as long"
+    (let [dir (watch-site)
+          budget 600]
+      (try
+        (let [t0 (System/currentTimeMillis)
+              ;; slow registration, then a watcher that never delivers
+              ok (dev/probe-watch! (cfg-for dir) (fn [_] nil)
+                                   {:watch   (fn [_p _cb _o] (Thread/sleep 250) {:id 1})
+                                    :unwatch (fn [w] w)
+                                    :timeout-ms budget})
+              elapsed (- (System/currentTimeMillis) t0)]
+          (is (false? ok))
+          (is (< elapsed (+ budget 400))
+              (str "took " elapsed " ms against a " budget " ms budget")))
+        (finally (fs/delete-tree dir))))))

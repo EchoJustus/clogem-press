@@ -175,17 +175,33 @@ var u=new URL(l.href);u.searchParams.set('t',Date.now());l.href=u.toString();});
             (on-change changed)))
         (recur now)))))
 
-(def default-probe-ms
-  "How long to wait for the watcher to prove itself.
+(def watch-delay-ms
+  "The fswatcher pod's event-coalescing window, in ms.
 
-  Real inotify delivers in single-digit milliseconds, so this looks generous —
-  but it is sized against a measurement, not against inotify. In the container
-  this was developed in, the pod registers and events *do* arrive, consistently
-  ~2000 ms later: notify has fallen back to its own `PollWatcher`, whose default
-  interval is two seconds. A window at 2000 ms would sit exactly on that and
-  answer a coin flip. Three seconds clears it, so the answer is stable, and the
-  cost is paid only in an environment that is already degraded — where three
-  seconds buys a correct decision. `--probe-ms` tunes it."
+  Measured, not guessed: with the option left at its default this container
+  delivered every event **exactly 2002 ms after the write**, invariant to how
+  long the watcher had been registered (gaps of 200/900/1800 ms all gave
+  2002 ms). That rules out a poll clock — a poller is anchored to its own
+  interval, not to the write — and identifies it as the pod's debounce.
+  Setting it explicitly tracks it one-for-one: `:delay-ms 100` → 101 ms,
+  `:delay-ms 500` → 501 ms.
+
+  100 ms is not an arbitrary choice: §5.4 already specifies a
+  drain-until-100ms-quiet debounce for the dev loop, so this is that same
+  number, applied where the coalescing actually happens."
+  100)
+
+(def default-probe-ms
+  "Total budget for proving the watcher works, in ms.
+
+  Delivery is the cheap half — ~101 ms with `watch-delay-ms` set. The budget is
+  sized for the expensive half: `watch` is a synchronous call into a subprocess
+  and intermittently never returns (reproduced with the bare pod and no
+  clogem-press code, so it is the pod or the container, not this program). Three
+  seconds is long enough that a healthy-but-loaded registration is not written
+  off, and short enough to be tolerable at startup on the runs where it is spent.
+  `--probe-ms` tunes it; it is a *shared* deadline across registration and
+  delivery, so it is the worst case, not half of one."
   3000)
 
 (defn probe-watch!
@@ -232,11 +248,19 @@ var u=new URL(l.href);u.searchParams.set('t',Date.now());l.href=u.toString();});
                             (= p probe-s)  (deliver seen true)
                             @abandoned?    nil
                             :else          (on-change [p]))))
-            reg       (promise)]
+            reg       (promise)
+            ;; One deadline shared by registration and delivery. Giving each its
+            ;; own `timeout-ms` made the advertised window the *half* of a worst
+            ;; case that was silently twice as long.
+            deadline  (+ (System/currentTimeMillis) timeout-ms)
+            remaining #(max 0 (- deadline (System/currentTimeMillis)))]
         (future
-          (deliver reg (try {:watchers (mapv #(watch (str %) callback {:recursive true}) paths)}
+          (deliver reg (try {:watchers (mapv #(watch (str %) callback
+                                                     {:recursive true
+                                                      :delay-ms watch-delay-ms})
+                                             paths)}
                             (catch Throwable e {:error (or (ex-message e) (str e))}))))
-        (let [{:keys [watchers error] :as r} (deref reg timeout-ms ::timeout)]
+        (let [{:keys [watchers error] :as r} (deref reg (remaining) ::timeout)]
           (cond
             (= ::timeout r)
             (do (reset! abandoned? true)
@@ -254,15 +278,16 @@ var u=new URL(l.href);u.searchParams.set('t',Date.now());l.href=u.toString();});
             (try
               (let [t0 (System/currentTimeMillis)]
                 (spit (fs/file probe) "clogem-press watch probe\n")
-                (if (deref seen timeout-ms false)
+                (if (deref seen (remaining) false)
                   (do (println (format "clogem-press: fswatcher delivered a probe event in %d ms"
                                        (- (System/currentTimeMillis) t0)))
                       true)
                   (do (reset! abandoned? true)
                       (println
-                       (format (str "clogem-press: fswatcher registered but delivered no event in "
-                                    "%d ms — this environment does not deliver filesystem events "
-                                    "(DESIGN.md Appendix A item 5). Falling back to polling.")
+                       (format (str "clogem-press: fswatcher registered but delivered no event "
+                                    "within the %d ms probe budget — this environment does not "
+                                    "deliver filesystem events (DESIGN.md Appendix A item 5). "
+                                    "Falling back to polling.")
                                timeout-ms))
                       (doseq [w watchers] (try (unwatch w) (catch Throwable _ nil)))
                       false)))
