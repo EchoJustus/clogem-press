@@ -12,6 +12,7 @@
     clogem.frontmatter-test
     clogem.markdown-test
     clogem.model-test
+    clogem.render-test
     clogem.build-test])
 
 (defn run

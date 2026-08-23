@@ -119,18 +119,43 @@
   ;; hiccup2.core and hiccup.util are), so the doctype is a literal.
   "<!DOCTYPE html>\n")
 
-(defn- uri->file
-  [out uri]
-  (let [rel (-> (str uri) (str/replace #"^/" "") (str/replace #"/$" ""))]
+(defn uri->file
+  "Map an emitted URI to the file that must hold it, **stripping the site base**.
+
+  `dist/` *is* the deploy root: a project site's output directory is served at
+  `https://host/<base>/`. So `:base` belongs in every emitted *link* — that is
+  what makes the deployed HTML correct — and in no part of the *file layout*.
+  Baking it in doubles it in the served URL (`/project/project/pages/…`) and
+  leaves the site root a 404.
+
+  The asymmetry is what hid this: assets are copied to `dist/clogem/…` by
+  *path*, so they were already laid out correctly, while pages were laid out by
+  *URI*. And the only base ever exercised was `/`, which is exactly the base
+  under which stripping and not stripping produce identical output."
+  [base out uri]
+  (let [b     (u/clean-url (or base "/"))
+        b-bare (str/replace b #"/$" "")          ; "" for "/", "/project" for "/project/"
+        s     (str uri)
+        rel   (cond
+                (str/starts-with? s b) (subs s (count b))
+                (= s b-bare)           ""
+                :else
+                (do (diag/warn!
+                     s (str "emitted URI does not begin with the site base " b
+                            "; writing it at the output root.")
+                     "Every URL in the page map should be built from clogem.config/base-path.")
+                    s))
+        rel   (-> rel (str/replace #"^/+" "") (str/replace #"/+$" ""))]
     (if (str/blank? rel)
       (fs/path out "index.html")
       (fs/path out rel "index.html"))))
 
 (defn export-pages!
   [cfg pages]
-  (let [out (config/out-dir cfg)]
+  (let [out  (config/out-dir cfg)
+        base (config/base-path cfg)]
     (doseq [[uri render-fn] (sort-by key pages)]
-      (let [f (uri->file out uri)]
+      (let [f (uri->file base out uri)]
         (fs/create-dirs (fs/parent f))
         (spit (fs/file f) (str doctype (h/html (render-fn))))))
     (count pages)))

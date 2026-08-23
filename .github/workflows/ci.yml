@@ -91,6 +91,50 @@ jobs:
 
           echo "URL scheme OK: $(find dist -name index.html | wc -l) pages"
 
+      # Only base "/" is exercised above, and that is exactly the base under
+      # which stripping the base and not stripping it produce identical output
+      # — so the whole class of "the base is baked into the layout" bug was
+      # invisible. Build once with a non-root base and assert that `dist/` is
+      # the DEPLOY ROOT rather than a directory containing one.
+      - name: Build demo site with a non-root base
+        working-directory: examples/demo-site
+        run: bb --config ../../bb.edn build --no-write --base /clogem-demo/ --out dist-base
+
+      - name: Assert the base is not baked into the output layout
+        working-directory: examples/demo-site
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          base=/clogem-demo/
+
+          test -f dist-base/index.html            || fail "site root is a 404: no dist-base/index.html"
+          test ! -e dist-base/clogem-demo         || fail "the base is baked into the layout: dist-base/clogem-demo/ exists"
+          test -f dist-base/clogem/css/theme.css  || fail "theme assets missing"
+
+          # The real invariant, and the one that was broken: every internal
+          # link must resolve to a file once the base is stripped.
+          missing=0
+          hrefs=$(grep -ohE '(href|src)="/[^"]*"' -r dist-base --include='*.html' \
+                  | sed -E 's/^(href|src)="//; s/"$//' | sort -u)
+          for href in $hrefs; do
+            case "$href" in
+              "$base"*) ;;
+              *) echo "::error::link does not carry the base: $href"; missing=$((missing+1)); continue ;;
+            esac
+            rel="${href#$base}"
+            [ -f "dist-base/$rel" ] && continue
+            [ -f "dist-base/${rel%/}/index.html" ] && continue
+            [ -z "$rel" ] && [ -f dist-base/index.html ] && continue
+            echo "::error::dangling link $href -> dist-base/$rel"
+            missing=$((missing+1))
+          done
+          test "$missing" -eq 0 || fail "$missing internal link(s) do not resolve under a non-root base"
+
+          echo "base layout OK: $(find dist-base -name index.html | wc -l) pages, $(echo "$hrefs" | wc -l) distinct links"
+
+      - name: Assert the non-root-base build mutated nothing
+        run: git diff --exit-code -- examples/demo-site
+
       - name: Report output size
         working-directory: examples/demo-site
         run: du -sh dist
