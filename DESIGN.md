@@ -1602,6 +1602,12 @@ the document). D-9 through D-15 are new, surfaced by v2's design work.
   vdoing's unscoped rule here would make every translated article fail the build — the reason this
   correction is load-bearing rather than cosmetic. (`bb doctor` still reports the near-collision case
   where numbering gaps have been exhausted.)
+  **The rule covers sibling directories as well as files**, on the scoping §6.1 already specifies:
+  files group on *(order, title)* because language variants share both by construction, directories
+  group on `order` alone because they are never language-suffixed — so for directories there is no
+  legal same-number case to exempt, and any two siblings sharing a number are a collision. Checking
+  only files leaves directories on exactly the warn-and-overwrite behaviour this decision exists to
+  replace, in the half of the tree where the scoping subtlety does not even apply.
 - **D-4. Execution modes.** ▶ bb-only for v1. nextjournal/markdown is cross-platform and the core is
   pure functions, so a JVM mode (flexmark extensions, image processing, Datomic indexing) stays an open
   escape hatch, not a day-one cost.

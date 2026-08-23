@@ -223,7 +223,11 @@
 
 (defn scan-tree
   "Walk the numbered directory tree. Returns a flat vector of entries; the tree
-  shape is reconstructed in `clogem.model` from :dir-key and :categories."
+  shape is reconstructed in `clogem.model` from :dir-key and :categories.
+
+  Also emits one `{:kind :dir}` marker per directory, so that
+  `check-duplicate-numbers!` can apply D-3 to directories as well as files.
+  `scan` filters them out again."
   [cfg]
   (let [root (config/content-dir cfg)]
     (letfn [(walk [dir depth categories dir-key]
@@ -252,9 +256,19 @@
                                         (str "directory `" nm "` has no number prefix; "
                                              "vdoing requires numbering below level 1 — "
                                              "it will sort after numbered siblings.")))
-                          (walk d (inc depth)
-                                (conj categories title)
-                                (str dir-key "/" nm))))))
+                          (cons
+                           ;; A marker entry, so `check-duplicate-numbers!` can see
+                           ;; directories at all — only files were ever scanned, and
+                           ;; D-3's error is not a rule about files. Keyed on the
+                           ;; PARENT's dir-key so siblings group together. `scan`
+                           ;; drops these; they never reach the model.
+                           {:kind :dir :dir-key dir-key :order order
+                            :base-title title :title title
+                            :path (str d) :rel-path (str (fs/relativize root d))
+                            :depth depth}
+                           (walk d (inc depth)
+                                 (conj categories title)
+                                 (str dir-key "/" nm)))))))
                   dirs))))]
       (if-not (fs/directory? root)
         (do (diag/error! (str root) "content directory does not exist.") [])
@@ -273,6 +287,7 @@
   Applying vdoing's unscoped rule here would fail the build on every translated
   article, which is why this scoping is load-bearing rather than cosmetic."
   [entries]
+  ;; Files: same number AND same identity = language variants, legal.
   (doseq [[dir-key group] (group-by :dir-key (filter #(= :tree (:kind %)) entries))
           [order same-order] (group-by :order group)
           :when order
@@ -287,9 +302,29 @@
      (str "Same number + same title = language variants of one article (legal). "
           "Same number + different titles = a collision. Renumber one of them "
           "(gaps of 10 are recommended).")))
+  ;; Directories: grouped on `order` alone, because directories are never
+  ;; language-suffixed (§6.1) — so there is no legal same-number case for them
+  ;; at all, and any two siblings sharing a number are a collision. Only files
+  ;; were ever checked, which left directories on vdoing's warn-and-overwrite
+  ;; behaviour in the one place D-3 says not to have it: two sibling directories
+  ;; with the same number simply sorted by a string tie-break.
+  (doseq [[dir-key group] (group-by :dir-key (filter #(= :dir (:kind %)) entries))
+          [order same-order] (group-by :order group)
+          :when (and order (> (count same-order) 1))]
+    (diag/error!
+     (str (u/blank->nil dir-key) "/")
+     (str "duplicate sidebar number " order " for different directories: "
+          (str/join ", " (sort (map #(fs/file-name (:path %)) same-order))))
+     (str "Directories are never language-suffixed, so two siblings sharing a "
+          "number are always a collision — there is no variant case to exempt "
+          "(D-3, §6.1). Renumber one of them (gaps of 10 are recommended).")))
   entries)
 
 (defn scan
-  "Full scan: walk, then apply the identity-scoped duplicate check."
+  "Full scan: walk, apply the identity-scoped duplicate check, then drop the
+  directory markers `scan-tree` emitted for it — downstream every entry is a
+  Markdown file, and `clogem.model/load-entries` slurps `:path`."
   [cfg]
-  (-> (scan-tree cfg) check-duplicate-numbers!))
+  (->> (scan-tree cfg)
+       check-duplicate-numbers!
+       (filterv #(not= :dir (:kind %)))))

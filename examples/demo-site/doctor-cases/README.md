@@ -14,6 +14,12 @@ To see the error, copy one into `content/01.Guide/10.Basics/` (dropping the
 | `01.article.zh-CN.md.disabled` | error: `zh-CN` is in the confusables set derived from `:langs` |
 | `01.Setup.md.disabled`, `01.Teardown.md.disabled` | error: duplicate sidebar number 1 for *different* articles (M1). `10.Basics/` already has `01.getting-started.md`, so **either one alone** collides; copy both to see three identities named in one error. |
 | `02.conventions.ms.md.disabled` | error: an identity group whose members declare different `permalink:` values (§6.2). Copy it into `content/01.Guide/10.Basics/`, beside the three `02.conventions*` files it claims to be a variant of. |
+| `duplicate-dirs/10.Alpha/`, `duplicate-dirs/10.Beta/` | error: two **sibling directories** sharing a number (D-3, §6.1). Copy both directories into `content/01.Guide/` and drop the `.disabled` suffixes. `01.Guide/` already has `10.Basics/`, so **either one alone** collides; copy both to see three directories named in one error. Directories are never language-suffixed, so unlike files there is no legal same-number case to exempt — any two siblings sharing a number are a collision. |
+
+The last row is the directory half of the same rule, and it is scoped
+differently on purpose: files group on *(number, base name)* because language
+variants share both by construction, while directories group on the number
+alone because they are never language-suffixed.
 
 The third row is the point of v2.1's M1 correction. Note the contrast with
 `02.conventions.md` / `.zh-Hans.md` / `.zh-Hant.md`, which are checked into

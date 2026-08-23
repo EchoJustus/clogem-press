@@ -205,3 +205,58 @@
                                  "_posts/tech/2026-08-01-hello.md" post-body})]
     (is (= #{"_posts" "_posts/tech"}
            (set (map :dir-key (:entries model)))))))
+
+;; ---------------------------------------------------------------------------
+;; D-3 for directories
+
+(defn- dir-entry [parent order title]
+  {:kind :dir :dir-key parent :order order :base-title title :title title
+   :path (str parent "/" order "." title)})
+
+(deftest sibling-directories-sharing-a-number-are-an-error
+  (testing "D-3 upgrades vdoing's warn-and-overwrite to an error, and §6.1 says
+            directories are grouped on `order` alone since they are never
+            language-suffixed. Only FILES were ever checked, so two sibling
+            directories with the same number sorted by a string tie-break —
+            vdoing's exact behaviour, in the one place D-3 said not to have it."
+    (let [errs (dup-errors [(dir-entry "/01.Guide" 10 "Basics")
+                            (dir-entry "/01.Guide" 10 "Advanced")])]
+      (is (= 1 (count errs)))
+      (is (re-find #"duplicate sidebar number 10" (:message (first errs))))
+      (is (re-find #"10\.Basics" (:message (first errs))))
+      (is (re-find #"10\.Advanced" (:message (first errs)))))))
+
+(deftest directories-are-scoped-to-their-parent
+  (is (empty? (dup-errors [(dir-entry "/01.Guide" 10 "Basics")
+                           (dir-entry "/02.Notes" 10 "Local")]))))
+
+(deftest unnumbered-directories-are-not-a-collision
+  (testing "an unnumbered directory is legal at level 1 and simply sorts last"
+    (is (empty? (dup-errors [(dir-entry "" nil "Guide")
+                             (dir-entry "" nil "Notes")])))))
+
+(deftest a-directory-and-a-file-sharing-a-number-are-not-a-collision
+  (testing "they occupy different slots — vdoing renders directories and files
+            as separate sidebar groups"
+    (is (empty? (dup-errors [(dir-entry "/01.Guide" 10 "Basics")
+                             (entry "/01.Guide" 10 "notes")])))))
+
+(deftest duplicate-directory-numbers-fail-a-real-tree
+  (let [[_ ds] (analyse-temp {"01.Guide/10.Alpha/01.a.md" post-body
+                              "01.Guide/10.Beta/01.b.md"  post-body})
+        errs (diag/errors ds)]
+    (is (= 1 (count errs)) (pr-str (map :message errs)))
+    (is (re-find #"duplicate sidebar number 10" (:message (first errs))))))
+
+(deftest directory-markers-never-escape-the-scanner
+  (testing "`scan-tree` emits directory entries so the duplicate rule can see
+            them; `scan` must drop them, or load-entries would try to slurp a
+            directory as Markdown"
+    (let [dir (temp-site {"01.Guide/10.Basics/01.a.md" post-body})]
+      (try
+        (let [cfg (first (diag/collecting (config/load-config (str dir))))
+              [entries ds] (diag/collecting (scan/scan cfg))]
+          (is (empty? (filter #(= :dir (:kind %)) entries)))
+          (is (= 1 (count entries)))
+          (is (empty? (diag/errors ds))))
+        (finally (fs/delete-tree dir))))))

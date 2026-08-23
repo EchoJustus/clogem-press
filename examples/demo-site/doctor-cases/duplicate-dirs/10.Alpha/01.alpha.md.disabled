@@ -1,0 +1,6 @@
+---
+title: Alpha
+---
+
+Its *directory* is the point, not this file. `10.Alpha/` and `10.Beta/` are
+siblings sharing the number 10.
