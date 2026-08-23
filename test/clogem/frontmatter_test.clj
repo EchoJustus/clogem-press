@@ -10,6 +10,8 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [clogem.cli :as cli]
+            [clogem.config :as config]
             [clogem.diag :as diag]
             [clogem.frontmatter :as fm]))
 
@@ -157,3 +159,67 @@
                                    {})]
     (is (= [:title :date :permalink :categories :tags] (mapv first adds))
         "matching vdoing's key order keeps a migrated tree's first diff minimal")))
+
+;; ---------------------------------------------------------------------------
+;; Non-map front matter (all three YAML shapes)
+
+(deftest yaml-front-matter-must-be-a-mapping
+  (testing "the EDN branch guarded on map?; the YAML branch did not, and YAML
+            has two other document shapes that reach it"
+
+    (testing "a scalar block — `contains?` on a String is an IllegalArgumentException,
+              which used to surface deep inside compute-additions"
+      (let [[result ds] (diag/collecting (fm/parse-fm "just a note" "scalar.md"))]
+        (is (nil? result))
+        (is (= 1 (count (diag/errors ds))))
+        (is (re-find #"not a mapping" (:message (first (diag/errors ds)))))))
+
+    (testing "a list block — the dangerous one: a sequence is `contains?`-able by
+              index, so it did not crash, it reached the WRITER and inserted
+              `title: …` lines into a YAML list"
+      (let [[result ds] (diag/collecting (fm/parse-fm "- one\n- two\n" "list.md"))]
+        (is (nil? result))
+        (is (= 1 (count (diag/errors ds))))))
+
+    (testing "a mapping — unchanged"
+      (is (= {:title "y"} (fm/parse-fm "title: y" "map.md"))))))
+
+(deftest non-map-front-matter-reads-as-an-empty-map-and-never-crashes
+  (testing "read-file must hand downstream code a map whatever the file says, so
+            the diagnostic is what stops the build rather than a stack trace"
+    (let [dir (fs/create-temp-dir {:prefix "clogem-fm"})]
+      (try
+        (doseq [[name content] {"scalar.md" "---\njust a note\n---\n\nbody\n"
+                                "list.md"   "---\n- one\n- two\n---\n\nbody\n"}]
+          (let [f (fs/path dir name)]
+            (spit (fs/file f) content)
+            (let [[file ds] (diag/collecting (fm/read-file f))]
+              (is (map? (:front-matter file)) (str name " → a map"))
+              (is (seq (diag/errors ds)) (str name " → an error"))
+              ;; the actual Phase 1 crash site: `contains?` on a String threw
+              ;; IllegalArgumentException from deep inside the fill plan
+              (is (= [:date :tags]
+                     (mapv first (fm/compute-additions
+                                  {:front-matter (:front-matter file) :path (str f)}
+                                  {} {})))
+                  (str name " → compute-additions runs instead of throwing")))))
+        (finally (fs/delete-tree dir))))))
+
+(deftest a-file-with-non-map-front-matter-is-never-written-back
+  (testing "write-back is the one irreversible thing this program does, so the
+            guarantee is structural: an :error means the pipeline raises before
+            apply-fill! is reached, and the bytes on disk are untouched"
+    (let [dir (fs/create-temp-dir {:prefix "clogem-fmsite"})
+          f   (fs/path dir "content" "01.Guide" "01.notes.md")
+          raw "---\n- one\n- two\n---\n\nbody\n"]
+      (try
+        (fs/create-dirs (fs/parent f))
+        (spit (fs/file f) raw)
+        (binding [diag/*sink* (atom [])]      ; keep config's own notes off stderr
+          (is (thrown? clojure.lang.ExceptionInfo
+                       (cli/build {:site-dir (str dir) :out (str (fs/path dir "dist"))}))
+              "the build refuses to run"))
+        (is (= raw (slurp (fs/file f)))
+            "and the source file is byte-identical — write-back happens only
+             after throw-on-errors!, which is what makes this structural")
+        (finally (fs/delete-tree dir))))))

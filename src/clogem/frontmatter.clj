@@ -52,22 +52,59 @@
 (defn edn-block? [fm-text]
   (str/starts-with? (str/triml (or fm-text "")) "{"))
 
+(defn- non-map-front-matter!
+  "Front matter that parses but is not a mapping.
+
+  YAML has three document shapes and only one of them is front matter. A scalar
+  block (`---`/`just a note`/`---`) parses to a String and a list block parses
+  to a sequence, and both used to travel on: the String reached
+  `compute-additions` and blew up on `contains?`, while the *sequence* — the
+  worse of the two, because `contains?` accepts it — reached the WRITER, which
+  appended `title: …` lines to a YAML list and left invalid YAML in the user's
+  source file.
+
+  So this is an error, not a warning, and the severity is the mechanism: both
+  `build` and `fm-fix` raise on errors before `apply-fill!` runs, which is what
+  makes `the file is skipped for write-back` a structural guarantee rather
+  than a promise."
+  [path what]
+  (diag/error!
+   path
+   (str "front matter is not a mapping (parsed as " what ").")
+   (str "Front matter must be a YAML mapping (`key: value` lines) or an EDN map "
+        "(`{:key \"value\"}`). A `---` fence at the very top of the file is read as "
+        "front matter, so if this was meant as a horizontal rule or as prose, put a "
+        "blank line or some text above it."))
+  nil)
+
+(defn- shape-of
+  [v]
+  (cond
+    (sequential? v) "a list"
+    (string? v)     "a scalar string"
+    (number? v)     "a number"
+    (boolean? v)    "a boolean"
+    :else           (str "a " (.getName (class v)))))
+
 (defn parse-fm
   "Parse a front-matter block to a map with keyword keys. Returns {} for an empty
-  block, nil (plus a diagnostic) when the block is malformed."
+  block, nil (plus a diagnostic) when the block is malformed or is not a mapping."
   [fm-text path]
   (cond
     (nil? fm-text)             {}
     (str/blank? fm-text)       {}
     (edn-block? fm-text)
     (try (let [m (edn/read-string fm-text)]
-           (if (map? m) m
-               (do (diag/warn! path "EDN front matter is not a map; ignoring.") {})))
+           (if (map? m) m (non-map-front-matter! path (shape-of m))))
          (catch Exception e
            (diag/error! path (str "malformed EDN front matter: " (ex-message e)))
            nil))
     :else
-    (try (or (yaml/parse-string fm-text :keywords true) {})
+    (try (let [m (yaml/parse-string fm-text :keywords true)]
+           (cond
+             (nil? m)  {}
+             (map? m)  m
+             :else     (non-map-front-matter! path (shape-of m))))
          (catch Exception e
            (diag/error! path (str "malformed YAML front matter: " (ex-message e)))
            nil))))
