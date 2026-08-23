@@ -18,7 +18,8 @@
             [clojure.string :as str]
             [clogem.config :as config]
             [org.httpkit.server :as http])
-  (:import [java.net URLDecoder]))
+  (:import [java.io File]
+           [java.net URLDecoder]))
 
 ;; ---------------------------------------------------------------------------
 ;; Static files
@@ -41,6 +42,17 @@
 (defn- content-type [p]
   (get mime-types (u-ext p) "application/octet-stream"))
 
+(defn- under?
+  "Is the canonical path `p` the root itself or something inside it?
+
+  The separator is the whole point. Comparing canonical paths as bare strings
+  makes containment a prefix test on names, so `/site/dist-readonly` sits
+  \"inside\" a root of `/site/dist` — and `dist-readonly` is not hypothetical:
+  CI builds one, `build --out dist-readonly`, right beside the served `dist/`."
+  [^String base ^String p]
+  (or (= p base)
+      (str/starts-with? p (str base File/separator))))
+
 (defn resolve-file
   "Map a request URI to a file under `root`, refusing anything that escapes it."
   [root uri]
@@ -49,7 +61,7 @@
         base    (str (fs/canonicalize root))
         target  (fs/path base rel)]
     (when (and (fs/exists? target)
-               (str/starts-with? (str (fs/canonicalize target)) base))
+               (under? base (str (fs/canonicalize target))))
       (cond
         (fs/directory? target)    (let [idx (fs/path target "index.html")]
                                     (when (fs/regular-file? idx) idx))

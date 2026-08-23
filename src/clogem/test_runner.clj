@@ -14,6 +14,7 @@
     clogem.model-test
     clogem.render-test
     clogem.ledger-test
+    clogem.dev-test
     clogem.build-test])
 
 (defn run
