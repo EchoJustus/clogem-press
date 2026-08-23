@@ -1,0 +1,11 @@
+---
+title: Konvensyen
+permalink: /pages/000bad/
+---
+
+Same directory, same number, same base name as `02.conventions.md` — so
+mechanism 1 says these are one article — but a *different* `permalink:`. That
+claims two articles in one sidebar slot, and is a hard error (DESIGN.md §6.2).
+
+Copy this into `content/01.Guide/10.Basics/` (dropping `.disabled`) and run
+`bb doctor` to see it.

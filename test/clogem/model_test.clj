@@ -98,13 +98,55 @@
       (is (seq warns))
       (is (some #(re-find #"different directories" (:message %)) warns)))))
 
-(deftest disagreeing-permalinks-in-one-implicit-group-warn
-  (testing "§6.1's doctor check: variants that declare different permalinks"
+(deftest agreeing-permalinks-in-one-implicit-group-merge
+  (testing "the merged path: members that declare the SAME permalink are one
+            article, and members that declare nothing inherit it"
     (let [[groups ds] (build [(entry {:permalink "/pages/aaa/"})
-                              (entry {:lang :zh-Hans :permalink "/pages/bbb/"})])]
-      (is (some #(re-find #"declare different permalinks" (:message %)) (diag/warnings ds)))
-      (is (= 2 (count groups))
-          "each declared permalink is honoured — a declared value is never overwritten"))))
+                              (entry {:lang :zh-Hans :title "约定" :permalink "/pages/aaa/"})
+                              (entry {:lang :ta :title "மரபுகள்"})])]
+      (is (= 1 (count groups)))
+      (is (= #{:en :zh-Hans :ta} (set (keys (:variants (get groups "/pages/aaa/"))))))
+      (is (empty? (diag/errors ds)))
+      (is (empty? (filter #(re-find #"different permalinks" (:message %)) (diag/warnings ds)))))))
+
+(deftest conflicting-permalinks-in-one-implicit-group-are-an-error
+  (testing "§6.2 as amended: identity IS the permalink, so members of one
+            implicit group that declare DIFFERENT permalinks are claiming to be
+            two articles occupying one directory, number and base name — which
+            is the collision D-3 already makes a hard error, reached by another
+            route. It is an error, not a warning: the previous behaviour warned
+            that the highest-priority variant's permalink was being used and
+            then gave every declaring member its own, so the group split in two
+            and the file on disk never converged with the site."
+    (let [[groups ds] (build [(entry {:permalink "/pages/aaa/"})
+                              (entry {:lang :zh-Hans :title "约定" :permalink "/pages/bbb/"})])
+          errs (diag/errors ds)]
+      (is (= 1 (count errs)))
+      (is (re-find #"declare different permalinks" (:message (first errs))))
+      (is (re-find #"/pages/aaa/" (:message (first errs))))
+      (is (re-find #"/pages/bbb/" (:message (first errs))))
+      (is (= 1 (count groups))
+          "resolved deterministically anyway, so the rest of the doctor report is readable")
+      (is (= #{:en :zh-Hans} (set (keys (:variants (get groups "/pages/aaa/"))))))
+      (is (nil? (get groups "/pages/bbb/"))
+          "the group does not split — that split is the bug the warning denied"))))
+
+(deftest the-conflict-winner-is-the-highest-priority-variants
+  (testing "…and which one wins is stated by the error, so the author can see it"
+    (let [[groups ds] (build [(entry {:lang :ta   :title "த" :permalink "/pages/ttt/"})
+                              (entry {:lang :zh-Hans :title "约定" :permalink "/pages/zzz/"})])]
+      (is (= ["/pages/zzz/"] (keys groups)) ":zh-Hans outranks :ta in :priority")
+      (is (re-find #"Using /pages/zzz/" (:hint (first (diag/errors ds))))))))
+
+(deftest a-conflict-does-not-need-every-member-to-declare
+  (testing "two declarations plus a silent sibling is still one article"
+    (let [[groups ds] (build [(entry {:permalink "/pages/aaa/"})
+                              (entry {:lang :zh-Hans :title "约定" :permalink "/pages/bbb/"})
+                              (entry {:lang :ta :title "மரபுகள்"})])]
+      (is (= 1 (count (diag/errors ds))))
+      (is (= 1 (count groups)))
+      (is (= 3 (count (:variants (get groups "/pages/aaa/"))))
+          "the non-declaring sibling joins the winner too"))))
 
 (deftest two-files-claiming-one-language-is-an-error
   (let [[_ ds] (build [(entry {:base "a" :permalink "/pages/x/"})

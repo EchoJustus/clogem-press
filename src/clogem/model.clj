@@ -179,27 +179,46 @@
                         (swap! taken conj p)
                         p)))
               1 (first decls)
-              ;; >1: a content bug. Deterministic resolution + a loud doctor
-              ;; report, per §6.1's "identity groups whose members disagree on
-              ;; permalink" check.
+              ;; >1: a hard error (§6.2 as amended). Members of one implicit
+              ;; group share a directory, a number and a base name; declaring
+              ;; different permalinks claims they are two articles in one
+              ;; sidebar slot, which is exactly the collision D-3 already makes
+              ;; an error, reached by another route. And "identity IS the
+              ;; permalink" (§6.2) leaves no third reading.
+              ;;
+              ;; It used to warn that the highest-priority variant's permalink
+              ;; was being used and then hand every declaring member its own,
+              ;; so the group split into two articles anyway — the warning
+              ;; described a merge that never happened. Merging for real is the
+              ;; other option and is worse: front-matter rule 1 forbids
+              ;; overwriting a manual value, so the losing file would keep
+              ;; saying `/pages/bbb/` on disk while the site served it at
+              ;; `/pages/aaa/`, every build, for ever.
+              ;;
+              ;; Resolution still happens, deterministically, so the rest of
+              ;; the doctor report is readable — the same shape config
+              ;; validation uses for a bad :langs :default.
               (let [winner (->> members
                                 (filter :declared-permalink)
                                 (sort-by #(get rank (:lang %) 999))
                                 first
                                 :declared-permalink)]
-                (diag/warn!
+                (diag/error!
                  (str/join ", " (sort (map :rel-path members)))
                  (str "language variants of one article declare different permalinks: "
                       (str/join ", " (sort decls)))
-                 (str "Using " winner " (the highest-priority variant's). Make them agree, "
-                      "or move one file so it forms its own article."))
+                 (str "Using " winner " (the highest-priority variant's) so the rest of this "
+                      "report is readable, but the build will not run. Make them agree, "
+                      "or move/rename one file so it forms its own article."))
                 winner))))]
     [(into []
            (mapcat (fn [[ikey members]]
+                     ;; Always the group's permalink, never the member's own
+                     ;; declaration. With 0 or 1 distinct declarations the two
+                     ;; are the same value; with more, the group is an error and
+                     ;; honouring each declaration is what split it.
                      (let [pl (group-permalink ikey members)]
-                       (map #(assoc % :permalink (or (:declared-permalink %) pl)
-                                    :implicit-key ikey)
-                            members))))
+                       (map #(assoc % :permalink pl :implicit-key ikey) members))))
            groups)
      @taken]))
 

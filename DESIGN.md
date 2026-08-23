@@ -723,9 +723,9 @@ both paths. Directories are grouped the same way on `order` alone, since directo
 language-suffixed.
 
 `bb doctor` additionally reports: variants whose stripped suffix leaves them with no same-identity
-sibling (the `01.Timing.ms.md` accident), identity groups whose members disagree on `permalink`,
-identity groups whose members disagree on directory path (the mechanism-2 case — see §6.2), and
-variants declaring `lang:` inconsistent with their filename.
+sibling (the `01.Timing.ms.md` accident), identity groups whose members disagree on `permalink`
+(an **error** — see §6.2), identity groups whose members disagree on directory path (the mechanism-2
+case, a warning — see §6.2), and variants declaring `lang:` inconsistent with their filename.
 
 ### 6.2 Article identity: one permalink, many variants
 
@@ -757,6 +757,24 @@ permalink. That resolution happens two ways:
 Mechanism 2 is the same escape hatch Hugo provides as `translationKey` — except clogem-press reuses a
 field it already has, already collision-checks, and already uses as the comment-thread key. One
 identity, one field, no second concept to keep in sync.
+
+**Conflicting declarations inside one implicit group are a hard error (v2.1).** Mechanism 2 exists to
+*join* an article, never to split one. If two files share a directory, a number and a base name —
+so mechanism 1 says "one article" — and then declare *different* `permalink:` values, they are
+claiming to be two articles occupying one sidebar slot with one number and one title. That is exactly
+the collision D-3 already makes a hard error, reached by a different route, and "identity is the
+permalink" leaves no third reading of it. The build stops, naming both paths and both permalinks;
+the group is still resolved to the highest-priority variant's permalink so the rest of the `doctor`
+report is readable, the same shape config validation uses for a bad `:langs :default`.
+
+The two rejected alternatives, for the record. *Warn and let each file keep its own* was the Phase 1
+behaviour and is the worst of the three: it warned that the highest-priority variant's permalink was
+being used and then gave every declaring member its own, so the group silently split into two
+articles while the message said it had merged. *Warn and actually rewrite the losers to the winner*
+at least tells the truth, but it collides with front-matter rule 1 (never overwrite a manual value):
+the losing file would keep saying `/pages/bbb/` on disk while the site served it at `/pages/aaa/` —
+on every build, for ever, with no path to convergence. An author who genuinely wants two articles has
+a one-step fix the error names: move or rename one file so mechanism 1 stops grouping them.
 
 **Permalink assignment for a new variant.** When auto-fill encounters a variant with no `permalink`,
 it does **not** mint a new one: it looks up the identity group's existing permalink and writes that

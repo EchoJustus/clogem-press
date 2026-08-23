@@ -13,6 +13,7 @@ To see the error, copy one into `content/01.Guide/10.Basics/` (dropping the
 | `01.article.zh-Hanz.md.disabled` | error: unknown language `zh-Hanz` — did you mean `zh-Hans`? |
 | `01.article.zh-CN.md.disabled` | error: `zh-CN` is in the confusables set derived from `:langs` |
 | `01.Setup.md.disabled`, `01.Teardown.md.disabled` | error: duplicate sidebar number 1 for *different* articles (M1). `10.Basics/` already has `01.getting-started.md`, so **either one alone** collides; copy both to see three identities named in one error. |
+| `02.conventions.ms.md.disabled` | error: an identity group whose members declare different `permalink:` values (§6.2). Copy it into `content/01.Guide/10.Basics/`, beside the three `02.conventions*` files it claims to be a variant of. |
 
 The third row is the point of v2.1's M1 correction. Note the contrast with
 `02.conventions.md` / `.zh-Hans.md` / `.zh-Hant.md`, which are checked into
