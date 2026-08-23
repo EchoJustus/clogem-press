@@ -55,13 +55,20 @@
 (defn- non-map-front-matter!
   "Front matter that parses but is not a mapping.
 
-  YAML has three document shapes and only one of them is front matter. A scalar
-  block (`---`/`just a note`/`---`) parses to a String and a list block parses
-  to a sequence, and both used to travel on: the String reached
-  `compute-additions` and blew up on `contains?`, while the *sequence* — the
-  worse of the two, because `contains?` accepts it — reached the WRITER, which
-  appended `title: …` lines to a YAML list and left invalid YAML in the user's
-  source file.
+  YAML has several document shapes and only one of them is front matter, and
+  the two ways they used to fail were both bad in different directions.
+
+  A scalar block (`---`/`just a note`/`---`) parses to a String and a list block
+  to a `LazySeq`; `contains?` supports neither, so both surfaced as an
+  IllegalArgumentException thrown from inside `compute-additions` — a stack
+  trace naming the fill plan rather than the file.
+
+  A **set** (`!!set`) parses to an `OrderedSet`, which `contains?` *does*
+  accept, answering `false` for every key. That one never crashed: it reached
+  the WRITER, which appended `title: …` lines into a non-mapping block and left
+  invalid YAML in the user's source file. The build printed `auto-filled front
+  matter in 1 file` and exited 0, and because auto-fill then re-ran on a block
+  it could no longer parse, the damage compounded on every subsequent build.
 
   So this is an error, not a warning, and the severity is the mechanism: both
   `build` and `fm-fix` raise on errors before `apply-fill!` runs, which is what
@@ -81,6 +88,7 @@
   [v]
   (cond
     (sequential? v) "a list"
+    (set? v)        "a set"
     (string? v)     "a scalar string"
     (number? v)     "a number"
     (boolean? v)    "a boolean"

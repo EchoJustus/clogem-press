@@ -79,9 +79,11 @@ are fixed, each with a regression test written to fail first.
    merge.** The warning said the highest-priority variant's permalink was being
    used; the code gave every declaring member its own. Now a hard error — see
    the design change below.
-5. **Non-map front matter crashed or corrupted the file.** A scalar block threw
-   from `contains?`; a *list* block did not throw and reached the writer, which
-   appended `key: value` lines to a YAML list in the user's source. Both are now
+5. **Non-map front matter crashed or corrupted the file.** Scalar and list
+   blocks threw from `contains?` deep inside the fill plan; a YAML **set** did
+   not throw — `contains?` accepts it and answers false for every key — so it
+   reached the writer, which appended mapping lines into a non-mapping block
+   and corrupted the source while the build reported success. All are now
    errors, and the pipeline raises before `apply-fill!`.
 6. **The dev server's containment check was a string prefix test.** A
    `dist-readonly/` sibling — which CI creates — escaped a `dist/` root. It now

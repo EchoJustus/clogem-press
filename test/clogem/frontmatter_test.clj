@@ -174,12 +174,22 @@
         (is (= 1 (count (diag/errors ds))))
         (is (re-find #"not a mapping" (:message (first (diag/errors ds)))))))
 
-    (testing "a list block — the dangerous one: a sequence is `contains?`-able by
-              index, so it did not crash, it reached the WRITER and inserted
-              `title: …` lines into a YAML list"
+    (testing "a list block — parses to a LazySeq, which `contains?` also refuses"
       (let [[result ds] (diag/collecting (fm/parse-fm "- one\n- two\n" "list.md"))]
         (is (nil? result))
-        (is (= 1 (count (diag/errors ds))))))
+        (is (= 1 (count (diag/errors ds))))
+        (is (re-find #"a list" (:message (first (diag/errors ds)))))))
+
+    (testing "a SET — the genuinely dangerous shape, and the reason this guard
+              cannot just be `(map? m)` mirrored from the EDN branch. An
+              OrderedSet is `contains?`-able and answers false for every key, so
+              it never crashed: it reached the writer, which appended mapping
+              lines into a non-mapping block and corrupted the source file while
+              the build printed success and exited 0."
+      (let [[result ds] (diag/collecting (fm/parse-fm "!!set\n? a\n? b\n" "set.md"))]
+        (is (nil? result))
+        (is (= 1 (count (diag/errors ds))))
+        (is (re-find #"a set" (:message (first (diag/errors ds)))))))
 
     (testing "a mapping — unchanged"
       (is (= {:title "y"} (fm/parse-fm "title: y" "map.md"))))))
@@ -190,7 +200,8 @@
     (let [dir (fs/create-temp-dir {:prefix "clogem-fm"})]
       (try
         (doseq [[name content] {"scalar.md" "---\njust a note\n---\n\nbody\n"
-                                "list.md"   "---\n- one\n- two\n---\n\nbody\n"}]
+                                "list.md"   "---\n- one\n- two\n---\n\nbody\n"
+                                "set.md"    "---\n!!set\n? a\n? b\n---\n\nbody\n"}]
           (let [f (fs/path dir name)]
             (spit (fs/file f) content)
             (let [[file ds] (diag/collecting (fm/read-file f))]
