@@ -44,12 +44,64 @@ Phase 1 in full.
 - **`examples/demo-site`** — a five-language fixture exercising every
   convention, plus `doctor-cases/` holding the filenames that are *supposed* to
   fail.
-- **Tests** — 97 tests / 295 assertions: golden-file front-matter write-back,
+- **Tests** — 140 tests / 415 assertions: golden-file front-matter write-back,
   parser table tests reproducing §6.1's worked examples, identity-group
-  resolution, and CJK/Tamil heading-slug characterization.
-- **CI** (`.github/workflows/ci.yml`) — tests, then two demo builds
-  (`--no-write` and normal) each followed by `git diff --exit-code`, then
-  `doctor`, then assertions on the emitted URL scheme.
+  resolution, permalink-collision avoidance, ledger round-tripping, output
+  layout under a non-root base, dev-server path containment and watcher
+  liveness, and CJK/Tamil heading-slug characterization.
+- **CI** (`.github/workflows/ci.yml`) — tests, then three demo builds
+  (`--no-write`, normal, and one under a non-root `--base`) each followed by
+  `git diff --exit-code`, then `doctor`, then assertions on the emitted URL
+  scheme and on every internal link resolving to a real file.
+
+### Fixed — defect-fix pass over Phase 0/1
+
+An independent review of the Phase 1 implementation found ten defects; all ten
+are fixed, each with a regression test written to fail first.
+
+1. **The site `:base` was baked into the output layout.** With `:base
+   "/project/"`, pages exported to `dist/project/…` while their links pointed
+   at `/project/…` — a doubled prefix once deployed and a 404 at the site root.
+   `dist/` *is* the deploy root, so `render/uri->file` strips the base. Only
+   base `/` had ever been exercised, which is exactly the base that hides it;
+   CI now builds under a non-root base too.
+2. **Two posts sharing a slug collided into one article.** A post's identity
+   key dropped the `YYYY-MM-DD-` prefix and flattened every subfolder to
+   `_posts`, so posts differing only by date or subfolder became one identity
+   group and hard-errored. Identity now uses the full stem and the subfolder;
+   only the *display* title drops the date.
+3. **Every build erased the D-15 tombstone ledger.** `:tombstones` was read from
+   a cfg key nothing ever set, so `permalinks.edn` was rewritten with `{}` each
+   time — irreversible, since a tombstone is by definition a permalink no file
+   declares any more. Also made ledger serialization canonical, so a rewrite
+   that changed nothing lands as no diff.
+4. **Conflicting `permalink:` declarations split the group they claimed to
+   merge.** The warning said the highest-priority variant's permalink was being
+   used; the code gave every declaring member its own. Now a hard error — see
+   the design change below.
+5. **Non-map front matter crashed or corrupted the file.** A scalar block threw
+   from `contains?`; a *list* block did not throw and reached the writer, which
+   appended `key: value` lines to a YAML list in the user's source. Both are now
+   errors, and the pipeline raises before `apply-fill!`.
+6. **The dev server's containment check was a string prefix test.** A
+   `dist-readonly/` sibling — which CI creates — escaped a `dist/` root. It now
+   compares on the path separator.
+7. **`try-pod-watch!` never probed.** It returned true on registration, so in a
+   zero-event container `bb dev` announced it was watching and silently never
+   rebuilt. It now proves delivery, and budgets registration too (`watch` was
+   observed blocking indefinitely). Fixed alongside it: `(requiring-resolve
+   'babashka.pods/load-pod)` deadlocked once the server was up.
+8. **Fresh permalinks could collide with the ledger's.** `taken` omitted the
+   ledger's own permalinks, and the deterministic `--no-write` fallback was
+   never checked against anything. Both fixed; group iteration is sorted so a
+   read-only build reproduces.
+9. **Mixed `:date` types threw on a legal tree.** An unquoted YAML date parses
+   to `java.util.Date` and a quoted one to a String, so a migrated vdoing tree
+   plus one auto-filled article broke `sort-by`. `:date` is normalized to a
+   String at parse time.
+10. **Duplicate numbers were only checked for files.** Sibling *directories*
+    sharing a number kept vdoing's warn-and-carry-on, in the half of the tree
+    D-3 is simplest about.
 
 ### Design changes made during implementation
 
@@ -67,3 +119,15 @@ Recorded in DESIGN.md in the same commit:
   flagged; a whitespace repair is applied uniformly to heading ids and the TOC.
 - **Errors are collected and reported together** rather than raised at the first
   offender.
+- **Conflicting permalinks inside one identity group are a hard error** (§6.2).
+  Mechanism 2 joins articles; it never splits one. Rewriting the losers to the
+  winner was the alternative and is worse — front-matter rule 1 forbids
+  overwriting a manual value, so the file on disk would never converge with the
+  site it describes.
+- **`bb dev` detects a dead watcher by probing it**, not by trusting
+  registration, and falls back to polling automatically (§5.4). Appendix A
+  item 5 records the re-measurement behind the 3 s default: some containers
+  deliver events via notify's own 2 s `PollWatcher`, so there are three cases to
+  tell apart — fast, slow, and none — not two.
+- **D-3's duplicate-number rule covers sibling directories**, grouped on the
+  number alone since directories are never language-suffixed.
