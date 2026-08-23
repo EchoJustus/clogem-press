@@ -223,3 +223,35 @@
             "and the source file is byte-identical — write-back happens only
              after throw-on-errors!, which is what makes this structural")
         (finally (fs/delete-tree dir))))))
+
+;; ---------------------------------------------------------------------------
+;; :date normalization
+
+(deftest date-is-always-a-string-after-parsing
+  (testing "clj-yaml resolves an UNQUOTED YAML timestamp to java.util.Date and a
+            quoted one to a String, and vdoing's own writer emits the unquoted
+            form — so a migrated tree and a freshly auto-filled one put both
+            types in one model. Anything that sorts by :date then throws
+            ClassCastException on a perfectly legal tree."
+    (doseq [[block expected]
+            [["date: 2026-08-01"                "2026-08-01 00:00:00"]
+             ["date: 2026-08-01 09:30:00"       "2026-08-01 09:30:00"]
+             ["date: 2026-08-01T09:30:00Z"      "2026-08-01 09:30:00"]
+             ["date: \"2026-08-01 09:30:00\""   "2026-08-01 09:30:00"]
+             ["{:date #inst \"2026-08-01T09:30:00Z\"}" "2026-08-01 09:30:00"]]]
+      (let [d (:date (fm/parse-fm block "t"))]
+        (is (string? d) (str block " → a string"))
+        (is (= expected d) block)))))
+
+(deftest date-normalization-preserves-what-the-author-wrote
+  (testing "a String date is never rewritten — auto-fill's own canonical form
+            round-trips, and an unrecognized one is left alone rather than
+            reinterpreted"
+    (is (= "yesterday" (:date (fm/parse-fm "date: yesterday" "t"))))
+    (is (= "2026-08-01 09:30:00" (:date (fm/parse-fm "date: \"2026-08-01 09:30:00\"" "t"))))
+    (is (nil? (:date (fm/parse-fm "title: x" "t"))))))
+
+(deftest a-non-date-date-still-becomes-a-string
+  (testing "the invariant is the type, not the shape: YAML resolves `20260801`
+            to a number, which would mix just as badly"
+    (is (= "20260801" (:date (fm/parse-fm "date: 20260801" "t"))))))

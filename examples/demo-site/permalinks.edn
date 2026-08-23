@@ -51,6 +51,10 @@
   {:key "/03.Deep/10.Level2/20.Level3|2|three-deep",
    :langs ["en"],
    :paths ["03.Deep/10.Level2/20.Level3/02.three-deep.md"]},
+  "/pages/mig001/"
+  {:key "_posts||2026-07-20-migrated",
+   :langs ["en"],
+   :paths ["_posts/2026-07-20-migrated.md"]},
   "/pages/relocated/"
   {:key "/03.Deep/10.Level2/20.Level3|1|relocated",
    :langs ["en" "zh-Hans"],

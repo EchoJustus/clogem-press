@@ -20,3 +20,6 @@ What it covers:
 - `_posts/` and `@pages/`, including two posts that share a slug and a date and are
   different articles anyway because one lives in `_posts/tech/` (§6.2)
 - a catalogue-page placeholder
+- a post carrying an **unquoted** `date:` the way a migrated vdoing tree does,
+  beside auto-filled posts whose dates are quoted — two YAML spellings that
+  parse to two different types, in one tree that still has to sort

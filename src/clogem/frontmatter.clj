@@ -86,6 +86,52 @@
     (boolean? v)    "a boolean"
     :else           (str "a " (.getName (class v)))))
 
+(def ^:private canonical-date-format
+  (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd HH:mm:ss"))
+
+(defn canonical-date
+  "Coerce a parsed `date:` value to a String, always.
+
+  YAML has two spellings of the same date and they parse to two different Clojure
+  types: `date: 2026-08-01 09:30:00` resolves to a `java.util.Date`, while
+  `date: \"2026-08-01 09:30:00\"` stays a String. vdoing's own writer emits the
+  unquoted form and clogem-press's auto-fill emits the quoted one, so *any*
+  migrated tree that has since had a new article added holds both — and
+  `(sort-by :date …)` over that tree throws ClassCastException on content that
+  is entirely legal. Normalizing at parse time is the only place the fix belongs;
+  every consumer downstream then has one type to reason about.
+
+  Date-likes are rendered in **UTC**, because SnakeYAML resolves a zoneless YAML
+  timestamp as UTC — so this round-trips what the author wrote rather than
+  shifting it by the build machine's offset (auto-fill's `format-date` is a
+  different case: a file birthtime is a real instant, and local time is the
+  right reading of it).
+
+  A String is returned byte-identical. Normalizing the *type* is what stops the
+  crash; rewriting what an author typed is not this function's business, and the
+  canonical form already sorts correctly against it. The residual cost is that a
+  hand-written non-canonical string (`2026-8-1`) still sorts lexicographically —
+  a display-order wrinkle, not an exception."
+  [v]
+  (cond
+    (nil? v)     nil
+    (string? v)  v
+    (instance? java.util.Date v)
+    (.format (java.time.LocalDateTime/ofInstant (.toInstant ^java.util.Date v)
+                                                java.time.ZoneOffset/UTC)
+             canonical-date-format)
+    (instance? java.time.Instant v)
+    (.format (java.time.LocalDateTime/ofInstant ^java.time.Instant v
+                                                java.time.ZoneOffset/UTC)
+             canonical-date-format)
+    :else (str v)))
+
+(defn- normalize
+  "Post-process a parsed front-matter map into the shapes the rest of the
+  pipeline is entitled to assume."
+  [m]
+  (if (contains? m :date) (update m :date canonical-date) m))
+
 (defn parse-fm
   "Parse a front-matter block to a map with keyword keys. Returns {} for an empty
   block, nil (plus a diagnostic) when the block is malformed or is not a mapping."
@@ -95,7 +141,7 @@
     (str/blank? fm-text)       {}
     (edn-block? fm-text)
     (try (let [m (edn/read-string fm-text)]
-           (if (map? m) m (non-map-front-matter! path (shape-of m))))
+           (if (map? m) (normalize m) (non-map-front-matter! path (shape-of m))))
          (catch Exception e
            (diag/error! path (str "malformed EDN front matter: " (ex-message e)))
            nil))
@@ -103,7 +149,7 @@
     (try (let [m (yaml/parse-string fm-text :keywords true)]
            (cond
              (nil? m)  {}
-             (map? m)  m
+             (map? m)  (normalize m)
              :else     (non-map-front-matter! path (shape-of m))))
          (catch Exception e
            (diag/error! path (str "malformed YAML front matter: " (ex-message e)))

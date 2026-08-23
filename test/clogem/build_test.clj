@@ -166,3 +166,17 @@
       (is (= 1 (count (diag/warnings ds)))
           (str "unexpected warnings: " (pr-str (map :message (diag/warnings ds)))))
       (is (re-find #"different directories" (:message (first (diag/warnings ds))))))))
+
+(deftest posts-sort-across-mixed-date-spellings
+  (testing "the demo tree deliberately mixes a migrated vdoing post (unquoted
+            `date:`, which YAML resolves to a date value) with auto-filled posts
+            (quoted, i.e. strings). `(sort-by :date …)` over that mix threw
+            ClassCastException on entirely legal content until :date was
+            normalized at parse time."
+    (let [dates (mapv #(get-in *model* [:articles % :date]) (:posts *model*))]
+      (is (every? string? dates)
+          (str "one representation, not two: " (pr-str (map type dates))))
+      (is (= (vec (reverse (sort dates))) dates)
+          "and the index really is newest-first")
+      (is (some #{"2026-07-20 08:00:00"} dates)
+          "the unquoted YAML timestamp came through in the canonical form"))))
