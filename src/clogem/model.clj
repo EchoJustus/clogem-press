@@ -99,8 +99,12 @@
                              :raw          (:raw file)
                              :lang         (declared-lang cfg entry front)
                              ;; :base-title is identity (from the filename);
-                             ;; :title is display (front matter wins).
-                             :base-title   (:title entry)
+                             ;; :title is display (front matter wins). The
+                             ;; scanner may supply :base-title itself when the
+                             ;; two differ at scan time — `_posts/` does, because
+                             ;; a post's display title drops the date prefix that
+                             ;; its identity must keep.
+                             :base-title   (or (:base-title entry) (:title entry))
                              :title        (or (:title front) (:title entry))
                              :declared-permalink (some-> (:permalink front) str u/clean-url)))))))
         entries))

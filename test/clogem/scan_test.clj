@@ -5,7 +5,9 @@
   The first block reproduces DESIGN.md §6.1's worked-example table row for row —
   if the design table and this test ever disagree, one of them is wrong and the
   build says so."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [babashka.fs :as fs]
+            [clojure.test :refer [deftest is testing]]
+            [clogem.cli :as cli]
             [clogem.config :as config]
             [clogem.diag :as diag]
             [clogem.scan :as scan]))
@@ -133,3 +135,73 @@
                             (entry "/01.Guide" 2 "something-else")])]
       (is (= 1 (count errs))
           "one error for the directory, not one per file"))))
+
+;; ---------------------------------------------------------------------------
+;; Post identity (§6.2 mechanism 1, applied to `_posts/`)
+
+(defn- temp-site
+  "Materialize `files` ({rel-path → content}) under a temp content/ tree and
+  return the site dir."
+  [files]
+  (let [dir (fs/create-temp-dir {:prefix "clogem-posts"})]
+    (doseq [[rel content] files
+            :let [f (fs/path dir "content" rel)]]
+      (fs/create-dirs (fs/parent f))
+      (spit (fs/file f) content))
+    dir))
+
+(defn- analyse-temp
+  [files]
+  (let [dir (temp-site files)]
+    (try
+      (let [cfg (first (diag/collecting
+                        (config/load-config (str dir) nil
+                                            {:content {:write-front-matter false}})))]
+        (diag/collecting (cli/analyse cfg)))
+      (finally (fs/delete-tree dir)))))
+
+(def ^:private post-body "---\ntitle: A post\n---\n\nbody\n")
+
+(deftest posts-are-identified-by-their-full-stem-and-subfolder
+  (testing "§6.2 mechanism 1 for `_posts/`: identity is (directory, order, base
+            name), and for a post the base name is the FULL stem — the date is
+            part of the filename, so it is part of the identity. Stripping it
+            (and flattening every subfolder to \"_posts\") made any two posts
+            sharing a slug one article, which then hard-errors as two files
+            claiming the same language."
+    (let [[model ds]
+          (analyse-temp {"_posts/2026-08-01-hello.md"         post-body
+                         "_posts/2026-09-15-hello.md"         post-body
+                         "_posts/tech/2026-08-01-hello.md"    post-body})]
+      (is (empty? (diag/errors ds))
+          (str "unexpected errors: " (pr-str (map :message (diag/errors ds)))))
+      (is (= 3 (count (:articles model)))
+          "three distinct posts: two dates and two subfolders, one shared slug")
+      (is (= 3 (count (distinct (map :implicit-key (:entries model)))))))))
+
+(deftest post-language-variants-still-group
+  (testing "the date is in the identity, but the LANGUAGE SUFFIX is not — a
+            translated post must still join its sibling"
+    (let [[model ds]
+          (analyse-temp {"_posts/2026-08-01-hello.md"         post-body
+                         "_posts/2026-08-01-hello.zh-Hans.md" post-body
+                         "_posts/2026-09-15-hello.md"         post-body})]
+      (is (empty? (diag/errors ds)))
+      (is (= 2 (count (:articles model))))
+      (let [g (first (filter #(= 2 (count (:variants %))) (vals (:articles model))))]
+        (is (some? g) "the dated pair is one article with two variants")
+        (is (= #{:en :zh-Hans} (set (keys (:variants g)))))))))
+
+(deftest post-display-title-still-drops-the-date
+  (testing "identity keeps the date; the *display* title does not — a
+            `YYYY-MM-DD-slug` post still shows as `slug`"
+    (let [[model _] (analyse-temp {"_posts/2026-08-01-hello.md" "---\n---\n\nbody\n"})
+          v (first (vals (:variants (first (vals (:articles model))))))]
+      (is (= "hello" (:title v)))
+      (is (= "2026-08-01-hello" (:base-title v))))))
+
+(deftest post-subfolder-is-part-of-the-directory-key
+  (let [[model _] (analyse-temp {"_posts/2026-08-01-hello.md"      post-body
+                                 "_posts/tech/2026-08-01-hello.md" post-body})]
+    (is (= #{"_posts" "_posts/tech"}
+           (set (map :dir-key (:entries model)))))))

@@ -740,6 +740,17 @@ permalink. That resolution happens two ways:
    translated file its own identity and its own minted permalink — silently defeating the entire i18n
    design while every individual page still renders fine. The filename is the stable half; `title:`
    is presentation, and §6.1 already lists it as an override for *display*, not for identity.
+
+   **`_posts/` uses the same rule, and needs the same care about display vs identity (v2.1).** A post
+   has no `order`, so its identity is *(the post's directory — `_posts/` plus any subfolder — and its
+   full filename stem)*. The stem **keeps** the `YYYY-MM-DD-` prefix: the date is part of the
+   filename, so it is part of the identity, and only the *display* title drops it. Two posts may
+   legitimately share a slug across dates (`2026-08-01-hello.md`, `2026-09-15-hello.md`) or across
+   subfolders (`_posts/tech/…` vs `_posts/life/…`); keying on the date-stripped slug in a flattened
+   `_posts` collapses every one of them into a single identity group, which then fails the build with
+   "two files claim to be the en version". The language suffix is still stripped *before* the stem is
+   taken — which is exactly what keeps `2026-08-01-hello.zh-Hans.md` a variant of
+   `2026-08-01-hello.md` rather than an article of its own.
 2. **Explicitly**, by writing the same `permalink:` in the front matter of both files. This covers the
    awkward cases: a translation with a different title, or one that has to live elsewhere in the tree.
 

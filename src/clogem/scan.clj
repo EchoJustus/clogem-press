@@ -197,11 +197,26 @@
                       {:path       (str p)
                        :rel-path   rel
                        :order      nil
-                       ;; a `YYYY-MM-DD-slug` post name shows as `slug`
+                       ;; Identity vs display, and the distinction is
+                       ;; load-bearing (§6.2 mechanism 1). The identity of a
+                       ;; post is (directory, order, base name) like any other
+                       ;; article — and for a post the base name is the FULL
+                       ;; stem, date included, with the subfolder in the
+                       ;; directory key. Two posts may legitimately share a
+                       ;; slug across dates or across subfolders; keying on the
+                       ;; date-stripped slug alone merged them into one identity
+                       ;; group, which then hard-errors as two files claiming
+                       ;; the same language.
+                       ;;
+                       ;; The language suffix is NOT part of the stem, which is
+                       ;; exactly what still lets `…-hello.zh-Hans.md` join
+                       ;; `…-hello.md`.
+                       :base-title stem
+                       ;; a `YYYY-MM-DD-slug` post still *shows* as `slug`
                        :title      (str/replace stem #"^\d{4}-\d{2}-\d{2}-" "")
                        :lang       lang-hit
                        :suffix?    (boolean lang-hit)
-                       :dir-key    "_posts"
+                       :dir-key    (str/join "/" (cons "_posts" sub))
                        :depth      1
                        :categories (vec (or (seq sub) [(get-in cfg [:content :category-text])]))
                        :kind       :post}))))))))))

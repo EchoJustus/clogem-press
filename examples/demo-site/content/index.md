@@ -17,5 +17,6 @@ What it covers:
   always exercised
 - a Malay-only article
 - an explicit-permalink variant living elsewhere in the tree (§6.2 mechanism 2)
-- `_posts/` and `@pages/`
+- `_posts/` and `@pages/`, including two posts that share a slug and a date and are
+  different articles anyway because one lives in `_posts/tech/` (§6.2)
 - a catalogue-page placeholder

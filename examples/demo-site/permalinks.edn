@@ -23,7 +23,7 @@
    :langs ["en"],
    :paths ["01.Guide/10.Basics/03.Vue.js.md"]},
   "/pages/284c67/"
-  {:key "_posts||hello",
+  {:key "_posts||2026-08-01-hello",
    :langs ["en" "zh-Hans"],
    :paths
    ["_posts/2026-08-01-hello.md"
@@ -43,6 +43,10 @@
    ["01.Guide/10.Basics/02.conventions.md"
     "01.Guide/10.Basics/02.conventions.zh-Hans.md"
     "01.Guide/10.Basics/02.conventions.zh-Hant.md"]},
+  "/pages/a00015/"
+  {:key "_posts/tech||2026-08-01-hello",
+   :langs ["en"],
+   :paths ["_posts/tech/2026-08-01-hello.md"]},
   "/pages/ebaa6b/"
   {:key "/03.Deep/10.Level2/20.Level3|2|three-deep",
    :langs ["en"],
