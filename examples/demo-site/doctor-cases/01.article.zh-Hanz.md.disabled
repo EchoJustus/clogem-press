@@ -1,0 +1,7 @@
+---
+title: Near miss
+---
+
+The last dot-segment `zh-Hanz` is language-tag-shaped but is not a configured
+language, so this is a hard error with a suggestion rather than an article
+titled "article.zh-Hanz".

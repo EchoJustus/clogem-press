@@ -1,0 +1,26 @@
+;; 主題介面文案 — 繁體中文。
+;; 注意：Pagefind 的 UI 字串解析沒有 language-script 鍵，zh-Hant 會落到 zh.json
+;; （簡體字串），所以這份檔案也是餵給 Pagefind `translations` 選項的來源
+;; （DESIGN.md §6.7，v2.1 修訂 V13）。
+{:lang/name            "繁體中文"
+ :nav/search           "搜尋"
+ :nav/language         "語言"
+ :nav/home             "首頁"
+ :page/last-updated    "最後更新於 {{date}}"
+ :page/prev            "上一篇"
+ :page/next            "下一篇"
+ :page/edit            "編輯此頁"
+ :page/toc             "本頁目錄"
+ :page/also-available  "另有 {{lang}} 版本"
+ :page/fallback-notice "目前顯示的是{{lang}}版本 — 尚未翻譯"
+ :index/categories     "分類"
+ :index/tags           "標籤"
+ :index/archives       "封存"
+ :index/recent         "最新文章"
+ :index/count          "文章數：{{n}}"
+ :container/tip        "提示"
+ :container/warning    "注意"
+ :container/danger     "警告"
+ :container/note       "筆記"
+ :container/details    "詳情"
+ :comments/title       "留言"}

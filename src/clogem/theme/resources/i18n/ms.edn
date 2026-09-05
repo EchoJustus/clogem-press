@@ -1,0 +1,25 @@
+;; Teks antara muka tema — Bahasa Melayu.
+;; Pagefind tiada entri `ms`, jadi fail ini juga menjadi sumber untuk pilihan
+;; `translations` Pagefind (DESIGN.md §6.7).
+{:lang/name            "Bahasa Melayu"
+ :nav/search           "Cari"
+ :nav/language         "Bahasa"
+ :nav/home             "Laman utama"
+ :page/last-updated    "Dikemas kini {{date}}"
+ :page/prev            "Sebelumnya"
+ :page/next            "Seterusnya"
+ :page/edit            "Sunting halaman ini"
+ :page/toc             "Dalam halaman ini"
+ :page/also-available  "Juga tersedia dalam {{lang}}"
+ :page/fallback-notice "Dipaparkan dalam {{lang}} — belum diterjemahkan"
+ :index/categories     "Kategori"
+ :index/tags           "Tag"
+ :index/archives       "Arkib"
+ :index/recent         "Artikel terkini"
+ :index/count          "Artikel: {{n}}"
+ :container/tip        "PETUA"
+ :container/warning    "AMARAN"
+ :container/danger     "BAHAYA"
+ :container/note       "NOTA"
+ :container/details    "Butiran"
+ :comments/title       "Komen"}

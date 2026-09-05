@@ -1,0 +1,155 @@
+/* clogem-press default theme — Phase 1 minimum.
+ *
+ * vdoing's theming is verifiably just CSS custom properties plus body classes
+ * (DESIGN.md §1.2), so there is no build step here and never will be. Phase 4
+ * fills in the four colour modes and the card/line page styles; what follows is
+ * the smallest sheet that makes a five-language site legible.
+ */
+
+:root {
+  --bodyBg: #fff;
+  --mainBg: #fff;
+  --sidebarBg: #fafafa;
+  --textColor: #2c3e50;
+  --textColorSubtle: #6a737d;
+  --borderColor: #e5e7eb;
+  --accent: #3eaf7c;
+  --codeBg: #f6f8fa;
+  --maxWidth: 62rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  body.theme-mode-auto {
+    --bodyBg: #16181d;
+    --mainBg: #16181d;
+    --sidebarBg: #1b1e24;
+    --textColor: #d5d8dc;
+    --textColorSubtle: #8b949e;
+    --borderColor: #2c313a;
+    --codeBg: #1f2329;
+  }
+}
+
+body.theme-mode-dark {
+  --bodyBg: #16181d;
+  --mainBg: #16181d;
+  --sidebarBg: #1b1e24;
+  --textColor: #d5d8dc;
+  --textColorSubtle: #8b949e;
+  --borderColor: #2c313a;
+  --codeBg: #1f2329;
+}
+
+body.theme-mode-read {
+  --bodyBg: #f5f2e9;
+  --mainBg: #f5f2e9;
+  --sidebarBg: #efeade;
+  --textColor: #40382c;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bodyBg);
+  color: var(--textColor);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.7;
+  overflow-wrap: break-word;
+  word-break: normal;   /* §6.9: CJK wraps between characters, Tamil must not
+                           break inside a grapheme cluster */
+}
+
+/* §6.9 — the two Chinese scripts need separate rules, because CSS :lang()
+   matches on the tag prefix and :lang(zh) alone would collapse them onto one
+   stack and produce visibly wrong shapes for one of the two. */
+:lang(zh-Hans) { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+:lang(zh-Hant) { font-family: "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", sans-serif; }
+:lang(ta) {
+  font-family: "Noto Sans Tamil", "Tamil Sangam MN", "Nirmala UI", Latha, Roboto, sans-serif;
+  line-height: 1.85;   /* taller than the Latin default — Tamil glyphs are tall */
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.clogem-navbar {
+  display: flex; align-items: center; gap: 1.5rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--borderColor);
+  position: sticky; top: 0; background: var(--bodyBg); z-index: 10;
+  flex-wrap: wrap;
+}
+.clogem-navbar__brand { font-weight: 700; font-size: 1.1rem; color: var(--textColor); }
+.clogem-navbar__nav { display: flex; gap: 1rem; }
+
+.clogem-langs { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; }
+.clogem-langs__label { color: var(--textColorSubtle); font-size: 0.85rem; }
+.clogem-langs ul { list-style: none; display: flex; gap: 0.6rem; margin: 0; padding: 0; }
+.clogem-langs .is-current { color: var(--textColorSubtle); font-weight: 600; }
+
+.clogem-shell {
+  display: grid;
+  grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr);
+  gap: 2rem;
+  max-width: var(--maxWidth);
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 4rem;
+}
+@media (max-width: 50rem) {
+  .clogem-shell { grid-template-columns: minmax(0, 1fr); }
+  .clogem-sidebar { order: 2; }
+}
+
+.clogem-sidebar { background: var(--sidebarBg); border-radius: 8px; padding: 1rem; align-self: start; }
+.clogem-sidebar__group h2 { font-size: 0.8rem; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--textColorSubtle); margin: 1rem 0 0.4rem; }
+.clogem-sidebar ul { list-style: none; margin: 0; padding: 0; }
+.clogem-sidebar li { padding: 0.15rem 0; }
+.clogem-sidebar li.is-active > a { font-weight: 700; color: var(--accent); }
+
+.clogem-fallback {
+  font-size: 0.7rem; margin-left: 0.35rem; padding: 0 0.3rem;
+  border: 1px solid var(--borderColor); border-radius: 3px; color: var(--textColorSubtle);
+}
+
+.clogem-main { min-width: 0; }
+.clogem-article h1 { margin-top: 0; }
+.clogem-meta { color: var(--textColorSubtle); font-size: 0.85rem; display: flex; gap: 1rem; flex-wrap: wrap; }
+.clogem-notice {
+  border-left: 3px solid var(--accent); background: var(--codeBg);
+  padding: 0.6rem 0.9rem; font-size: 0.9rem;
+}
+.clogem-variants { font-size: 0.9rem; display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: baseline; }
+.clogem-variants__links { display: flex; gap: 0.6rem; }
+
+.clogem-content :is(h2, h3, h4, h5, h6) { scroll-margin-top: 4rem; }
+.header-anchor { opacity: 0; margin-left: 0.35rem; text-decoration: none; }
+:is(h1, h2, h3, h4, h5, h6):hover .header-anchor { opacity: 0.5; }
+
+pre.clogem-code {
+  background: var(--codeBg); padding: 0.9rem 1rem; border-radius: 6px;
+  overflow-x: auto;   /* wide code scrolls inside its own box, never the page */
+}
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; }
+:not(pre) > code { background: var(--codeBg); padding: 0.1em 0.35em; border-radius: 3px; }
+
+table { border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }
+th, td { border: 1px solid var(--borderColor); padding: 0.4rem 0.7rem; }
+
+blockquote {
+  margin: 1rem 0; padding: 0.1rem 1rem; border-left: 3px solid var(--borderColor);
+  color: var(--textColorSubtle);
+}
+
+.clogem-list { list-style: none; padding: 0; }
+.clogem-list li { padding: 0.3rem 0; border-bottom: 1px solid var(--borderColor);
+  display: flex; justify-content: space-between; gap: 1rem; }
+
+.clogem-footer {
+  border-top: 1px solid var(--borderColor); padding: 1.5rem 1.25rem;
+  color: var(--textColorSubtle); font-size: 0.85rem; text-align: center;
+}
+
+img { max-width: 100%; height: auto; }

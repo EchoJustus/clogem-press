@@ -1,0 +1,16 @@
+# Build output. Never committed anywhere — the site ships as an Actions
+# artifact, which is what makes build-trigger loops structurally impossible
+# (DESIGN.md §7.1).
+dist/
+dist-*/
+
+# Pinned Pagefind/Chroma binaries. Deliberately OUTSIDE dist/: every byte in the
+# published output counts against the 1 GB Pages cap, and upload-pages-artifact
+# dereferences symlinks rather than skipping them (§4, v2.1 V15).
+.cache/
+
+.cpcache/
+.clj-kondo/.cache/
+.lsp/.cache/
+*.jar
+.DS_Store

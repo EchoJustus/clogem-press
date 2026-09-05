@@ -1,0 +1,140 @@
+name: CI
+
+# The convention-regression tripwire from DESIGN.md §10: `examples/demo-site` is
+# the executable specification of the content conventions, so it is built on
+# every push. A convention change therefore surfaces in the generator repo,
+# before any content repo bumps its pinned `ref:` (D-14).
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TZ: Asia/Singapore     # "last updated" timestamps render in SGT (§6.10)
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeLaGuardo/setup-clojure@13
+        with:
+          bb: latest
+
+      - name: Show versions
+        run: bb --version
+
+      - name: Run tests
+        run: bb test
+
+      # Two builds, and the pair is the point:
+      #
+      #   --no-write proves the generator can run against a read-only tree and
+      #   still produce stable URLs (§7.2 mechanism (c)); the `git diff` check
+      #   after it proves it really did not touch a single source byte.
+      - name: Build demo site (read-only)
+        working-directory: examples/demo-site
+        run: bb --config ../../bb.edn build --no-write --out dist-readonly
+
+      - name: Assert the read-only build mutated nothing
+        run: git diff --exit-code -- examples/demo-site
+
+      #   The normal build exercises the auto-fill path. Because the demo tree
+      #   ships already-normalized, auto-fill is a no-op and the tree must STILL
+      #   be unchanged — which is loop guard 3 from §7.2 (idempotence) checked
+      #   on every push rather than trusted.
+      - name: Build demo site (normal, exercises auto-fill)
+        working-directory: examples/demo-site
+        run: bb --config ../../bb.edn build
+
+      - name: Assert auto-fill is idempotent on an already-normalized tree
+        run: git diff --exit-code -- examples/demo-site
+
+      - name: Doctor must report no errors
+        working-directory: examples/demo-site
+        run: bb --config ../../bb.edn doctor
+
+      # Cheap assertions that the five-language output shape is what §6.3
+      # specifies. A test can assert on the model; only this can assert on the
+      # bytes that would be uploaded.
+      - name: Assert the emitted URL scheme
+        working-directory: examples/demo-site
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+
+          test -f dist/index.html                  || fail "no English home"
+          for l in zh-Hans zh-Hant ms ta; do
+            test -f "dist/$l/index.html"           || fail "no $l home"
+          done
+
+          # The Tamil-only article must be served at its BARE identity URL, in
+          # Tamil — §6.3's per-article primary, and the case the requirement
+          # explicitly allows.
+          ta_page=$(grep -rl 'lang="ta"' dist/pages/*/index.html | head -1)
+          test -n "$ta_page"                       || fail "no Tamil article at a bare /pages/ URL"
+
+          # A translated article must have prefixed non-primary variants.
+          test -d dist/zh-Hant/pages               || fail "no zh-Hant variants emitted"
+
+          # The exporter copies; nothing in dist/ may be a symlink. Not a
+          # platform constraint (upload-pages-artifact dereferences — v2.1 V15),
+          # but a house rule worth enforcing: a dereferenced link ships its
+          # target's full bytes against the 1 GB published-site cap.
+          if find dist -type l | grep -q .; then fail "dist/ contains symlinks"; fi
+
+          echo "URL scheme OK: $(find dist -name index.html | wc -l) pages"
+
+      # Only base "/" is exercised above, and that is exactly the base under
+      # which stripping the base and not stripping it produce identical output
+      # — so the whole class of "the base is baked into the layout" bug was
+      # invisible. Build once with a non-root base and assert that `dist/` is
+      # the DEPLOY ROOT rather than a directory containing one.
+      - name: Build demo site with a non-root base
+        working-directory: examples/demo-site
+        run: bb --config ../../bb.edn build --no-write --base /clogem-demo/ --out dist-base
+
+      - name: Assert the base is not baked into the output layout
+        working-directory: examples/demo-site
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          base=/clogem-demo/
+
+          test -f dist-base/index.html            || fail "site root is a 404: no dist-base/index.html"
+          test ! -e dist-base/clogem-demo         || fail "the base is baked into the layout: dist-base/clogem-demo/ exists"
+          test -f dist-base/clogem/css/theme.css  || fail "theme assets missing"
+
+          # The real invariant, and the one that was broken: every internal
+          # link must resolve to a file once the base is stripped.
+          missing=0
+          hrefs=$(grep -ohE '(href|src)="/[^"]*"' -r dist-base --include='*.html' \
+                  | sed -E 's/^(href|src)="//; s/"$//' | sort -u)
+          for href in $hrefs; do
+            case "$href" in
+              "$base"*) ;;
+              *) echo "::error::link does not carry the base: $href"; missing=$((missing+1)); continue ;;
+            esac
+            rel="${href#$base}"
+            [ -f "dist-base/$rel" ] && continue
+            [ -f "dist-base/${rel%/}/index.html" ] && continue
+            [ -z "$rel" ] && [ -f dist-base/index.html ] && continue
+            echo "::error::dangling link $href -> dist-base/$rel"
+            missing=$((missing+1))
+          done
+          test "$missing" -eq 0 || fail "$missing internal link(s) do not resolve under a non-root base"
+
+          echo "base layout OK: $(find dist-base -name index.html | wc -l) pages, $(echo "$hrefs" | wc -l) distinct links"
+
+      - name: Assert the non-root-base build mutated nothing
+        run: git diff --exit-code -- examples/demo-site
+
+      - name: Report output size
+        working-directory: examples/demo-site
+        run: du -sh dist
