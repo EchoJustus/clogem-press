@@ -188,3 +188,21 @@
       (doseq [id toc-ids]
         (is (str/includes? html (str "id=\"" id "\""))
             (str "TOC id " (pr-str id) " must exist as a heading id"))))))
+
+;; ---------------------------------------------------------------------------
+;; The TOC bar (D-P2-9)
+
+(deftest toc-entries-carry-encoded-hrefs
+  (let [ast (markdown/parse "# T\n\n## 你好世界\n\n### Hello, World!\n")
+        es  (markdown/toc-entries ast)]
+    (is (= ["#t" "#%E4%BD%A0%E5%A5%BD%E4%B8%96%E7%95%8C" "#hello,-world!"] (map :href es))
+        "the fragment is percent-encoded; the id stays raw (the scroll-spy decodes)")
+    (is (= ["t" "你好世界" "hello,-world!"] (map :id es)))))
+
+(deftest toc-depth-and-the-leading-h1
+  (let [ast (markdown/parse "# Title\n\n## A\n\n### A.1\n\n#### A.1.a\n\n## B\n\n# Another h1\n")]
+    (is (= ["A" "A.1" "B"] (map :text (markdown/toc ast 2))) "sidebarDepth 2 (the default): h2–h3, no h1")
+    (is (= ["A" "B"] (map :text (markdown/toc ast 1))) "sidebarDepth 1: h2 only")
+    (is (= ["A" "A.1" "A.1.a" "B"] (map :text (markdown/toc ast 3))) "sidebarDepth 3: h2–h4")
+    (is (= ["A" "A.1" "B"] (map :text (markdown/toc ast nil))) "nil → the default")
+    (is (= [] (markdown/toc (markdown/parse "# only a title\n\ntext\n") 2)) "nothing to list")))

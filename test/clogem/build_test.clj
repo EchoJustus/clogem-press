@@ -506,3 +506,26 @@
       (is (empty? errors))
       (is (= 1 (count warnings)) (pr-str (map :message warnings)))
       (is (re-find #"different directories" (:message (first warnings)))))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 — TOC bar (D-P2-9)
+
+(deftest articles-carry-a-toc-built-from-the-same-ast
+  (let [html (slurp-out "pages" "643259" "index.html")]
+    (is (str/includes? html "<aside class=\"clogem-toc\"><nav aria-label=\"On this page\"><ul>"))
+    (is (str/includes? html "<li class=\"level-2\"><a href=\"#numbered-directories\">Numbered directories</a></li>"))
+    (is (str/includes? html "<li class=\"level-2\"><a href=\"#language-suffixes\">Language suffixes</a></li>"))
+    (is (not (str/includes? html "<a href=\"#conventions\">")) "the leading h1 is not in the TOC")
+    (is (str/includes? html "clogem-shell--toc")))
+  (let [html (slurp-out "pages" "17c887" "index.html")]
+    (is (str/includes? html "<a href=\"#%E0%AE%B5%E0%AE%A3%E0%AE%95%E0%AF%8D%E0%AE%95%E0%AE%AE%E0%AF%8D-%E0%AE%89%E0%AE%B2%E0%AE%95%E0%AE%AE%E0%AF%8D\">வணக்கம் உலகம்</a>")
+        "Tamil: encoded href in the TOC…")
+    (is (str/includes? html "id=\"வணக்கம்-உலகம்\"") "…unencoded id on the heading — the scroll-spy must decode"))
+  (let [html (slurp-out "pages" "3ce486" "index.html")]
+    (is (not (str/includes? html "clogem-toc")) "no h2/h3 → no TOC aside at all")))
+
+(deftest the-scroll-spy-is-vendored-and-loaded-with-defer
+  (is (exists? "clogem" "js" "toc.js"))
+  (is (str/includes? (slurp-out "clogem" "js" "toc.js") "decodeURIComponent")
+      "ids are unencoded, hrefs are percent-encoded — mandatory for CJK/Tamil pages")
+  (is (str/includes? (slurp-out "index.html") "<script defer=\"defer\" src=\"/clogem/js/toc.js\"></script>")))

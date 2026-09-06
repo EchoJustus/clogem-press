@@ -222,14 +222,27 @@
           (->hiccup (assoc ast :content [para]) link-ctx))))))
 
 (defn toc-entries
-  "Flatten the AST's :toc into [{:level :id :text}] with repaired ids, so the
-  right-hand TOC bar (Phase 2) and the heading anchors agree by construction."
+  "Flatten the AST's :toc into [{:level :id :text :href}] with repaired ids,
+  so the right-hand TOC bar and the heading anchors agree by construction.
+  `:href` is the percent-encoded fragment (`#` + `url-encode-fragment`), the
+  same encoding the heading anchor uses; the scroll-spy decodes it again
+  before `getElementById`, because ids are stored unencoded."
   [ast]
   (letfn [(walk [node]
             (concat
              (when-let [lvl (:heading-level node)]
-               [{:level lvl
-                 :id    (anchor-id (get-in node [:attrs :id]))
-                 :text  (md/node->text node)}])
+               (let [id (anchor-id (get-in node [:attrs :id]))]
+                 [{:level lvl
+                   :id    id
+                   :text  (md/node->text node)
+                   :href  (str "#" (u/url-encode-fragment (str id)))}]))
              (mapcat walk (:children node))))]
     (vec (mapcat walk (:children (:toc ast))))))
+
+(defn toc
+  "The right-hand TOC of D-P2-9: heading levels 2 … (1 + `depth`) — so the
+  vdoing default `sidebarDepth: 2` shows h2–h3 — with the body's leading h1
+  and every other h1 dropped, since the theme already renders the title."
+  [ast depth]
+  (let [depth (max 1 (long (or depth 2)))]
+    (filterv #(<= 2 (:level %) (inc depth)) (toc-entries ast))))

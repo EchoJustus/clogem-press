@@ -94,3 +94,13 @@
         (let [dangling (remove #(resolves? out %) (internal-hrefs out))]
           (is (empty? dangling) (str "dangling: " (pr-str dangling))))
         (finally (fs/delete-tree out))))))
+
+(deftest the-scroll-spy-script-is-referenced-with-the-base
+  (testing "D-P2-9: js/ is exported like css/, and the <script src> carries the
+            site base (the css-href pattern, not layout/asset's trailing slash)"
+    (let [out (build-with-base "/project/")]
+      (try
+        (is (fs/regular-file? (fs/path out "clogem" "js" "toc.js")))
+        (is (str/includes? (slurp (fs/file (fs/path out "index.html")))
+                           "src=\"/project/clogem/js/toc.js\""))
+        (finally (fs/delete-tree out))))))

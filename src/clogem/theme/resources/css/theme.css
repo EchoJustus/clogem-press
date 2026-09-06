@@ -216,3 +216,19 @@ img { max-width: 100%; height: auto; }
 .clogem-catalogue__list li { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.2rem 0; }
 .clogem-catalogue__sub { margin-top: 0.75rem; padding-left: 0.75rem; border-left: 2px solid var(--borderColor); }
 .clogem-catalogue__sub h4 { margin: 0.25rem 0; }
+
+/* ---- Phase 2: TOC bar ---- */
+.clogem-shell--toc { grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr) minmax(11rem, 14rem); }
+.clogem-shell--single.clogem-shell--toc { grid-template-columns: minmax(0, 1fr) minmax(11rem, 14rem); }
+@media (max-width: 64rem) {
+  .clogem-shell--toc, .clogem-shell--single.clogem-shell--toc { grid-template-columns: minmax(0, 1fr); }
+  .clogem-toc { display: none; }
+}
+.clogem-toc { position: sticky; top: 4rem; align-self: start; font-size: 0.85rem; border-left: 1px solid var(--borderColor); padding-left: 0.75rem; }
+.clogem-toc ul { list-style: none; margin: 0; padding: 0; }
+.clogem-toc li { padding: 0.15rem 0; }
+.clogem-toc li.level-3 { padding-left: 0.9rem; }
+.clogem-toc li.level-4 { padding-left: 1.8rem; }
+.clogem-toc li.level-5, .clogem-toc li.level-6 { padding-left: 2.7rem; }
+.clogem-toc a { color: var(--textColorSubtle); }
+.clogem-toc li.is-active > a { color: var(--accent); font-weight: 600; }

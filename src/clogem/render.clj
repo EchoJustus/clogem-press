@@ -302,7 +302,13 @@
              (if node
                (catalogue/catalogue (assoc ctx :page-kind :catalogue :node node
                                            :page-component (:page-component group)))
-               (page/article ctx (markdown/render (:body variant) lc)))))])
+               ;; parse ONCE: the body hiccup and the TOC come from the same
+               ;; AST, so TOC ids and heading anchors agree by construction
+               (let [ast   (markdown/parse (:body variant))
+                     depth (or (some-> (get-in variant [:front-matter :sidebarDepth]) str parse-long)
+                               (get-in cfg [:theme :sidebar-depth]))]
+                 (page/article (assoc ctx :toc (markdown/toc ast depth))
+                               (markdown/->hiccup ast lc))))))])
 
       ;; redirect stubs at the bare identity URL when every variant is prefixed
       (when prefix-all?

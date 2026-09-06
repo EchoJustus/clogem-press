@@ -313,15 +313,30 @@
                       (not (false? (get-in cfg [:theme :sidebar-open])))
                       (ancestors-of (:dir-key group)))]])))
 
+(defn toc
+  "The right-hand TOC bar (D-P2-9): one link per entry of ctx :toc, levelled
+  by class, hidden when there is nothing to list. The scroll-spy in
+  js/toc.js marks the current entry; without JS it is a plain list of links."
+  [{:keys [toc] :as ctx}]
+  (when (seq toc)
+    [:aside.clogem-toc
+     [:nav {:aria-label (i18n/tr ctx :page/toc)}
+      (into [:ul]
+            (for [{:keys [level href text]} toc]
+              [:li {:class (str "level-" level)}
+               [:a {:href href} text]]))]]))
+
 (defn shell
   "The page body between navbar and footer: the sidebar tree when the page
-  has one, the main column, and any extra columns (the TOC bar)."
-  [ctx main & extra]
-  (let [sb (sidebar ctx)]
-    (into [:div.clogem-shell {:class (when-not sb "clogem-shell--single")}
-           sb
-           main]
-          extra)))
+  has one, the main column, and the TOC bar when the page has headings."
+  [ctx main]
+  (let [sb (sidebar ctx)
+        tc (toc ctx)]
+    [:div.clogem-shell {:class (str/join " " (remove nil? [(when-not sb "clogem-shell--single")
+                                                          (when tc "clogem-shell--toc")]))}
+     sb
+     main
+     tc]))
 
 (defn variant-bar
   "Per-article language buttons — plain links between separate documents."
@@ -379,7 +394,10 @@
       [:title (str title
                    (when-let [st (i18n/resolve-str ctx (get-in cfg [:site :title]))]
                      (when (not= st title) (str " · " st))))]
-      [:link {:rel "stylesheet" :href (asset-href ctx "css/theme.css")}]]
+      [:link {:rel "stylesheet" :href (asset-href ctx "css/theme.css")}]
+      ;; vendored vanilla scroll-spy (D-P2-9); no CDN, no deps — deferred, so
+      ;; a page without a TOC pays one cached request and nothing else
+      [:script {:src (asset-href ctx "js/toc.js") :defer true}]]
      (into [:body {:class (str "theme-mode-" (name (get-in cfg [:theme :default-mode] :auto))
                                " theme-style-" (name (get-in cfg [:theme :page-style] :card))
                                " lang-" (name lang)
