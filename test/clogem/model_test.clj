@@ -484,3 +484,41 @@
            (map :permalink (model/newest-first gs)))
         "date desc, permalink tie-break, undated last")
     (is (= (model/newest-first gs) (model/newest-first (reverse gs))))))
+
+(deftest doctor-reports-every-kind-of-variant-disagreement
+  (doseq [[k a b] [[:pageComponent {:name "Catalogue" :data {:path "01.Guide"}} nil]
+                   [:comment false true]
+                   [:article true false]]]
+    (let [m (full-model [(dated {:base "x" :order 1} "2026-01-01 00:00:00" (when (some? a) {k a}))
+                         (dated {:base "x" :order 1 :lang :ta :title "த"} nil (when (some? b) {k b}))])
+          [_ ds] (diag/collecting (model/doctor-checks! m))]
+      (is (some #(re-find (re-pattern (str "disagree on `" (name k) "`")) (:message %)) (diag/warnings ds))
+          (name k)))))
+
+(deftest unnumbered-top-level-directories-sort-by-title-after-numbered-ones
+  (let [m (full-model [(entry {:dir "/Zeta" :base "z" :order 1})
+                       (entry {:dir "/Alpha" :base "a" :order 1})
+                       (entry {:dir "/05.Numbered" :base "n" :order 1})])]
+    (is (= ["05.Numbered" "Alpha" "Zeta"] (keys (:sidebar m)))
+        "(order, title): numbered first, then the unnumbered by title")))
+
+(deftest blank-and-nil-tags-never-become-tags
+  (testing "vdoing's placeholder `tags:\n  - ` reads as [nil]; a stray empty
+            string is just as meaningless — neither reaches the info line or
+            the index"
+    (let [m (full-model [(-> (dated {} "2026-01-01 00:00:00") (assoc-in [:front-matter :tags] [nil "" " " "real" 2026]))])
+          g (first (vals (:articles m)))]
+      (is (= ["real" "2026"] (:tags g)) "strings, blanks dropped")
+      (is (= #{"real" "2026"} (set (keys (:tags m))))))))
+
+(deftest post-neighbours-include-non-article-posts
+  (let [post (fn [base d fm] (dated {:base base :dir "_posts" :order nil :kind :post} d fm))
+        m (full-model [(post "2026-03-01-a" "2026-03-01 00:00:00" nil)
+                       (post "2026-02-01-b" "2026-02-01 00:00:00" {:article false})
+                       (post "2026-01-01-c" "2026-01-01 00:00:00" nil)])
+        pl (fn [t] (some (fn [[pl g]] (when (= t (get-in g [:variants :en :base-title])) pl)) (:articles m)))
+        b  (get-in m [:articles (pl "2026-02-01-b")])]
+    (is (false? (:article? b)))
+    (is (= [(pl "2026-03-01-a") (pl "2026-01-01-c")] (model/neighbours m b)) "a non-article post has neighbours…")
+    (is (= [nil (pl "2026-02-01-b")] (model/neighbours m (get-in m [:articles (pl "2026-03-01-a")])))
+        "…and is one (D-P2-7: not skipped for being a non-article)")))

@@ -40,6 +40,8 @@
          ;; an article with no English version is still reachable at its
          ;; identity URL.
          :priority [:en :zh-Hans :zh-Hant :ms :ta]
+         ;; The five defaults are always merged in; to run a site with FEWER
+         ;; languages set the unwanted ones to nil: {:ms nil :ta nil}.
          :locales
          {:en      {:label "English"       :html-lang "en"      :giscus "en"    :dir :ltr}
           :zh-Hans {:label "简体中文"       :html-lang "zh-Hans" :giscus "zh-CN" :dir :ltr}

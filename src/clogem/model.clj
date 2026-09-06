@@ -285,7 +285,7 @@
   exactly as the directories are spelled). nil when there is no path."
   [pc]
   (when-let [path (u/blank->nil (str (get-in pc [:data :path])))]
-    (str "/" (-> path (str/replace #"^[/\\\\]+|[/\\\\]+$" "") (str/replace #"\\\\" "/")))))
+    (str "/" (-> path (str/replace #"^[/\\]+|[/\\]+$" "") (str/replace #"\\" "/")))))
 
 
 (defn- pick-primary
@@ -350,11 +350,14 @@
                                         (true? (get-in pv [:front-matter :home]))))
                    ;; tags are the one union: a tag added on one version must not
                    ;; hide the article from that tag's index
+                   ;; strings, blanks dropped — vdoing's empty placeholder
+                   ;; `tags:\n  - ` reads as [nil] and must not become a tag
                    :tags       (vec (distinct (mapcat (fn [[_ v]]
                                                         (let [t (get-in v [:front-matter :tags])]
-                                                          (cond (sequential? t) (remove nil? t)
-                                                                (some? t) [t]
-                                                                :else nil)))
+                                                          (keep #(u/blank->nil (str %))
+                                                                (cond (sequential? t) (remove nil? t)
+                                                                      (some? t) [t]
+                                                                      :else nil))))
                                                       by-lang)))}])))
         (group-by :permalink entries)))
 
@@ -584,9 +587,11 @@
   articles — the leaves of its top-level directory, non-articles included,
   as vdoing does — and newest-first date order among posts for :post
   articles (prev = newer, next = older). nil at either end."
-  [{:keys [sidebar articles posts]} group]
+  [{:keys [sidebar articles]} group]
   (let [ids (if (= :post (:kind group))
-              (filter #(= :post (get-in articles [% :kind])) posts)
+              ;; every post, article or not — a `article: false` post is
+              ;; still a neighbour, as a catalogue page is in the tree
+              (map :permalink (newest-first (filter #(= :post (:kind %)) (vals articles))))
               (when-let [top (top-dir group)]
                 (map :permalink (tree-leaves (get sidebar top)))))
         v   (vec ids)
@@ -683,6 +688,12 @@
     (diag/warn! pl (str "Catalogue page points at `" (subs dir-key 1)
                         "`, which is not a directory in the content tree.")
                 "Use the numbered directory names exactly, e.g. `01.Guide/10.Basics`."))
+  (letfn [(nav-links [items] (mapcat (fn [{:keys [link items]}] (cons link (nav-links items))) items))]
+    (doseq [link (nav-links (get-in _model [:cfg :nav]))
+            :when (and (string? link) (re-find #"^/pages/" link)
+                       (nil? (get articles (u/clean-url link))))]
+      (diag/warn! nil (str ":nav link " link " names no article; it is emitted with the base only.")
+                  "Nav conventionally points at a catalogue page's permalink (D-P2-11).")))
   (doseq [[what index] [["category" categories] ["tag" tags]]
           [slug ks] (group-by u/slug (keys index))
           :when (> (count ks) 1)]

@@ -240,6 +240,9 @@
       (re-find #"^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|//|#)" link) link
       (get-in model [:articles (u/clean-url link)])
       (:href (article-link ctx (get-in model [:articles (u/clean-url link)])))
+      ;; a permalink that names nothing: the base only, never a language
+      ;; prefix that would invent a URL — doctor reports it
+      (re-find #"^/pages/" link) (str/replace (str (config/base-path cfg) "/" link) #"/{2,}" "/")
       (str/ends-with? link "/") (href ctx (model/site-url cfg lang link))
       :else (str/replace (str (config/base-path cfg) "/" link) #"/{2,}" "/"))))
 

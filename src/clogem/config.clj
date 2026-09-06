@@ -97,11 +97,16 @@
   whatever the site wrote, and that is what `<html lang>` and filename matching
   use (§6.1: compare lowercased, emit the configured spelling)."
   [{:keys [default priority locales] :as langs}]
-  (let [locales  (into {} (map (fn [[k v]] [k (merge {:dir :ltr
-                                                      :label (name k)
-                                                      :html-lang (name k)}
-                                                     v)])
-                               locales))
+  (let [;; deep-merge lets an explicit nil win, so `{:locales {:ms nil}}`
+        ;; REMOVES a default locale — the only way a site can have fewer
+        ;; than the five defaults
+        locales  (into {}
+                       (comp (remove (fn [[_ v]] (nil? v)))
+                             (map (fn [[k v]] [k (merge {:dir :ltr
+                                                         :label (name k)
+                                                         :html-lang (name k)}
+                                                        v)])))
+                       locales)
         known    (set (keys locales))
         priority (vec (concat (filterv known priority)
                               (remove (set priority) (keys locales))))]

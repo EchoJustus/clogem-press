@@ -133,3 +133,10 @@
 (deftest lines-outside-containers-are-byte-identical
   (let [src "# T\n\nplain  \n\n- a\n- b\n\n```clj\n(+ 1 2)\n```\n\ntrailing"]
     (is (= src (expand src)))))
+
+(deftest a-card-list-inside-a-list-item-is-dedented-before-parsing
+  (let [src "- item\n\n  ::: cardList\n  ```yaml\n  - name: A\n    link: /l/\n  ```\n  :::\n"
+        [out ds] (diag/collecting (c/expand src {:from-path "t.md"}))]
+    (is (empty? (diag/warnings ds)) (pr-str (map :message ds)))
+    (is (str/includes? out "  <div class=\"card-list row-3\">") "emitted with the item's indent")
+    (is (str/includes? out "<div class=\"name\">A</div>"))))

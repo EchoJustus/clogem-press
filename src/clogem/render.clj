@@ -108,9 +108,8 @@
   hrefs percent-encode them."
   [model ctx-for]
   (let [{:keys [cfg]} model
-        paths    (index-paths cfg)
-        per-page (max 1 (long (or (get-in cfg [:theme :per-page]) 10)))
-        ]
+        paths    (:index-paths model)
+        per-page (max 1 (long (or (get-in cfg [:theme :per-page]) 10)))]
     (apply concat
            (for [lang (config/lang-keys cfg)
                  {:keys [kind title-key] :as k} (pages/enabled-kinds cfg)
@@ -123,8 +122,10 @@
                        title (or (when own?
                                    (some-> file* fm/read-file :front-matter :title u/blank->nil))
                                  (i18n/tr (ctx-for lang {}) title-key))
+                       ;; a user-authored body renders above the list (D-P2-6) —
+                       ;; only from the language's OWN file (§6.4 rule 2)
                        body  (fn []
-                               (when file*
+                               (when (and file* own?)
                                  (let [b (:body (fm/read-file file*))]
                                    (when-not (str/blank? b)
                                      (markdown/render b (link-context model model lang (str file*)))))))
@@ -278,12 +279,14 @@
   [model]
   (let [{:keys [cfg articles]} model
         strings (i18n/load-strings cfg)
-        model   (assoc model :by-rel-path (rel-path-index model) :strings strings)
+        ;; read the @pages/ files ONCE per build, not once per rendered page
+        paths   (index-paths cfg)
+        model   (assoc model :by-rel-path (rel-path-index model) :strings strings :index-paths paths)
         prefix-all? (get-in cfg [:i18n :prefix-default?])
         ctx-for (fn [lang m]
                   (merge {:cfg cfg :lang lang :strings strings :model model
                           :dev? (:clogem/dev? cfg)
-                          :index-paths (index-paths cfg)}
+                          :index-paths paths}
                          m))]
     (into
      {}
@@ -311,7 +314,9 @@
                      depth (or (some-> (get-in variant [:front-matter :sidebarDepth]) str parse-long)
                                (get-in cfg [:theme :sidebar-depth]))]
                  (page/article (assoc ctx :toc (markdown/toc ast depth))
-                               (markdown/->hiccup ast lc))))))])
+                               ;; the theme renders the title; the body's own
+                               ;; `# Title` would be a second <h1>
+                               (markdown/->hiccup (markdown/drop-leading-h1 ast) lc))))))])
 
       ;; redirect stubs at the bare identity URL when every variant is prefixed
       (when prefix-all?

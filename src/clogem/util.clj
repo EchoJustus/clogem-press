@@ -194,7 +194,9 @@
   does not start with a date (D-P2-7: ISO, no locale formats yet)."
   [d]
   (when d
-    (or (re-find #"^\d{4}-\d{2}-\d{2}" (str d)) (str d))))
+    (if-let [[_ y m dd] (re-find #"^\s*(\d{4})-(\d{1,2})-(\d{1,2})" (str d))]
+      (format "%s-%02d-%02d" y (parse-long m) (parse-long dd))   ; `2026-8-1` → 2026-08-01
+      (str d))))
 
 (defn slug
   "The URL slug of a category or tag (DESIGN.md D-P2-3): lower-cased, with

@@ -84,9 +84,21 @@ demo site and test suite prove it rather than describe it.
 - Version `0.1.0` (`src/clogem/version.edn`), tagged `v0.1.0`, so the content
   repo can pin `ref: v0.1.0` and declare `:generator {:min-version "0.1.0"}`.
 
+### Review pass
+
+An adversarial review of the Phase 2 diff found and fixed: posts' prev/next
+skipped `article: false` posts; `sidebarDepth: 0` still showed h2s; the body's
+`# Title` rendered as a second `<h1>`; a non-padded `date:` produced an invalid
+`<time datetime>`; `catalogue-dir-key`'s backslash normalization never fired;
+the card-list YAML dedent was a no-op; `@pages/` front matter was re-read on
+every rendered page (a malformed file diagnosed ~200 times); a user-authored
+`@pages/` body leaked onto every language's page; blank tags rendered empty
+spans; a `:nav` permalink naming nothing was given a language prefix; and a
+site could not remove a default locale. Each has a test.
+
 ### Tests
 
-231 tests / 894 assertions (from 144 / 431): model indexes and tree, index
+249 tests / 975 assertions (from 144 / 431): model indexes and tree, index
 pages per language, homepage modes and pagination, article chrome, catalogue
 pages, `@pages/` golden files, TOC and scroll-spy, containers and card lists,
 config fatality end to end (including a real `bb` subprocess), the near-miss

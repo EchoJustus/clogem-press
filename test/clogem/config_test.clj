@@ -195,3 +195,24 @@
               (str l " is missing " (pr-str (clojure.set/difference en ks))))
           (is (empty? (clojure.set/difference ks en))
               (str l " has keys en lacks: " (pr-str (clojure.set/difference ks en)))))))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 defaults and locale removal
+
+(deftest phase-2-theme-defaults
+  (let [[cfg _] (with-site {})]
+    (is (= 10 (get-in cfg [:theme :per-page])))
+    (is (= 2 (get-in cfg [:theme :sidebar-depth])))
+    (is (true? (get-in cfg [:theme :sidebar-open])))
+    (is (true? (get-in cfg [:content :category])))
+    (is (true? (get-in cfg [:content :tag])))
+    (is (true? (get-in cfg [:content :archive])))
+    (is (= {} (get-in cfg [:i18n :category-labels])))))
+
+(deftest an-explicit-nil-removes-a-default-locale
+  (testing "deep-merge lets nil win, and normalize-langs honours it — the only
+            way a site can have fewer than the five default languages"
+    (let [[cfg ds] (with-site {:langs {:locales {:zh-Hant nil :ms nil :ta nil}}})]
+      (is (= [:en :zh-Hans] (config/lang-keys cfg)))
+      (is (nil? (config/lang-for-suffix cfg "ms")) "…so `01.Timing.ms.md` is a title again")
+      (is (empty? (diag/errors ds))))))

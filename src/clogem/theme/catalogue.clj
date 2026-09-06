@@ -67,5 +67,8 @@
                  [[:section.clogem-catalogue__card
                    [:h3 (:title node)]
                    (rows ctx node)]])
-               (map #(card ctx %) dirs)))]]]
+               (map #(card ctx %) dirs)))]
+       ;; a catalogue page is a leaf of its directory's tree like any other,
+       ;; so it has neighbours (D-P2-7: not skipped for being a non-article)
+       (layout/prev-next ctx)]]
      (layout/footer ctx))))

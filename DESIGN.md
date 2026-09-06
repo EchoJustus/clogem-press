@@ -1919,6 +1919,16 @@ Recorded as the Phase 2 work (§8) landed; each item names the section it amends
     spaces of indentation only; a container inside a list item indented four or more spaces is
     therefore an indented code block, as CommonMark says.
 11. **The near-miss distance rule requires a hyphen on one side (D-P2-14).** See item 1.
+12. **An article page carries one `<h1>` (D-P2-9).** The theme renders the front-matter title; the
+    body's leading `# Title` is dropped from the rendered content as it is from the TOC and the
+    excerpt. vdoing shows the body verbatim and renders no theme title; clogem-press keeps the theme
+    title (it carries the `titleTag` badge and exists for bodies without a heading).
+13. **A single-language site hides the switcher; an explicit `nil` removes a default locale (§5.6,
+    D-P2-13).** The five default locales always deep-merge in, so `{:langs {:locales {:ms nil}}}` is
+    the way to run with fewer, and a one-language site emits no switcher at all.
+14. **`sidebarDepth: 0` means no TOC**, as in vdoing; the default remains `[:theme :sidebar-depth 2]`.
+15. **A `:nav` permalink that names no article is emitted with the base only**, never with an invented
+    language prefix, and `doctor` reports it.
 
 ---
 

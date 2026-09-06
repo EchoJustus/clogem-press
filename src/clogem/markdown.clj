@@ -205,9 +205,10 @@
 
 (def more-marker-re #"<!--\s*more\s*-->")
 
-(defn- drop-leading-h1
+(defn drop-leading-h1
   "The body's leading `# Title` duplicates the title the theme already
-  renders; an excerpt starts after it."
+  renders (D-P2-9): an excerpt starts after it, and the article body is
+  rendered without it so a page carries one <h1>, not two."
   [ast]
   (let [c (:content ast)]
     (if (and (= :heading (:type (first c))) (= 1 (:heading-level (first c))))
@@ -250,5 +251,7 @@
   vdoing default `sidebarDepth: 2` shows h2–h3 — with the body's leading h1
   and every other h1 dropped, since the theme already renders the title."
   [ast depth]
-  (let [depth (max 1 (long (or depth 2)))]
-    (filterv #(<= 2 (:level %) (inc depth)) (toc-entries ast))))
+  (let [depth (long (or depth 2))]
+    (if (< depth 1)
+      []                                   ; vdoing: `sidebarDepth: 0` = no TOC
+      (filterv #(<= 2 (:level %) (inc depth)) (toc-entries ast)))))

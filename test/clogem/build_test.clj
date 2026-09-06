@@ -11,6 +11,7 @@
             [hiccup2.core]
             [clogem.cli :as cli]
             [clogem.markdown]
+            [clogem.model :as model]
             [clogem.theme.home]
             [clogem.config :as config]
             [clogem.diag :as diag]
@@ -270,11 +271,12 @@
       (is (not-any? #(re-find #"/tags/" %) uris))
       (is (some #(re-find #"/categories/" %) uris) "the others stay"))))
 
-(deftest a-user-authored-pages-body-renders-above-the-list
-  (testing "D-P2-6: the demo's categoriesPage.md carries no body, so the
-            generated bar follows the heading directly — see the golden test
-            for the generated files"
-    (is (str/includes? (slurp-out "categories" "index.html") "<h1>Categories</h1>"))))
+(deftest the-index-title-comes-from-the-owning-pages-file
+  (testing "the demo's categoriesPage.md says `title: Categories`; that title
+            is used on the English page only — zh-Hans uses its own theme string"
+    (is (str/includes? (slurp-out "categories" "index.html") "<h1>Categories</h1>"))
+    (is (str/includes? (slurp-out "zh-Hans" "categories" "index.html") "<h1>分类</h1>"))
+    (is (str/includes? (slurp-out "zh-Hans" "categories" "index.html") "<title>分类 ·"))))
 
 ;; ---------------------------------------------------------------------------
 ;; Phase 2 — sidebar tree (D-P2-1) and the site-wide switcher (D-P2-13)
@@ -622,9 +624,13 @@
                         (config/load-config (str dir) nil
                                             (merge {:content {:write-front-matter false}} cfg-overrides))))
             [m _] (diag/collecting (cli/analyse cfg))
-            [pm ds] (diag/collecting (let [pm (render/page-map m)] (doseq [[_ f] pm] (f)) pm))]
+            ;; render everything NOW — the thunks read files under `dir`,
+            ;; which is deleted before the caller looks at the result
+            [rendered ds] (diag/collecting
+                           (into {} (map (fn [[u f]] [u (str (hiccup2.core/html (f)))]))
+                                 (render/page-map m)))]
         (is (empty? (diag/errors ds)))
-        [m (set (keys pm))])
+        [m (set (keys rendered)) (fn [uri] (get rendered uri)) ds])
       (finally (fs/delete-tree dir)))))
 
 (def ^:private a-post "---\ntitle: P\ndate: \"2026-01-01 00:00:00\"\npermalink: /pages/p00001/\ntags: [t]\n---\n\n# P\n\nbody\n")
@@ -668,3 +674,121 @@
     (is (some #(= :tree (get-in *model* [:articles % :kind])) (:posts *model*)))
     (is (exists? "categories" "index.html"))
     (is (exists? "ta" "archives" "index.html"))))
+
+
+;; ---------------------------------------------------------------------------
+;; Review pass — findings pinned
+
+(deftest a-user-authored-pages-body-renders-above-the-list-on-its-own-language
+  (testing "D-P2-6 + §6.4 rule 2: the body of @pages/categoriesPage.md renders
+            above the bar on the language that owns the file, and nowhere else"
+    (let [[_ _ html] (temp-tree {"01.Guide/10.Basics/01.t.md" a-tree
+                                 "@pages/categoriesPage.md" "---\ncategoriesPage: true\ntitle: Cats\npermalink: /categories/\narticle: false\n---\n\nUSER BODY HERE\n"
+                                 "@pages/categoriesPage.zh-Hans.md" "---\ncategoriesPage: true\ntitle: 分类页\narticle: false\n---\n\n用户正文\n"})
+          en (html "/categories/")
+          zh (html "/zh-Hans/categories/")
+          ms (html "/ms/categories/")]
+      (is (re-find #"USER BODY HERE.*clogem-bar" en) "above the generated list")
+      (is (str/includes? en "<h1>Cats</h1>"))
+      (is (str/includes? zh "用户正文") "zh-Hans owns a file of its own")
+      (is (str/includes? zh "<h1>分类页</h1>"))
+      (is (not (str/includes? ms "USER BODY HERE")) "ms has no file: no English body leaks in")
+      (is (str/includes? ms "<h1>Kategori</h1>")))))
+
+(deftest prefix-default-true-keeps-index-pages-bare-and-stubs-only-articles
+  (testing "D-P2-3: homes and index pages follow the site-default rule in
+            BOTH modes; under :prefix-default? true only articles get stubs"
+    (let [pm (first (diag/collecting (render/page-map (assoc-in *model* [:cfg :i18n :prefix-default?] true))))
+          uris (set (keys pm))
+          html (fn [uri] (str (hiccup2.core/html ((get pm uri)))))]
+      (is (contains? uris "/categories/"))
+      (is (not (contains? uris "/en/categories/")))
+      (is (contains? uris "/"))
+      (is (not (contains? uris "/en/")))
+      (is (contains? uris "/en/pages/643259/") "every variant prefixed")
+      (is (str/includes? (html "/pages/643259/") "http-equiv=\"refresh\"") "the bare URL is a stub")
+      (is (str/includes? (html "/categories/basics/") "href=\"/en/pages/643259/\"") "rows link the prefixed article")
+      (is (str/includes? (html "/en/pages/643259/") "href=\"/zh-Hans/pages/643259/\" hreflang=\"zh-Hans\"")))))
+
+(deftest sidebar-depth-front-matter-governs-the-toc
+  (let [body (fn [depth] (str "---\ntitle: T\npermalink: /pages/t00001/\nsidebarDepth: " depth "\n---\n\n# T\n\n## H2\n\n### H3\n\n#### H4\n"))]
+    (doseq [[depth expected] [[0 []] [1 ["H2"]] [3 ["H2" "H3" "H4"]]]]
+      (let [[_ _ html] (temp-tree {"01.Guide/01.t.md" (body depth)})
+            page (html "/pages/t00001/")
+            items (map second (re-seq #"<li class=\"level-\d\"><a href=\"#[^\"]*\">([^<]*)</a>" page))]
+        (is (= expected items) (str "sidebarDepth " depth))
+        (when (empty? expected)
+          (is (not (str/includes? page "clogem-toc")) "sidebarDepth: 0 = no TOC at all"))))))
+
+(deftest a-fourth-level-directory-renders-anyway
+  (testing "D-P2-1: deeper than level 3 renders; doctor warns (model_test covers the warning)"
+    (let [[m uris html] (temp-tree {"01.A/10.B/20.C/30.D/01.deep.md" a-tree})]
+      (is (contains? uris "/pages/t00001/"))
+      (is (str/includes? (html "/pages/t00001/") "<summary>D</summary>"))
+      (is (= 4 (count (model/tree-dirs (:tree m))))))))
+
+(deftest archives-span-two-years
+  (let [html (slurp-out "archives" "index.html")]
+    (is (str/includes? html "<h2>2025</h2>"))
+    (is (< (str/index-of html "<h2>2026</h2>") (str/index-of html "<h2>2025</h2>")) "newest year first")
+    (is (str/includes? html "<h3>2025-11</h3>"))
+    (is (re-find #"<h3>2025-11</h3>.*?/pages/y2025a/" html))))
+
+(deftest neighbours-are-not-skipped-for-being-non-articles
+  (testing "D-P2-7: in the tree, the Guide catalogue's next is the Deep
+            catalogue — a non-article leaf"
+    (is (str/includes? (slurp-out "pages" "559f0f" "index.html") "href=\"/pages/c4d33p/\" lang=\"en\" rel=\"next\"")))
+  (testing "…and among posts too"
+    (let [post (fn [d pl & [extra]] (str "---\ntitle: P" pl "\ndate: \"" d "\"\npermalink: /pages/" pl "/\n" (or extra "") "---\n\nbody\n"))
+          [_ _ html] (temp-tree {"_posts/2026-03-01-a.md" (post "2026-03-01 00:00:00" "aaaaaa")
+                                 "_posts/2026-02-01-b.md" (post "2026-02-01 00:00:00" "bbbbbb" "article: false\n")
+                                 "_posts/2026-01-01-c.md" (post "2026-01-01 00:00:00" "cccccc")})]
+      (is (str/includes? (html "/pages/aaaaaa/") "href=\"/pages/bbbbbb/\" lang=\"en\" rel=\"next\"")
+          "the article: false post is still the neighbour")
+      (is (str/includes? (html "/pages/bbbbbb/") "href=\"/pages/aaaaaa/\" lang=\"en\" rel=\"prev\""))
+      (is (str/includes? (html "/pages/bbbbbb/") "href=\"/pages/cccccc/\" lang=\"en\" rel=\"next\"")))))
+
+(deftest excerpt-paths-and-the-fallback-notice-toggle
+  (testing "first paragraph when there is no <!-- more -->"
+    (is (str/includes? (slurp-out "index.html") "This article exists in English only")))
+  (testing "the L variant's excerpt when it exists, else the primary's"
+    ;; one big page, so the conventions article is on it in every language
+    (let [big #(assoc-in % [:theme :per-page] 100)]
+      (is (str/includes? (page-html big "/zh-Hant/") "這三個檔案共用") "zh-Hant home, zh-Hant variant")
+      (is (str/includes? (page-html big "/ms/") "Three files share this number") "ms home, primary (en) variant")))
+  (testing ":show-fallback-notice false removes every marker"
+    (let [html (page-html #(assoc-in % [:i18n :show-fallback-notice] false) "/zh-Hans/categories/guide/")]
+      (is (str/includes? html "clogem-row"))
+      (is (not (str/includes? html "clogem-fallback"))))))
+
+(deftest html-lang-matches-on-filtered-and-paginated-pages
+  (doseq [[path lang] [[["zh-Hans" "categories" "basics" "index.html"] "zh-Hans"]
+                       [["ta" "tags" "meta" "index.html"] "ta"]
+                       [["ms" "page" "2" "index.html"] "ms"]
+                       [["zh-Hant" "categories" "guide" "page" "2" "index.html"] "zh-Hant"]
+                       [["zh-Hant" "pages" "643259" "index.html"] "zh-Hant"]]]
+    (is (str/includes? (apply slurp-out path) (str "<html dir=\"ltr\" lang=\"" lang "\">")) (pr-str path))))
+
+(deftest an-article-page-carries-exactly-one-h1
+  (testing "the theme renders the title; the body's leading `# Title` is dropped (D-P2-9)"
+    (let [html (slurp-out "pages" "643259" "index.html")]
+      (is (= 1 (count (re-seq #"<h1[ >]" html))))
+      (is (str/includes? html "<h1>conventions</h1>"))
+      (is (not (str/includes? html "<h1 id=\"conventions\"")))
+      (is (str/includes? html "<h2 id=\"numbered-directories\"") "the rest of the body is intact"))))
+
+(deftest a-one-language-site-has-no-switcher
+  (let [[m uris html] (temp-tree {"01.Guide/01.t.md" a-tree}
+                                 {:langs {:locales {:zh-Hans nil :zh-Hant nil :ms nil :ta nil}}})]
+    (is (= [:en] (config/lang-keys (:cfg m))))
+    (is (not-any? #(re-find #"^/(zh-Hans|zh-Hant|ms|ta)/" %) uris))
+    (is (not (str/includes? (html "/pages/t00001/") "clogem-langs")))))
+
+(deftest a-dangling-nav-permalink-is-base-only-and-a-doctor-warning
+  (let [[m _ html ds] (temp-tree {"01.Guide/01.t.md" a-tree}
+                                 {:nav [{:text "Gone" :link "/pages/nope00/"}]})
+        [_ dds] (diag/collecting (model/doctor-checks! m))]
+    (is (str/includes? (html "/zh-Hans/") "<a href=\"/pages/nope00/\">Gone</a>")
+        "no language prefix is invented for a permalink that names nothing")
+    (is (some #(re-find #":nav link /pages/nope00/ names no article" (:message %)) (diag/warnings dds)))
+    (is (empty? (diag/warnings ds)) "…and rendering itself stays quiet")))

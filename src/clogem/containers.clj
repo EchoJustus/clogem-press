@@ -164,7 +164,8 @@
                 (some (fn [i] (when (re-matches yaml-fence-re (nth lines i)) i))
                       (range (dec (count lines)) open -1)))
         body  (if (and open close (> close open)) (subvec lines (inc open) close) lines)
-        indent (->> body (remove str/blank?) (map #(count (re-find #"^\s*" %))) (reduce min 0))]
+        indents (->> body (remove str/blank?) (map #(count (re-find #"^\s*" %))))
+        indent  (if (seq indents) (apply min indents) 0)]
     (str/join "\n" (map #(if (str/blank? %) "" (subs % (min indent (count %)))) body))))
 
 (defn- parse-cards

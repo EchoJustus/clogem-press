@@ -126,7 +126,7 @@ need to know which languages exist.
 ## Development
 
 ```bash
-bb test                                             # 231 tests / 894 assertions
+bb test                                             # 249 tests / 975 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 
