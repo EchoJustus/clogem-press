@@ -12,6 +12,7 @@
     clogem.frontmatter-test
     clogem.pages-test
     clogem.markdown-test
+    clogem.containers-test
     clogem.model-test
     clogem.render-test
     clogem.ledger-test

@@ -40,6 +40,9 @@
    :articles articles
    :lang lang
    :from-path from-path
+   ;; the containers' default titles come from the page's language (§6.4 rule 2)
+   :strings (:strings model)
+   :dev? (:clogem/dev? cfg)
    :by-rel-path (:by-rel-path model)
    :url-for (fn [group l]
               (model/variant-url cfg group (model/best-variant group l)))})
@@ -275,7 +278,7 @@
   [model]
   (let [{:keys [cfg articles]} model
         strings (i18n/load-strings cfg)
-        model   (assoc model :by-rel-path (rel-path-index model))
+        model   (assoc model :by-rel-path (rel-path-index model) :strings strings)
         prefix-all? (get-in cfg [:i18n :prefix-default?])
         ctx-for (fn [lang m]
                   (merge {:cfg cfg :lang lang :strings strings :model model
@@ -304,7 +307,7 @@
                                            :page-component (:page-component group)))
                ;; parse ONCE: the body hiccup and the TOC come from the same
                ;; AST, so TOC ids and heading anchors agree by construction
-               (let [ast   (markdown/parse (:body variant))
+               (let [ast   (markdown/parse (:body variant) lc)
                      depth (or (some-> (get-in variant [:front-matter :sidebarDepth]) str parse-long)
                                (get-in cfg [:theme :sidebar-depth]))]
                  (page/article (assoc ctx :toc (markdown/toc ast depth))

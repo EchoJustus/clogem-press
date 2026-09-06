@@ -15,6 +15,7 @@ To see the error, copy one into `content/01.Guide/10.Basics/` (dropping the
 | `01.article.ta-IN.md.disabled` | error: a configured primary subtag (`ta`) followed by a region-shaped subtag (rule (c)) |
 | `01.Setup.md.disabled`, `01.Teardown.md.disabled` | error: duplicate sidebar number 1 for *different* articles (M1). `10.Basics/` already has `01.getting-started.md`, so **either one alone** collides; copy both to see three identities named in one error. |
 | `02.conventions.ms.md.disabled` | error: an identity group whose members declare different `permalink:` values (§6.2). Copy it into `content/01.Guide/10.Basics/`, beside the three `02.conventions*` files it claims to be a variant of. |
+| `01.bad-cards.md.disabled` | **warning** (not an error): a `cardList` whose YAML does not parse. `bb doctor` renders every page in memory, so it names the file; the page still builds, with a `danger` block where the grid would be (D-P2-10). |
 | `duplicate-dirs/10.Alpha/`, `duplicate-dirs/10.Beta/` | error: two **sibling directories** sharing a number (D-3, §6.1). Copy both directories into `content/01.Guide/` and drop the `.disabled` suffixes. `01.Guide/` already has `10.Basics/`, so **either one alone** collides; copy both to see three directories named in one error. Directories are never language-suffixed, so unlike files there is no legal same-number case to exempt — any two siblings sharing a number are a collision. |
 
 **What is deliberately NOT here any more:** plain hyphenated slugs. Under the

@@ -206,3 +206,26 @@
     (is (= ["A" "A.1" "A.1.a" "B"] (map :text (markdown/toc ast 3))) "sidebarDepth 3: h2–h4")
     (is (= ["A" "A.1" "B"] (map :text (markdown/toc ast nil))) "nil → the default")
     (is (= [] (markdown/toc (markdown/parse "# only a title\n\ntext\n") 2)) "nothing to list")))
+
+;; ---------------------------------------------------------------------------
+;; Containers reach the markdown pipeline (D-P2-10)
+
+(deftest parse-runs-the-container-pre-pass
+  (testing "`markdown/parse` takes the page context so titles follow the page language"
+    (let [zh {:strings {:zh-Hans {:container/tip "提示"}} :lang :zh-Hans :cfg {:langs {:default :en}}}
+          html (str (h/html (markdown/render "::: tip\nx\n:::\n" zh)))]
+      (is (str/includes? html "<p class=\"custom-block-title\">提示</p>"))
+      (is (str/includes? html "<p>x</p>"))))
+  (testing "card-list links resolve through rewrite-href, permalink to the reader's variant"
+    (let [html (str (h/html (markdown/render "::: cardList\n- name: A\n  link: /pages/aaa111/\n:::\n"
+                                             (assoc link-ctx :lang :zh-Hans))))]
+      (is (str/includes? html "href=\"/zh-Hans/pages/aaa111/\"")))))
+
+(deftest toc-ids-match-heading-ids-inside-containers
+  (let [src "# T\n\n::: warning\n\n## 你好世界\n\n:::\n"
+        ast (markdown/parse src {})
+        toc-ids (set (map :id (markdown/toc ast 2)))
+        html (str (h/html (markdown/->hiccup ast {})))]
+    (is (= #{"你好世界"} toc-ids))
+    (doseq [id toc-ids]
+      (is (str/includes? html (str "id=\"" id "\""))))))

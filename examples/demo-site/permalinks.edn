@@ -51,10 +51,20 @@
   {:key "/02.Notes/10.Local|4|api-design",
    :langs ["en"],
    :paths ["02.Notes/10.Local/04.api-design.md"]},
+  "/pages/c0nta1/"
+  {:key "/01.Guide/10.Basics|4|containers",
+   :langs ["en" "zh-Hans"],
+   :paths
+   ["01.Guide/10.Basics/04.containers.md"
+    "01.Guide/10.Basics/04.containers.zh-Hans.md"]},
   "/pages/c4d33p/"
   {:key "/00.Catalogue|2|Deep",
    :langs ["en"],
    :paths ["00.Catalogue/02.Deep.md"]},
+  "/pages/ca4d51/"
+  {:key "/02.Notes/10.Local|5|cards",
+   :langs ["en"],
+   :paths ["02.Notes/10.Local/05.cards.md"]},
   "/pages/ebaa6b/"
   {:key "/03.Deep/10.Level2/20.Level3|2|three-deep",
    :langs ["en"],

@@ -1,0 +1,14 @@
+---
+title: Bad card list
+---
+
+The YAML below is malformed, so `bb doctor` reports a warning naming this file
+and the rendered page shows a `danger` block in place of the grid
+(D-P2-10). Not an error: the rest of the page still renders.
+
+::: cardList
+```yaml
+- name: [unclosed
+  desc: flow sequence
+```
+:::

@@ -41,6 +41,7 @@
   (:require [clojure.string :as str]
             [hiccup2.core :as h]
             [nextjournal.markdown :as md]
+            [clogem.containers :as containers]
             [clogem.diag :as diag]
             [clogem.util :as u]))
 
@@ -185,8 +186,13 @@
 ;; Public API
 
 (defn parse
-  [source]
-  (md/parse source))
+  "Source → AST, after the container pre-pass (`clogem.containers/expand`).
+  `ctx` is the page context — `:cfg :lang :strings :dev?` for the containers'
+  default titles in the page's language, plus the link context for card-list
+  hrefs; the one-arity form is for ad-hoc parsing with English titles."
+  ([source] (parse source {}))
+  ([source ctx]
+   (md/parse (containers/expand source (assoc ctx :rewrite-href #(rewrite-href ctx %))))))
 
 (defn ->hiccup
   [ast link-ctx]
@@ -194,8 +200,8 @@
 
 (defn render
   "Markdown source → hiccup."
-  [source link-ctx]
-  (->hiccup (parse source) link-ctx))
+  [source ctx]
+  (->hiccup (parse source ctx) ctx))
 
 (def more-marker-re #"<!--\s*more\s*-->")
 
@@ -215,9 +221,9 @@
   [source link-ctx]
   (let [src (str source)]
     (if (re-find more-marker-re src)
-      (let [ast (drop-leading-h1 (parse (first (str/split src more-marker-re 2))))]
+      (let [ast (drop-leading-h1 (parse (first (str/split src more-marker-re 2)) link-ctx))]
         (when (seq (:content ast)) (->hiccup ast link-ctx)))
-      (let [ast (drop-leading-h1 (parse src))]
+      (let [ast (drop-leading-h1 (parse src link-ctx))]
         (when-let [para (some #(when (= :paragraph (:type %)) %) (:content ast))]
           (->hiccup (assoc ast :content [para]) link-ctx))))))
 

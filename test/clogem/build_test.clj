@@ -234,15 +234,19 @@
 (deftest index-rows-follow-6-8
   (testing "the L variant's title and URL when it exists, else the primary's
             with the fallback notice; row order identical across languages"
-    (let [en (slurp-out "categories" "guide" "index.html")
-          zh (slurp-out "zh-Hans" "categories" "guide" "index.html")]
-      (is (str/includes? en "href=\"/pages/171a98/\"") "Tamil-only: linked at its bare URL")
-      (is (re-find #"href=\"/pages/171a98/\"[^<]*</a><span class=\"clogem-fallback\"" en)
+    (let [en  (slurp-out "categories" "guide" "index.html")
+          zh  (slurp-out "zh-Hans" "categories" "guide" "index.html")
+          en2 (slurp-out "categories" "guide" "page" "2" "index.html")
+          zh2 (slurp-out "zh-Hans" "categories" "guide" "page" "2" "index.html")
+          order (fn [html] (map second (re-seq #"href=\"(?:/zh-Hans)?(/pages/[^\"]+)\" lang" html)))]
+      (is (str/includes? en2 "href=\"/pages/171a98/\"") "Tamil-only: linked at its bare URL (page 2 at 3 per page)")
+      (is (re-find #"href=\"/pages/171a98/\"[^<]*</a><span class=\"clogem-fallback\"" en2)
           "…and carries the fallback marker on the English page")
       (is (str/includes? zh "href=\"/zh-Hans/pages/643259/\"") "the zh-Hans variant when it exists")
-      (is (str/includes? zh "href=\"/pages/171a98/\""))
-      (let [order (fn [html] (map second (re-seq #"href=\"(?:/zh-Hans)?(/pages/[^\"]+)\" lang" html)))]
-        (is (= (order en) (order zh)) "sort keys come from the primary")))))
+      (is (str/includes? zh2 "href=\"/pages/171a98/\""))
+      (is (= (order en) (order zh)) "sort keys come from the primary — page 1")
+      (is (= (order en2) (order zh2)) "…and page 2")
+      (is (= 3 (count (order en))) ":per-page 3"))))
 
 (deftest index-pages-are-not-articles-and-the-catalogue-is-not-a-post
   (is (not-any? #(re-find #"@pages" (str (:rel-path %)))
@@ -334,7 +338,7 @@
 (deftest homepage-list-is-sticky-then-newest
   (let [html (slurp-out "index.html")
         pos  (fn [s] (str/index-of html s))]
-    (is (< (pos "href=\"/pages/3ce486/\"") (pos "href=\"/pages/y2025a/\"") (pos "href=\"/pages/ap1de5/\""))
+    (is (< (pos "href=\"/pages/3ce486/\"") (pos "href=\"/pages/y2025a/\"") (pos "href=\"/pages/ca4d51/\""))
         "sticky: true (rank 1, newer) then sticky: 1 (2025) then the newest unpinned article")
     (is (str/includes? html "<article class=\"clogem-post-card is-sticky\"><h2 class=\"clogem-post-card__title\"><span class=\"clogem-sticky\">Pinned</span>"))
     (is (= 2 (count (re-seq #"is-sticky" html))))
@@ -410,7 +414,7 @@
     (is (str/includes? conv "href=\"/pages/22deb7/\" lang=\"en\" rel=\"next\"") "next = Vue.js")
     (is (not (str/includes? start "rel=\"prev\"")) "first leaf of 01.Guide")
     (is (str/includes? start "href=\"/pages/643259/\" lang=\"en\" rel=\"next\""))
-    (is (str/includes? tamil "href=\"/pages/22deb7/\" lang=\"en\" rel=\"prev\"") "across subdirectories, in tree order")
+    (is (str/includes? tamil "href=\"/pages/c0nta1/\" lang=\"en\" rel=\"prev\"") "across subdirectories, in tree order")
     (is (not (str/includes? tamil "rel=\"next\"")) "last leaf of 01.Guide")
     (is (str/includes? (slurp-out "zh-Hans" "pages" "643259" "index.html") "href=\"/pages/3ce486/\" lang=\"en\" rel=\"prev\"")
         "a neighbour without a zh-Hans variant links to its primary")))
@@ -449,7 +453,7 @@
         deep  (slurp-out "pages" "c4d33p" "index.html")]
     (is (str/includes? guide "clogem-catalogue__grid"))
     (is (not (str/includes? guide "Catalogue pages render a card grid")) "the body is NOT rendered")
-    (is (str/includes? guide "<h3>Basics<span class=\"clogem-bar__count\">Articles: 3</span></h3>"))
+    (is (str/includes? guide "<h3>Basics<span class=\"clogem-bar__count\">Articles: 4</span></h3>"))
     (is (str/includes? guide "<h3>Advanced<span class=\"clogem-bar__count\">Articles: 1</span></h3>"))
     (is (= 1 (count (re-seq #"/pages/643259/\"" guide))) "three variants, one row")
     (is (str/includes? deep "<img alt=\"\" class=\"clogem-catalogue__img\" src=\"/assets/demo.png\" />") "imgUrl")
@@ -529,3 +533,51 @@
   (is (str/includes? (slurp-out "clogem" "js" "toc.js") "decodeURIComponent")
       "ids are unencoded, hrefs are percent-encoded — mandatory for CJK/Tamil pages")
   (is (str/includes? (slurp-out "index.html") "<script defer=\"defer\" src=\"/clogem/js/toc.js\"></script>")))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 — containers (D-P2-10)
+
+(deftest containers-render-with-titles-in-the-page-language
+  (let [en (slurp-out "pages" "c0nta1" "index.html")
+        zh (slurp-out "zh-Hans" "pages" "c0nta1" "index.html")]
+    (is (str/includes? en "<div class=\"custom-block tip\">\n<p class=\"custom-block-title\">TIP</p>"))
+    (is (str/includes? en "<p class=\"custom-block-title\">Custom title</p>"))
+    (is (str/includes? en "<details class=\"custom-block details\"><summary>Details</summary>"))
+    (is (str/includes? en "<div class=\"custom-block theorem\"><p class=\"title\">Theorem</p>"))
+    (is (str/includes? en "<div style=\"text-align:right\">"))
+    (is (str/includes? en "<div style=\"text-align:center\">"))
+    (is (str/includes? en "<p class=\"custom-block-title\">Inner</p>") "nested")
+    (is (str/includes? en "<li><p>An item</p><div class=\"custom-block note\">") "inside a list item")
+    (is (str/includes? en "::: tip\nThis is literal text, not a container.\n:::\n</code>") "immune inside a code fence")
+    (is (str/includes? en "<a href=\"#heading-inside-a-container\">Heading inside a container</a>")
+        "a heading inside a container is in the TOC")
+    (is (str/includes? zh "<p class=\"custom-block-title\">提示</p>") "zh-Hans default title")
+    (is (str/includes? zh "<p class=\"title\">定理</p>"))
+    (is (str/includes? zh "<summary>详情</summary>"))
+    (is (not (str/includes? zh ">TIP<")))))
+
+(deftest card-lists-render-with-rewritten-links
+  (let [en (slurp-out "pages" "ca4d51" "index.html")]
+    (is (str/includes? en "<div class=\"card-list row-2\">"))
+    (is (str/includes? en "href=\"/pages/643259/\""))
+    (is (str/includes? en "href=\"https://github.com/EchoJustus/clogem-press\" target=\"_blank\""))
+    (is (str/includes? en "style=\"background-color:#3eaf7c;color:#ffffff\""))
+    (is (str/includes? en "<div class=\"card-img-list row-3\">"))
+    (is (str/includes? en "src=\"/assets/demo.png\""))
+    (is (str/includes? en "style=\"height:80px\""))))
+
+(deftest a-bad-card-list-is-a-doctor-warning-naming-the-file
+  (let [dir (fs/create-temp-dir {:prefix "clogem-badcards"})]
+    (try
+      (fs/create-dirs (fs/path dir "content" "01.Guide"))
+      (fs/copy "examples/demo-site/doctor-cases/01.bad-cards.md.disabled"
+               (fs/path dir "content" "01.Guide" "01.bad-cards.md"))
+      (let [{:keys [warnings errors]}
+            (binding [diag/*sink* (atom [])]
+              (cli/doctor {:site-dir (str dir) :no-write true}))]
+        (is (empty? errors) "malformed card YAML is a warning, not a build error")
+        (is (some #(and (re-find #"could not parse the YAML" (:message %))
+                        (re-find #"01\.bad-cards\.md" (str (:path %))))
+                  warnings)
+            (pr-str warnings)))
+      (finally (fs/delete-tree dir)))))
