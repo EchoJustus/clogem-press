@@ -384,6 +384,29 @@
   [cfg group]
   (u/clean-url (str (config/base-path cfg) (:permalink group))))
 
+(defn lang-prefix
+  "\"\" for the site-default language, \"/<lang>\" otherwise — the rule homes
+  and index pages follow in BOTH :prefix-default? modes (§6.3, D-P2-3). Only
+  ARTICLES vary with :prefix-default?, because only articles have a
+  per-article primary."
+  [cfg lang]
+  (if (= lang (config/default-lang cfg)) "" (str "/" (name lang))))
+
+(defn site-url
+  "A site page (home, index, paginated list) under `lang`:
+  base + language prefix + path. `path` is site-relative and UNencoded."
+  [cfg lang path]
+  (u/clean-url (str (config/base-path cfg) (lang-prefix cfg lang) "/" path)))
+
+(defn home-url [cfg lang] (site-url cfg lang "/"))
+
+(defn paged-url
+  "Page `n` of a list rooted at `path`: the root itself for page 1, `path/page/n/` after."
+  [cfg lang path n]
+  (if (<= (long n) 1)
+    (site-url cfg lang path)
+    (site-url cfg lang (str (u/clean-url path) "page/" n "/"))))
+
 (defn best-variant
   "The variant to show a reader of `lang`: that language if the article has it,
   else the primary (§6.8's fallback rule)."

@@ -37,25 +37,15 @@
 
 (defn home
   [{:keys [cfg lang model] :as ctx} content-hiccup]
-  (layout/document
+  (layout/page
    (assoc ctx :title (i18n/resolve-str ctx (get-in cfg [:site :title])))
-   (layout/navbar ctx)
-   [:div.clogem-shell
-    (layout/sidebar ctx)
-    [:main.clogem-main
-     [:div.clogem-content (or content-hiccup
-                              [:p (i18n/resolve-str ctx (get-in cfg [:site :description]))])]
-     [:h2 (i18n/tr ctx :index/recent)]
-     (into [:ul.clogem-list]
-           (for [pl (take 10 (:posts model))
-                 :let [g (get-in model [:articles pl])
-                       vl (model/best-variant g lang)
-                       v (get-in g [:variants vl])]]
-             [:li [:a {:href (model/variant-url cfg g vl)
-                       :lang (config/html-lang cfg vl)} (:title v)]
-              (when-let [d (:date g)] [:span.clogem-meta__date (str d)])]))]]
-   [:footer.clogem-footer
-    [:p (str "clogem-press " (:clogem/version cfg))]]))
+   [:div.clogem-content (or content-hiccup
+                            [:p (i18n/resolve-str ctx (get-in cfg [:site :description]))])]
+   [:h2 (i18n/tr ctx :index/recent)]
+   (into [:ul.clogem-list]
+         (for [pl (take 10 (:posts model))
+               :let [g (get-in model [:articles pl])]]
+           (layout/article-row ctx g)))))
 
 (defn redirect-stub
   "D-10 / D-15: a retired or de-canonicalized URL redirects rather than 404s.

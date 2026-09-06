@@ -180,3 +180,85 @@
           "and the index really is newest-first")
       (is (some #{"2026-07-20 08:00:00"} dates)
           "the unquoted YAML timestamp came through in the canonical form"))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 — index pages (D-P2-2, D-P2-3)
+
+(def non-default-langs ["zh-Hans" "zh-Hant" "ms" "ta"])
+
+(deftest index-pages-exist-per-language
+  (testing "D-P2-3: bare for the site-default language, /<lang>/ otherwise —
+            the site-default rule, not the per-article one"
+    (doseq [kind ["categories" "tags" "archives"]]
+      (is (exists? kind "index.html") kind)
+      (doseq [l non-default-langs]
+        (is (exists? l kind "index.html") (str l "/" kind))
+        (is (str/includes? (slurp-out l kind "index.html") (str "lang=\"" l "\""))
+            "rendered per language with a matching <html lang>")))))
+
+(deftest categories-overview-shows-every-category-with-localized-labels
+  (let [en (slurp-out "categories" "index.html")
+        zh (slurp-out "zh-Hans" "categories" "index.html")]
+    (doseq [c ["Guide" "Basics" "Notes" "tech"]]
+      (is (str/includes? en (str ">" c "<")) c))
+    (is (str/includes? zh ">基础<") "D-12: :i18n :category-labels localizes the DISPLAY")
+    (is (str/includes? zh "href=\"/zh-Hans/categories/basics/\"")
+        "…while the key and the URL slug stay the raw directory name")
+    (is (exists? "zh-Hans" "categories" "basics" "index.html"))))
+
+(deftest tags-page-lists-the-tags
+  (is (str/includes? (slurp-out "tags" "index.html") ">meta<"))
+  (is (exists? "tags" "meta" "index.html")))
+
+(deftest archives-group-by-year-then-month-newest-first
+  (let [html (slurp-out "archives" "index.html")]
+    (is (str/includes? html "<h2>2026</h2>"))
+    (is (< (str/index-of html "<h3>2026-08</h3>") (str/index-of html "<h3>2026-07</h3>"))
+        "newest month first")
+    (is (str/includes? html "/pages/mig001/") "the July post is in July")))
+
+(deftest an-article-appears-once-per-index-page
+  (testing "§6.8: dedupe by identity is structural — three variants, one row"
+    (let [html (slurp-out "categories" "basics" "index.html")]
+      (is (= 1 (count (re-seq #"/pages/643259/\"" html)))))))
+
+(deftest index-rows-follow-6-8
+  (testing "the L variant's title and URL when it exists, else the primary's
+            with the fallback notice; row order identical across languages"
+    (let [en (slurp-out "categories" "guide" "index.html")
+          zh (slurp-out "zh-Hans" "categories" "guide" "index.html")]
+      (is (str/includes? en "href=\"/pages/171a98/\"") "Tamil-only: linked at its bare URL")
+      (is (re-find #"href=\"/pages/171a98/\"[^<]*</a><span class=\"clogem-fallback\"" en)
+          "…and carries the fallback marker on the English page")
+      (is (str/includes? zh "href=\"/zh-Hans/pages/643259/\"") "the zh-Hans variant when it exists")
+      (is (str/includes? zh "href=\"/pages/171a98/\""))
+      (let [order (fn [html] (map second (re-seq #"href=\"(?:/zh-Hans)?(/pages/[^\"]+)\" lang" html)))]
+        (is (= (order en) (order zh)) "sort keys come from the primary")))))
+
+(deftest index-pages-are-not-articles-and-the-catalogue-is-not-a-post
+  (is (not-any? #(re-find #"@pages" (str (:rel-path %)))
+                (mapcat (comp vals :variants) (vals (:articles *model*))))
+      "@pages/ files are never scanned as articles")
+  (let [cat (group-titled "Guide catalogue")]
+    (is (not (some #{(:permalink cat)} (:posts *model*))))
+    (is (not (some #{(:permalink cat)} (mapcat val (:categories *model*)))))))
+
+(deftest docs-mode-has-no-index-uris
+  (testing "D-P2-2 / :content toggles: category/tag/archive false → no index
+            page in the page map at all, in any language"
+    (let [m (update *model* :cfg #(-> % (assoc-in [:content :category] false)
+                                      (assoc-in [:content :tag] false)
+                                      (assoc-in [:content :archive] false)))
+          uris (keys (first (diag/collecting (render/page-map m))))]
+      (is (seq uris))
+      (is (not-any? #(re-find #"/(categories|tags|archives)/" %) uris)))
+    (let [m (update *model* :cfg #(assoc-in % [:content :tag] false))
+          uris (keys (first (diag/collecting (render/page-map m))))]
+      (is (not-any? #(re-find #"/tags/" %) uris))
+      (is (some #(re-find #"/categories/" %) uris) "the others stay"))))
+
+(deftest a-user-authored-pages-body-renders-above-the-list
+  (testing "D-P2-6: the demo's categoriesPage.md carries no body, so the
+            generated bar follows the heading directly — see the golden test
+            for the generated files"
+    (is (str/includes? (slurp-out "categories" "index.html") "<h1>Categories</h1>"))))

@@ -67,7 +67,10 @@
              :write-front-matter true
              :permalinks-file "permalinks.edn"
              :assets-dir "assets"}
-   :theme   {:default-mode :auto :page-style :card :sidebar-open true}
+   :theme   {:default-mode :auto :page-style :card
+             :sidebar-open true          ; true → every sidebar group open; false → only the active trail
+             :sidebar-depth 2            ; TOC depth: h2–h3 (front matter `sidebarDepth` overrides)
+             :per-page 10}               ; homepage / category / tag pagination
    :nav     []
    :search   {:provider :none}
    :comments {:provider :none}

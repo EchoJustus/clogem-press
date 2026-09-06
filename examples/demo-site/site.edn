@@ -33,6 +33,8 @@
  :i18n {:strings-dir "i18n"
         :prefix-default? false          ; D-10: primary variant at the bare /pages/…/
         :missing-key :warn
+        ;; D-12: display-only labels; the category key and URL slug stay "Basics"
+        :category-labels {"Basics" {:zh-Hans "基础" :zh-Hant "基礎"}}
         :show-fallback-notice true}
 
  :content {:dir "content"

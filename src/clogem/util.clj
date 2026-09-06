@@ -181,6 +181,21 @@
                        (apply str))))))
        (apply str)))
 
+(defn url-encode-path
+  "Percent-encode every segment of a site path for use in an href, keeping the
+  separators: \"/categories/基础/\" → \"/categories/%E5%9F%BA%E7%A1%80/\". The
+  page map is keyed by the UNencoded path (that is the directory the file is
+  written to); links carry the encoded one (D-P2-3)."
+  [path]
+  (str/join "/" (map url-encode-segment (str/split (str path) #"/" -1))))
+
+(defn iso-date
+  "YYYY-MM-DD from a canonical date string, or the string as written when it
+  does not start with a date (D-P2-7: ISO, no locale formats yet)."
+  [d]
+  (when d
+    (or (re-find #"^\d{4}-\d{2}-\d{2}" (str d)) (str d))))
+
 (defn slug
   "The URL slug of a category or tag (DESIGN.md D-P2-3): lower-cased, with
   whitespace runs and path separators collapsed to `-`; Unicode letters (CJK,

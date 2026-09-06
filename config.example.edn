@@ -59,12 +59,16 @@
         ;; are REDIRECTED, not broken (D-10).
         :prefix-default? false
         :missing-key   :warn      ; :warn in dev, :silent in prod
-        :category-labels {}       ; e.g. {"Basics" {:zh-Hans "基础"}}   (D-12)
+        ;; Display-only (D-12): category KEYS stay the raw directory-derived
+        ;; names and are the URL slugs; labels localize what is shown.
+        :category-labels {}       ; e.g. {"Basics" {:zh-Hans "基础"}}
         :show-fallback-notice true}
 
  ;; ------------------------------------------------------------- content ----
  :content {:dir "content"
            :assets-dir "assets"
+           ;; The three index systems. false removes the index pages AND the
+           ;; matching @pages/ auto-creation (a docs site sets all three false).
            :category true :tag true :archive true
            :category-text "Notes"        ; category for _posts/ with no subfolder
            :extend-frontmatter {}        ; extra keys auto-fill should write
@@ -81,7 +85,12 @@
  ;; --------------------------------------------------------------- theme ----
  :theme {:default-mode :auto          ; :auto | :light | :dark | :read
          :page-style   :card          ; :card | :line
-         :sidebar-open true
+         :sidebar-open true           ; true → every sidebar group starts open;
+                                      ; false → only the current article's trail
+         :sidebar-depth 2             ; right-hand TOC depth: 1 = h2, 2 = h2–h3, 3 = h2–h4;
+                                      ; front matter `sidebarDepth:` overrides per page
+         :per-page 10                 ; articles per page on the homepage and on
+                                      ; category / tag pages (/page/2/, …)
          :fonts {:tamil :system}      ; :system | :self-hosted  (§6.9)
          :html-modules {}}            ; raw HTML injected into named regions
 
