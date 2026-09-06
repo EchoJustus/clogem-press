@@ -222,15 +222,44 @@
                            :hreflang (config/html-lang cfg l)}
                        (get-in locales [l :label])])]))])))
 
+(defn nav-href
+  "Where a `:nav` link goes on a page in `lang` (D-P2-11):
+
+    external                → untouched
+    /pages/xxxxxx/          → that article, in the reader's language when it
+                              has it (catalogue permalinks are what nav
+                              conventionally points to)
+    a site page (`/…/`)     → the same page under the language's prefix
+                              (`/` → `/zh-Hans/`, `/categories/` →
+                              `/zh-Hans/categories/`)
+    a file (`/x.pdf`)       → the base only"
+  [{:keys [cfg lang model] :as ctx} link]
+  (let [link (str link)]
+    (cond
+      (str/blank? link) (model/home-url cfg lang)
+      (re-find #"^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|//|#)" link) link
+      (get-in model [:articles (u/clean-url link)])
+      (:href (article-link ctx (get-in model [:articles (u/clean-url link)])))
+      (str/ends-with? link "/") (href ctx (model/site-url cfg lang link))
+      :else (str/replace (str (config/base-path cfg) "/" link) #"/{2,}" "/"))))
+
+(defn- nav-item
+  [ctx {:keys [text link items]}]
+  (let [label (i18n/resolve-str ctx text)
+        a     (if link [:a {:href (nav-href ctx link)} label] [:span label])]
+    (if (seq items)
+      [:li.clogem-navbar__item.has-items
+       [:details [:summary a]
+        (into [:ul.clogem-navbar__menu] (map #(nav-item ctx %) items))]]
+      [:li.clogem-navbar__item a])))
+
 (defn navbar
   [{:keys [cfg lang] :as ctx}]
   [:header.clogem-navbar
    [:a.clogem-navbar__brand {:href (model/home-url cfg lang)}
     (i18n/resolve-str ctx (get-in cfg [:site :title]))]
-   (into [:nav.clogem-navbar__nav]
-         (for [{:keys [text link]} (:nav cfg)]
-           [:a {:href (u/clean-url (str (config/base-path cfg) link))}
-            (i18n/resolve-str ctx text)]))
+   [:nav.clogem-navbar__nav
+    (into [:ul] (map #(nav-item ctx %) (:nav cfg)))]
    (lang-switcher ctx)])
 
 (defn- sidebar-node

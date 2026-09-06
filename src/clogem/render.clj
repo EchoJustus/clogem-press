@@ -22,6 +22,8 @@
             [clogem.i18n :as i18n]
             [clogem.markdown :as markdown]
             [clogem.model :as model]
+            [clogem.pages :as pages]
+            [clogem.theme.catalogue :as catalogue]
             [clogem.theme.home :as home]
             [clogem.theme.indexes :as indexes]
             [clogem.theme.page :as page]
@@ -77,25 +79,13 @@
            (fs/exists? d) [d (= lang (config/default-lang cfg))]
            :else nil))))
 
-(def index-kinds
-  "The three `@pages/` index systems (§1.1). `:toggle` is the `:content` key
-  that switches each off; `:default-path` is the vdoing permalink, which the
-  `@pages/` file's own `permalink:` may override."
-  [{:kind :categories :toggle :category :flag :categoriesPage :file "@pages/categoriesPage" :default-path "/categories/"}
-   {:kind :tags       :toggle :tag      :flag :tagsPage       :file "@pages/tagsPage"       :default-path "/tags/"}
-   {:kind :archives   :toggle :archive  :flag :archivesPage   :file "@pages/archivesPage"   :default-path "/archives/"}])
-
-(defn enabled-index-kinds
-  [cfg]
-  (filter #(get-in cfg [:content (:toggle %)] true) index-kinds))
-
 (defn index-paths
   "{kind → site-relative root path} for every enabled index, read once per
   build: the `@pages/` file's `permalink:` when it has one, else the default."
   [cfg]
   (into {}
-        (for [{:keys [kind file default-path]} (enabled-index-kinds cfg)
-              :let [f  (localized-file cfg file (config/default-lang cfg))
+        (for [{:keys [kind default-path] :as k} (pages/enabled-kinds cfg)
+              :let [f  (localized-file cfg (pages/file-rel k) (config/default-lang cfg))
                     pl (when f (get-in (fm/read-file f) [:front-matter :permalink]))]]
           [kind (u/clean-url (or (u/blank->nil (str pl)) default-path))])))
 
@@ -117,19 +107,19 @@
   (let [{:keys [cfg]} model
         paths    (index-paths cfg)
         per-page (max 1 (long (or (get-in cfg [:theme :per-page]) 10)))
-        title-key {:categories :index/categories :tags :index/tags :archives :index/archives}]
+        ]
     (apply concat
            (for [lang (config/lang-keys cfg)
-                 {:keys [kind file]} (enabled-index-kinds cfg)
+                 {:keys [kind title-key] :as k} (pages/enabled-kinds cfg)
                  :let [root  (get paths kind)
-                       [file* own?] (localized-file cfg file lang true)
+                       [file* own?] (localized-file cfg (pages/file-rel k) lang true)
                        ;; the page's own language decides the title (§6.4 rule 2):
                        ;; a user-written `title:` counts only from that language's
                        ;; own @pages file (or the site default's, on the default
                        ;; language); everywhere else the theme string is used
                        title (or (when own?
                                    (some-> file* fm/read-file :front-matter :title u/blank->nil))
-                                 (i18n/tr (ctx-for lang {}) (title-key kind)))
+                                 (i18n/tr (ctx-for lang {}) title-key))
                        body  (fn []
                                (when file*
                                  (let [b (:body (fm/read-file file*))]
@@ -246,6 +236,32 @@
          :title (get-in g [:variants vl :title])
          :lang  vl}))))
 
+(defn- catalogue-node
+  "The directory node a Catalogue page renders, or nil — with a warning —
+  when the page names no directory or an unknown pageComponent, in which
+  case the page falls back to its body (D-P2-8)."
+  [model group from-path]
+  (when-let [pc (:page-component group)]
+    (let [nm (u/lower (str (:name pc)))]
+      (cond
+        (not= "catalogue" nm)
+        (do (diag/warn! from-path (str "unknown pageComponent `" (:name pc)
+                                       "`; rendering the markdown body instead.")
+                        "Only `Catalogue` is supported (DESIGN.md §1.1).")
+            nil)
+
+        (nil? (model/catalogue-dir-key pc))
+        (do (diag/warn! from-path "pageComponent Catalogue has no data.path; rendering the body instead.")
+            nil)
+
+        :else
+        (or (model/find-dir (:tree model) (model/catalogue-dir-key pc))
+            (do (diag/warn! from-path
+                            (str "pageComponent Catalogue path `" (get-in pc [:data :path])
+                                 "` is not a directory in the content tree; rendering the body instead.")
+                            "Use the numbered directory names exactly, e.g. `01.Guide/10.Basics`.")
+                nil))))))
+
 (defn page-map
   "{uri → (fn [] hiccup)} for every emitted document.
 
@@ -269,19 +285,24 @@
     (into
      {}
      (concat
-      ;; articles
+      ;; articles — and catalogue pages, which are articles whose primary
+      ;; variant carries `pageComponent: {name: Catalogue}` (D-P2-8)
       (for [[_pl group] articles
             [lang variant] (:variants group)]
         [(model/variant-url cfg group lang)
          (fn []
            (let [[prev-pl next-pl] (model/neighbours model group)
+                 lc  (link-context model model lang (:rel-path variant))
                  ctx (ctx-for lang {:group group :variant (assoc variant :lang lang)
                                     :page-kind :article
+                                    :rewrite-href (fn [h] (markdown/rewrite-href lc h))
                                     :prev (neighbour model lang variant group :prev prev-pl)
                                     :next (neighbour model lang variant group :next next-pl)})
-                 lc  (link-context model model lang (:rel-path variant))
-                 body (markdown/render (:body variant) lc)]
-             (page/article ctx body)))])
+                 node (catalogue-node model group (:rel-path variant))]
+             (if node
+               (catalogue/catalogue (assoc ctx :page-kind :catalogue :node node
+                                           :page-component (:page-component group)))
+               (page/article ctx (markdown/render (:body variant) lc)))))])
 
       ;; redirect stubs at the bare identity URL when every variant is prefixed
       (when prefix-all?
@@ -294,6 +315,16 @@
 
       ;; index pages
       (index-pages model ctx-for)))))
+
+(defn check-pages!
+  "Render every page to hiccup and throw the result away — what `doctor`
+  runs so that render-time findings (dead links, unresolved catalogue paths,
+  unknown containers, bad card-list YAML) land in its report without a
+  build. Returns the page count."
+  [model]
+  (let [pm (page-map model)]
+    (doseq [[_ f] pm] (f))
+    (count pm)))
 
 ;; ---------------------------------------------------------------------------
 ;; Export

@@ -440,3 +440,69 @@
     (let [html (str (hiccup2.core/html (clogem.markdown/render "![demo](/assets/demo.png)" {:cfg {:site {:base "/p/"}}})))]
       (is (str/includes? html "src=\"/p/assets/demo.png\"") "image srcs are links too")
       (is (str/includes? html "alt=\"demo\"")))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 — catalogue pages (D-P2-8), nav (D-P2-11), doctor
+
+(deftest catalogue-pages-render-a-card-grid-instead-of-the-body
+  (let [guide (slurp-out "pages" "559f0f" "index.html")
+        deep  (slurp-out "pages" "c4d33p" "index.html")]
+    (is (str/includes? guide "clogem-catalogue__grid"))
+    (is (not (str/includes? guide "Catalogue pages render a card grid")) "the body is NOT rendered")
+    (is (str/includes? guide "<h3>Basics<span class=\"clogem-bar__count\">Articles: 3</span></h3>"))
+    (is (str/includes? guide "<h3>Advanced<span class=\"clogem-bar__count\">Articles: 1</span></h3>"))
+    (is (= 1 (count (re-seq #"/pages/643259/\"" guide))) "three variants, one row")
+    (is (str/includes? deep "<img alt=\"\" class=\"clogem-catalogue__img\" src=\"/assets/demo.png\" />") "imgUrl")
+    (is (str/includes? deep "three-level 03.Deep subtree") "description")
+    (is (str/includes? deep "<h3>Level2<span") "one card per child directory…")
+    (is (str/includes? deep "<div class=\"clogem-catalogue__sub\"><h4>Level3</h4>") "…nested to the tree's depth")
+    (is (str/includes? deep "/pages/ebaa6b/"))
+    (is (not (str/includes? deep "clogem-sidebar")) "no tree on a catalogue page")
+    (is (not (exists? "zh-Hans" "pages" "c4d33p" "index.html"))
+        "a catalogue page is an article with one variant: no /zh-Hans/ copy")))
+
+(deftest catalogue-model-table-feeds-breadcrumbs-and-nav
+  (is (= {"/01.Guide" "/pages/559f0f/" "/03.Deep" "/pages/c4d33p/"} (:catalogue *model*)))
+  (is (str/includes? (slurp-out "pages" "ebaa6b" "index.html") "<li><a href=\"/pages/c4d33p/\">Deep</a></li>")
+      "the Deep crumb links to the Deep catalogue"))
+
+(deftest unknown-or-unresolved-page-components-warn-and-fall-back
+  (let [dir (fs/create-temp-dir {:prefix "clogem-pc"})]
+    (try
+      (fs/create-dirs (fs/path dir "content" "01.Guide"))
+      (spit (fs/file (fs/path dir "content" "01.Guide" "01.a.md")) "---\ntitle: A\npermalink: /pages/aaaaaa/\n---\n\nbody\n")
+      (spit (fs/file (fs/path dir "content" "01.Guide" "02.bad.md"))
+            "---\ntitle: Bad\npermalink: /pages/bbbbbb/\npageComponent:\n  name: Widget\n---\n\nfallback body\n")
+      (spit (fs/file (fs/path dir "content" "01.Guide" "03.nowhere.md"))
+            "---\ntitle: Nowhere\npermalink: /pages/cccccc/\npageComponent:\n  name: Catalogue\n  data:\n    path: 09.Missing\n---\n\nnowhere body\n")
+      (let [cfg (first (diag/collecting (config/load-config (str dir) nil {:content {:write-front-matter false}})))
+            [m _] (diag/collecting (cli/analyse cfg))
+            [pm ds] (diag/collecting (let [pm (render/page-map m)] (doseq [[_ f] pm] (f)) pm))
+            html (fn [uri] (str (hiccup2.core/html ((get pm uri)))))
+            msgs (map :message (diag/warnings ds))]
+        (is (some #(re-find #"unknown pageComponent `Widget`" %) msgs))
+        (is (some #(re-find #"09\.Missing" %) msgs))
+        (is (str/includes? (html "/pages/bbbbbb/") "fallback body"))
+        (is (str/includes? (html "/pages/cccccc/") "nowhere body")))
+      (finally (fs/delete-tree dir)))))
+
+(deftest nav-links-are-prefixed-per-language-with-dropdowns
+  (let [zh (slurp-out "zh-Hans" "index.html")
+        en (slurp-out "index.html")]
+    (is (str/includes? zh "<a href=\"/zh-Hans/\">首页</a>") "`/` → `/zh-Hans/`")
+    (is (str/includes? zh "<a href=\"/zh-Hans/categories/\">分类</a>") "site pages get the prefix")
+    (is (str/includes? zh "<summary><a href=\"/pages/559f0f/\">指南</a></summary>")
+        "a permalink resolves to the article (en-only → bare), and a parent may carry both link and items")
+    (is (str/includes? zh "<ul class=\"clogem-navbar__menu\">") ":items make a dropdown")
+    (is (str/includes? en "<a href=\"/\">Home</a>"))
+    (is (str/includes? en "<a href=\"/categories/\">Categories</a>"))))
+
+(deftest doctor-is-clean-on-the-demo-apart-from-the-mechanism-2-warning
+  (testing "doctor-checks! and the in-memory render pass fire only the warning
+            the demo tree deliberately contains"
+    (let [{:keys [warnings errors]}
+          (binding [diag/*sink* (atom [])] ; keep the report off stderr
+            (cli/doctor {:site-dir demo}))]
+      (is (empty? errors))
+      (is (= 1 (count warnings)) (pr-str (map :message warnings)))
+      (is (re-find #"different directories" (:message (first warnings)))))))

@@ -11,6 +11,7 @@
             [clogem.diag :as diag]
             [clogem.frontmatter :as fm]
             [clogem.model :as model]
+            [clogem.pages :as pages]
             [clogem.render :as render]
             [clogem.scan :as scan]))
 
@@ -112,7 +113,12 @@
         (let [n (apply-fill! plan)]
           (when (pos? n)
             (println (format "clogem-press: auto-filled front matter in %d file%s"
-                             n (if (> n 1) "s" "")))))))
+                             n (if (> n 1) "s" "")))))
+        ;; D-P2-6: vdoing's three @pages/ files, created when missing, never
+        ;; overwritten — the indexes render without them; the files exist so
+        ;; the author has something to edit.
+        (doseq [f (pages/ensure-files! cfg)]
+          (println "clogem-press: created" f))))
     (let [[result ds]
           (diag/collecting
            (let [m (analyse cfg)]
@@ -136,11 +142,13 @@
       (do (doseq [{:keys [rel-path additions]} plan]
             (println rel-path "→" (str/join ", " (map (comp name first) additions))))
           (println (format "clogem-press: %d file(s) would be normalized" (count plan))))
-      (let [n (apply-fill! plan)]
+      (let [n (apply-fill! plan)
+            created (pages/ensure-files! cfg)]
         (let [[m ds2] (diag/collecting (analyse cfg))]
           (diag/print-all! ds2)
           (model/write-ledger! cfg (model/ledger-from-model m)))
-        (println (format "clogem-press: normalized %d file(s)" n))))
+        (doseq [f created] (println "clogem-press: created" f))
+        (println (format "clogem-press: normalized %d file(s)" (+ n (count created))))))
     plan))
 
 (defn ^{:org.babashka/cli {:spec common-spec}}
@@ -151,7 +159,17 @@
   ;; findings below are still produced. The exit status counts them all the
   ;; same — D-P2-12: a config error is an error.
   (let [[cfg cds] (load-cfg* opts)
-        [m ds] (diag/collecting (analyse cfg))
+        [m ds] (diag/collecting
+                (let [m (analyse cfg)]
+                  ;; findings that must not fire inside analyse (undated
+                  ;; articles, disagreeing variants, over-deep directories,
+                  ;; unresolved catalogue paths, slug collisions) …
+                  (model/doctor-checks! m)
+                  ;; … and the render-time ones (dead links, unknown
+                  ;; containers, bad card-list YAML), by rendering every page
+                  ;; in memory and discarding it
+                  (when (seq (:articles m)) (render/check-pages! m))
+                  m))
         ds    (into (vec cds) ds)
         errs  (diag/errors ds)
         warns (diag/warnings ds)]

@@ -10,6 +10,7 @@
     clogem.config-test
     clogem.scan-test
     clogem.frontmatter-test
+    clogem.pages-test
     clogem.markdown-test
     clogem.model-test
     clogem.render-test

@@ -82,7 +82,13 @@ a:hover { text-decoration: underline; }
   flex-wrap: wrap;
 }
 .clogem-navbar__brand { font-weight: 700; font-size: 1.1rem; color: var(--textColor); }
-.clogem-navbar__nav { display: flex; gap: 1rem; }
+.clogem-navbar__nav > ul { list-style: none; display: flex; gap: 1rem; margin: 0; padding: 0; }
+.clogem-navbar__item { position: relative; }
+.clogem-navbar__item details > summary { list-style: none; cursor: pointer; }
+.clogem-navbar__item details > summary::after { content: " ▾"; font-size: 0.7em; color: var(--textColorSubtle); }
+.clogem-navbar__menu { list-style: none; position: absolute; top: 100%; left: 0; min-width: 10rem; margin: 0;
+  padding: 0.4rem 0.8rem; background: var(--bodyBg); border: 1px solid var(--borderColor); border-radius: 6px; z-index: 20; }
+.clogem-navbar__menu li { padding: 0.2rem 0; }
 
 .clogem-langs { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; }
 .clogem-langs__label { color: var(--textColorSubtle); font-size: 0.85rem; }
@@ -197,3 +203,16 @@ img { max-width: 100%; height: auto; }
 .clogem-prev-next { display: flex; justify-content: space-between; gap: 1rem; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--borderColor); }
 .clogem-prev-next__next { margin-left: auto; text-align: right; }
 .clogem-prev-next span { display: block; font-size: 0.75rem; color: var(--textColorSubtle); }
+
+/* ---- Phase 2: catalogue pages ---- */
+.clogem-catalogue__header { margin-bottom: 1.5rem; }
+.clogem-catalogue__img { max-height: 12rem; border-radius: 8px; }
+.clogem-catalogue__desc { color: var(--textColorSubtle); }
+.clogem-catalogue__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; }
+.clogem-catalogue__card { border: 1px solid var(--borderColor); border-radius: 8px; padding: 1rem; }
+.clogem-catalogue__card h3 { margin-top: 0; }
+.clogem-catalogue__card h3 .clogem-bar__count { font-weight: 400; }
+.clogem-catalogue__list { list-style: none; padding: 0; margin: 0; }
+.clogem-catalogue__list li { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.2rem 0; }
+.clogem-catalogue__sub { margin-top: 0.75rem; padding-left: 0.75rem; border-left: 2px solid var(--borderColor); }
+.clogem-catalogue__sub h4 { margin: 0.25rem 0; }
