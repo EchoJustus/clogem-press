@@ -14,7 +14,6 @@
  :index/categories     "Categories"
  :index/tags           "Tags"
  :index/archives       "Archive"
- :index/recent         "Recent articles"
  :index/count          "Articles: {{n}}"
  :container/tip        "TIP"
  :container/warning    "WARNING"

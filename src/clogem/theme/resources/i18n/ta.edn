@@ -13,7 +13,6 @@
  :index/categories     "பிரிவுகள்"
  :index/tags           "குறிச்சொற்கள்"
  :index/archives       "காப்பகம்"
- :index/recent         "சமீபத்திய கட்டுரைகள்"
  :index/count          "கட்டுரைகள்: {{n}}"
  :container/tip        "குறிப்பு"
  :container/warning    "எச்சரிக்கை"

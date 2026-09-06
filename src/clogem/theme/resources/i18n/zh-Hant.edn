@@ -16,7 +16,6 @@
  :index/categories     "分類"
  :index/tags           "標籤"
  :index/archives       "封存"
- :index/recent         "最新文章"
  :index/count          "文章數：{{n}}"
  :container/tip        "提示"
  :container/warning    "注意"

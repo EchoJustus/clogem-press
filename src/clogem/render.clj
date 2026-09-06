@@ -22,6 +22,7 @@
             [clogem.i18n :as i18n]
             [clogem.markdown :as markdown]
             [clogem.model :as model]
+            [clogem.theme.home :as home]
             [clogem.theme.indexes :as indexes]
             [clogem.theme.page :as page]
             [clogem.util :as u]))
@@ -164,6 +165,59 @@
                                            :page-url (fn [n] (model/paged-url cfg lang sub n))
                                            :alt-url (fn [l] (model/paged-url cfg l sub n))))))])))))))
 
+(defn- home-front-matter
+  "The homepage options for `lang`: its own `index.<lang>.md` when it has
+  one, else the site-default `index.md` — list options are site-wide unless
+  a language overrides them. The BODY, by contrast, comes only from the
+  language's own file (§6.4 rule 2: chrome language ≡ content language)."
+  [cfg lang]
+  (let [[f own?] (localized-file cfg "index" lang true)
+        parts (when f (fm/read-file f))]
+    {:fm   (or (:front-matter parts) {})
+     :body (when (and own? parts (not (str/blank? (:body parts)))) (:body parts))
+     :path (some-> f str)}))
+
+(defn- home-pages
+  "Each language's home and its /page/N/ continuations (D-P2-5): the list is
+  sticky ++ (posts minus sticky); `postList: detailed` paginates by
+  [:theme :per-page], `simple` caps at `simplePostListLength`, `none` shows
+  the body only."
+  [model ctx-for]
+  (let [{:keys [cfg]} model
+        per-page (max 1 (long (or (get-in cfg [:theme :per-page]) 10)))
+        ids      (home/home-ids model)
+        plan     (into {}
+                       (for [lang (config/lang-keys cfg)
+                             :let [{:keys [fm body path]} (home-front-matter cfg lang)
+                                   mode (home/post-list-mode fm)
+                                   pages (if (= mode :detailed) (paginate ids per-page) [[1 ids]])]]
+                         [lang {:fm fm :body body :path path :pages pages}]))
+        page-uri (fn [l n]
+                   ;; the same page under `l` when it has one, else `l`'s home
+                   (if (<= n (count (get-in plan [l :pages])))
+                     (model/paged-url cfg l "/" n)
+                     (model/home-url cfg l)))]
+    (for [lang (config/lang-keys cfg)
+          :let [{:keys [fm body path pages]} (get plan lang)
+                total (count pages)]
+          [n page-ids] pages]
+      [(model/paged-url cfg lang "/" n)
+       (fn []
+         (let [lc  (link-context model model lang path)
+               ctx (ctx-for lang {:page-kind :home
+                                  :home-fm fm
+                                  :body (when body (markdown/render body lc))
+                                  :ids page-ids :page n :total total
+                                  :page-url (fn [n] (model/paged-url cfg lang "/" n))
+                                  :alt-url (fn [l] (page-uri l n))
+                                  :rewrite-href (fn [h] (markdown/rewrite-href lc h))
+                                  :excerpt (fn [group vl]
+                                             (let [v (get-in group [:variants vl])]
+                                               (markdown/excerpt
+                                                (:body v)
+                                                (link-context model model lang (:rel-path v)))))})]
+           (home/home ctx)))])))
+
 (defn page-map
   "{uri → (fn [] hiccup)} for every emitted document.
 
@@ -204,18 +258,8 @@
           [(model/identity-url cfg group)
            (fn [] (page/redirect-stub cfg (model/variant-url cfg group (:primary group))))]))
 
-      ;; one home per language
-      (for [lang (config/lang-keys cfg)]
-        [(model/home-url cfg lang)
-         (fn []
-           (let [ctx (ctx-for lang {:page-kind :home
-                                    :alt-url (fn [l] (model/home-url cfg l))})
-                 index-md (localized-file cfg "index" lang)
-                 body (when index-md
-                        (let [parts (fm/read-file index-md)]
-                          (markdown/render (:body parts)
-                                           (link-context model model lang (str index-md)))))]
-             (page/home ctx body)))])
+      ;; homes, paginated: /, /page/2/, … per language
+      (home-pages model ctx-for)
 
       ;; index pages
       (index-pages model ctx-for)))))

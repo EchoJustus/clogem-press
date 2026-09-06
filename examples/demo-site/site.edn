@@ -45,6 +45,7 @@
 
  :nav [{:text {:en "Home" :zh-Hans "首页" :zh-Hant "首頁" :ms "Laman utama" :ta "முகப்பு"} :link "/"}]
 
- :theme {:default-mode :auto :page-style :card}
+ :theme {:default-mode :auto :page-style :card
+         :per-page 3}                    ; small, so the demo has a /page/2/
  :search   {:provider :none}
  :comments {:provider :none}}

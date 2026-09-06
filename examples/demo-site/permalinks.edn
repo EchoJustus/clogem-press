@@ -64,5 +64,9 @@
    :langs ["en" "zh-Hans"],
    :paths
    ["02.Notes/10.Local/02.relocated-variant.zh-Hans.md"
-    "03.Deep/10.Level2/20.Level3/01.relocated.md"]}},
+    "03.Deep/10.Level2/20.Level3/01.relocated.md"]},
+  "/pages/y2025a/"
+  {:key "_posts||2025-11-05-year-before",
+   :langs ["en"],
+   :paths ["_posts/2025-11-05-year-before.md"]}},
  :tombstones {}}

@@ -10,6 +10,7 @@
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hiccup2.core]
             [clogem.cli :as cli]
+            [clogem.theme.home]
             [clogem.config :as config]
             [clogem.diag :as diag]
             [clogem.render :as render]))
@@ -136,8 +137,10 @@
     (is (apply exists? path) (str lang " home"))))
 
 (deftest site-i18n-overrides-win-over-theme-defaults
-  (is (str/includes? (slurp-out "index.html") "Latest from the demo")
-      "examples/demo-site/i18n/en.edn overrides :index/recent"))
+  (is (str/includes? (slurp-out "index.html") "Read the full article")
+      "examples/demo-site/i18n/en.edn overrides :index/read-more")
+  (is (str/includes? (slurp-out "ta" "index.html") "முழுக் கட்டுரையையும் படிக்க")
+      "…per language"))
 
 (deftest assets-are-copied-not-symlinked
   (is (exists? "assets" "demo.txt"))
@@ -319,3 +322,56 @@
     (let [html (slurp-out "zh-Hans" "categories" "guide" "index.html")]
       (is (str/includes? html "href=\"/categories/guide/\" hreflang=\"en\""))
       (is (str/includes? html "href=\"/ta/categories/guide/\" hreflang=\"ta\"")))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 — homepage (D-P2-4, D-P2-5)
+
+(deftest homepage-list-is-sticky-then-newest
+  (let [html (slurp-out "index.html")
+        pos  (fn [s] (str/index-of html s))]
+    (is (< (pos "href=\"/pages/3ce486/\"") (pos "href=\"/pages/y2025a/\"") (pos "href=\"/pages/ap1de5/\""))
+        "sticky: true (rank 1, newer) then sticky: 1 (2025) then the newest unpinned article")
+    (is (str/includes? html "<article class=\"clogem-post-card is-sticky\"><h2 class=\"clogem-post-card__title\"><span class=\"clogem-sticky\">Pinned</span>"))
+    (is (= 2 (count (re-seq #"is-sticky" html))))
+    (is (= 3 (count (re-seq #"<article class=\"clogem-post-card" html))) ":per-page 3")))
+
+(deftest homepage-cards-carry-excerpt-title-tag-and-info-line
+  (let [html (slurp-out "index.html")]
+    (is (str/includes? html "<span class=\"clogem-title-tag\">原创</span>") "titleTag badge")
+    (is (str/includes? html "This post is dated 2025") "the excerpt is the content before <!-- more -->")
+    (is (not (str/includes? html "Everything below the")) "…and nothing after it")
+    (is (str/includes? html "href=\"/categories/notes/\">Notes</a>") "categories link to their index pages")
+    (is (str/includes? html "href=\"/tags/archive/\">archive</a>") "tags too")
+    (is (str/includes? html "datetime=\"2025-11-05\"") "ISO date")))
+
+(deftest homepage-paginates-in-detailed-mode-only
+  (is (exists? "page" "2" "index.html"))
+  (is (exists? "page" "5" "index.html") "14 articles at 3 per page")
+  (is (not (exists? "page" "6" "index.html")))
+  (is (exists? "ms" "page" "2" "index.html") "ms inherits index.md's options")
+  (is (not (exists? "zh-Hans" "page" "2" "index.html")) "simple mode has no pagination")
+  (let [p2 (slurp-out "page" "2" "index.html")]
+    (is (str/includes? p2 "href=\"/\" rel=\"prev\""))
+    (is (str/includes? p2 "href=\"/page/3/\" rel=\"next\""))
+    (is (str/includes? p2 "href=\"/ms/page/2/\" hreflang=\"ms\"") "the switcher lands on page 2 under ms")
+    (is (str/includes? p2 "href=\"/zh-Hans/\" hreflang=\"zh-Hans\"") "…and on zh-Hans's home, which has no page 2")))
+
+(deftest homepage-simple-mode-and-right-bar
+  (let [zh (slurp-out "zh-Hans" "index.html")
+        en (slurp-out "index.html")]
+    (is (str/includes? zh "clogem-list--simple"))
+    (is (= 3 (count (re-seq #"<li class=\"clogem-row\"" (first (str/split (second (str/split zh #"clogem-list--simple" 2)) #"</ul>" 2)))))
+        "simplePostListLength: 3")
+    (is (not (str/includes? zh "clogem-pagination")))
+    (is (str/includes? zh "<aside class=\"clogem-home-right\">") "the right bar stays on zh-Hans")
+    (is (str/includes? zh ">最近更新<") "the update bar, in the page's language")
+    (is (str/includes? zh "href=\"/zh-Hans/archives/\"") "…linking to that language's /archives/")
+    (is (not (str/includes? en "clogem-home-right")) "hideRightBar: true on index.md")))
+
+(deftest post-list-mode-and-home-ids
+  (is (= :detailed (clogem.theme.home/post-list-mode {})))
+  (is (= :simple (clogem.theme.home/post-list-mode {:postList "simple"})))
+  (is (= :none (clogem.theme.home/post-list-mode {:postList "none"})))
+  (is (= :detailed (clogem.theme.home/post-list-mode {:postList "bogus"})))
+  (is (= ["b" "a" "c"] (clogem.theme.home/home-ids {:sticky ["b"] :posts ["a" "b" "c"]}))
+      "sticky ++ (posts minus sticky): never twice"))

@@ -72,6 +72,58 @@
                       {:lang (get-in cfg [:langs :locales vl :label])})}
      (name vl)]))
 
+(defn index-href
+  "The site URI of a category or tag page in the page's language, or nil
+  when that index system is switched off."
+  [{:keys [cfg lang index-paths]} kind k]
+  (when-let [root (get index-paths kind)]
+    (model/site-url cfg lang (str root (u/slug k) "/"))))
+
+(defn- author-of
+  "Front matter `author:` (a string or {:name :link}) else `:site :author`."
+  [{:keys [cfg] :as ctx} variant]
+  (let [a (or (get-in variant [:front-matter :author]) (get-in cfg [:site :author]))]
+    (cond
+      (nil? a)    nil
+      (map? a)    {:name (i18n/resolve-str ctx (or (:name a) (get a "name")))
+                   :link (or (:link a) (get a "link"))}
+      :else       {:name (i18n/resolve-str ctx a)})))
+
+(defn title-tag
+  "vdoing's `titleTag:` badge beside a title (原创 / 转载 / …). The plain
+  badge lands in Phase 2; the animated title-badge is Phase 4."
+  [variant]
+  (when-let [t (u/blank->nil (str (get-in variant [:front-matter :titleTag])))]
+    [:span.clogem-title-tag t]))
+
+(defn article-info
+  "vdoing's ArticleInfo line (D-P2-7): author, ISO date, categories and tags
+  linked to their index pages. `variant` supplies the author; `group` the
+  language-invariant facts."
+  [{:keys [cfg] :as ctx} group variant]
+  (let [{:keys [name link]} (author-of ctx variant)
+        cats (seq (:categories group))
+        tags (seq (:tags group))]
+    [:p.clogem-meta
+     (when name
+       [:span.clogem-meta__author {:title (i18n/tr ctx :page/author)}
+        (if link [:a {:href link} name] name)])
+     (when-let [d (u/iso-date (:date group))]
+       [:time.clogem-meta__date {:datetime d :title (i18n/tr ctx :page/date)} d])
+     (when cats
+       (into [:span.clogem-meta__cats {:title (i18n/tr ctx :page/categories)}]
+             (interpose " / "
+                        (for [c cats]
+                          (if-let [h (index-href ctx :categories c)]
+                            [:a {:href (href ctx h)} (category-label ctx c)]
+                            (category-label ctx c))))))
+     (when tags
+       (into [:span.clogem-meta__tags {:title (i18n/tr ctx :page/tags)}]
+             (for [t tags]
+               (if-let [h (index-href ctx :tags t)]
+                 [:a.clogem-tag {:href (href ctx h)} (str t)]
+                 [:span.clogem-tag (str t)]))))]))
+
 (defn article-row
   "One index row: title (linked per §6.8), fallback marker, ISO date."
   [{:keys [cfg] :as ctx} group]

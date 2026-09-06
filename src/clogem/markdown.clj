@@ -173,6 +173,30 @@
   [source link-ctx]
   (->hiccup (parse source) link-ctx))
 
+(def more-marker-re #"<!--\s*more\s*-->")
+
+(defn- drop-leading-h1
+  "The body's leading `# Title` duplicates the title the theme already
+  renders; an excerpt starts after it."
+  [ast]
+  (let [c (:content ast)]
+    (if (and (= :heading (:type (first c))) (= 1 (:heading-level (first c))))
+      (assoc ast :content (vec (rest c)))
+      ast)))
+
+(defn excerpt
+  "The homepage excerpt of an article (D-P2-5): everything before
+  `<!-- more -->` when the marker is present, else the first paragraph —
+  with the leading h1 dropped either way. nil when there is nothing to show."
+  [source link-ctx]
+  (let [src (str source)]
+    (if (re-find more-marker-re src)
+      (let [ast (drop-leading-h1 (parse (first (str/split src more-marker-re 2))))]
+        (when (seq (:content ast)) (->hiccup ast link-ctx)))
+      (let [ast (drop-leading-h1 (parse src))]
+        (when-let [para (some #(when (= :paragraph (:type %)) %) (:content ast))]
+          (->hiccup (assoc ast :content [para]) link-ctx))))))
+
 (defn toc-entries
   "Flatten the AST's :toc into [{:level :id :text}] with repaired ids, so the
   right-hand TOC bar (Phase 2) and the heading anchors agree by construction."

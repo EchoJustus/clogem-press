@@ -34,18 +34,6 @@
         [:div.clogem-content content-hiccup]]])
      (layout/footer ctx))))
 
-(defn home
-  [{:keys [cfg lang model] :as ctx} content-hiccup]
-  (layout/page
-   (assoc ctx :title (i18n/resolve-str ctx (get-in cfg [:site :title])))
-   [:div.clogem-content (or content-hiccup
-                            [:p (i18n/resolve-str ctx (get-in cfg [:site :description]))])]
-   [:h2 (i18n/tr ctx :index/recent)]
-   (into [:ul.clogem-list]
-         (for [pl (take 10 (:posts model))
-               :let [g (get-in model [:articles pl])]]
-           (layout/article-row ctx g)))))
-
 (defn redirect-stub
   "D-10 / D-15: a retired or de-canonicalized URL redirects rather than 404s.
   `<meta http-equiv=\"refresh\">` plus `rel=canonical`, which is all a static

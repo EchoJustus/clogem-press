@@ -13,7 +13,6 @@
  :index/categories     "分类"
  :index/tags           "标签"
  :index/archives       "归档"
- :index/recent         "最近文章"
  :index/count          "文章数：{{n}}"
  :container/tip        "提示"
  :container/warning    "注意"

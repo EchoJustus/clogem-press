@@ -15,7 +15,6 @@
  :index/categories     "Kategori"
  :index/tags           "Tag"
  :index/archives       "Arkib"
- :index/recent         "Artikel terkini"
  :index/count          "Artikel: {{n}}"
  :container/tip        "PETUA"
  :container/warning    "AMARAN"
