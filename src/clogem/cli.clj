@@ -21,13 +21,34 @@
   {:site-dir    {:desc "Directory holding site.edn and content/." :default "." :alias :d :ref "<dir>"}
    :config-file {:desc "Config filename inside --site-dir." :default "site.edn" :ref "<file>"}})
 
-(defn- load-cfg
+(defn- load-cfg*
+  "Load config under a diagnostic sink. Returns [cfg diagnostics]."
   [{:keys [site-dir config-file out no-write base]}]
-  (config/load-config site-dir config-file
-                      (cond-> {}
-                        out      (assoc-in [:build :out] out)
-                        base     (assoc-in [:site :base] base)
-                        no-write (assoc-in [:content :write-front-matter] false))))
+  (diag/collecting
+   (config/load-config site-dir config-file
+                       (cond-> {}
+                         out      (assoc-in [:build :out] out)
+                         base     (assoc-in [:site :base] base)
+                         no-write (assoc-in [:content :write-front-matter] false)))))
+
+(defn load-cfg!
+  "Load config; a config ERROR is fatal (D-P2-12).
+
+  `config/validate!` reports through the same diagnostic sink as content
+  problems and repairs the map so the rest of a `doctor` report stays readable —
+  but repairing is not permission to proceed. It used to print \"the build will
+  not run\" and then run anyway, exiting 0 with a `dist/` rendered under a
+  language the site never configured. Now every task raises here, before a
+  single file is read or written, so `build`, `doctor` and `fm-fix` all exit
+  non-zero on a config error and `build` writes nothing.
+
+  Warnings are printed and the config is returned. `doctor` uses `load-cfg*`
+  instead so the config diagnostics land in its counted report."
+  [opts]
+  (let [[cfg ds] (load-cfg* opts)]
+    (diag/print-all! ds)
+    (diag/throw-on-errors! ds "config error")
+    cfg))
 
 ;; ---------------------------------------------------------------------------
 ;; The pipeline
@@ -79,7 +100,7 @@
                        :no-write {:desc "Read-only build: never touch source files." :coerce :boolean}})}}
   build
   [opts]
-  (let [cfg (load-cfg opts)]
+  (let [cfg (load-cfg! opts)]
     ;; Pass 1 — normalize front matter. Its diagnostics are discarded because
     ;; pass 2 re-derives them from the normalized tree and is the authoritative
     ;; report; but content ERRORS abort before anything is written, since
@@ -108,7 +129,7 @@
                                                   :coerce :boolean})}}
   fm-fix
   [opts]
-  (let [cfg (load-cfg opts)
+  (let [cfg (load-cfg! opts)
         [plan ds] (diag/collecting (fill-plan cfg (analyse cfg)))]
     (report! ds)
     (if (:dry-run opts)
@@ -125,23 +146,33 @@
 (defn ^{:org.babashka/cli {:spec common-spec}}
   doctor
   [opts]
-  (let [cfg (load-cfg opts)
+  ;; Config diagnostics are part of the report, not a gate in front of it: a
+  ;; bad :langs :default is repaired by validate! precisely so the content
+  ;; findings below are still produced. The exit status counts them all the
+  ;; same — D-P2-12: a config error is an error.
+  (let [[cfg cds] (load-cfg* opts)
         [m ds] (diag/collecting (analyse cfg))
-        errs (diag/errors ds)
+        ds    (into (vec cds) ds)
+        errs  (diag/errors ds)
         warns (diag/warnings ds)]
     (diag/print-all! ds)
     (println (format "clogem-press doctor: %d article(s), %d variant(s), %d warning(s), %d error(s)"
                      (count (:articles m))
                      (reduce + (map #(count (:variants %)) (vals (:articles m))))
                      (count warns) (count errs)))
-    (when (seq errs) (System/exit 1))
+    (when (seq errs)
+      ;; :babashka/exit makes bb exit with that status after printing the
+      ;; message; raising (rather than System/exit) keeps `doctor` testable
+      ;; in-process, and is the same mechanism `build` already uses.
+      (throw (ex-info (format "clogem-press doctor: %d error(s)" (count errs))
+                      {:clogem/errors errs :babashka/exit 1})))
     {:warnings warns :errors errs}))
 
 (defn ^{:org.babashka/cli {:spec (assoc common-spec
                                         :out {:desc "Output directory." :default "dist" :alias :o})}}
   clean
   [opts]
-  (let [cfg (load-cfg opts)
+  (let [cfg (load-cfg! opts)
         out (config/out-dir cfg)]
     (when (fs/exists? out) (fs/delete-tree out))
     (println "clogem-press: removed" (str out))))
