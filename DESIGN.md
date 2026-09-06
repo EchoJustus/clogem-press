@@ -438,7 +438,8 @@ Build phases in detail:
 
 1. **Scan** (`scan.clj`) — walk `content/`, applying vdoing's exact rules **as amended in §6.1**:
    strip the extension, strip a recognized language suffix, then parse `NN.name` (number = before
-   first dot; title = between first and last dot for files, everything after the first dot for
+   the first dot; title = everything after the first dot-segment, extension and any language suffix
+   dropped, for files — so `05.a.b.c.md` is titled `a.b.c` — and everything after the first dot for
    directories), skip invalid numbers with a warning, **error on duplicate numbers that belong to
    different identities** — same number *and* same title in one directory is the language-variant
    case and is legal (§6.1, D-3) — exclude `_posts/`, `@pages/`, `index.md`, dotfiles.
@@ -702,6 +703,13 @@ Worked examples (the first four are byte-identical to vdoing's behaviour):
 | `01.article.zh-Hans.md` | 1 | `article` | `:zh-Hans` |
 | `10.article.ZH-HANS.md` | 10 | `article` | `:zh-Hans` (case-insensitive, canonicalized) |
 | `01.article.zh-Hanz.md` | — | — | **error**: "unknown language `zh-Hanz` — did you mean `zh-Hans`?" |
+| `02.api-design.md` | 2 | `api-design` | article default (a hyphenated word is not a tag — D-P2-14) |
+| `03.my-notes.md` | 3 | `my-notes` | article default |
+| `05.re-frame.md` | 5 | `re-frame` | article default |
+| `01.en-passant.md` | 1 | `en-passant` | article default (`passant` is neither script- nor region-shaped) |
+| `01.article.en-us.md` | — | — | **error**: did you mean `en`? (configured primary + region-shaped subtag) |
+| `01.article.ta-IN.md` | — | — | **error**: did you mean `ta`? |
+| `01.article.zh-han.md` | — | — | **error**: did you mean `zh-Hans`? (one edit from a configured code) |
 
 Three deliberate choices, each with its reason:
 
@@ -714,12 +722,21 @@ Three deliberate choices, each with its reason:
   (`zh-Hans`), but case-insensitive filesystems and human habit produce `zh-hans`. Hugo sidesteps this
   by *requiring* lowercase in filenames; we cannot, because the emitted `<html lang>` should read
   `zh-Hans`. So: match lowercased, emit the configured spelling.
-- **Near-miss codes are a hard error, not silently part of the title.** "Near miss" means: the segment
-  contains a hyphen and matches `^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})+$`, **or** it is in the small
-  confusables set derived from `:langs` (`zh`, `zh-CN`, `zh-TW`, `zh-HK`, `en-US`, …). Requiring the
-  hyphen for the pattern branch is what keeps `01.Vue.js.md` from tripping it. Rationale: a silent
-  misparse costs both a wrong title *and* a lost translation link — two bugs that surface far from
-  their cause. Failing at scan time is cheaper.
+- **Near-miss codes are a hard error, not silently part of the title.** A last dot-segment that is
+  not itself a configured code is a "near miss" iff, compared lower-cased, **any** of:
+  (a) it is in the small confusables set derived from `:langs` (`zh`, `zh-CN`, `zh-TW`, `zh-HK`,
+  `en-US`, …); **or** (b) its Damerau-Levenshtein distance to a configured code is ≤ 1 *and* the
+  segment or that code contains a hyphen (`zh-hanz`, `zh-han`, `ta-`, `zhhans`) — the hyphen
+  condition is what keeps `01.Vue.js.md` a file titled `Vue.js` even though `js` is one edit from
+  `ms`, as `tax` is from `ta`; **or** (c) it contains a hyphen, its primary subtag is a *configured*
+  primary (`zh`, `en`, `ms`, `ta` on the demo) and every remaining subtag is script-shaped (4 letters)
+  or region-shaped (2 letters / 3 digits) — so `zh-Hanz`, `en-us`, `ta-IN` are caught while
+  `api-design`, `my-notes`, `re-frame` and `en-passant` are ordinary titles. (Phase 1 used a pattern,
+  `^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})+$`, which made every hyphenated two- or three-letter word a
+  misspelled tag; `02.api-design.md`, `03.my-notes.md` and `05.re-frame.md` were confirmed false
+  positives on a real tree — D-P2-14.) Rationale for the error: a silent misparse costs both a wrong
+  title *and* a lost translation link — two bugs that surface far from their cause. Failing at scan
+  time is cheaper.
 
 **Duplicate numbers are scoped to identity (v2.1).** vdoing warns-and-overwrites when two entries in a
 directory share a number; D-3 upgrades that to an error. That upgrade must be **scoped to the identity
@@ -1847,6 +1864,26 @@ v2 decision.
     a **Phase 3** acceptance test (§9 said Phase 1, contradicting Appendix A and the risk table), and
     research/13's workflow listing gained the `i18n/**` path filter and the size-check step that §7.3
     already had.
+
+---
+
+## 11.2 Phase 2 implementation changelog
+
+Recorded as the Phase 2 work (§8) landed; each item names the section it amends.
+
+1. **Near-miss language tags (§6.1, §5.2 step 1).** The pattern branch
+   `^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})+$` made every hyphenated two- or three-letter word a misspelled
+   language tag — `02.api-design.md`, `03.my-notes.md` and `05.re-frame.md` hard-errored on a real
+   tree. Replaced by: confusables, **or** Damerau-Levenshtein ≤ 1 from a configured code when the
+   segment or the code carries a hyphen, **or** a configured primary subtag followed only by
+   script-shaped (4 alpha) or region-shaped (2 alpha / 3 digit) subtags. The hyphen condition on the
+   distance rule is a deliberate narrowing of D-P2-14's wording: without it `js` (one edit from `ms`)
+   would have turned the worked example `01.Vue.js.md` into an error. §5.2's title wording now
+   matches §6.1's pseudocode.
+2. **Config validation is fatal (§5.6, §6.2, D-P2-12).** `validate!` repaired a bad `:langs :default`
+   "so the rest of the report is readable, but the build will not run" — and the build ran. `build`,
+   `doctor` and `fm-fix` now exit non-zero on a config error, `build` writes nothing, and `doctor`
+   still produces the content findings under the repaired config.
 
 ---
 

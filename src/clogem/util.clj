@@ -67,6 +67,30 @@
                                                       (.charAt b (dec j)))
                                                  0 1)))))))))))))
 
+(defn damerau-levenshtein
+  "Optimal-string-alignment edit distance: insert, delete, substitute, and
+  ONE adjacent transposition each cost 1. Used by the scanner's near-miss rule
+  (DESIGN.md §6.1, D-P2-14): a filename segment within distance 1 of a
+  configured language code (`zh-hanz`, `zh-han`, `ta-`, `zh-hsna`) is a
+  misspelled tag, not a title."
+  [^String a ^String b]
+  (let [m (count a) n (count b)
+        d (make-array Long/TYPE (inc m) (inc n))]
+    (dotimes [i (inc m)] (aset d i 0 (long i)))
+    (dotimes [j (inc n)] (aset d 0 j (long j)))
+    (doseq [i (range 1 (inc m)) j (range 1 (inc n))]
+      (let [cost (if (= (.charAt a (dec i)) (.charAt b (dec j))) 0 1)
+            best (min (inc (aget d (dec i) j))
+                      (inc (aget d i (dec j)))
+                      (+ (aget d (dec i) (dec j)) cost))
+            best (if (and (> i 1) (> j 1)
+                          (= (.charAt a (dec i)) (.charAt b (- j 2)))
+                          (= (.charAt a (- i 2)) (.charAt b (dec j))))
+                   (min best (inc (aget d (- i 2) (- j 2))))
+                   best)]
+        (aset d i j (long best))))
+    (aget d m n)))
+
 (defn closest
   "The candidate with the smallest edit distance to s, or nil if none is within
   `max-distance`.
