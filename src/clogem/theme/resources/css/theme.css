@@ -190,3 +190,10 @@ img { max-width: 100%; height: auto; }
 .clogem-feature { border: 1px solid var(--borderColor); border-radius: 8px; padding: 1rem; }
 .clogem-tag::before { content: "#"; color: var(--textColorSubtle); }
 .clogem-meta__tags .clogem-tag { margin-right: 0.4rem; }
+
+/* ---- Phase 2: article chrome ---- */
+.clogem-breadcrumbs ol { list-style: none; display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0; margin: 0 0 1rem; font-size: 0.85rem; color: var(--textColorSubtle); }
+.clogem-breadcrumbs li + li::before { content: "›"; margin-right: 0.35rem; }
+.clogem-prev-next { display: flex; justify-content: space-between; gap: 1rem; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--borderColor); }
+.clogem-prev-next__next { margin-left: auto; text-align: right; }
+.clogem-prev-next span { display: block; font-size: 0.75rem; color: var(--textColorSubtle); }

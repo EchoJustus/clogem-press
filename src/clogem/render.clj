@@ -218,6 +218,34 @@
                                                 (link-context model model lang (:rel-path v)))))})]
            (home/home ctx)))])))
 
+(defn- resolve-target
+  "A front matter `prev:`/`next:` value: a permalink or a relative `.md`
+  path → the group it names, or nil (with a warning) when it names nothing."
+  [model from-path v]
+  (let [s (str v)]
+    (or (get-in model [:articles (u/clean-url s)])
+        (get-in model [:by-rel-path (u/lower s)])
+        (get-in model [:by-rel-path (u/lower (str "./" s))])
+        (do (diag/warn! from-path (str "front matter prev/next names an unknown page: " s))
+            nil))))
+
+(defn- neighbour
+  "The prev or next link of an article page: front matter `false` hides it,
+  a permalink or `.md` path overrides the model's order, else
+  `model/neighbours`. The target is the reader's own variant when the
+  neighbour has one (model/best-variant)."
+  [model lang variant group k pl]
+  (let [fm-v (get-in variant [:front-matter k])
+        g    (cond
+               (false? fm-v) nil
+               (some? fm-v)  (resolve-target model (:rel-path variant) fm-v)
+               :else         (get-in model [:articles pl]))]
+    (when g
+      (let [vl (model/best-variant g lang)]
+        {:href  (model/variant-url (:cfg model) g vl)
+         :title (get-in g [:variants vl :title])
+         :lang  vl}))))
+
 (defn page-map
   "{uri → (fn [] hiccup)} for every emitted document.
 
@@ -246,8 +274,11 @@
             [lang variant] (:variants group)]
         [(model/variant-url cfg group lang)
          (fn []
-           (let [ctx (ctx-for lang {:group group :variant (assoc variant :lang lang)
-                                    :page-kind :article})
+           (let [[prev-pl next-pl] (model/neighbours model group)
+                 ctx (ctx-for lang {:group group :variant (assoc variant :lang lang)
+                                    :page-kind :article
+                                    :prev (neighbour model lang variant group :prev prev-pl)
+                                    :next (neighbour model lang variant group :next next-pl)})
                  lc  (link-context model model lang (:rel-path variant))
                  body (markdown/render (:body variant) lc)]
              (page/article ctx body)))])

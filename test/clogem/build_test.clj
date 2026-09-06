@@ -10,6 +10,7 @@
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hiccup2.core]
             [clogem.cli :as cli]
+            [clogem.markdown]
             [clogem.theme.home]
             [clogem.config :as config]
             [clogem.diag :as diag]
@@ -93,7 +94,11 @@
         (let [html (if (str/blank? sub)
                      (slurp-out "pages" "relocated" "index.html")
                      (slurp-out sub "pages" "relocated" "index.html"))]
-          (is (str/includes? html "Deep / Level2 / Level3")
+          ;; Phase 2 links each category to its index page, so the three
+          ;; names are separate anchors rather than one "Deep / Level2 /
+          ;; Level3" string; the invariant — both variants show the GROUP's
+          ;; categories, i.e. the primary's — is unchanged.
+          (is (re-find #"<span class=\"clogem-meta__cats\"[^>]*>(?:<a [^>]*>)?Deep(?:</a>)? / (?:<a [^>]*>)?Level2(?:</a>)? / (?:<a [^>]*>)?Level3" html)
               "both variants show the group's categories"))))))
 
 (deftest relative-md-links-are-rewritten-to-permalinks
@@ -375,3 +380,63 @@
   (is (= :detailed (clogem.theme.home/post-list-mode {:postList "bogus"})))
   (is (= ["b" "a" "c"] (clogem.theme.home/home-ids {:sticky ["b"] :posts ["a" "b" "c"]}))
       "sticky ++ (posts minus sticky): never twice"))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 — article chrome (D-P2-7)
+
+(deftest breadcrumbs-walk-the-category-path
+  (let [html (slurp-out "pages" "643259" "index.html")]
+    (is (re-find #"<nav aria-label=\"You are here\" class=\"clogem-breadcrumbs\"><ol><li><a href=\"/\">Home</a></li><li><a href=\"/pages/559f0f/\">Guide</a></li><li><a href=\"/categories/basics/\">Basics</a></li></ol></nav>" html)
+        "Guide → its Catalogue page; Basics → its category index"))
+  (let [html (slurp-out "zh-Hans" "pages" "643259" "index.html")]
+    (is (str/includes? html "<li><a href=\"/zh-Hans/categories/basics/\">基础</a></li>")
+        "localized label, per-language index, on the zh-Hans variant"))
+  (let [html (slurp-out "pages" "a00015" "index.html")]
+    (is (str/includes? html "<li><a href=\"/categories/tech/\">tech</a></li>")
+        "a post's crumbs derive from its category")))
+
+(deftest article-info-line-links-categories-and-tags
+  (let [html (slurp-out "pages" "284c67" "index.html")]
+    (is (str/includes? html "datetime=\"2026-08-16\""))
+    (is (str/includes? html "href=\"/categories/notes/\">Notes</a>"))
+    (is (str/includes? html "href=\"/tags/meta/\">meta</a>"))
+    (is (str/includes? (slurp-out "pages" "y2025a" "index.html") "<h1>A post from the year before<span class=\"clogem-title-tag\">原创</span></h1>"))))
+
+(deftest prev-next-follow-tree-order-for-tree-articles
+  (let [conv (slurp-out "pages" "643259" "index.html")
+        start (slurp-out "pages" "3ce486" "index.html")
+        tamil (slurp-out "pages" "171a98" "index.html")]
+    (is (str/includes? conv "href=\"/pages/3ce486/\" lang=\"en\" rel=\"prev\"") "prev = getting-started")
+    (is (str/includes? conv "href=\"/pages/22deb7/\" lang=\"en\" rel=\"next\"") "next = Vue.js")
+    (is (not (str/includes? start "rel=\"prev\"")) "first leaf of 01.Guide")
+    (is (str/includes? start "href=\"/pages/643259/\" lang=\"en\" rel=\"next\""))
+    (is (str/includes? tamil "href=\"/pages/22deb7/\" lang=\"en\" rel=\"prev\"") "across subdirectories, in tree order")
+    (is (not (str/includes? tamil "rel=\"next\"")) "last leaf of 01.Guide")
+    (is (str/includes? (slurp-out "zh-Hans" "pages" "643259" "index.html") "href=\"/pages/3ce486/\" lang=\"en\" rel=\"prev\"")
+        "a neighbour without a zh-Hans variant links to its primary")))
+
+(deftest prev-next-follow-date-order-for-posts
+  (let [newest (slurp-out "pages" "284c67" "index.html")
+        oldest (slurp-out "pages" "y2025a" "index.html")]
+    (is (not (str/includes? newest "rel=\"prev\"")))
+    (is (str/includes? newest "href=\"/pages/a00015/\" lang=\"en\" rel=\"next\"") "next = older")
+    (is (str/includes? oldest "href=\"/pages/mig001/\" lang=\"en\" rel=\"prev\"") "prev = newer")
+    (is (not (str/includes? oldest "rel=\"next\"")))))
+
+(deftest prev-next-front-matter-overrides
+  (let [html (slurp-out "pages" "22deb7" "index.html")]
+    (is (not (str/includes? html "rel=\"prev\"")) "prev: false hides it")
+    (is (str/includes? html "href=\"/pages/17c887/\" lang=\"en\" rel=\"next\"") "next: /pages/17c887/ overrides tree order")))
+
+(deftest root-relative-links-get-the-base
+  (testing "vdoing's $withBase: /assets/… and /categories/ written by an author
+            work on a project site (§7.3: clogem-press's own docs live at /clogem-press/)"
+    (let [cfg {:site {:base "/project/"}}
+          ctx {:cfg cfg :articles {} :by-rel-path {} :lang :en :from-path "x.md" :url-for (fn [_ _] "/x/")}]
+      (is (= "/project/assets/x.png" (clogem.markdown/rewrite-href ctx "/assets/x.png")))
+      (is (= "/project/categories/" (clogem.markdown/rewrite-href ctx "/categories/")))
+      (is (= "/project/assets/x.png" (clogem.markdown/rewrite-href ctx "/project/assets/x.png")) "not doubled")
+      (is (= "/assets/x.png" (clogem.markdown/rewrite-href (assoc ctx :cfg {:site {:base "/"}}) "/assets/x.png"))))
+    (let [html (str (hiccup2.core/html (clogem.markdown/render "![demo](/assets/demo.png)" {:cfg {:site {:base "/p/"}}})))]
+      (is (str/includes? html "src=\"/p/assets/demo.png\"") "image srcs are links too")
+      (is (str/includes? html "alt=\"demo\"")))))

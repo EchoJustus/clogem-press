@@ -74,10 +74,13 @@
 
 (defn index-href
   "The site URI of a category or tag page in the page's language, or nil
-  when that index system is switched off."
-  [{:keys [cfg lang index-paths]} kind k]
+  when that index system is switched off — or when no ARTICLE carries the
+  value (a category that only a catalogue page sits in has no index page,
+  so a link to it would dangle)."
+  [{:keys [cfg lang index-paths model]} kind k]
   (when-let [root (get index-paths kind)]
-    (model/site-url cfg lang (str root (u/slug k) "/"))))
+    (when (contains? (get model kind) (str k))
+      (model/site-url cfg lang (str root (u/slug k) "/")))))
 
 (defn- author-of
   "Front matter `author:` (a string or {:name :link}) else `:site :author`."
@@ -123,6 +126,44 @@
                (if-let [h (index-href ctx :tags t)]
                  [:a.clogem-tag {:href (href ctx h)} (str t)]
                  [:span.clogem-tag (str t)]))))]))
+
+(defn breadcrumbs
+  "vdoing's breadcrumb line (D-P2-7): the primary's category path, each crumb
+  linking to the Catalogue page that covers that directory when one exists
+  (`:catalogue`, keyed by dir-key), else to the category's index page. Posts
+  have no tree slot, so their crumbs derive from the category alone."
+  [{:keys [cfg lang model] :as ctx} group]
+  (let [segs (when (= :tree (:kind group))
+               (vec (remove str/blank? (str/split (str (:dir-key group)) #"/"))))
+        cats (:categories group)]
+    (when (seq cats)
+      [:nav.clogem-breadcrumbs {:aria-label (i18n/tr ctx :page/breadcrumbs)}
+       (into [:ol
+              [:li [:a {:href (model/home-url cfg lang)} (i18n/tr ctx :nav/home)]]]
+             (map-indexed
+              (fn [i c]
+                (let [dir-key (when (and segs (< i (count segs)))
+                                (str "/" (str/join "/" (take (inc i) segs))))
+                      cat-pl  (when dir-key (get-in model [:catalogue dir-key]))
+                      target  (if-let [g (and cat-pl (get-in model [:articles cat-pl]))]
+                                (:href (article-link ctx g))
+                                (index-href ctx :categories c))]
+                  [:li (if target
+                         [:a {:href (href ctx target)} (category-label ctx c)]
+                         (category-label ctx c))]))
+              cats))])))
+
+(defn prev-next
+  "The prev/next buttons. `prev`/`next` are {:href :title :lang} or nil."
+  [{:keys [cfg prev next] :as ctx}]
+  (when (or prev next)
+    [:nav.clogem-prev-next
+     (when prev
+       [:a.clogem-prev-next__prev {:href (:href prev) :rel "prev" :lang (config/html-lang cfg (:lang prev))}
+        [:span (i18n/tr ctx :page/prev)] " " (:title prev)])
+     (when next
+       [:a.clogem-prev-next__next {:href (:href next) :rel "next" :lang (config/html-lang cfg (:lang next))}
+        [:span (i18n/tr ctx :page/next)] " " (:title next)])]))
 
 (defn article-row
   "One index row: title (linked per §6.8), fallback marker, ISO date."

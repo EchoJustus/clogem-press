@@ -73,15 +73,27 @@
 (defn- external? [href]
   (boolean (re-find #"^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|//|#|mailto:|tel:)" (str href))))
 
+(defn with-base
+  "vdoing's `$withBase`: a root-relative site path gets the site's `:base`
+  prefixed, so `/assets/x.png` and `/categories/` written by an author work
+  on a project site served under `/project/`. Already-prefixed paths and a
+  root base are left alone."
+  [cfg href]
+  (let [base (u/clean-url (or (get-in cfg [:site :base]) "/"))]
+    (if (or (= "/" base) (str/starts-with? href base))
+      href
+      (str/replace (str base href) #"/{2,}" "/"))))
+
 (defn rewrite-href
   "Resolve a link to its destination URL.
 
-  Three cases are rewritten; everything else passes through untouched:
+  Four cases are rewritten; everything else passes through untouched:
 
     `/pages/xxxxxx/`  → the identity URL, resolved to the reader's own language
                         variant when the article has one (§6.3)
     `other.md`        → the article that file belongs to, same resolution
     `#frag`           → percent-encoded, since heading ids may be non-ASCII
+    `/anything/else`  → the site :base prefixed (`with-base`)
 
   A `.md` or `/pages/` target that resolves to nothing is a dead link and warns
   (the design's requirement); the original href is left in place so the page
@@ -114,6 +126,10 @@
           (do (diag/warn! from-path (str "dead link: " href " does not resolve to a page"))
               href)))
 
+      ;; a root-relative site path: assets, index pages, anything hand-written
+      (str/starts-with? href "/")
+      (with-base cfg href)
+
       :else href)))
 
 ;; ---------------------------------------------------------------------------
@@ -145,6 +161,14 @@
                          (and ext? (str/starts-with? (str href) "http"))
                          (assoc :target "_blank" :rel "noopener noreferrer"))]
                    (children ctx node))))
+
+         ;; images: the src is a link too — `/assets/x.png` needs the base
+         :image
+         (fn [_ctx node]
+           (let [{:keys [src alt title]} (:attrs node)]
+             [:img (cond-> {:src (rewrite-href link-ctx src)
+                            :alt (or alt (md/node->text node))}
+                     title (assoc :title title))]))
 
          ;; Phase 1 emits plain fenced code. Phase 4 swaps in Chroma behind the
          ;; same seam, which is why the class name already follows the

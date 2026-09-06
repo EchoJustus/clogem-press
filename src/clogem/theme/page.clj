@@ -2,12 +2,8 @@
 (ns clogem.theme.page
   "Page templates: article, home, and the redirect stub."
   (:require [clojure.string :as str]
-            [clogem.config :as config]
             [clogem.i18n :as i18n]
-            [clogem.markdown :as markdown]
-            [clogem.model :as model]
-            [clogem.theme.layout :as layout]
-            [clogem.util :as u]))
+            [clogem.theme.layout :as layout]))
 
 (defn article
   [{:keys [cfg lang group variant] :as ctx} content-hiccup]
@@ -18,20 +14,17 @@
      (layout/shell
       ctx
       [:main.clogem-main
+       (layout/breadcrumbs ctx group)
        [:article.clogem-article
-        [:h1 (:title variant)]
-        [:p.clogem-meta
-         (when-let [cats (seq (:categories group))]
-           [:span.clogem-meta__cats (str/join " / " cats)])
-         (when-let [d (:date group)] [:span.clogem-meta__date (str d)])
-         (when-let [tags (seq (:tags group))]
-           [:span.clogem-meta__tags (str/join ", " (map str tags))])]
+        [:h1 (:title variant) (layout/title-tag variant)]
+        (layout/article-info ctx group variant)
         (when (and fallback? (get-in cfg [:i18n :show-fallback-notice]))
           [:p.clogem-notice
            (i18n/tr ctx :page/fallback-notice
                     {:lang (get-in cfg [:langs :locales (:lang variant) :label])})])
         (layout/variant-bar ctx)
-        [:div.clogem-content content-hiccup]]])
+        [:div.clogem-content content-hiccup]]
+       (layout/prev-next ctx)])
      (layout/footer ctx))))
 
 (defn redirect-stub

@@ -579,6 +579,22 @@
                      (cons [c (inc depth)] (tree-dirs c (inc depth)))))
            (:children node))))
 
+(defn neighbours
+  "[prev next] permalinks of a group (D-P2-7): sidebar-tree order for :tree
+  articles — the leaves of its top-level directory, non-articles included,
+  as vdoing does — and newest-first date order among posts for :post
+  articles (prev = newer, next = older). nil at either end."
+  [{:keys [sidebar articles posts]} group]
+  (let [ids (if (= :post (:kind group))
+              (filter #(= :post (get-in articles [% :kind])) posts)
+              (when-let [top (top-dir group)]
+                (map :permalink (tree-leaves (get sidebar top)))))
+        v   (vec ids)
+        i   (.indexOf ^java.util.List v (:permalink group))]
+    (when (>= i 0)
+      [(when (pos? i) (nth v (dec i)))
+       (when (< (inc i) (count v)) (nth v (inc i)))])))
+
 ;; ---------------------------------------------------------------------------
 ;; Assembly
 
