@@ -140,6 +140,39 @@
                        (apply str))))))
        (apply str)))
 
+(defn url-encode-segment
+  "Percent-encode one URL *path segment*: everything but RFC 3986 unreserved
+  characters is encoded, so `/`, `?`, `#` and `%` inside a category or tag
+  name cannot change the URL's structure. Unlike `url-encode-fragment`, this
+  encodes the sub-delimiters too — a fragment can carry `?` unencoded, a path
+  segment cannot."
+  [s]
+  (->> (str s)
+       (map (fn [^Character c]
+              (let [ch (str c)]
+                (if (re-matches #"[A-Za-z0-9\-._~]" ch)
+                  ch
+                  (->> (.getBytes ch "UTF-8")
+                       (map #(format "%%%02X" (bit-and % 0xff)))
+                       (apply str))))))
+       (apply str)))
+
+(defn slug
+  "The URL slug of a category or tag (DESIGN.md D-P2-3): lower-cased, with
+  whitespace runs and path separators collapsed to `-`; Unicode letters (CJK,
+  Tamil) are kept verbatim, percent-encoding being the href side's job
+  (`url-encode-segment`) — the same policy the heading slugger follows.
+
+  `.` and `..` are not slugs but directory names, and would escape the index
+  directory; they, and the empty string, become `_`."
+  [s]
+  (let [out (-> (str s)
+                str/trim
+                lower
+                (str/replace #"[\s/\\]+" "-")
+                (str/replace #"^-+|-+$" ""))]
+    (if (or (str/blank? out) (#{"." ".."} out)) "_" out)))
+
 (defn html-escape
   [s]
   (-> (str s)

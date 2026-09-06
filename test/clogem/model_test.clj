@@ -317,3 +317,170 @@
                                  (first (first (diag/collecting
                                                 (model/resolve-permalinks cfg' es model/empty-ledger))))))]
       (is (= (run entries) (run (reverse entries)) (run (shuffle entries)))))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 — indexes, sticky, archives, the sidebar tree (D-P2-1, D-P2-2, D-P2-4)
+
+(defn- full-model
+  "The whole model over `entries`, diagnostics discarded."
+  [entries]
+  (first (diag/collecting (model/build-model cfg entries model/empty-ledger))))
+
+(defn- dated
+  "An entry with a canonical date string and any other front matter."
+  [opts date & [fm]]
+  (-> (entry opts)
+      (update :front-matter merge (cond-> (or fm {}) date (assoc :date date)))))
+
+(deftest indexes-hold-article-ids-and-a-group-files-under-every-category
+  (testing "D-P2-2 / vdoing semantics: categories [\"Guide\" \"Basics\"] index
+            the article under BOTH, and the values are permalinks, not pages"
+    (let [m (full-model [(dated {:base "a" :order 1} "2026-08-01 00:00:00")])
+          pl (first (:posts m))]
+      (is (= [pl] (get-in m [:categories "Guide"])))
+      (is (= [pl] (get-in m [:categories "Basics"])))
+      (is (string? pl)))))
+
+(deftest tags-index-is-the-union-across-variants
+  (testing "a tag present only on a non-primary variant still indexes the article"
+    (let [en (-> (dated {} "2026-08-01 00:00:00") (assoc-in [:front-matter :tags] ["a"]))
+          zh (-> (dated {:lang :zh-Hans :title "约定"} nil) (assoc-in [:front-matter :tags] ["b" "c"]))
+          m  (full-model [en zh])
+          pl (first (:posts m))]
+      (is (= 1 (count (:articles m))))
+      (is (= {"a" [pl] "b" [pl] "c" [pl]} (:tags m))))))
+
+(deftest sticky-is-normalized-and-ordered
+  (testing "D-P2-4: `true` means rank 1, numbers are ranks, ascending; anything
+            else is not sticky; a non-article can never be sticky"
+    (is (= 1 (model/sticky-rank true)))
+    (is (= 3 (model/sticky-rank 3)))
+    (is (= 2 (model/sticky-rank "2")))
+    (is (nil? (model/sticky-rank false)))
+    (is (nil? (model/sticky-rank nil)))
+    (is (nil? (model/sticky-rank "soon")))
+    (let [m (full-model [(dated {:base "three" :order 1} "2026-01-01 00:00:00" {:sticky 3})
+                         (dated {:base "one"   :order 2} "2026-01-02 00:00:00" {:sticky true})
+                         (dated {:base "two"   :order 3} "2026-01-03 00:00:00" {:sticky 2})
+                         (dated {:base "plain" :order 4} "2026-01-04 00:00:00")
+                         (dated {:base "cat"   :order 5} "2026-01-05 00:00:00"
+                                {:sticky 1 :pageComponent {:name "Catalogue" :data {:path "01.Guide"}}})])
+          by-title (into {} (map (fn [[pl g]] [(get-in g [:variants :en :base-title]) pl])) (:articles m))]
+      (is (= [(by-title "one") (by-title "two") (by-title "three")] (:sticky m)))
+      (is (= 4 (count (:posts m))) "the catalogue page is not an article")
+      (is (= (by-title "plain") (first (:posts m))) ":posts stays date-desc; sticky is a separate list"))))
+
+(deftest archives-group-by-year-and-month-newest-first-and-skip-undated
+  (let [m (full-model [(dated {:base "a" :order 1} "2026-08-01 09:00:00")
+                       (dated {:base "b" :order 2} "2026-07-20 08:00:00")
+                       (dated {:base "c" :order 3} "2025-12-31 23:59:59")
+                       (dated {:base "d" :order 4} "2026-8-1")      ; hand-written, still files
+                       (dated {:base "e" :order 5} nil)])          ; skipped
+        archives (:archives m)
+        pl (fn [t] (some (fn [[pl g]] (when (= t (get-in g [:variants :en :base-title])) pl)) (:articles m)))]
+    (is (= [2026 2025] (keys archives)) "years descending")
+    (is (= [8 7] (keys (get archives 2026))) "months descending")
+    (is (= #{(pl "a") (pl "d")} (set (get-in archives [2026 8]))))
+    (is (= [(pl "b")] (get-in archives [2026 7])))
+    (is (= [(pl "c")] (get-in archives [2025 12])))
+    (is (not (some #{(pl "e")} (mapcat (fn [[_ ms]] (mapcat val ms)) archives)))
+        "no date, no archive slot — reported by doctor, not by analyse")
+    (is (= (pl "e") (last (:posts m))) "…but it is still an article, sorted last")
+    (is (nil? (model/archive-key nil)))
+    (is (= [2026 8] (model/archive-key "2026-08-01 09:00:00")))))
+
+(deftest tree-articles-are-posts-too
+  (testing "D-P2-4: :posts is EVERY article group — tree AND post kinds — newest first"
+    (let [m (full-model [(dated {:base "tree" :order 1 :kind :tree} "2026-01-01 00:00:00")
+                         (dated {:base "2026-02-01-post" :dir "_posts" :order nil :kind :post} "2026-02-01 00:00:00")])
+          kinds (map #(get-in m [:articles % :kind]) (:posts m))]
+      (is (= [:post :tree] kinds)))))
+
+(deftest a-page-component-group-is-in-no-index-but-is-a-leaf-and-a-catalogue
+  (let [m (full-model [(dated {:base "Guide" :order 1 :dir "/00.Catalogue"} "2026-01-01 00:00:00"
+                              {:pageComponent {:name "Catalogue"
+                                               :data {:path "01.Guide/10.Basics" :description "x"}}
+                               :tags ["t"]})
+                       (dated {:base "a" :order 1} "2026-01-02 00:00:00")])
+        cat (first (filter #(false? (:article? %)) (vals (:articles m))))]
+    (is (some? cat))
+    (is (not (some #{(:permalink cat)} (:posts m))))
+    (is (not (some #{(:permalink cat)} (mapcat val (:categories m)))))
+    (is (empty? (:tags m)) "its tag never reached the tag index")
+    (is (not (some #{(:permalink cat)} (mapcat (fn [[_ ms]] (mapcat val ms)) (:archives m)))))
+    (is (= {"/01.Guide/10.Basics" (:permalink cat)} (:catalogue m))
+        "D-P2-8: :catalogue is keyed by the numbered dir-key the page covers")
+    (is (= [(:permalink cat)]
+           (map :permalink (model/tree-leaves (get-in m [:sidebar "00.Catalogue"]))))
+        "D-P2-1: vdoing lists every file — the article predicate governs indexes, not the tree")))
+
+(deftest the-sidebar-is-a-nested-tree-with-one-leaf-per-identity
+  (testing "01.Guide/10.Basics nests; children sort by (order, title); the
+            three-variant group is ONE leaf (M1)"
+    (let [m (full-model [(entry {:base "conventions" :order 2})
+                         (entry {:base "conventions" :order 2 :lang :zh-Hans :title "约定"})
+                         (entry {:base "conventions" :order 2 :lang :zh-Hant :title "慣例"})
+                         (entry {:base "getting-started" :order 1})
+                         (entry {:base "Vue.js" :order 3})
+                         (entry {:base "adv" :order 1 :dir "/01.Guide/20.Advanced"})
+                         (entry {:base "zzz" :order 5 :dir "/01.Guide"})])
+          guide (get-in m [:sidebar "01.Guide"])
+          basics (second (:children guide))]
+      (is (= ["01.Guide"] (keys (:sidebar m))))
+      (is (= {:kind :dir :order 1 :title "Guide" :name "01.Guide" :dir-key "/01.Guide"}
+             (select-keys guide [:kind :order :title :name :dir-key]))
+          "(order, title) re-derived from the directory name")
+      (is (= [[:article 5 "zzz"] [:dir 10 "Basics"] [:dir 20 "Advanced"]]
+             (map (juxt :kind :order :title) (:children guide)))
+          "files and subdirectories interleave by number, as in vdoing")
+      (is (= [[1 "getting-started"] [2 "conventions"] [3 "Vue.js"]]
+             (map (juxt :order :title) (:children basics))))
+      (is (= 1 (count (filter #(= "conventions" (:title %)) (:children basics))))
+          "three files, one leaf")
+      (is (= ["zzz" "getting-started" "conventions" "Vue.js" "adv"]
+             (map :title (model/tree-leaves guide)))
+          "tree-leaves is the prev/next order for :tree articles"))))
+
+(deftest a-mechanism-2-variant-gets-no-second-slot
+  (testing "v2.1 M2: the slot is the PRIMARY's dir-key; the relocated variant's
+            directory does not even appear in the tree if nothing else lives there"
+    (let [m (full-model [(entry {:dir "/03.Deep/10.L2" :base "relocated" :order 1 :permalink "/pages/shared/"})
+                         (entry {:dir "/02.Notes/10.Local" :base "other" :order 1 :lang :zh-Hans
+                                 :permalink "/pages/shared/"})])]
+      (is (= ["03.Deep"] (keys (:sidebar m))))
+      (is (= ["/pages/shared/"] (map :permalink (model/tree-leaves (get-in m [:sidebar "03.Deep"])))))
+      (is (= "/03.Deep/10.L2" (:dir-key (model/find-dir (:tree m) "/03.Deep/10.L2")))))))
+
+(deftest posts-have-no-tree-slot
+  (let [m (full-model [(entry {:base "2026-01-01-p" :dir "_posts" :order nil :kind :post})])]
+    (is (empty? (:sidebar m)))
+    (is (nil? (model/top-dir (first (vals (:articles m))))))))
+
+(deftest doctor-checks-report-what-analyse-must-not
+  (testing "undated articles, disagreeing variants, over-deep directories and
+            unresolved catalogue paths are doctor warnings — never analyse
+            warnings, so build_test's only-the-expected-warning still holds"
+    (let [m (full-model [(dated {:base "undated" :order 1} nil)
+                         (dated {:base "dis" :order 2} "2026-01-01 00:00:00" {:article true})
+                         (dated {:base "dis" :order 2 :lang :ta :title "த"} nil {:article false})
+                         (dated {:base "deep" :order 1 :dir "/01.A/10.B/20.C/30.D"} "2026-01-01 00:00:00")
+                         (dated {:base "Cat" :order 1 :dir "/00.Catalogue"} "2026-01-01 00:00:00"
+                                {:pageComponent {:name "Catalogue" :data {:path "09.Nowhere"}}})])
+          [_ ds] (diag/collecting (model/doctor-checks! m))
+          msgs (map :message (diag/warnings ds))]
+      (is (empty? (diag/errors ds)))
+      (is (some #(re-find #"no parseable `date:`" %) msgs))
+      (is (some #(re-find #"disagree on `article`" %) msgs))
+      (is (some #(re-find #"4 levels deep" %) msgs))
+      (is (some #(re-find #"09\.Nowhere" %) msgs))
+      (is (= 4 (count msgs)) (pr-str msgs)))))
+
+(deftest newest-first-is-total
+  (let [gs [{:permalink "/pages/b/" :date "2026-01-01 00:00:00"}
+            {:permalink "/pages/a/" :date "2026-01-01 00:00:00"}
+            {:permalink "/pages/c/" :date nil}
+            {:permalink "/pages/d/" :date "2026-06-01 00:00:00"}]]
+    (is (= ["/pages/d/" "/pages/a/" "/pages/b/" "/pages/c/"]
+           (map :permalink (model/newest-first gs)))
+        "date desc, permalink tie-break, undated last")
+    (is (= (model/newest-first gs) (model/newest-first (reverse gs))))))

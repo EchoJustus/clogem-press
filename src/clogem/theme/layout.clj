@@ -76,10 +76,12 @@
   (let [current (:permalink group)]
     [:aside.clogem-sidebar
      (into [:nav {:aria-label "Sidebar"}]
-           (for [[top groups] (:sidebar model)
+           (for [[top node] (:sidebar model)
+                 :let [groups (map #(get-in model [:articles (:permalink %)])
+                                   (model/tree-leaves node))]
                  :when (seq groups)]
              [:section.clogem-sidebar__group
-              [:h2 (-> (str top) (str/replace #"^\d+\." ""))]
+              [:h2 (:title node)]
               (into [:ul]
                     (for [g groups
                           :let [v-lang (model/best-variant g lang)

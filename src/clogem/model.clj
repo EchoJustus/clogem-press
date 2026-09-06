@@ -250,6 +250,44 @@
 ;; ---------------------------------------------------------------------------
 ;; Identity groups
 
+;; ---------------------------------------------------------------------------
+;; Group-level facts that are more than a front-matter lookup
+
+(defn sticky-rank
+  "vdoing's `sticky: 1|2|3…` pins an article to the top of the homepage list,
+  lowest rank first. `sticky: true` is common in migrated trees and means
+  rank 1 (D-P2-4). Anything else — false, nil, a non-numeric string — is not
+  sticky. A numeric string is accepted because YAML authors quote things."
+  [v]
+  (cond
+    (true? v)   1
+    (number? v) v
+    (string? v) (parse-long (str/trim v))
+    :else       nil))
+
+(defn page-component
+  "The primary variant's `pageComponent`, normalized to {:name String :data map}
+  or nil. YAML gives keyword keys; EDN front matter may use strings."
+  [pv]
+  (when-let [pc (get-in pv [:front-matter :pageComponent])]
+    (cond
+      (map? pc)    {:name (some-> (or (get pc :name) (get pc "name")) str)
+                    :data (let [d (or (get pc :data) (get pc "data"))]
+                            (if (map? d)
+                              (into {} (map (fn [[k v]] [(keyword (name k)) v])) d)
+                              {}))}
+      (string? pc) {:name pc :data {}}
+      :else        nil)))
+
+(defn catalogue-dir-key
+  "The dir-key a Catalogue page's `data.path` names: `01.Guide` → \"/01.Guide\",
+  `01.Guide/10.Basics` → \"/01.Guide/10.Basics\" (D-P2-8: the numbered forms,
+  exactly as the directories are spelled). nil when there is no path."
+  [pc]
+  (when-let [path (u/blank->nil (str (get-in pc [:data :path])))]
+    (str "/" (-> path (str/replace #"^[/\\\\]+|[/\\\\]+$" "") (str/replace #"\\\\" "/")))))
+
+
 (defn- pick-primary
   "The primary variant is the first language in :priority that this article
   actually has (§6.3's per-article twist)."
@@ -305,6 +343,8 @@
                    :kind       (:kind pv)
                    :date       (get-in pv [:front-matter :date])
                    :sticky     (get-in pv [:front-matter :sticky])
+                   ;; what the page IS comes from the primary too (§6.2 table)
+                   :page-component (page-component pv)
                    :article?   (not (or (get-in pv [:front-matter :pageComponent])
                                         (false? (get-in pv [:front-matter :article]))
                                         (true? (get-in pv [:front-matter :home]))))
@@ -353,27 +393,168 @@
     (:primary group)))
 
 ;; ---------------------------------------------------------------------------
-;; Sidebar (flat in Phase 1; tree rendering is Phase 2)
+;; Ordering
+
+(defn newest-first
+  "The one sort every index shares (§6.8: sort order is language-invariant
+  because `date` comes from the primary). Date descending; undated groups
+  last; permalink as the final tie-break so the order is total and a rebuild
+  cannot reshuffle two same-day articles."
+  [groups]
+  (sort (fn [a b]
+          (let [da (:date a) db (:date b)]
+            (cond
+              (and da db (not= da db)) (compare db da)
+              (and da (nil? db)) -1
+              (and db (nil? da)) 1
+              :else (compare (:permalink a) (:permalink b)))))
+        groups))
+
+;; ---------------------------------------------------------------------------
+;; Indexes (§5.2 step 3 — ids, never page refs)
+
+(defn- index-by
+  "{key → [permalink …]} over `groups`, keeping `groups`' order inside each
+  bucket. `f` yields the keys a group files under — a group with categories
+  [\"Guide\" \"Basics\"] is indexed under BOTH (vdoing semantics, D-P2-2)."
+  [f groups]
+  (reduce (fn [m g]
+            (reduce (fn [m k] (update m k (fnil conj []) (:permalink g)))
+                    m (distinct (keep #(u/blank->nil (str %)) (f g)))))
+          (sorted-map) groups))
+
+(defn archive-key
+  "[year month] of a canonical `YYYY-MM-DD …` date string, or nil. Only the
+  leading date is read, so `2026-8-1` and `2026-08-01 09:30:00` both file."
+  [date]
+  (when-let [[_ y m] (re-find #"^\s*(\d{4})-(\d{1,2})" (str date))]
+    [(parse-long y) (parse-long m)]))
+
+(defn archives
+  "{year {month [permalink …]}}, newest year and month first; groups without a
+  parseable date are skipped here and reported by `doctor-checks!`."
+  [groups]
+  (reduce (fn [m g]
+            (if-let [[y mo] (archive-key (:date g))]
+              (let [months (get m y (sorted-map-by >))]
+                (assoc m y (update months mo (fnil conj []) (:permalink g))))
+              m))
+          (sorted-map-by >) groups))
+
+;; ---------------------------------------------------------------------------
+;; Sidebar tree (D-P2-1)
+
+(defn- dir-key-segments
+  [dir-key]
+  (vec (remove str/blank? (str/split (str dir-key) #"/"))))
+
+(defn dir-node
+  "A directory node, its (order, title) re-derived from the directory NAME via
+  `scan/parse-dirname` rather than from any scanner marker — scan_test forbids
+  the {:kind :dir} markers from escaping the scanner. (`parse-dirname` is
+  reimplemented inline to keep clogem.model free of a dependency on the
+  scanner: number before the first dot, title after it.)"
+  [dir-key name]
+  (let [i (str/index-of name ".")
+        order (when i (let [m (re-find #"^\s*([+-]?\d+)" (subs name 0 i))]
+                        (when m (parse-long (second m)))))]
+    {:kind      :dir
+     :name      name
+     :dir-key   dir-key
+     :order     order
+     :numbered? (some? order)
+     :title     (if order (subs name (inc i)) name)
+     :children  []}))
+
+(defn- node-sort-key
+  "vdoing sorts a directory's files and subdirectories TOGETHER by number
+  (order-as-array-index); an unnumbered directory (legal at level 1) sorts
+  after every numbered sibling."
+  [n]
+  [(if (:order n) 0 1) (or (:order n) 0) (str (:title n))])
+
+(defn- sort-tree [node]
+  (update node :children
+          (fn [cs] (->> cs (map #(if (= :dir (:kind %)) (sort-tree %) %))
+                        (sort-by node-sort-key) vec))))
+
+(defn- insert-leaf
+  "Insert `leaf` under the directory path `segs` (dir names), creating
+  directory nodes on the way."
+  [node segs leaf key-so-far]
+  (if (empty? segs)
+    (update node :children conj leaf)
+    (let [[seg & more] segs
+          key' (str key-so-far "/" seg)
+          idx  (some (fn [[i c]] (when (and (= :dir (:kind c)) (= seg (:name c))) i))
+                     (map-indexed vector (:children node)))
+          child (if idx (nth (:children node) idx) (dir-node key' seg))
+          child' (insert-leaf child more leaf key')]
+      (if idx
+        (assoc-in node [:children idx] child')
+        (update node :children conj child')))))
+
+(defn sidebar-tree
+  "The whole numbered tree as ONE root node whose children are the top-level
+  directories, each a nested {:kind :dir :children […]} of directory nodes and
+  {:kind :article :permalink …} leaves.
+
+  One leaf per identity group — never per file — which is exactly M1's point:
+  `02.conventions.md` and `02.conventions.zh-Hans.md` are one leaf. A
+  mechanism-2 variant living elsewhere creates NO second leaf: the slot is the
+  primary's :dir-key (§6.2, v2.1 M2). Non-article pages (catalogue pages,
+  `article: false`) ARE leaves — vdoing lists every file; the article
+  predicate governs indexes, not the tree (D-P2-1)."
+  [groups]
+  (sort-tree
+   (reduce (fn [root g]
+             (insert-leaf root (dir-key-segments (:dir-key g))
+                          {:kind :article :permalink (:permalink g)
+                           :order (:order g)
+                           :title (get-in g [:variants (:primary g) :base-title])}
+                          ""))
+           {:kind :dir :name "" :dir-key "" :title "" :children []}
+           (filter #(= :tree (:kind %)) (vals groups)))))
 
 (defn sidebar
-  "Group articles by their top-level directory, ordered by (order, title).
+  "{top-dir-name → subtree}, in sidebar order. An article page renders only
+  its own top-level directory's tree (D-P2-1), so the map is keyed the way the
+  page looks it up."
+  [tree]
+  (reduce (fn [m n] (assoc m (:name n) n))
+          (array-map)
+          (:children tree)))
 
-  One entry per identity group — not per file — which is exactly M1's point:
-  `02.conventions.md` and `02.conventions.zh-Hans.md` are one entry, and the
-  duplicate-number rule had to be scoped to identity for that to be expressible."
-  [cfg groups]
-  (let [tree-groups (filter #(= :tree (:kind %)) (vals groups))]
-    (->> tree-groups
-         (group-by #(first (remove str/blank? (str/split (str (:dir-key %)) #"/"))))
-         (into (sorted-map-by
-                (fn [a b] (compare [(str a)] [(str b)]))))
-         (reduce-kv
-          (fn [m top gs]
-            (assoc m top (vec (sort-by (juxt #(or (:order %) 9999)
-                                             #(str (:dir-key %))
-                                             #(str (get-in % [:variants (:primary %) :title])))
-                                       gs))))
-          {}))))
+(defn top-dir
+  "The top-level directory name of a group's sidebar slot, or nil for posts —
+  a post has no structured position (`sidebar: auto`, D-P2-1)."
+  [group]
+  (when (= :tree (:kind group))
+    (first (dir-key-segments (:dir-key group)))))
+
+(defn tree-leaves
+  "Every article leaf of a subtree in sidebar order — the order prev/next
+  follow for :tree articles (D-P2-7)."
+  [node]
+  (mapcat (fn [c] (if (= :dir (:kind c)) (tree-leaves c) [c])) (:children node)))
+
+(defn find-dir
+  "The directory node at `dir-key` inside `tree`, or nil."
+  [tree dir-key]
+  (loop [node tree segs (dir-key-segments dir-key)]
+    (if (empty? segs)
+      node
+      (when-let [c (some #(when (and (= :dir (:kind %)) (= (first segs) (:name %))) %)
+                         (:children node))]
+        (recur c (rest segs))))))
+
+(defn tree-dirs
+  "Every directory node of a subtree with its depth (1 = top level)."
+  ([node] (tree-dirs node 0))
+  ([node depth]
+   (mapcat (fn [c] (when (= :dir (:kind c))
+                     (cons [c (inc depth)] (tree-dirs c (inc depth)))))
+           (:children node))))
 
 ;; ---------------------------------------------------------------------------
 ;; Assembly
@@ -381,7 +562,13 @@
 (defn build-model
   [cfg entries ledger]
   (let [[entries taken] (resolve-permalinks cfg entries ledger)
-        groups          (build-groups cfg entries)]
+        groups          (build-groups cfg entries)
+        articles        (newest-first (filter :article? (vals groups)))
+        sticky          (->> articles
+                             (keep #(when-let [r (sticky-rank (:sticky %))] [r %]))
+                             (sort-by first)
+                             (mapv (comp :permalink second)))
+        tree            (sidebar-tree groups)]
     {:cfg      cfg
      :entries  entries
      :articles groups
@@ -391,13 +578,78 @@
      ;; remembers a permalink that no file declares any more, so dropping it is
      ;; irreversible — and a build rewrites permalinks.edn unconditionally.
      :tombstones (or (:tombstones ledger) {})
-     :sidebar  (sidebar cfg groups)
+     :tree     tree
+     :sidebar  (sidebar tree)
      :permalinks (into {} (map (fn [[pl g]] [pl (:dir-key g)])) groups)
-     :posts    (->> (vals groups)
-                    (filter #(and (:article? %) (= :post (:kind %))))
-                    (sort-by :date)
-                    reverse
-                    (mapv :permalink))}))
+     ;; §5.2 step 3: every index holds article IDS, built from identity groups,
+     ;; never from entries — dedupe-by-identity is the shape, not a filter.
+     ;; All of them are populated only from :article? groups (D-P2-2): a
+     ;; catalogue page, an `article: false` page or a `home: true` page never
+     ;; enters an index.
+     :posts    (mapv :permalink articles)        ; ALL article groups, tree and post kinds (D-P2-4)
+     :sticky   sticky                            ; ascending rank; true → 1
+     :categories (index-by :categories articles)
+     :tags       (index-by :tags articles)
+     :archives   (archives articles)
+     ;; {dir-key → permalink} for every Catalogue page, so breadcrumbs and nav
+     ;; can point at the catalogue that covers a directory (D-P2-7, D-P2-8).
+     :catalogue  (into (sorted-map)
+                       (keep (fn [g]
+                               (let [pc (:page-component g)]
+                                 (when (and (= "catalogue" (u/lower (str (:name pc))))
+                                            (catalogue-dir-key pc))
+                                   [(catalogue-dir-key pc) (:permalink g)])))
+                             (vals groups)))}))
+
+;; ---------------------------------------------------------------------------
+;; Doctor findings that are not build errors
+
+(defn- variant-disagreements
+  "§6.2's group-facts table: `article: false`, `pageComponent` and
+  `comment: false` change what a page IS, so variants disagreeing on them is a
+  content bug — reported, while the primary's value is what the build uses."
+  [group]
+  (for [k [:pageComponent :article :comment]
+        :let [vals* (into {} (map (fn [[l v]] [l (get-in v [:front-matter k])])) (:variants group))]
+        :when (> (count (distinct (vals vals*))) 1)]
+    [k vals*]))
+
+(defn doctor-checks!
+  "Warnings `doctor` reports over a finished model. They live here rather than
+  inside `build-model` so that `analyse` stays exactly as quiet as Phase 1
+  left it (build_test pins its single expected warning) and so that they
+  fire once per report rather than once per render."
+  [{:keys [articles tree catalogue categories tags] :as _model}]
+  (doseq [g (vals articles)
+          :when (and (:article? g) (nil? (archive-key (:date g))))]
+    (diag/warn! (:permalink g)
+                (str "no parseable `date:` on the primary variant ("
+                     (get-in g [:variants (:primary g) :rel-path]) "); "
+                     "the article sorts last and is skipped by /archives/.")))
+  (doseq [g (vals articles)
+          [k vals*] (variant-disagreements g)]
+    (diag/warn! (:permalink g)
+                (str "language variants disagree on `" (name k) "`: "
+                     (str/join ", " (map (fn [[l v]] (str (name l) " → " (pr-str v)))
+                                         (sort-by (comp name key) vals*))))
+                (str "These change what a page IS (DESIGN.md §6.2); the primary variant ("
+                     (name (:primary g)) ") decides, and the others should agree.")))
+  (doseq [[node depth] (tree-dirs tree)
+          :when (> depth 3)]
+    (diag/warn! (str (subs (:dir-key node) 1) "/")
+                (str "directory is " depth " levels deep; vdoing allows numbered "
+                     "directories to level 3 and files only at level 4. It renders anyway.")))
+  (doseq [[dir-key pl] catalogue
+          :when (nil? (find-dir tree dir-key))]
+    (diag/warn! pl (str "Catalogue page points at `" (subs dir-key 1)
+                        "`, which is not a directory in the content tree.")
+                "Use the numbered directory names exactly, e.g. `01.Guide/10.Basics`."))
+  (doseq [[what index] [["category" categories] ["tag" tags]]
+          [slug ks] (group-by u/slug (keys index))
+          :when (> (count ks) 1)]
+    (diag/warn! nil (str "these " what " names share the URL slug `" slug "`: "
+                         (str/join ", " (map pr-str ks)) "; only one index page can be emitted.")))
+  nil)
 
 (defn ledger-from-model
   [model]
