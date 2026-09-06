@@ -338,7 +338,7 @@
 (deftest homepage-list-is-sticky-then-newest
   (let [html (slurp-out "index.html")
         pos  (fn [s] (str/index-of html s))]
-    (is (< (pos "href=\"/pages/3ce486/\"") (pos "href=\"/pages/y2025a/\"") (pos "href=\"/pages/ca4d51/\""))
+    (is (< (pos "href=\"/pages/3ce486/\"") (pos "href=\"/pages/y2025a/\"") (pos "href=\"/pages/cjk001/\""))
         "sticky: true (rank 1, newer) then sticky: 1 (2025) then the newest unpinned article")
     (is (str/includes? html "<article class=\"clogem-post-card is-sticky\"><h2 class=\"clogem-post-card__title\"><span class=\"clogem-sticky\">Pinned</span>"))
     (is (= 2 (count (re-seq #"is-sticky" html))))
@@ -355,8 +355,8 @@
 
 (deftest homepage-paginates-in-detailed-mode-only
   (is (exists? "page" "2" "index.html"))
-  (is (exists? "page" "5" "index.html") "14 articles at 3 per page")
-  (is (not (exists? "page" "6" "index.html")))
+  (is (exists? "page" "6" "index.html") "17 articles (the two catalogue pages are not articles) at 3 per page")
+  (is (not (exists? "page" "7" "index.html")))
   (is (exists? "ms" "page" "2" "index.html") "ms inherits index.md's options")
   (is (not (exists? "zh-Hans" "page" "2" "index.html")) "simple mode has no pagination")
   (let [p2 (slurp-out "page" "2" "index.html")]
@@ -424,7 +424,7 @@
         oldest (slurp-out "pages" "y2025a" "index.html")]
     (is (not (str/includes? newest "rel=\"prev\"")))
     (is (str/includes? newest "href=\"/pages/a00015/\" lang=\"en\" rel=\"next\"") "next = older")
-    (is (str/includes? oldest "href=\"/pages/mig001/\" lang=\"en\" rel=\"prev\"") "prev = newer")
+    (is (str/includes? oldest "href=\"/pages/ta0001/\" lang=\"ta\" rel=\"prev\"") "prev = newer (the 2026-03 Tamil post)")
     (is (not (str/includes? oldest "rel=\"next\"")))))
 
 (deftest prev-next-front-matter-overrides
@@ -581,3 +581,90 @@
                   warnings)
             (pr-str warnings)))
       (finally (fs/delete-tree dir)))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 — Unicode category/tag values and the tag union (D-P2-2, D-P2-3)
+
+(deftest cjk-and-tamil-category-and-tag-values
+  (testing "keys are kept verbatim as the directory name and the URL; hrefs are percent-encoded"
+    (is (exists? "categories" "中文笔记" "index.html"))
+    (is (exists? "tags" "中文" "index.html"))
+    (is (exists? "categories" "தமிழ்" "index.html"))
+    (is (exists? "tags" "தமிழ்" "index.html"))
+    (let [html (slurp-out "categories" "index.html")]
+      (is (str/includes? html "href=\"/categories/%E4%B8%AD%E6%96%87%E7%AC%94%E8%AE%B0/\">中文笔记</a>"))
+      (is (str/includes? html "href=\"/categories/%E0%AE%A4%E0%AE%AE%E0%AE%BF%E0%AE%B4%E0%AF%8D/\">தமிழ்</a>")))
+    (is (str/includes? (slurp-out "pages" "cjk001" "index.html") "lang=\"zh-Hans\"")
+        "a zh-Hans-only article serves zh-Hans at its bare URL")))
+
+(deftest tags-index-includes-a-tag-only-a-non-primary-variant-carries
+  (testing "§6.2: tags are the union across variants"
+    (let [g (group-titled "Containers")]
+      (is (= #{"markdown" "容器"} (set (:tags g))))
+      (is (= [(:permalink g)] (get-in *model* [:tags "容器"])))
+      (is (exists? "tags" "容器" "index.html"))
+      (is (str/includes? (slurp-out "tags" "index.html") ">容器<")))
+    (is (= 2 (count (get-in *model* [:tags "தமிழ்"]))) "the Tamil tag is on the tree article AND the post")))
+
+;; ---------------------------------------------------------------------------
+;; The four usage modes (§1, §8 Phase 2 exit criterion)
+
+(defn- temp-tree
+  "Materialize {rel-path → content} under a temp content/ tree; return [model uris]."
+  [files & [cfg-overrides]]
+  (let [dir (fs/create-temp-dir {:prefix "clogem-mode"})]
+    (try
+      (doseq [[rel content] files
+              :let [f (fs/path dir "content" rel)]]
+        (fs/create-dirs (fs/parent f))
+        (spit (fs/file f) content))
+      (let [cfg (first (diag/collecting
+                        (config/load-config (str dir) nil
+                                            (merge {:content {:write-front-matter false}} cfg-overrides))))
+            [m _] (diag/collecting (cli/analyse cfg))
+            [pm ds] (diag/collecting (let [pm (render/page-map m)] (doseq [[_ f] pm] (f)) pm))]
+        (is (empty? (diag/errors ds)))
+        [m (set (keys pm))])
+      (finally (fs/delete-tree dir)))))
+
+(def ^:private a-post "---\ntitle: P\ndate: \"2026-01-01 00:00:00\"\npermalink: /pages/p00001/\ntags: [t]\n---\n\n# P\n\nbody\n")
+(def ^:private a-tree "---\ntitle: T\ndate: \"2026-02-01 00:00:00\"\npermalink: /pages/t00001/\n---\n\n# T\n\n## H2\n\nbody\n")
+
+(deftest blog-only-mode
+  (testing "only _posts/: empty sidebar, populated posts and indexes"
+    (let [[m uris] (temp-tree {"_posts/2026-01-01-p.md" a-post})]
+      (is (empty? (:sidebar m)))
+      (is (= ["/pages/p00001/"] (:posts m)))
+      (is (= {"Notes" ["/pages/p00001/"]} (:categories m)) ":content :category-text")
+      (is (= {"t" ["/pages/p00001/"]} (:tags m)))
+      (is (contains? uris "/categories/notes/"))
+      (is (contains? uris "/tags/t/"))
+      (is (contains? uris "/archives/"))
+      (is (contains? uris "/pages/p00001/")))))
+
+(deftest kb-only-mode
+  (testing "no _posts/: posts still populated from tree articles (D-P2-4)"
+    (let [[m uris] (temp-tree {"01.Guide/10.Basics/01.t.md" a-tree})]
+      (is (= ["01.Guide"] (keys (:sidebar m))))
+      (is (= ["/pages/t00001/"] (:posts m)))
+      (is (= {"Guide" ["/pages/t00001/"] "Basics" ["/pages/t00001/"]} (:categories m)))
+      (is (contains? uris "/categories/basics/"))
+      (is (contains? uris "/")))))
+
+(deftest docs-mode
+  (testing ":content {:category false :tag false :archive false} → no index URIs at all"
+    (let [[m uris] (temp-tree {"01.Guide/10.Basics/01.t.md" a-tree
+                               "_posts/2026-01-01-p.md" a-post}
+                              {:content {:category false :tag false :archive false}})]
+      (is (seq (:sidebar m)) "the tree still renders")
+      (is (not-any? #(re-find #"/(categories|tags|archives)/" %) uris))
+      (is (contains? uris "/pages/t00001/"))
+      (is (contains? uris "/")))))
+
+(deftest kb-plus-blog-mode
+  (testing "the demo itself: tree + posts, every index, every language"
+    (is (seq (:sidebar *model*)))
+    (is (some #(= :post (get-in *model* [:articles % :kind])) (:posts *model*)))
+    (is (some #(= :tree (get-in *model* [:articles % :kind])) (:posts *model*)))
+    (is (exists? "categories" "index.html"))
+    (is (exists? "ta" "archives" "index.html"))))

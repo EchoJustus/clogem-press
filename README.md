@@ -18,10 +18,14 @@ The full design rationale, with every external claim verified against primary
 sources, is in [DESIGN.md](DESIGN.md); thirteen research reports back it in
 [`research/`](research/).
 
-> **Status: Phase 1.** The generator scans a content tree, resolves identity
-> groups, normalizes front matter, and renders a navigable multilingual site.
-> Sidebar *tree* rendering, index pages, catalogue rendering, containers, search,
-> highlighting, and the full theme are Phases 2–4 — see
+> **Status: Phase 2 complete (v0.1.0).** The generator scans a content tree,
+> resolves identity groups, normalizes front matter, and renders a multilingual
+> site with vdoing's core surface: collapsible sidebar tree, category / tag /
+> archive index pages, a paginated blog homepage with sticky posts, breadcrumbs
+> and prev/next, catalogue pages, `@pages/` auto-creation, a TOC bar with
+> scroll-spy, and the eight markdown containers plus `cardList` /
+> `cardImgList`. Search, syntax highlighting, hreflang/feeds and the full
+> theme are Phases 3–4 — see
 > [the implementation plan](DESIGN.md#8-implementation-plan).
 
 ## Install
@@ -69,8 +73,9 @@ content/
 ├── 01.Guide/10.Basics/02.conventions.zh-Hant.md    ┘ three variants
 ├── 01.Guide/20.Advanced/01.tamil-only.ta.md   an article with no English version
 ├── 02.Notes/10.Local/01.hawker-guide.ms.md
+├── 00.Catalogue/01.Guide.md                   pageComponent: Catalogue → card grid of 01.Guide
 ├── _posts/2026-08-01-hello.md                 blog posts, sorted by date
-└── @pages/                                    auto-generated index pages
+└── @pages/                                    auto-created index pages
 ```
 
 - **Numbered directories** become the sidebar. The number is everything before
@@ -90,6 +95,13 @@ content/
 - **A new variant inherits its permalink** from its identity group rather than
   minting one. Write the translation; the build files it under the existing
   article.
+- **Every index holds article identities**, so an article with three language
+  versions is one sidebar leaf, one category row, one archive entry — in every
+  language, in the same order. A row shows the reader's own version when it
+  exists, else the primary with a fallback marker.
+- **Hyphenated words are titles, not language tags.** `02.api-design.md` is an
+  article titled `api-design`; only confusables (`zh-CN`), one-edit misspellings
+  (`zh-Hanz`) and configured-primary-plus-region shapes (`en-us`) are errors.
 
 `examples/demo-site/` exercises all of it and is built by CI on every push,
 which makes it the executable specification rather than prose that can drift.
@@ -101,6 +113,10 @@ which makes it the executable specification rather than prose that can drift.
                           :priority that THIS article has, not a site default
 /zh-Hans/pages/a1b2c3/    a non-primary variant
 /zh-Hans/                 that language's home
+/categories/  /categories/<slug>/  /categories/<slug>/page/2/
+/tags/  /tags/<slug>/  /archives/  /page/2/
+                          index pages and pagination: bare for the site-default
+                          language, /zh-Hans/… for every other one
 ```
 
 A Tamil-only article lives at `/pages/d4e5f6/`, in Tamil. Every article is
@@ -110,7 +126,7 @@ need to know which languages exist.
 ## Development
 
 ```bash
-bb test                                             # 97 tests
+bb test                                             # 231 tests / 894 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 

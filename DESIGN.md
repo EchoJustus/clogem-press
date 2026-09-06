@@ -461,13 +461,16 @@ Build phases in detail:
                 {:primary :en                                    ; highest-priority available lang
                  :variants {:en page-ref :zh-Hans page-ref}
                  :categories ["Guide" "Basics"] :tags [] :date … :sticky nil}}
-    :sidebar   {"/01.Guide/" [{:title "Basics" :children […]} …]} ; per top-dir trees, deduped
+    :tree      {:kind :dir :children [{:kind :dir :name "01.Guide" :order 1 :title "Guide"
+                                       :children [… {:kind :article :permalink "/pages/a1b2c3/"}]}]}
+    :sidebar   {"01.Guide" <that subtree>}                        ; per top-dir trees, deduped
     :permalinks {"/pages/a1b2c3/" regular-path}                   ; two-path model
     :categories {"Guide" [article-id …]}                          ; ids, not pages
     :tags       {"tag1" [article-id …]}
     :archives   {2026 {8 [article-id …]}}
-    :posts      [article-id …]                                    ; article predicate, sorted
-    :catalogue  {"Guide" "/pages/xyz/"}}                          ; breadcrumb links
+    :posts      [article-id …]                                    ; article predicate, newest first
+    :sticky     [article-id …]                                    ; `sticky:` rank order (Phase 2)
+    :catalogue  {"/01.Guide" "/pages/xyz/"}}                      ; breadcrumb links, keyed by dir-key
    ```
    The v2 shift is small but load-bearing: **`:categories`, `:tags`, `:archives`, `:posts` and the
    sidebar hold *article ids* (permalinks), not page refs.** Dedupe-by-identity therefore isn't a
@@ -1884,6 +1887,38 @@ Recorded as the Phase 2 work (§8) landed; each item names the section it amends
    "so the rest of the report is readable, but the build will not run" — and the build ran. `build`,
    `doctor` and `fm-fix` now exit non-zero on a config error, `build` writes nothing, and `doctor`
    still produces the content findings under the repaired config.
+3. **`:catalogue` is keyed by dir-key, not by category title (§5.2 step 3).** The sketch wrote
+   `{"Guide" "/pages/xyz/"}`; category titles repeat across levels (`Local` under `Notes` and under
+   `Guide`), so the table is keyed by the numbered directory path a Catalogue page's `data.path`
+   names (`"/01.Guide"`, `"/01.Guide/10.Basics"`). Breadcrumbs look it up by the crumb's dir-key prefix.
+4. **`:posts` holds every article group, tree and post kinds (D-P2-4).** Phase 1 filtered to
+   `_posts/` only; the homepage list, the update bar and the archive are over all articles, as in
+   vdoing. `:sticky` is a separate id list in rank order (`sticky: true` = 1).
+5. **Index and home URLs follow the site-default rule in both `:prefix-default?` modes (§6.3,
+   D-P2-3).** Only articles have a per-article primary; `/categories/`, `/tags/`, `/archives/`,
+   `/page/N/` and the homes are bare for `:langs :default` and under `/<lang>/` otherwise. Slugs are
+   the raw key lower-cased with whitespace → `-`, Unicode kept verbatim, percent-encoded in hrefs.
+6. **Category index pages link only values that an article carries.** A category held solely by a
+   catalogue page (`article: false`) has no index page, so breadcrumbs and info lines render it as
+   plain text rather than a dangling link. `:i18n :category-labels` resolve through the §6.5 chain
+   *without* the first-available last resort — an English page shows `Basics`, not `基础`.
+7. **The homepage body is per language; list options are site-wide unless overridden.**
+   `index.<lang>.md` supplies both; a language without its own file inherits `index.md`'s
+   `postList`/`simplePostListLength`/`hideRightBar` but shows the site description, not an
+   untranslated body (§6.4 rule 2).
+8. **`doctor` renders every page in memory.** Dead links, unknown containers, malformed card-list
+   YAML, unresolved catalogue paths and unknown `pageComponent` names are render-time findings; the
+   doctor report includes them by rendering the page map and discarding the output, so "report content
+   problems without building" still holds (nothing is written).
+9. **`sidebarDepth` governs the TOC, not sidebar nesting (D-P2-9).** vdoing's default `2` shows
+   h2–h3; the body's h1 never enters the TOC. The scroll-spy decodes the percent-encoded fragment
+   before `getElementById`, because ids are stored unencoded (Appendix A item 18).
+10. **Containers are a source-line pre-pass (D-P2-10, approach A).** The bundled nextjournal.markdown
+    has no block-level hook; fences become HTML blocks before parsing, emitted with blank lines so
+    a heading inside a container remains a real `:heading` in `:toc`. Fences are recognized at 0–3
+    spaces of indentation only; a container inside a list item indented four or more spaces is
+    therefore an indented code block, as CommonMark says.
+11. **The near-miss distance rule requires a hyphen on one side (D-P2-14).** See item 1.
 
 ---
 

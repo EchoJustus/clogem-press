@@ -65,6 +65,10 @@
   {:key "/02.Notes/10.Local|5|cards",
    :langs ["en"],
    :paths ["02.Notes/10.Local/05.cards.md"]},
+  "/pages/cjk001/"
+  {:key "/04.中文笔记|1|first",
+   :langs ["zh-Hans"],
+   :paths ["04.中文笔记/01.first.zh-Hans.md"]},
   "/pages/ebaa6b/"
   {:key "/03.Deep/10.Level2/20.Level3|2|three-deep",
    :langs ["en"],
@@ -79,6 +83,10 @@
    :paths
    ["02.Notes/10.Local/02.relocated-variant.zh-Hans.md"
     "03.Deep/10.Level2/20.Level3/01.relocated.md"]},
+  "/pages/ta0001/"
+  {:key "_posts/தமிழ்||2026-03-01-tamil-post",
+   :langs ["ta"],
+   :paths ["_posts/தமிழ்/2026-03-01-tamil-post.ta.md"]},
   "/pages/y2025a/"
   {:key "_posts||2025-11-05-year-before",
    :langs ["en"],

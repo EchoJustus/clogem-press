@@ -62,7 +62,9 @@
 
 (defn- resolves?
   [out href]
-  (let [rel (str/replace href #"^/+" "")]
+  (let [;; hrefs percent-encode path segments (D-P2-3); the directory on
+        ;; disk is the unencoded slug
+        rel (str/replace (java.net.URLDecoder/decode (str href) "UTF-8") #"^/+" "")]
     (or (and (str/blank? rel) (fs/regular-file? (fs/path out "index.html")))
         (fs/regular-file? (fs/path out rel))
         (fs/regular-file? (fs/path out (str/replace rel #"/+$" "") "index.html")))))

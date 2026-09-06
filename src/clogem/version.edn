@@ -3,4 +3,5 @@
 ;;
 ;; The authoritative *pin* is the content repo's publish.yml `ref:` — this file
 ;; is what the running generator knows about itself, so the floor can be checked.
-{:version "0.1.0-phase1"}
+;; 0.1.0 = Phase 2 complete (DESIGN.md §8); tagged v0.1.0.
+{:version "0.1.0"}

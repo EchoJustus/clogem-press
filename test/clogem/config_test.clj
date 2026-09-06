@@ -3,9 +3,11 @@
   (:require [babashka.fs :as fs]
             [babashka.process]
             [clojure.test :refer [deftest is testing]]
+            [clojure.set]
             [clogem.cli :as cli]
             [clogem.config :as config]
             [clogem.diag :as diag]
+            [clogem.i18n]
             [clogem.util :as u]))
 
 (defn- with-site
@@ -175,3 +177,21 @@
         (is (re-find #":langs :default" err))
         (is (not (fs/exists? (fs/path dir "dist"))))
         (finally (fs/delete-tree dir))))))
+
+;; ---------------------------------------------------------------------------
+;; Theme string parity (§6.5)
+
+(deftest every-language-has-every-theme-string
+  (testing "each of the configured languages carries every key en.edn has —
+            the fallback chain would hide a gap in production, so it is
+            asserted here instead (this is what catches a missing
+            :container/theorem)"
+    (let [[cfg _] (with-site {})
+          en (set (keys (clogem.i18n/theme-strings :en)))]
+      (is (seq en))
+      (doseq [l (config/lang-keys cfg)]
+        (let [ks (set (keys (clogem.i18n/theme-strings l)))]
+          (is (empty? (clojure.set/difference en ks))
+              (str l " is missing " (pr-str (clojure.set/difference en ks))))
+          (is (empty? (clojure.set/difference ks en))
+              (str l " has keys en lacks: " (pr-str (clojure.set/difference ks en)))))))))

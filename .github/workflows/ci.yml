@@ -83,6 +83,19 @@ jobs:
           # A translated article must have prefixed non-primary variants.
           test -d dist/zh-Hant/pages               || fail "no zh-Hant variants emitted"
 
+          # Phase 2 (D-P2-3): the three index systems, bare for the site
+          # default language and under /<lang>/ for every other one.
+          for k in categories tags archives; do
+            test -f "dist/$k/index.html"           || fail "no /$k/ index"
+            for l in zh-Hans zh-Hant ms ta; do
+              test -f "dist/$l/$k/index.html"      || fail "no /$l/$k/ index"
+            done
+          done
+          test -f dist/page/2/index.html           || fail "no homepage pagination"
+          # Unicode slugs are kept verbatim in the directory name (D-P2-3)
+          test -f "dist/categories/中文笔记/index.html" || fail "no CJK category page"
+          test -f "dist/tags/தமிழ்/index.html"      || fail "no Tamil tag page"
+
           # The exporter copies; nothing in dist/ may be a symlink. Not a
           # platform constraint (upload-pages-artifact dereferences — v2.1 V15),
           # but a house rule worth enforcing: a dereferenced link ships its
@@ -122,6 +135,8 @@ jobs:
               *) echo "::error::link does not carry the base: $href"; missing=$((missing+1)); continue ;;
             esac
             rel="${href#$base}"
+            # hrefs percent-encode path segments (D-P2-3); files are unencoded
+            rel="$(printf '%b' "${rel//%/\\x}")"
             [ -f "dist-base/$rel" ] && continue
             [ -f "dist-base/${rel%/}/index.html" ] && continue
             [ -z "$rel" ] && [ -f dist-base/index.html ] && continue
