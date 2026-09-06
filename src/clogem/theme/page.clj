@@ -15,8 +15,8 @@
     (layout/document
      (assoc ctx :title (:title variant))
      (layout/navbar ctx)
-     [:div.clogem-shell
-      (layout/sidebar ctx)
+     (layout/shell
+      ctx
       [:main.clogem-main
        [:article.clogem-article
         [:h1 (:title variant)]
@@ -31,9 +31,8 @@
            (i18n/tr ctx :page/fallback-notice
                     {:lang (get-in cfg [:langs :locales (:lang variant) :label])})])
         (layout/variant-bar ctx)
-        [:div.clogem-content content-hiccup]]]]
-     [:footer.clogem-footer
-      [:p (str "clogem-press " (:clogem/version cfg))]])))
+        [:div.clogem-content content-hiccup]]])
+     (layout/footer ctx))))
 
 (defn home
   [{:keys [cfg lang model] :as ctx} content-hiccup]

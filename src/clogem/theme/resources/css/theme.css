@@ -165,3 +165,10 @@ img { max-width: 100%; height: auto; }
 .clogem-pagination .is-disabled { color: var(--textColorSubtle); }
 .clogem-empty { color: var(--textColorSubtle); font-style: italic; }
 .clogem-archive-month h3 { font-size: 0.95rem; color: var(--textColorSubtle); margin: 1rem 0 0.25rem; }
+
+/* ---- Phase 2: sidebar tree ---- */
+.clogem-sidebar__dir > summary { cursor: pointer; font-weight: 600; padding: 0.2rem 0; list-style: none; }
+.clogem-sidebar__dir > summary::before { content: "▸ "; color: var(--textColorSubtle); font-size: 0.8em; }
+.clogem-sidebar__dir[open] > summary::before { content: "▾ "; }
+.clogem-sidebar__dir > ul { padding-left: 0.9rem; border-left: 1px solid var(--borderColor); margin-left: 0.3rem; }
+.clogem-sidebar .is-active-trail > summary { color: var(--accent); }

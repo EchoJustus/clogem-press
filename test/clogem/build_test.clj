@@ -8,6 +8,7 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
+            [hiccup2.core]
             [clogem.cli :as cli]
             [clogem.config :as config]
             [clogem.diag :as diag]
@@ -262,3 +263,59 @@
             generated bar follows the heading directly — see the golden test
             for the generated files"
     (is (str/includes? (slurp-out "categories" "index.html") "<h1>Categories</h1>"))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 — sidebar tree (D-P2-1) and the site-wide switcher (D-P2-13)
+
+(defn- page-html
+  "Render one URI of a page map built over *model* with `cfg-f` applied."
+  [cfg-f uri]
+  (let [pm (first (diag/collecting (render/page-map (update *model* :cfg cfg-f))))
+        f  (get pm uri)]
+    (when f (str (hiccup2.core/html (f))))))
+
+(deftest an-article-shows-only-its-own-top-level-tree
+  (let [html (slurp-out "pages" "643259" "index.html")]
+    (is (str/includes? html "<details class=\"clogem-sidebar__dir"))
+    (is (str/includes? html "<summary>Guide</summary>"))
+    (is (str/includes? html "<summary>Basics</summary>") "nested directory")
+    (is (str/includes? html "<summary>Advanced</summary>"))
+    (is (not (str/includes? html "Heading slug cases")) "02.Notes articles are not in 01.Guide's tree")
+    (is (not (str/includes? html "Three levels deep")))
+    (is (re-find #"<li class=\"is-active\"><a aria-current=\"page\" href=\"/pages/643259/\"" html)
+        "the leaf is marked")
+    (is (= 1 (count (re-seq #"/pages/643259/\" lang" html))) "three variants, one leaf")))
+
+(deftest sidebar-open-governs-which-groups-start-open
+  (testing "[:theme :sidebar-open] true → every group open; false → only the active trail"
+    (let [uri "/pages/643259/"
+          all-open (page-html identity uri)
+          trail    (page-html #(assoc-in % [:theme :sidebar-open] false) uri)]
+      (is (= 3 (count (re-seq #"<details[^>]*open" all-open))) "Guide, Basics and Advanced all open")
+      (is (= 2 (count (re-seq #"<details[^>]*open" trail))) "only Guide and Basics — the active trail")
+      (is (re-find #"<details class=\"clogem-sidebar__dir is-active-trail\" open" trail))
+      (is (re-find #"<details class=\"clogem-sidebar__dir\"><summary>Advanced" trail)))))
+
+(deftest posts-catalogue-and-home-have-no-tree
+  (is (not (str/includes? (slurp-out "pages" "284c67" "index.html") "clogem-sidebar"))
+      "a post has no structured position (sidebar: auto)")
+  (is (not (str/includes? (slurp-out "pages" "559f0f" "index.html") "clogem-sidebar"))
+      "sidebar: false on the catalogue page hides the panel")
+  (is (not (str/includes? (slurp-out "index.html") "clogem-sidebar")))
+  (is (not (str/includes? (slurp-out "categories" "index.html") "clogem-sidebar"))))
+
+(deftest the-switcher-is-site-wide-and-lands-on-the-same-page
+  (testing "D-P2-13: every page lists every configured language"
+    (doseq [path [["index.html"] ["pages" "3ce486" "index.html"] ["zh-Hans" "categories" "index.html"]]]
+      (let [html (apply slurp-out path)]
+        (doseq [l ["English" "简体中文" "繁體中文" "Bahasa Melayu" "தமிழ்"]]
+          (is (str/includes? html (str ">" l "<")) (str path " lists " l))))))
+  (testing "an article with the variant → that variant; without → that language's home"
+    (let [html (slurp-out "pages" "643259" "index.html")]
+      (is (str/includes? html "href=\"/zh-Hans/pages/643259/\" hreflang=\"zh-Hans\""))
+      (is (str/includes? html "href=\"/ta/\" hreflang=\"ta\"") "no Tamil variant → Tamil home")
+      (is (str/includes? html "aria-current=\"true\" class=\"is-current\" lang=\"en\""))))
+  (testing "an index page → the same page under the other language"
+    (let [html (slurp-out "zh-Hans" "categories" "guide" "index.html")]
+      (is (str/includes? html "href=\"/categories/guide/\" hreflang=\"en\""))
+      (is (str/includes? html "href=\"/ta/categories/guide/\" hreflang=\"ta\"")))))

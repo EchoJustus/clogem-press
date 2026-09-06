@@ -85,29 +85,47 @@
 ;; ---------------------------------------------------------------------------
 ;; Chrome
 
+(defn switch-target
+  "Where the language switcher sends a reader of this page who picks `l`
+  (§6.4 rule 3, D-P2-13):
+
+    - an article that has an `l` variant → that variant's URL;
+    - an article without one            → `l`'s home (the fallback notice on
+                                          arrival already covers \"not translated\");
+    - an index / catalogue / paginated
+      page                              → the same page under `l` (:alt-url);
+    - anything else                     → `l`'s home."
+  [{:keys [cfg group alt-url]} l]
+  (cond
+    (and group (contains? (:variants group) l)) (model/variant-url cfg group l)
+    group    (model/home-url cfg l)
+    alt-url  (alt-url l)
+    :else    (model/home-url cfg l)))
+
 (defn lang-switcher
-  "Navbar language switcher. Every target is a real URL to a real document —
-  §6.3's point that the per-article buttons only *look* like a client-side
-  toggle. Languages the article does not have are not offered."
-  [{:keys [cfg lang group] :as ctx}]
+  "Navbar language switcher — site-wide, on every page, listing every
+  configured language (§6.4 rule 3, D-P2-13). Every target is a real URL to a
+  real document: §6.3's point that the buttons only *look* like a client-side
+  toggle. The current language is marked with aria-current.
+
+  Phase 1 narrowed this to the article's own variants; the design specifies
+  the site-wide switcher, with the per-article `variant-bar` below the title
+  as the place that lists only what the article has."
+  [{:keys [cfg lang] :as ctx}]
   (let [locales (get-in cfg [:langs :locales])
-        available (if group
-                    (filter #(contains? (:variants group) %) (config/lang-keys cfg))
-                    (config/lang-keys cfg))]
-    (when (> (count available) 1)
+        langs   (config/lang-keys cfg)]
+    (when (> (count langs) 1)
       [:nav.clogem-langs {:aria-label (i18n/tr ctx :nav/language)}
        [:span.clogem-langs__label (i18n/tr ctx :nav/language)]
        (into [:ul]
-             (for [l available
-                   :let [current? (= l lang)
-                         href (if group
-                                (model/variant-url cfg group l)
-                                (model/home-url cfg l))]]
+             (for [l langs
+                   :let [current? (= l lang)]]
                [:li (if current?
                       [:span.is-current {:lang (config/html-lang cfg l)
                                          :aria-current "true"}
                        (get-in locales [l :label])]
-                      [:a {:href href :lang (config/html-lang cfg l)
+                      [:a {:href (href ctx (switch-target ctx l))
+                           :lang (config/html-lang cfg l)
                            :hreflang (config/html-lang cfg l)}
                        (get-in locales [l :label])])]))])))
 
@@ -122,26 +140,66 @@
             (i18n/resolve-str ctx text)]))
    (lang-switcher ctx)])
 
-(defn sidebar
-  "Flat sidebar (tree rendering is Phase 2). One entry per identity group, with
-  the title of the reader's own language variant when the article has one, else
-  the primary's — marked with the fallback notice (§6.8)."
-  [{:keys [cfg lang model group] :as ctx}]
+(defn- sidebar-node
+  "One directory as <details>/<summary> — collapsible without JS — with its
+  children in sidebar order. `open-all?` is [:theme :sidebar-open]; otherwise
+  only the active trail (every ancestor of the current article) starts open."
+  [{:keys [cfg model group] :as ctx} node open-all? trail]
   (let [current (:permalink group)]
-    [:aside.clogem-sidebar
-     (into [:nav {:aria-label (i18n/tr ctx :page/sidebar)}]
-           (for [[top node] (:sidebar model)
-                 :let [groups (map #(get-in model [:articles (:permalink %)])
-                                   (model/tree-leaves node))]
-                 :when (seq groups)]
-             [:section.clogem-sidebar__group
-              [:h2 (:title node)]
-              (into [:ul]
-                    (for [g groups
-                          :let [{:keys [href title lang fallback?]} (article-link ctx g)]]
-                      [:li {:class (when (= current (:permalink g)) "is-active")}
-                       [:a {:href href :lang (config/html-lang cfg lang)} title]
-                       (when fallback? (fallback-badge ctx lang))]))]))]))
+    (into [:details.clogem-sidebar__dir
+           (cond-> {:class (when (contains? trail (:dir-key node)) "is-active-trail")}
+             (or open-all? (contains? trail (:dir-key node))) (assoc :open true))
+           [:summary (:title node)]]
+          [(into [:ul]
+                 (for [c (:children node)]
+                   (if (= :dir (:kind c))
+                     [:li (sidebar-node ctx c open-all? trail)]
+                     (let [g (get-in model [:articles (:permalink c)])
+                           {:keys [href title lang fallback?]} (article-link ctx g)]
+                       [:li {:class (when (= current (:permalink g)) "is-active")}
+                        [:a {:href href :lang (config/html-lang cfg lang)
+                             :aria-current (when (= current (:permalink g)) "page")}
+                         title]
+                        (when fallback? (fallback-badge ctx lang))]))))])))
+
+(defn- ancestors-of
+  "Every dir-key on the path to `dir-key`: \"/01.Guide/10.Basics\" →
+  #{\"/01.Guide\" \"/01.Guide/10.Basics\"}."
+  [dir-key]
+  (let [segs (remove str/blank? (str/split (str dir-key) #"/"))]
+    (set (map #(str "/" (str/join "/" (take % segs))) (range 1 (inc (count segs)))))))
+
+(defn sidebar
+  "The left sidebar tree of D-P2-1, or nil when the page has none:
+
+    - an article page shows ONLY its own top-level directory's tree;
+    - a post (`sidebar: auto`) has no structured position and gets no tree;
+    - `sidebar: false` on the primary variant hides the panel;
+    - home, index and catalogue pages show none (they use `page`).
+
+  Every directory is a <details> group; [:theme :sidebar-open true] opens all
+  of them, false only the active trail. The leaf AND every ancestor of the
+  current article are marked."
+  [{:keys [cfg model group] :as ctx}]
+  (when-let [top (and group
+                      (not (false? (get-in group [:variants (:primary group) :front-matter :sidebar])))
+                      (model/top-dir group))]
+    (when-let [node (get-in model [:sidebar top])]
+      [:aside.clogem-sidebar
+       [:nav {:aria-label (i18n/tr ctx :page/sidebar)}
+        (sidebar-node ctx node
+                      (not (false? (get-in cfg [:theme :sidebar-open])))
+                      (ancestors-of (:dir-key group)))]])))
+
+(defn shell
+  "The page body between navbar and footer: the sidebar tree when the page
+  has one, the main column, and any extra columns (the TOC bar)."
+  [ctx main & extra]
+  (let [sb (sidebar ctx)]
+    (into [:div.clogem-shell {:class (when-not sb "clogem-shell--single")}
+           sb
+           main]
+          extra)))
 
 (defn variant-bar
   "Per-article language buttons — plain links between separate documents."
