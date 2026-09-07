@@ -438,7 +438,8 @@ Build phases in detail:
 
 1. **Scan** (`scan.clj`) — walk `content/`, applying vdoing's exact rules **as amended in §6.1**:
    strip the extension, strip a recognized language suffix, then parse `NN.name` (number = before
-   first dot; title = between first and last dot for files, everything after the first dot for
+   the first dot; title = everything after the first dot-segment, extension and any language suffix
+   dropped, for files — so `05.a.b.c.md` is titled `a.b.c` — and everything after the first dot for
    directories), skip invalid numbers with a warning, **error on duplicate numbers that belong to
    different identities** — same number *and* same title in one directory is the language-variant
    case and is legal (§6.1, D-3) — exclude `_posts/`, `@pages/`, `index.md`, dotfiles.
@@ -460,13 +461,16 @@ Build phases in detail:
                 {:primary :en                                    ; highest-priority available lang
                  :variants {:en page-ref :zh-Hans page-ref}
                  :categories ["Guide" "Basics"] :tags [] :date … :sticky nil}}
-    :sidebar   {"/01.Guide/" [{:title "Basics" :children […]} …]} ; per top-dir trees, deduped
+    :tree      {:kind :dir :children [{:kind :dir :name "01.Guide" :order 1 :title "Guide"
+                                       :children [… {:kind :article :permalink "/pages/a1b2c3/"}]}]}
+    :sidebar   {"01.Guide" <that subtree>}                        ; per top-dir trees, deduped
     :permalinks {"/pages/a1b2c3/" regular-path}                   ; two-path model
     :categories {"Guide" [article-id …]}                          ; ids, not pages
     :tags       {"tag1" [article-id …]}
     :archives   {2026 {8 [article-id …]}}
-    :posts      [article-id …]                                    ; article predicate, sorted
-    :catalogue  {"Guide" "/pages/xyz/"}}                          ; breadcrumb links
+    :posts      [article-id …]                                    ; article predicate, newest first
+    :sticky     [article-id …]                                    ; `sticky:` rank order (Phase 2)
+    :catalogue  {"/01.Guide" "/pages/xyz/"}}                      ; breadcrumb links, keyed by dir-key
    ```
    The v2 shift is small but load-bearing: **`:categories`, `:tags`, `:archives`, `:posts` and the
    sidebar hold *article ids* (permalinks), not page refs.** Dedupe-by-identity therefore isn't a
@@ -702,6 +706,13 @@ Worked examples (the first four are byte-identical to vdoing's behaviour):
 | `01.article.zh-Hans.md` | 1 | `article` | `:zh-Hans` |
 | `10.article.ZH-HANS.md` | 10 | `article` | `:zh-Hans` (case-insensitive, canonicalized) |
 | `01.article.zh-Hanz.md` | — | — | **error**: "unknown language `zh-Hanz` — did you mean `zh-Hans`?" |
+| `02.api-design.md` | 2 | `api-design` | article default (a hyphenated word is not a tag — D-P2-14) |
+| `03.my-notes.md` | 3 | `my-notes` | article default |
+| `05.re-frame.md` | 5 | `re-frame` | article default |
+| `01.en-passant.md` | 1 | `en-passant` | article default (`passant` is neither script- nor region-shaped) |
+| `01.article.en-us.md` | — | — | **error**: did you mean `en`? (configured primary + region-shaped subtag) |
+| `01.article.ta-IN.md` | — | — | **error**: did you mean `ta`? |
+| `01.article.zh-han.md` | — | — | **error**: did you mean `zh-Hans`? (one edit from a configured code) |
 
 Three deliberate choices, each with its reason:
 
@@ -714,12 +725,21 @@ Three deliberate choices, each with its reason:
   (`zh-Hans`), but case-insensitive filesystems and human habit produce `zh-hans`. Hugo sidesteps this
   by *requiring* lowercase in filenames; we cannot, because the emitted `<html lang>` should read
   `zh-Hans`. So: match lowercased, emit the configured spelling.
-- **Near-miss codes are a hard error, not silently part of the title.** "Near miss" means: the segment
-  contains a hyphen and matches `^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})+$`, **or** it is in the small
-  confusables set derived from `:langs` (`zh`, `zh-CN`, `zh-TW`, `zh-HK`, `en-US`, …). Requiring the
-  hyphen for the pattern branch is what keeps `01.Vue.js.md` from tripping it. Rationale: a silent
-  misparse costs both a wrong title *and* a lost translation link — two bugs that surface far from
-  their cause. Failing at scan time is cheaper.
+- **Near-miss codes are a hard error, not silently part of the title.** A last dot-segment that is
+  not itself a configured code is a "near miss" iff, compared lower-cased, **any** of:
+  (a) it is in the small confusables set derived from `:langs` (`zh`, `zh-CN`, `zh-TW`, `zh-HK`,
+  `en-US`, …); **or** (b) its Damerau-Levenshtein distance to a configured code is ≤ 1 *and* the
+  segment or that code contains a hyphen (`zh-hanz`, `zh-han`, `ta-`, `zhhans`) — the hyphen
+  condition is what keeps `01.Vue.js.md` a file titled `Vue.js` even though `js` is one edit from
+  `ms`, as `tax` is from `ta`; **or** (c) it contains a hyphen, its primary subtag is a *configured*
+  primary (`zh`, `en`, `ms`, `ta` on the demo) and every remaining subtag is script-shaped (4 letters)
+  or region-shaped (2 letters / 3 digits) — so `zh-Hanz`, `en-us`, `ta-IN` are caught while
+  `api-design`, `my-notes`, `re-frame` and `en-passant` are ordinary titles. (Phase 1 used a pattern,
+  `^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})+$`, which made every hyphenated two- or three-letter word a
+  misspelled tag; `02.api-design.md`, `03.my-notes.md` and `05.re-frame.md` were confirmed false
+  positives on a real tree — D-P2-14.) Rationale for the error: a silent misparse costs both a wrong
+  title *and* a lost translation link — two bugs that surface far from their cause. Failing at scan
+  time is cheaper.
 
 **Duplicate numbers are scoped to identity (v2.1).** vdoing warns-and-overwrites when two entries in a
 directory share a number; D-3 upgrades that to an error. That upgrade must be **scoped to the identity
@@ -1847,6 +1867,68 @@ v2 decision.
     a **Phase 3** acceptance test (§9 said Phase 1, contradicting Appendix A and the risk table), and
     research/13's workflow listing gained the `i18n/**` path filter and the size-check step that §7.3
     already had.
+
+---
+
+## 11.2 Phase 2 implementation changelog
+
+Recorded as the Phase 2 work (§8) landed; each item names the section it amends.
+
+1. **Near-miss language tags (§6.1, §5.2 step 1).** The pattern branch
+   `^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})+$` made every hyphenated two- or three-letter word a misspelled
+   language tag — `02.api-design.md`, `03.my-notes.md` and `05.re-frame.md` hard-errored on a real
+   tree. Replaced by: confusables, **or** Damerau-Levenshtein ≤ 1 from a configured code when the
+   segment or the code carries a hyphen, **or** a configured primary subtag followed only by
+   script-shaped (4 alpha) or region-shaped (2 alpha / 3 digit) subtags. The hyphen condition on the
+   distance rule is a deliberate narrowing of D-P2-14's wording: without it `js` (one edit from `ms`)
+   would have turned the worked example `01.Vue.js.md` into an error. §5.2's title wording now
+   matches §6.1's pseudocode.
+2. **Config validation is fatal (§5.6, §6.2, D-P2-12).** `validate!` repaired a bad `:langs :default`
+   "so the rest of the report is readable, but the build will not run" — and the build ran. `build`,
+   `doctor` and `fm-fix` now exit non-zero on a config error, `build` writes nothing, and `doctor`
+   still produces the content findings under the repaired config.
+3. **`:catalogue` is keyed by dir-key, not by category title (§5.2 step 3).** The sketch wrote
+   `{"Guide" "/pages/xyz/"}`; category titles repeat across levels (`Local` under `Notes` and under
+   `Guide`), so the table is keyed by the numbered directory path a Catalogue page's `data.path`
+   names (`"/01.Guide"`, `"/01.Guide/10.Basics"`). Breadcrumbs look it up by the crumb's dir-key prefix.
+4. **`:posts` holds every article group, tree and post kinds (D-P2-4).** Phase 1 filtered to
+   `_posts/` only; the homepage list, the update bar and the archive are over all articles, as in
+   vdoing. `:sticky` is a separate id list in rank order (`sticky: true` = 1).
+5. **Index and home URLs follow the site-default rule in both `:prefix-default?` modes (§6.3,
+   D-P2-3).** Only articles have a per-article primary; `/categories/`, `/tags/`, `/archives/`,
+   `/page/N/` and the homes are bare for `:langs :default` and under `/<lang>/` otherwise. Slugs are
+   the raw key lower-cased with whitespace → `-`, Unicode kept verbatim, percent-encoded in hrefs.
+6. **Category index pages link only values that an article carries.** A category held solely by a
+   catalogue page (`article: false`) has no index page, so breadcrumbs and info lines render it as
+   plain text rather than a dangling link. `:i18n :category-labels` resolve through the §6.5 chain
+   *without* the first-available last resort — an English page shows `Basics`, not `基础`.
+7. **The homepage body is per language; list options are site-wide unless overridden.**
+   `index.<lang>.md` supplies both; a language without its own file inherits `index.md`'s
+   `postList`/`simplePostListLength`/`hideRightBar` but shows the site description, not an
+   untranslated body (§6.4 rule 2).
+8. **`doctor` renders every page in memory.** Dead links, unknown containers, malformed card-list
+   YAML, unresolved catalogue paths and unknown `pageComponent` names are render-time findings; the
+   doctor report includes them by rendering the page map and discarding the output, so "report content
+   problems without building" still holds (nothing is written).
+9. **`sidebarDepth` governs the TOC, not sidebar nesting (D-P2-9).** vdoing's default `2` shows
+   h2–h3; the body's h1 never enters the TOC. The scroll-spy decodes the percent-encoded fragment
+   before `getElementById`, because ids are stored unencoded (Appendix A item 18).
+10. **Containers are a source-line pre-pass (D-P2-10, approach A).** The bundled nextjournal.markdown
+    has no block-level hook; fences become HTML blocks before parsing, emitted with blank lines so
+    a heading inside a container remains a real `:heading` in `:toc`. Fences are recognized at 0–3
+    spaces of indentation only; a container inside a list item indented four or more spaces is
+    therefore an indented code block, as CommonMark says.
+11. **The near-miss distance rule requires a hyphen on one side (D-P2-14).** See item 1.
+12. **An article page carries one `<h1>` (D-P2-9).** The theme renders the front-matter title; the
+    body's leading `# Title` is dropped from the rendered content as it is from the TOC and the
+    excerpt. vdoing shows the body verbatim and renders no theme title; clogem-press keeps the theme
+    title (it carries the `titleTag` badge and exists for bodies without a heading).
+13. **A single-language site hides the switcher; an explicit `nil` removes a default locale (§5.6,
+    D-P2-13).** The five default locales always deep-merge in, so `{:langs {:locales {:ms nil}}}` is
+    the way to run with fewer, and a one-language site emits no switcher at all.
+14. **`sidebarDepth: 0` means no TOC**, as in vdoing; the default remains `[:theme :sidebar-depth 2]`.
+15. **A `:nav` permalink that names no article is emitted with the base only**, never with an invented
+    language prefix, and `doctor` reports it.
 
 ---
 

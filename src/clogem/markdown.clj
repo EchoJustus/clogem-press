@@ -41,6 +41,7 @@
   (:require [clojure.string :as str]
             [hiccup2.core :as h]
             [nextjournal.markdown :as md]
+            [clogem.containers :as containers]
             [clogem.diag :as diag]
             [clogem.util :as u]))
 
@@ -73,15 +74,27 @@
 (defn- external? [href]
   (boolean (re-find #"^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|//|#|mailto:|tel:)" (str href))))
 
+(defn with-base
+  "vdoing's `$withBase`: a root-relative site path gets the site's `:base`
+  prefixed, so `/assets/x.png` and `/categories/` written by an author work
+  on a project site served under `/project/`. Already-prefixed paths and a
+  root base are left alone."
+  [cfg href]
+  (let [base (u/clean-url (or (get-in cfg [:site :base]) "/"))]
+    (if (or (= "/" base) (str/starts-with? href base))
+      href
+      (str/replace (str base href) #"/{2,}" "/"))))
+
 (defn rewrite-href
   "Resolve a link to its destination URL.
 
-  Three cases are rewritten; everything else passes through untouched:
+  Four cases are rewritten; everything else passes through untouched:
 
     `/pages/xxxxxx/`  → the identity URL, resolved to the reader's own language
                         variant when the article has one (§6.3)
     `other.md`        → the article that file belongs to, same resolution
     `#frag`           → percent-encoded, since heading ids may be non-ASCII
+    `/anything/else`  → the site :base prefixed (`with-base`)
 
   A `.md` or `/pages/` target that resolves to nothing is a dead link and warns
   (the design's requirement); the original href is left in place so the page
@@ -113,6 +126,10 @@
           (str (url-for group lang) (when frag (str "#" (u/url-encode-fragment frag))))
           (do (diag/warn! from-path (str "dead link: " href " does not resolve to a page"))
               href)))
+
+      ;; a root-relative site path: assets, index pages, anything hand-written
+      (str/starts-with? href "/")
+      (with-base cfg href)
 
       :else href)))
 
@@ -146,6 +163,14 @@
                          (assoc :target "_blank" :rel "noopener noreferrer"))]
                    (children ctx node))))
 
+         ;; images: the src is a link too — `/assets/x.png` needs the base
+         :image
+         (fn [_ctx node]
+           (let [{:keys [src alt title]} (:attrs node)]
+             [:img (cond-> {:src (rewrite-href link-ctx src)
+                            :alt (or alt (md/node->text node))}
+                     title (assoc :title title))]))
+
          ;; Phase 1 emits plain fenced code. Phase 4 swaps in Chroma behind the
          ;; same seam, which is why the class name already follows the
          ;; `language-x` convention highlighters expect.
@@ -161,8 +186,13 @@
 ;; Public API
 
 (defn parse
-  [source]
-  (md/parse source))
+  "Source → AST, after the container pre-pass (`clogem.containers/expand`).
+  `ctx` is the page context — `:cfg :lang :strings :dev?` for the containers'
+  default titles in the page's language, plus the link context for card-list
+  hrefs; the one-arity form is for ad-hoc parsing with English titles."
+  ([source] (parse source {}))
+  ([source ctx]
+   (md/parse (containers/expand source (assoc ctx :rewrite-href #(rewrite-href ctx %))))))
 
 (defn ->hiccup
   [ast link-ctx]
@@ -170,18 +200,58 @@
 
 (defn render
   "Markdown source → hiccup."
+  [source ctx]
+  (->hiccup (parse source ctx) ctx))
+
+(def more-marker-re #"<!--\s*more\s*-->")
+
+(defn drop-leading-h1
+  "The body's leading `# Title` duplicates the title the theme already
+  renders (D-P2-9): an excerpt starts after it, and the article body is
+  rendered without it so a page carries one <h1>, not two."
+  [ast]
+  (let [c (:content ast)]
+    (if (and (= :heading (:type (first c))) (= 1 (:heading-level (first c))))
+      (assoc ast :content (vec (rest c)))
+      ast)))
+
+(defn excerpt
+  "The homepage excerpt of an article (D-P2-5): everything before
+  `<!-- more -->` when the marker is present, else the first paragraph —
+  with the leading h1 dropped either way. nil when there is nothing to show."
   [source link-ctx]
-  (->hiccup (parse source) link-ctx))
+  (let [src (str source)]
+    (if (re-find more-marker-re src)
+      (let [ast (drop-leading-h1 (parse (first (str/split src more-marker-re 2)) link-ctx))]
+        (when (seq (:content ast)) (->hiccup ast link-ctx)))
+      (let [ast (drop-leading-h1 (parse src link-ctx))]
+        (when-let [para (some #(when (= :paragraph (:type %)) %) (:content ast))]
+          (->hiccup (assoc ast :content [para]) link-ctx))))))
 
 (defn toc-entries
-  "Flatten the AST's :toc into [{:level :id :text}] with repaired ids, so the
-  right-hand TOC bar (Phase 2) and the heading anchors agree by construction."
+  "Flatten the AST's :toc into [{:level :id :text :href}] with repaired ids,
+  so the right-hand TOC bar and the heading anchors agree by construction.
+  `:href` is the percent-encoded fragment (`#` + `url-encode-fragment`), the
+  same encoding the heading anchor uses; the scroll-spy decodes it again
+  before `getElementById`, because ids are stored unencoded."
   [ast]
   (letfn [(walk [node]
             (concat
              (when-let [lvl (:heading-level node)]
-               [{:level lvl
-                 :id    (anchor-id (get-in node [:attrs :id]))
-                 :text  (md/node->text node)}])
+               (let [id (anchor-id (get-in node [:attrs :id]))]
+                 [{:level lvl
+                   :id    id
+                   :text  (md/node->text node)
+                   :href  (str "#" (u/url-encode-fragment (str id)))}]))
              (mapcat walk (:children node))))]
     (vec (mapcat walk (:children (:toc ast))))))
+
+(defn toc
+  "The right-hand TOC of D-P2-9: heading levels 2 … (1 + `depth`) — so the
+  vdoing default `sidebarDepth: 2` shows h2–h3 — with the body's leading h1
+  and every other h1 dropped, since the theme already renders the title."
+  [ast depth]
+  (let [depth (long (or depth 2))]
+    (if (< depth 1)
+      []                                   ; vdoing: `sidebarDepth: 0` = no TOC
+      (filterv #(<= 2 (:level %) (inc depth)) (toc-entries ast)))))

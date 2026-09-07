@@ -67,6 +67,30 @@
                                                       (.charAt b (dec j)))
                                                  0 1)))))))))))))
 
+(defn damerau-levenshtein
+  "Optimal-string-alignment edit distance: insert, delete, substitute, and
+  ONE adjacent transposition each cost 1. Used by the scanner's near-miss rule
+  (DESIGN.md §6.1, D-P2-14): a filename segment within distance 1 of a
+  configured language code (`zh-hanz`, `zh-han`, `ta-`, `zh-hsna`) is a
+  misspelled tag, not a title."
+  [^String a ^String b]
+  (let [m (count a) n (count b)
+        d (make-array Long/TYPE (inc m) (inc n))]
+    (dotimes [i (inc m)] (aset d i 0 (long i)))
+    (dotimes [j (inc n)] (aset d 0 j (long j)))
+    (doseq [i (range 1 (inc m)) j (range 1 (inc n))]
+      (let [cost (if (= (.charAt a (dec i)) (.charAt b (dec j))) 0 1)
+            best (min (inc (aget d (dec i) j))
+                      (inc (aget d i (dec j)))
+                      (+ (aget d (dec i) (dec j)) cost))
+            best (if (and (> i 1) (> j 1)
+                          (= (.charAt a (dec i)) (.charAt b (- j 2)))
+                          (= (.charAt a (- i 2)) (.charAt b (dec j))))
+                   (min best (inc (aget d (- i 2) (- j 2))))
+                   best)]
+        (aset d i j (long best))))
+    (aget d m n)))
+
 (defn closest
   "The candidate with the smallest edit distance to s, or nil if none is within
   `max-distance`.
@@ -139,6 +163,56 @@
                        (map #(format "%%%02X" (bit-and % 0xff)))
                        (apply str))))))
        (apply str)))
+
+(defn url-encode-segment
+  "Percent-encode one URL *path segment*: everything but RFC 3986 unreserved
+  characters is encoded, so `/`, `?`, `#` and `%` inside a category or tag
+  name cannot change the URL's structure. Unlike `url-encode-fragment`, this
+  encodes the sub-delimiters too — a fragment can carry `?` unencoded, a path
+  segment cannot."
+  [s]
+  (->> (str s)
+       (map (fn [^Character c]
+              (let [ch (str c)]
+                (if (re-matches #"[A-Za-z0-9\-._~]" ch)
+                  ch
+                  (->> (.getBytes ch "UTF-8")
+                       (map #(format "%%%02X" (bit-and % 0xff)))
+                       (apply str))))))
+       (apply str)))
+
+(defn url-encode-path
+  "Percent-encode every segment of a site path for use in an href, keeping the
+  separators: \"/categories/基础/\" → \"/categories/%E5%9F%BA%E7%A1%80/\". The
+  page map is keyed by the UNencoded path (that is the directory the file is
+  written to); links carry the encoded one (D-P2-3)."
+  [path]
+  (str/join "/" (map url-encode-segment (str/split (str path) #"/" -1))))
+
+(defn iso-date
+  "YYYY-MM-DD from a canonical date string, or the string as written when it
+  does not start with a date (D-P2-7: ISO, no locale formats yet)."
+  [d]
+  (when d
+    (if-let [[_ y m dd] (re-find #"^\s*(\d{4})-(\d{1,2})-(\d{1,2})" (str d))]
+      (format "%s-%02d-%02d" y (parse-long m) (parse-long dd))   ; `2026-8-1` → 2026-08-01
+      (str d))))
+
+(defn slug
+  "The URL slug of a category or tag (DESIGN.md D-P2-3): lower-cased, with
+  whitespace runs and path separators collapsed to `-`; Unicode letters (CJK,
+  Tamil) are kept verbatim, percent-encoding being the href side's job
+  (`url-encode-segment`) — the same policy the heading slugger follows.
+
+  `.` and `..` are not slugs but directory names, and would escape the index
+  directory; they, and the empty string, become `_`."
+  [s]
+  (let [out (-> (str s)
+                str/trim
+                lower
+                (str/replace #"[\s/\\]+" "-")
+                (str/replace #"^-+|-+$" ""))]
+    (if (or (str/blank? out) (#{"." ".."} out)) "_" out)))
 
 (defn html-escape
   [s]

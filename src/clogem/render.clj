@@ -22,6 +22,10 @@
             [clogem.i18n :as i18n]
             [clogem.markdown :as markdown]
             [clogem.model :as model]
+            [clogem.pages :as pages]
+            [clogem.theme.catalogue :as catalogue]
+            [clogem.theme.home :as home]
+            [clogem.theme.indexes :as indexes]
             [clogem.theme.page :as page]
             [clogem.util :as u]))
 
@@ -36,6 +40,9 @@
    :articles articles
    :lang lang
    :from-path from-path
+   ;; the containers' default titles come from the page's language (§6.4 rule 2)
+   :strings (:strings model)
+   :dev? (:clogem/dev? cfg)
    :by-rel-path (:by-rel-path model)
    :url-for (fn [group l]
               (model/variant-url cfg group (model/best-variant group l)))})
@@ -57,36 +64,259 @@
    {} (:articles model)))
 
 ;; ---------------------------------------------------------------------------
+;; Files outside the numbered tree: index.md and @pages/
+
+(defn localized-file
+  "`content/<rel>.<lang>.md` when it exists, else `content/<rel>.md`, else nil —
+  the convention `index.md` / `index.zh-Hans.md` and `@pages/*.md` share.
+  The four-arity form returns [path own?], where `own?` says the file is the
+  language's OWN (or the site default's, on the default language) rather than
+  the fallback."
+  ([cfg rel lang]
+   (first (localized-file cfg rel lang true)))
+  ([cfg rel lang _with-flag]
+   (let [dir (config/content-dir cfg)
+         l   (fs/path dir (str rel "." (name lang) ".md"))
+         d   (fs/path dir (str rel ".md"))]
+     (cond (fs/exists? l) [l true]
+           (fs/exists? d) [d (= lang (config/default-lang cfg))]
+           :else nil))))
+
+(defn index-paths
+  "{kind → site-relative root path} for every enabled index, read once per
+  build: the `@pages/` file's `permalink:` when it has one, else the default."
+  [cfg]
+  (into {}
+        (for [{:keys [kind default-path] :as k} (pages/enabled-kinds cfg)
+              :let [f  (localized-file cfg (pages/file-rel k) (config/default-lang cfg))
+                    pl (when f (get-in (fm/read-file f) [:front-matter :permalink]))]]
+          [kind (u/clean-url (or (u/blank->nil (str pl)) default-path))])))
+
+;; ---------------------------------------------------------------------------
 ;; Page map
+
+(defn- paginate
+  "[[page-number ids] …] over `ids`, `per-page` at a time; at least one page."
+  [ids per-page]
+  (map-indexed (fn [i chunk] [(inc i) chunk])
+               (or (seq (partition-all per-page ids)) [[]])))
+
+(defn- index-pages
+  "Every `/categories/…`, `/tags/…` and `/archives/` URI, per language, for the
+  enabled kinds (D-P2-3). Slugs are the raw keys lower-cased with whitespace
+  hyphenated; the URI keeps them verbatim (that is the directory written),
+  hrefs percent-encode them."
+  [model ctx-for]
+  (let [{:keys [cfg]} model
+        paths    (:index-paths model)
+        per-page (max 1 (long (or (get-in cfg [:theme :per-page]) 10)))]
+    (apply concat
+           (for [lang (config/lang-keys cfg)
+                 {:keys [kind title-key] :as k} (pages/enabled-kinds cfg)
+                 :let [root  (get paths kind)
+                       [file* own?] (localized-file cfg (pages/file-rel k) lang true)
+                       ;; the page's own language decides the title (§6.4 rule 2):
+                       ;; a user-written `title:` counts only from that language's
+                       ;; own @pages file (or the site default's, on the default
+                       ;; language); everywhere else the theme string is used
+                       title (or (when own?
+                                   (some-> file* fm/read-file :front-matter :title u/blank->nil))
+                                 (i18n/tr (ctx-for lang {}) title-key))
+                       ;; a user-authored body renders above the list (D-P2-6) —
+                       ;; only from the language's OWN file (§6.4 rule 2)
+                       body  (fn []
+                               (when (and file* own?)
+                                 (let [b (:body (fm/read-file file*))]
+                                   (when-not (str/blank? b)
+                                     (markdown/render b (link-context model model lang (str file*)))))))
+                       base  {:kind kind :page-kind kind :title title
+                              :root-uri (model/site-url cfg lang root)
+                              :href-for (fn [k] (model/site-url cfg lang (str root (u/slug k) "/")))}
+                       index (get model kind)]]
+             (concat
+              ;; the overview page
+              [[(model/site-url cfg lang root)
+                (fn []
+                  (let [ctx (ctx-for lang (assoc base
+                                                 :alt-url (fn [l] (model/site-url cfg l root))
+                                                 :page-body (body)))]
+                    (if (= kind :archives)
+                      (indexes/archives (assoc ctx :archives index))
+                      (indexes/overview (assoc ctx :index index)))))]]
+              ;; one filtered list per category/tag, paginated
+              (when (not= kind :archives)
+                (for [[k ids] index
+                      :let [sub   (str root (u/slug k) "/")
+                            pages (paginate ids per-page)
+                            total (count pages)]
+                      [n page-ids] pages]
+                  [(model/paged-url cfg lang sub n)
+                   (fn []
+                     (indexes/filtered
+                      (ctx-for lang (assoc base
+                                           :index index :current k :ids page-ids
+                                           :page n :total total
+                                           :page-url (fn [n] (model/paged-url cfg lang sub n))
+                                           :alt-url (fn [l] (model/paged-url cfg l sub n))))))])))))))
+
+(defn- home-front-matter
+  "The homepage options for `lang`: its own `index.<lang>.md` when it has
+  one, else the site-default `index.md` — list options are site-wide unless
+  a language overrides them. The BODY, by contrast, comes only from the
+  language's own file (§6.4 rule 2: chrome language ≡ content language)."
+  [cfg lang]
+  (let [[f own?] (localized-file cfg "index" lang true)
+        parts (when f (fm/read-file f))]
+    {:fm   (or (:front-matter parts) {})
+     :body (when (and own? parts (not (str/blank? (:body parts)))) (:body parts))
+     :path (some-> f str)}))
+
+(defn- home-pages
+  "Each language's home and its /page/N/ continuations (D-P2-5): the list is
+  sticky ++ (posts minus sticky); `postList: detailed` paginates by
+  [:theme :per-page], `simple` caps at `simplePostListLength`, `none` shows
+  the body only."
+  [model ctx-for]
+  (let [{:keys [cfg]} model
+        per-page (max 1 (long (or (get-in cfg [:theme :per-page]) 10)))
+        ids      (home/home-ids model)
+        plan     (into {}
+                       (for [lang (config/lang-keys cfg)
+                             :let [{:keys [fm body path]} (home-front-matter cfg lang)
+                                   mode (home/post-list-mode fm)
+                                   pages (if (= mode :detailed) (paginate ids per-page) [[1 ids]])]]
+                         [lang {:fm fm :body body :path path :pages pages}]))
+        page-uri (fn [l n]
+                   ;; the same page under `l` when it has one, else `l`'s home
+                   (if (<= n (count (get-in plan [l :pages])))
+                     (model/paged-url cfg l "/" n)
+                     (model/home-url cfg l)))]
+    (for [lang (config/lang-keys cfg)
+          :let [{:keys [fm body path pages]} (get plan lang)
+                total (count pages)]
+          [n page-ids] pages]
+      [(model/paged-url cfg lang "/" n)
+       (fn []
+         (let [lc  (link-context model model lang path)
+               ctx (ctx-for lang {:page-kind :home
+                                  :home-fm fm
+                                  :body (when body (markdown/render body lc))
+                                  :ids page-ids :page n :total total
+                                  :page-url (fn [n] (model/paged-url cfg lang "/" n))
+                                  :alt-url (fn [l] (page-uri l n))
+                                  :rewrite-href (fn [h] (markdown/rewrite-href lc h))
+                                  :excerpt (fn [group vl]
+                                             (let [v (get-in group [:variants vl])]
+                                               (markdown/excerpt
+                                                (:body v)
+                                                (link-context model model lang (:rel-path v)))))})]
+           (home/home ctx)))])))
+
+(defn- resolve-target
+  "A front matter `prev:`/`next:` value: a permalink or a relative `.md`
+  path → the group it names, or nil (with a warning) when it names nothing."
+  [model from-path v]
+  (let [s (str v)]
+    (or (get-in model [:articles (u/clean-url s)])
+        (get-in model [:by-rel-path (u/lower s)])
+        (get-in model [:by-rel-path (u/lower (str "./" s))])
+        (do (diag/warn! from-path (str "front matter prev/next names an unknown page: " s))
+            nil))))
+
+(defn- neighbour
+  "The prev or next link of an article page: front matter `false` hides it,
+  a permalink or `.md` path overrides the model's order, else
+  `model/neighbours`. The target is the reader's own variant when the
+  neighbour has one (model/best-variant)."
+  [model lang variant group k pl]
+  (let [fm-v (get-in variant [:front-matter k])
+        g    (cond
+               (false? fm-v) nil
+               (some? fm-v)  (resolve-target model (:rel-path variant) fm-v)
+               :else         (get-in model [:articles pl]))]
+    (when g
+      (let [vl (model/best-variant g lang)]
+        {:href  (model/variant-url (:cfg model) g vl)
+         :title (get-in g [:variants vl :title])
+         :lang  vl}))))
+
+(defn- catalogue-node
+  "The directory node a Catalogue page renders, or nil — with a warning —
+  when the page names no directory or an unknown pageComponent, in which
+  case the page falls back to its body (D-P2-8)."
+  [model group from-path]
+  (when-let [pc (:page-component group)]
+    (let [nm (u/lower (str (:name pc)))]
+      (cond
+        (not= "catalogue" nm)
+        (do (diag/warn! from-path (str "unknown pageComponent `" (:name pc)
+                                       "`; rendering the markdown body instead.")
+                        "Only `Catalogue` is supported (DESIGN.md §1.1).")
+            nil)
+
+        (nil? (model/catalogue-dir-key pc))
+        (do (diag/warn! from-path "pageComponent Catalogue has no data.path; rendering the body instead.")
+            nil)
+
+        :else
+        (or (model/find-dir (:tree model) (model/catalogue-dir-key pc))
+            (do (diag/warn! from-path
+                            (str "pageComponent Catalogue path `" (get-in pc [:data :path])
+                                 "` is not a directory in the content tree; rendering the body instead.")
+                            "Use the numbered directory names exactly, e.g. `01.Guide/10.Basics`.")
+                nil))))))
 
 (defn page-map
   "{uri → (fn [] hiccup)} for every emitted document.
 
-  Which URIs exist follows §6.3 exactly:
+  Which URIs exist follows §6.3 and D-P2-3:
     - the primary variant at the bare identity URL (or a redirect stub there
       when :prefix-default? is true — D-10, redirected not broken)
     - every non-primary variant under /<lang>/
-    - one home page per language"
+    - one home per language
+    - the enabled index pages per language, bare for the site-default
+      language and under /<lang>/ otherwise, in BOTH :prefix-default? modes"
   [model]
   (let [{:keys [cfg articles]} model
         strings (i18n/load-strings cfg)
-        model   (assoc model :by-rel-path (rel-path-index model))
+        ;; read the @pages/ files ONCE per build, not once per rendered page
+        paths   (index-paths cfg)
+        model   (assoc model :by-rel-path (rel-path-index model) :strings strings :index-paths paths)
         prefix-all? (get-in cfg [:i18n :prefix-default?])
-        ctx-for (fn [lang group variant]
-                  {:cfg cfg :lang lang :strings strings :model model
-                   :group group :variant variant :dev? (:clogem/dev? cfg)})]
+        ctx-for (fn [lang m]
+                  (merge {:cfg cfg :lang lang :strings strings :model model
+                          :dev? (:clogem/dev? cfg)
+                          :index-paths paths}
+                         m))]
     (into
      {}
      (concat
-      ;; articles
+      ;; articles — and catalogue pages, which are articles whose primary
+      ;; variant carries `pageComponent: {name: Catalogue}` (D-P2-8)
       (for [[_pl group] articles
             [lang variant] (:variants group)]
         [(model/variant-url cfg group lang)
          (fn []
-           (let [ctx (ctx-for lang group (assoc variant :lang lang))
+           (let [[prev-pl next-pl] (model/neighbours model group)
                  lc  (link-context model model lang (:rel-path variant))
-                 body (markdown/render (:body variant) lc)]
-             (page/article ctx body)))])
+                 ctx (ctx-for lang {:group group :variant (assoc variant :lang lang)
+                                    :page-kind :article
+                                    :rewrite-href (fn [h] (markdown/rewrite-href lc h))
+                                    :prev (neighbour model lang variant group :prev prev-pl)
+                                    :next (neighbour model lang variant group :next next-pl)})
+                 node (catalogue-node model group (:rel-path variant))]
+             (if node
+               (catalogue/catalogue (assoc ctx :page-kind :catalogue :node node
+                                           :page-component (:page-component group)))
+               ;; parse ONCE: the body hiccup and the TOC come from the same
+               ;; AST, so TOC ids and heading anchors agree by construction
+               (let [ast   (markdown/parse (:body variant) lc)
+                     depth (or (some-> (get-in variant [:front-matter :sidebarDepth]) str parse-long)
+                               (get-in cfg [:theme :sidebar-depth]))]
+                 (page/article (assoc ctx :toc (markdown/toc ast depth))
+                               ;; the theme renders the title; the body's own
+                               ;; `# Title` would be a second <h1>
+                               (markdown/->hiccup (markdown/drop-leading-h1 ast) lc))))))])
 
       ;; redirect stubs at the bare identity URL when every variant is prefixed
       (when prefix-all?
@@ -94,22 +324,21 @@
           [(model/identity-url cfg group)
            (fn [] (page/redirect-stub cfg (model/variant-url cfg group (:primary group))))]))
 
-      ;; one home per language
-      (for [lang (config/lang-keys cfg)]
-        [(u/clean-url (str (config/base-path cfg)
-                           (when-not (= lang (config/default-lang cfg)) (str "/" (name lang)))))
-         (fn []
-           (let [ctx (ctx-for lang nil nil)
-                 index-md (fs/path (config/content-dir cfg)
-                                   (if (= lang (config/default-lang cfg))
-                                     "index.md"
-                                     (str "index." (name lang) ".md")))
-                 body (when (fs/exists? index-md)
-                        (let [f (slurp (fs/file index-md))
-                              parts (fm/split-file f)]
-                          (markdown/render (:body parts)
-                                           (link-context model model lang (str index-md)))))]
-             (page/home ctx body)))])))))
+      ;; homes, paginated: /, /page/2/, … per language
+      (home-pages model ctx-for)
+
+      ;; index pages
+      (index-pages model ctx-for)))))
+
+(defn check-pages!
+  "Render every page to hiccup and throw the result away — what `doctor`
+  runs so that render-time findings (dead links, unresolved catalogue paths,
+  unknown containers, bad card-list YAML) land in its report without a
+  build. Returns the page count."
+  [model]
+  (let [pm (page-map model)]
+    (doseq [[_ f] pm] (f))
+    (count pm)))
 
 ;; ---------------------------------------------------------------------------
 ;; Export

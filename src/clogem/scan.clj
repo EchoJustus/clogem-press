@@ -35,11 +35,7 @@
   #{".vuepress" "@pages" "_posts" "node_modules"})
 
 ;; ---------------------------------------------------------------------------
-;; Near-miss detection (§6.1)
-
-(def ^:private tag-like-re
-  ;; Requires the hyphen — that is what keeps `01.Vue.js.md` from tripping this.
-  #"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})+$")
+;; Near-miss detection (§6.1, as amended by D-P2-14)
 
 (def ^:private region-variants
   "The small confusables set of §6.1, keyed by primary subtag. These are the
@@ -51,24 +47,66 @@
    "pt" ["pt" "pt-BR" "pt-PT"]
    "es" ["es" "es-ES" "es-MX"]})
 
+(defn- configured-codes
+  "Lower-cased configured language codes."
+  [cfg]
+  (set (map (comp u/lower name) (config/lang-keys cfg))))
+
+(defn- configured-primaries
+  [cfg]
+  (set (map #(first (str/split % #"-")) (configured-codes cfg))))
+
 (defn confusables
   "Language tags that are *close enough to* a configured code to be a mistake
   rather than a title, but are not themselves configured."
   [cfg]
-  (let [configured (set (map u/lower (map name (config/lang-keys cfg))))
-        primaries  (set (map #(first (str/split % #"-")) configured))]
-    (->> primaries
+  (let [configured (configured-codes cfg)]
+    (->> (configured-primaries cfg)
          (mapcat #(get region-variants % [%]))
          (map u/lower)
          (remove configured)
          set)))
 
+(defn- subtag-shaped?
+  "BCP 47 script (4 letters) or region (2 letters / 3 digits) subtag shape."
+  [sub]
+  (boolean (re-matches #"[A-Za-z]{4}|[A-Za-z]{2}|\d{3}" sub)))
+
 (defn near-miss?
+  "Is a last dot-segment a misspelled language tag rather than title text?
+
+  Phase 1 answered yes for ANY segment matching
+  `^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})+$`, which made every hyphenated two- or
+  three-letter word a language tag: `02.api-design.md`, `03.my-notes.md` and
+  `05.re-frame.md` all hard-errored on a real tree. The pattern is gone
+  (D-P2-14). A segment is a near-miss iff, after lower-casing:
+
+    (a) it is in the confusables set derived from `:langs` (`zh`, `zh-CN`,
+        `en-US`, …), OR
+    (b) its Damerau-Levenshtein distance to some configured code is ≤ 1 AND
+        the segment or that code contains a hyphen (`zh-hanz`, `zh-han`,
+        `ta-`, `zhhans`) — without the hyphen condition every two-letter
+        word one edit from a two-letter code would be a tag, and
+        `01.Vue.js.md` → `Vue.js` is a §6.1 invariant (`js` is one edit
+        from `ms`, as `tax` is from `ta`), OR
+    (c) it contains a hyphen, its primary subtag is a CONFIGURED primary
+        (`zh`, `en`, `ms`, `ta` on the demo), and every remaining subtag is
+        script-shaped (4 letters) or region-shaped (2 letters / 3 digits) —
+        so `zh-Hanz`, `en-us`, `ta-IN` are caught while `api-design`,
+        `my-notes`, `re-frame`, `en-passant` are not."
   [cfg segment]
   (let [s (u/lower segment)]
     (and (not (config/lang-for-suffix cfg segment))
          (or (contains? (confusables cfg) s)
-             (boolean (re-matches tag-like-re segment))))))
+             (some #(and (or (str/includes? s "-") (str/includes? % "-"))
+                         (<= (u/damerau-levenshtein s %) 1))
+                   (configured-codes cfg))
+             (let [[primary & rest-subs] (str/split s #"-" -1)]
+               (and (str/includes? s "-")
+                    (contains? (configured-primaries cfg) primary)
+                    (seq rest-subs)
+                    (every? subtag-shaped? rest-subs))))
+         true)))
 
 (defn near-miss-hint
   [cfg segment]

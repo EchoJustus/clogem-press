@@ -42,3 +42,13 @@
     (is (= 40 (count (u/sha1-hex "/pages/a1b2c3/"))))
     (is (= (u/sha1-hex "/pages/a1b2c3/") (u/sha1-hex "/pages/a1b2c3/"))
         "pure function of the term, so `clogem migrate` can print it")))
+
+(deftest damerau-levenshtein-counts-a-transposition-as-one-edit
+  (is (= 0 (u/damerau-levenshtein "abc" "abc")))
+  (is (= 1 (u/damerau-levenshtein "zh-hanz" "zh-hans")) "substitution")
+  (is (= 1 (u/damerau-levenshtein "zh-han" "zh-hans")) "deletion")
+  (is (= 1 (u/damerau-levenshtein "ta-" "ta")) "insertion")
+  (is (= 1 (u/damerau-levenshtein "zh-hnas" "zh-hans")) "adjacent transposition — one edit, not two")
+  (is (= 2 (u/levenshtein "zh-hnas" "zh-hans")) "…which plain Levenshtein counts as two")
+  (is (= 3 (u/damerau-levenshtein "" "abc")))
+  (is (= 3 (u/damerau-levenshtein "api-design" "api-designs-x")) "far from any code"))

@@ -1,9 +1,13 @@
 ;; Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).
 (ns clogem.config-test
   (:require [babashka.fs :as fs]
+            [babashka.process]
             [clojure.test :refer [deftest is testing]]
+            [clojure.set]
+            [clogem.cli :as cli]
             [clogem.config :as config]
             [clogem.diag :as diag]
+            [clogem.i18n]
             [clogem.util :as u]))
 
 (defn- with-site
@@ -96,3 +100,119 @@
 (deftest paths-are-normalized
   (let [[cfg _] (with-site {})]
     (is (not (clojure.string/includes? (str (config/out-dir cfg)) "/./")))))
+
+;; ---------------------------------------------------------------------------
+;; D-P2-12 — config validation is FATAL
+
+(defn- bad-site
+  "A valid content tree under a config whose :langs :default names a language
+  the site never configured. validate! repairs the default so the rest of a
+  doctor report is readable; that repair used to be taken as permission to
+  build."
+  []
+  (let [dir (fs/create-temp-dir {:prefix "clogem-badcfg"})]
+    (spit (fs/file dir "site.edn") (pr-str {:langs {:default :fr}}))
+    (fs/create-dirs (fs/path dir "content" "01.Guide"))
+    (spit (fs/file (fs/path dir "content" "01.Guide" "01.a.md")) "# A\n\nbody\n")
+    dir))
+
+(defn- exit-code [e] (:babashka/exit (ex-data e)))
+
+(deftest a-config-error-stops-the-build-before-anything-is-written
+  (testing "build exits non-zero, writes no dist/, and touches no source file"
+    (let [dir (bad-site)
+          src (fs/path dir "content" "01.Guide" "01.a.md")
+          before (slurp (fs/file src))]
+      (try
+        (binding [diag/*sink* (atom [])]      ; keep the printed report off stderr
+          (let [e (is (thrown? clojure.lang.ExceptionInfo
+                               (cli/build {:site-dir (str dir) :out (str (fs/path dir "dist"))})))]
+            (when (instance? clojure.lang.ExceptionInfo e)
+              (is (= 1 (exit-code e)) "bb exits with the :babashka/exit status")
+              (is (re-find #":langs :default" (ex-message e)))
+              (is (re-find #"config error" (ex-message e))))))
+        (is (not (fs/exists? (fs/path dir "dist"))) "no dist/ — not even an empty one")
+        (is (= before (slurp (fs/file src)))
+            "auto-fill runs AFTER the config check, so the source is byte-identical")
+        (is (not (fs/exists? (fs/path dir "permalinks.edn"))) "and no ledger was written")
+        (finally (fs/delete-tree dir))))))
+
+(deftest a-config-error-fails-doctor-and-fm-fix-too
+  (let [dir (bad-site)]
+    (try
+      (binding [diag/*sink* (atom [])]
+        (testing "doctor still produces the content report, then exits non-zero"
+          (let [e (is (thrown? clojure.lang.ExceptionInfo (cli/doctor {:site-dir (str dir)})))]
+            (when (instance? clojure.lang.ExceptionInfo e)
+              (is (= 1 (exit-code e)))
+              (is (some #(re-find #":langs :default" (:message %)) (:clogem/errors (ex-data e)))
+                  "the config error is IN the doctor report, not just in front of it"))))
+        (testing "fm-fix refuses to normalize anything"
+          (let [e (is (thrown? clojure.lang.ExceptionInfo (cli/fm-fix {:site-dir (str dir)})))]
+            (when (instance? clojure.lang.ExceptionInfo e)
+              (is (= 1 (exit-code e)))))
+          (is (= "# A\n\nbody\n" (slurp (fs/file (fs/path dir "content" "01.Guide" "01.a.md")))))))
+      (finally (fs/delete-tree dir)))))
+
+(deftest a-good-config-still-builds
+  (testing "the gate is on ERRORS only — warnings (here: no site.edn at all) pass"
+    (let [dir (fs/create-temp-dir {:prefix "clogem-goodcfg"})]
+      (try
+        (fs/create-dirs (fs/path dir "content" "01.Guide"))
+        (spit (fs/file (fs/path dir "content" "01.Guide" "01.a.md")) "# A\n\nbody\n")
+        (binding [diag/*sink* (atom [])]
+          (is (map? (cli/build {:site-dir (str dir) :out (str (fs/path dir "dist")) :no-write true}))))
+        (is (fs/exists? (fs/path dir "dist" "index.html")))
+        (finally (fs/delete-tree dir))))))
+
+(deftest the-real-bb-process-exits-non-zero-on-a-config-error
+  (testing "end to end, as CI and publish.yml run it: `bb --config bb.edn build`
+            in the site directory must exit 1 and leave no dist/"
+    (let [dir (bad-site)
+          bb-edn (str (fs/absolutize "bb.edn"))
+          {:keys [exit err]} (babashka.process/sh {:dir (str dir) :out :string :err :string}
+                                                  "bb" "--config" bb-edn "build")]
+      (try
+        (is (= 1 exit) (str "stderr was: " err))
+        (is (re-find #":langs :default" err))
+        (is (not (fs/exists? (fs/path dir "dist"))))
+        (finally (fs/delete-tree dir))))))
+
+;; ---------------------------------------------------------------------------
+;; Theme string parity (§6.5)
+
+(deftest every-language-has-every-theme-string
+  (testing "each of the configured languages carries every key en.edn has —
+            the fallback chain would hide a gap in production, so it is
+            asserted here instead (this is what catches a missing
+            :container/theorem)"
+    (let [[cfg _] (with-site {})
+          en (set (keys (clogem.i18n/theme-strings :en)))]
+      (is (seq en))
+      (doseq [l (config/lang-keys cfg)]
+        (let [ks (set (keys (clogem.i18n/theme-strings l)))]
+          (is (empty? (clojure.set/difference en ks))
+              (str l " is missing " (pr-str (clojure.set/difference en ks))))
+          (is (empty? (clojure.set/difference ks en))
+              (str l " has keys en lacks: " (pr-str (clojure.set/difference ks en)))))))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 defaults and locale removal
+
+(deftest phase-2-theme-defaults
+  (let [[cfg _] (with-site {})]
+    (is (= 10 (get-in cfg [:theme :per-page])))
+    (is (= 2 (get-in cfg [:theme :sidebar-depth])))
+    (is (true? (get-in cfg [:theme :sidebar-open])))
+    (is (true? (get-in cfg [:content :category])))
+    (is (true? (get-in cfg [:content :tag])))
+    (is (true? (get-in cfg [:content :archive])))
+    (is (= {} (get-in cfg [:i18n :category-labels])))))
+
+(deftest an-explicit-nil-removes-a-default-locale
+  (testing "deep-merge lets nil win, and normalize-langs honours it — the only
+            way a site can have fewer than the five default languages"
+    (let [[cfg ds] (with-site {:langs {:locales {:zh-Hant nil :ms nil :ta nil}}})]
+      (is (= [:en :zh-Hans] (config/lang-keys cfg)))
+      (is (nil? (config/lang-for-suffix cfg "ms")) "…so `01.Timing.ms.md` is a title again")
+      (is (empty? (diag/errors ds))))))

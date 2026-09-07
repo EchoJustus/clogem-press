@@ -62,11 +62,41 @@
     (is (:error (parse "01.article.zh-CN.md")))
     (is (:error (parse "01.article.en-US.md"))))
 
-  (testing "the hyphen requirement is what keeps dotted titles safe"
+  (testing "short words one edit from a two-letter code are titles, not tags —
+            the hyphen condition on the distance rule (D-P2-14) keeps §6.1's
+            worked example `01.Vue.js.md` → `Vue.js` true"
     (is (nil? (:error (parse "01.Vue.js.md")))
-        "`js` has no hyphen and is not confusable, so it is part of the title")
+        "`js` is one edit from `ms` and is still part of the title")
     (is (nil? (:error (parse "01.Notes.v2.md"))))
-    (is (nil? (:error (parse "01.config.yaml.md"))))))
+    (is (nil? (:error (parse "01.config.yaml.md"))))
+    (is (nil? (:error (parse "01.income.tax.md"))) "`tax` is one edit from `ta`")))
+
+(deftest hyphenated-words-are-not-language-tags
+  (testing "D-P2-14: the Phase 1 pattern branch made every hyphenated 2–3 letter
+            word a misspelled tag; these were confirmed false positives"
+    (doseq [[fname order title] [["02.api-design.md" 2 "api-design"]
+                                 ["03.my-notes.md"   3 "my-notes"]
+                                 ["05.re-frame.md"   5 "re-frame"]
+                                 ["01.en-passant.md" 1 "en-passant"]
+                                 ["01.a.en-passant-style.md" 1 "a.en-passant-style"]]]
+      (let [r (parse fname)]
+        (is (nil? (:error r)) (str fname " must parse: " (:error r)))
+        (is (= order (:order r)) fname)
+        (is (= title (:title r)) fname)
+        (is (nil? (:lang r)) fname)))))
+
+(deftest near-misses-by-distance-and-by-subtag-shape
+  (testing "rule (b): one edit from a configured code, with a hyphen on either side"
+    (doseq [fname ["01.article.zh-han.md" "01.a.ta-.md" "01.a.zh-hsna.md" "01.a.zhhans.md"]]
+      (is (:error (parse fname)) fname)))
+  (testing "rule (c): a configured primary subtag + only script/region-shaped subtags"
+    (doseq [fname ["01.article.ta-IN.md" "01.a.en-us.md" "01.a.ms-MY.md" "01.a.zh-Hanz-CN.md" "01.a.en-001.md"]]
+      (is (:error (parse fname)) fname))
+    (is (nil? (:error (parse "01.a.fr-CA.md"))) "`fr` is not a configured primary, so it is a title")
+    (is (nil? (:error (parse "01.a.en-passant.md"))) "`passant` is neither script- nor region-shaped"))
+  (testing "the suggestion still names the intended code"
+    (is (re-find #"did you mean `ta`" (:hint (parse "01.article.ta-IN.md"))))
+    (is (re-find #"did you mean `zh-Hans`" (:hint (parse "01.article.zh-han.md"))))))
 
 (deftest configured-language-wins-over-near-miss
   (testing "a configured code is a match, never a near miss"
@@ -281,3 +311,11 @@
                                 ".hidden/01.x.md"             post-body})]
       (is (empty? (diag/errors ds)) (pr-str (map :message (diag/errors ds))))
       (is (empty? (diag/warnings ds)) (pr-str (map :message (diag/warnings ds)))))))
+
+(deftest hyphenated-slugs-build-in-a-real-tree
+  (let [[model ds] (analyse-temp {"01.Guide/10.Basics/02.api-design.md" post-body
+                                  "01.Guide/10.Basics/03.my-notes.md"   post-body
+                                  "01.Guide/10.Basics/05.re-frame.md"   post-body
+                                  "_posts/2026-01-01-re-frame.md"       post-body})]
+    (is (empty? (diag/errors ds)) (pr-str (map :message (diag/errors ds))))
+    (is (= 4 (count (:articles model))))))

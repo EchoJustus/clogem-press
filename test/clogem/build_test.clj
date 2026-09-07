@@ -8,7 +8,11 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
+            [hiccup2.core]
             [clogem.cli :as cli]
+            [clogem.markdown]
+            [clogem.model :as model]
+            [clogem.theme.home]
             [clogem.config :as config]
             [clogem.diag :as diag]
             [clogem.render :as render]))
@@ -91,7 +95,11 @@
         (let [html (if (str/blank? sub)
                      (slurp-out "pages" "relocated" "index.html")
                      (slurp-out sub "pages" "relocated" "index.html"))]
-          (is (str/includes? html "Deep / Level2 / Level3")
+          ;; Phase 2 links each category to its index page, so the three
+          ;; names are separate anchors rather than one "Deep / Level2 /
+          ;; Level3" string; the invariant — both variants show the GROUP's
+          ;; categories, i.e. the primary's — is unchanged.
+          (is (re-find #"<span class=\"clogem-meta__cats\"[^>]*>(?:<a [^>]*>)?Deep(?:</a>)? / (?:<a [^>]*>)?Level2(?:</a>)? / (?:<a [^>]*>)?Level3" html)
               "both variants show the group's categories"))))))
 
 (deftest relative-md-links-are-rewritten-to-permalinks
@@ -135,8 +143,10 @@
     (is (apply exists? path) (str lang " home"))))
 
 (deftest site-i18n-overrides-win-over-theme-defaults
-  (is (str/includes? (slurp-out "index.html") "Latest from the demo")
-      "examples/demo-site/i18n/en.edn overrides :index/recent"))
+  (is (str/includes? (slurp-out "index.html") "Read the full article")
+      "examples/demo-site/i18n/en.edn overrides :index/read-more")
+  (is (str/includes? (slurp-out "ta" "index.html") "முழுக் கட்டுரையையும் படிக்க")
+      "…per language"))
 
 (deftest assets-are-copied-not-symlinked
   (is (exists? "assets" "demo.txt"))
@@ -180,3 +190,605 @@
           "and the index really is newest-first")
       (is (some #{"2026-07-20 08:00:00"} dates)
           "the unquoted YAML timestamp came through in the canonical form"))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 — index pages (D-P2-2, D-P2-3)
+
+(def non-default-langs ["zh-Hans" "zh-Hant" "ms" "ta"])
+
+(deftest index-pages-exist-per-language
+  (testing "D-P2-3: bare for the site-default language, /<lang>/ otherwise —
+            the site-default rule, not the per-article one"
+    (doseq [kind ["categories" "tags" "archives"]]
+      (is (exists? kind "index.html") kind)
+      (doseq [l non-default-langs]
+        (is (exists? l kind "index.html") (str l "/" kind))
+        (is (str/includes? (slurp-out l kind "index.html") (str "lang=\"" l "\""))
+            "rendered per language with a matching <html lang>")))))
+
+(deftest categories-overview-shows-every-category-with-localized-labels
+  (let [en (slurp-out "categories" "index.html")
+        zh (slurp-out "zh-Hans" "categories" "index.html")]
+    (doseq [c ["Guide" "Basics" "Notes" "tech"]]
+      (is (str/includes? en (str ">" c "<")) c))
+    (is (str/includes? zh ">基础<") "D-12: :i18n :category-labels localizes the DISPLAY")
+    (is (str/includes? zh "href=\"/zh-Hans/categories/basics/\"")
+        "…while the key and the URL slug stay the raw directory name")
+    (is (exists? "zh-Hans" "categories" "basics" "index.html"))))
+
+(deftest tags-page-lists-the-tags
+  (is (str/includes? (slurp-out "tags" "index.html") ">meta<"))
+  (is (exists? "tags" "meta" "index.html")))
+
+(deftest archives-group-by-year-then-month-newest-first
+  (let [html (slurp-out "archives" "index.html")]
+    (is (str/includes? html "<h2>2026</h2>"))
+    (is (< (str/index-of html "<h3>2026-08</h3>") (str/index-of html "<h3>2026-07</h3>"))
+        "newest month first")
+    (is (str/includes? html "/pages/mig001/") "the July post is in July")))
+
+(deftest an-article-appears-once-per-index-page
+  (testing "§6.8: dedupe by identity is structural — three variants, one row"
+    (let [html (slurp-out "categories" "basics" "index.html")]
+      (is (= 1 (count (re-seq #"/pages/643259/\"" html)))))))
+
+(deftest index-rows-follow-6-8
+  (testing "the L variant's title and URL when it exists, else the primary's
+            with the fallback notice; row order identical across languages"
+    (let [en  (slurp-out "categories" "guide" "index.html")
+          zh  (slurp-out "zh-Hans" "categories" "guide" "index.html")
+          en2 (slurp-out "categories" "guide" "page" "2" "index.html")
+          zh2 (slurp-out "zh-Hans" "categories" "guide" "page" "2" "index.html")
+          order (fn [html] (map second (re-seq #"href=\"(?:/zh-Hans)?(/pages/[^\"]+)\" lang" html)))]
+      (is (str/includes? en2 "href=\"/pages/171a98/\"") "Tamil-only: linked at its bare URL (page 2 at 3 per page)")
+      (is (re-find #"href=\"/pages/171a98/\"[^<]*</a><span class=\"clogem-fallback\"" en2)
+          "…and carries the fallback marker on the English page")
+      (is (str/includes? zh "href=\"/zh-Hans/pages/643259/\"") "the zh-Hans variant when it exists")
+      (is (str/includes? zh2 "href=\"/pages/171a98/\""))
+      (is (= (order en) (order zh)) "sort keys come from the primary — page 1")
+      (is (= (order en2) (order zh2)) "…and page 2")
+      (is (= 3 (count (order en))) ":per-page 3"))))
+
+(deftest index-pages-are-not-articles-and-the-catalogue-is-not-a-post
+  (is (not-any? #(re-find #"@pages" (str (:rel-path %)))
+                (mapcat (comp vals :variants) (vals (:articles *model*))))
+      "@pages/ files are never scanned as articles")
+  (let [cat (group-titled "Guide catalogue")]
+    (is (not (some #{(:permalink cat)} (:posts *model*))))
+    (is (not (some #{(:permalink cat)} (mapcat val (:categories *model*)))))))
+
+(deftest docs-mode-has-no-index-uris
+  (testing "D-P2-2 / :content toggles: category/tag/archive false → no index
+            page in the page map at all, in any language"
+    (let [m (update *model* :cfg #(-> % (assoc-in [:content :category] false)
+                                      (assoc-in [:content :tag] false)
+                                      (assoc-in [:content :archive] false)))
+          uris (keys (first (diag/collecting (render/page-map m))))]
+      (is (seq uris))
+      (is (not-any? #(re-find #"/(categories|tags|archives)/" %) uris)))
+    (let [m (update *model* :cfg #(assoc-in % [:content :tag] false))
+          uris (keys (first (diag/collecting (render/page-map m))))]
+      (is (not-any? #(re-find #"/tags/" %) uris))
+      (is (some #(re-find #"/categories/" %) uris) "the others stay"))))
+
+(deftest the-index-title-comes-from-the-owning-pages-file
+  (testing "the demo's categoriesPage.md says `title: Categories`; that title
+            is used on the English page only — zh-Hans uses its own theme string"
+    (is (str/includes? (slurp-out "categories" "index.html") "<h1>Categories</h1>"))
+    (is (str/includes? (slurp-out "zh-Hans" "categories" "index.html") "<h1>分类</h1>"))
+    (is (str/includes? (slurp-out "zh-Hans" "categories" "index.html") "<title>分类 ·"))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 — sidebar tree (D-P2-1) and the site-wide switcher (D-P2-13)
+
+(defn- page-html
+  "Render one URI of a page map built over *model* with `cfg-f` applied."
+  [cfg-f uri]
+  (let [pm (first (diag/collecting (render/page-map (update *model* :cfg cfg-f))))
+        f  (get pm uri)]
+    (when f (str (hiccup2.core/html (f))))))
+
+(deftest an-article-shows-only-its-own-top-level-tree
+  (let [html (slurp-out "pages" "643259" "index.html")]
+    (is (str/includes? html "<details class=\"clogem-sidebar__dir"))
+    (is (str/includes? html "<summary>Guide</summary>"))
+    (is (str/includes? html "<summary>Basics</summary>") "nested directory")
+    (is (str/includes? html "<summary>Advanced</summary>"))
+    (is (not (str/includes? html "Heading slug cases")) "02.Notes articles are not in 01.Guide's tree")
+    (is (not (str/includes? html "Three levels deep")))
+    (is (re-find #"<li class=\"is-active\"><a aria-current=\"page\" href=\"/pages/643259/\"" html)
+        "the leaf is marked")
+    (is (= 1 (count (re-seq #"/pages/643259/\" lang" html))) "three variants, one leaf")))
+
+(deftest sidebar-open-governs-which-groups-start-open
+  (testing "[:theme :sidebar-open] true → every group open; false → only the active trail"
+    (let [uri "/pages/643259/"
+          all-open (page-html identity uri)
+          trail    (page-html #(assoc-in % [:theme :sidebar-open] false) uri)]
+      (is (= 3 (count (re-seq #"<details[^>]*open" all-open))) "Guide, Basics and Advanced all open")
+      (is (= 2 (count (re-seq #"<details[^>]*open" trail))) "only Guide and Basics — the active trail")
+      (is (re-find #"<details class=\"clogem-sidebar__dir is-active-trail\" open" trail))
+      (is (re-find #"<details class=\"clogem-sidebar__dir\"><summary>Advanced" trail)))))
+
+(deftest posts-catalogue-and-home-have-no-tree
+  (is (not (str/includes? (slurp-out "pages" "284c67" "index.html") "clogem-sidebar"))
+      "a post has no structured position (sidebar: auto)")
+  (is (not (str/includes? (slurp-out "pages" "559f0f" "index.html") "clogem-sidebar"))
+      "sidebar: false on the catalogue page hides the panel")
+  (is (not (str/includes? (slurp-out "index.html") "clogem-sidebar")))
+  (is (not (str/includes? (slurp-out "categories" "index.html") "clogem-sidebar"))))
+
+(deftest the-switcher-is-site-wide-and-lands-on-the-same-page
+  (testing "D-P2-13: every page lists every configured language"
+    (doseq [path [["index.html"] ["pages" "3ce486" "index.html"] ["zh-Hans" "categories" "index.html"]]]
+      (let [html (apply slurp-out path)]
+        (doseq [l ["English" "简体中文" "繁體中文" "Bahasa Melayu" "தமிழ்"]]
+          (is (str/includes? html (str ">" l "<")) (str path " lists " l))))))
+  (testing "an article with the variant → that variant; without → that language's home"
+    (let [html (slurp-out "pages" "643259" "index.html")]
+      (is (str/includes? html "href=\"/zh-Hans/pages/643259/\" hreflang=\"zh-Hans\""))
+      (is (str/includes? html "href=\"/ta/\" hreflang=\"ta\"") "no Tamil variant → Tamil home")
+      (is (str/includes? html "aria-current=\"true\" class=\"is-current\" lang=\"en\""))))
+  (testing "an index page → the same page under the other language"
+    (let [html (slurp-out "zh-Hans" "categories" "guide" "index.html")]
+      (is (str/includes? html "href=\"/categories/guide/\" hreflang=\"en\""))
+      (is (str/includes? html "href=\"/ta/categories/guide/\" hreflang=\"ta\"")))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 — homepage (D-P2-4, D-P2-5)
+
+(deftest homepage-list-is-sticky-then-newest
+  (let [html (slurp-out "index.html")
+        pos  (fn [s] (str/index-of html s))]
+    (is (< (pos "href=\"/pages/3ce486/\"") (pos "href=\"/pages/y2025a/\"") (pos "href=\"/pages/cjk001/\""))
+        "sticky: true (rank 1, newer) then sticky: 1 (2025) then the newest unpinned article")
+    (is (str/includes? html "<article class=\"clogem-post-card is-sticky\"><h2 class=\"clogem-post-card__title\"><span class=\"clogem-sticky\">Pinned</span>"))
+    (is (= 2 (count (re-seq #"is-sticky" html))))
+    (is (= 3 (count (re-seq #"<article class=\"clogem-post-card" html))) ":per-page 3")))
+
+(deftest homepage-cards-carry-excerpt-title-tag-and-info-line
+  (let [html (slurp-out "index.html")]
+    (is (str/includes? html "<span class=\"clogem-title-tag\">原创</span>") "titleTag badge")
+    (is (str/includes? html "This post is dated 2025") "the excerpt is the content before <!-- more -->")
+    (is (not (str/includes? html "Everything below the")) "…and nothing after it")
+    (is (str/includes? html "href=\"/categories/notes/\">Notes</a>") "categories link to their index pages")
+    (is (str/includes? html "href=\"/tags/archive/\">archive</a>") "tags too")
+    (is (str/includes? html "datetime=\"2025-11-05\"") "ISO date")))
+
+(deftest homepage-paginates-in-detailed-mode-only
+  (is (exists? "page" "2" "index.html"))
+  (is (exists? "page" "6" "index.html") "17 articles (the two catalogue pages are not articles) at 3 per page")
+  (is (not (exists? "page" "7" "index.html")))
+  (is (exists? "ms" "page" "2" "index.html") "ms inherits index.md's options")
+  (is (not (exists? "zh-Hans" "page" "2" "index.html")) "simple mode has no pagination")
+  (let [p2 (slurp-out "page" "2" "index.html")]
+    (is (str/includes? p2 "href=\"/\" rel=\"prev\""))
+    (is (str/includes? p2 "href=\"/page/3/\" rel=\"next\""))
+    (is (str/includes? p2 "href=\"/ms/page/2/\" hreflang=\"ms\"") "the switcher lands on page 2 under ms")
+    (is (str/includes? p2 "href=\"/zh-Hans/\" hreflang=\"zh-Hans\"") "…and on zh-Hans's home, which has no page 2")))
+
+(deftest homepage-simple-mode-and-right-bar
+  (let [zh (slurp-out "zh-Hans" "index.html")
+        en (slurp-out "index.html")]
+    (is (str/includes? zh "clogem-list--simple"))
+    (is (= 3 (count (re-seq #"<li class=\"clogem-row\"" (first (str/split (second (str/split zh #"clogem-list--simple" 2)) #"</ul>" 2)))))
+        "simplePostListLength: 3")
+    (is (not (str/includes? zh "clogem-pagination")))
+    (is (str/includes? zh "<aside class=\"clogem-home-right\">") "the right bar stays on zh-Hans")
+    (is (str/includes? zh ">最近更新<") "the update bar, in the page's language")
+    (is (str/includes? zh "href=\"/zh-Hans/archives/\"") "…linking to that language's /archives/")
+    (is (not (str/includes? en "clogem-home-right")) "hideRightBar: true on index.md")))
+
+(deftest post-list-mode-and-home-ids
+  (is (= :detailed (clogem.theme.home/post-list-mode {})))
+  (is (= :simple (clogem.theme.home/post-list-mode {:postList "simple"})))
+  (is (= :none (clogem.theme.home/post-list-mode {:postList "none"})))
+  (is (= :detailed (clogem.theme.home/post-list-mode {:postList "bogus"})))
+  (is (= ["b" "a" "c"] (clogem.theme.home/home-ids {:sticky ["b"] :posts ["a" "b" "c"]}))
+      "sticky ++ (posts minus sticky): never twice"))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 — article chrome (D-P2-7)
+
+(deftest breadcrumbs-walk-the-category-path
+  (let [html (slurp-out "pages" "643259" "index.html")]
+    (is (re-find #"<nav aria-label=\"You are here\" class=\"clogem-breadcrumbs\"><ol><li><a href=\"/\">Home</a></li><li><a href=\"/pages/559f0f/\">Guide</a></li><li><a href=\"/categories/basics/\">Basics</a></li></ol></nav>" html)
+        "Guide → its Catalogue page; Basics → its category index"))
+  (let [html (slurp-out "zh-Hans" "pages" "643259" "index.html")]
+    (is (str/includes? html "<li><a href=\"/zh-Hans/categories/basics/\">基础</a></li>")
+        "localized label, per-language index, on the zh-Hans variant"))
+  (let [html (slurp-out "pages" "a00015" "index.html")]
+    (is (str/includes? html "<li><a href=\"/categories/tech/\">tech</a></li>")
+        "a post's crumbs derive from its category")))
+
+(deftest article-info-line-links-categories-and-tags
+  (let [html (slurp-out "pages" "284c67" "index.html")]
+    (is (str/includes? html "datetime=\"2026-08-16\""))
+    (is (str/includes? html "href=\"/categories/notes/\">Notes</a>"))
+    (is (str/includes? html "href=\"/tags/meta/\">meta</a>"))
+    (is (str/includes? (slurp-out "pages" "y2025a" "index.html") "<h1>A post from the year before<span class=\"clogem-title-tag\">原创</span></h1>"))))
+
+(deftest prev-next-follow-tree-order-for-tree-articles
+  (let [conv (slurp-out "pages" "643259" "index.html")
+        start (slurp-out "pages" "3ce486" "index.html")
+        tamil (slurp-out "pages" "171a98" "index.html")]
+    (is (str/includes? conv "href=\"/pages/3ce486/\" lang=\"en\" rel=\"prev\"") "prev = getting-started")
+    (is (str/includes? conv "href=\"/pages/22deb7/\" lang=\"en\" rel=\"next\"") "next = Vue.js")
+    (is (not (str/includes? start "rel=\"prev\"")) "first leaf of 01.Guide")
+    (is (str/includes? start "href=\"/pages/643259/\" lang=\"en\" rel=\"next\""))
+    (is (str/includes? tamil "href=\"/pages/c0nta1/\" lang=\"en\" rel=\"prev\"") "across subdirectories, in tree order")
+    (is (not (str/includes? tamil "rel=\"next\"")) "last leaf of 01.Guide")
+    (is (str/includes? (slurp-out "zh-Hans" "pages" "643259" "index.html") "href=\"/pages/3ce486/\" lang=\"en\" rel=\"prev\"")
+        "a neighbour without a zh-Hans variant links to its primary")))
+
+(deftest prev-next-follow-date-order-for-posts
+  (let [newest (slurp-out "pages" "284c67" "index.html")
+        oldest (slurp-out "pages" "y2025a" "index.html")]
+    (is (not (str/includes? newest "rel=\"prev\"")))
+    (is (str/includes? newest "href=\"/pages/a00015/\" lang=\"en\" rel=\"next\"") "next = older")
+    (is (str/includes? oldest "href=\"/pages/ta0001/\" lang=\"ta\" rel=\"prev\"") "prev = newer (the 2026-03 Tamil post)")
+    (is (not (str/includes? oldest "rel=\"next\"")))))
+
+(deftest prev-next-front-matter-overrides
+  (let [html (slurp-out "pages" "22deb7" "index.html")]
+    (is (not (str/includes? html "rel=\"prev\"")) "prev: false hides it")
+    (is (str/includes? html "href=\"/pages/17c887/\" lang=\"en\" rel=\"next\"") "next: /pages/17c887/ overrides tree order")))
+
+(deftest root-relative-links-get-the-base
+  (testing "vdoing's $withBase: /assets/… and /categories/ written by an author
+            work on a project site (§7.3: clogem-press's own docs live at /clogem-press/)"
+    (let [cfg {:site {:base "/project/"}}
+          ctx {:cfg cfg :articles {} :by-rel-path {} :lang :en :from-path "x.md" :url-for (fn [_ _] "/x/")}]
+      (is (= "/project/assets/x.png" (clogem.markdown/rewrite-href ctx "/assets/x.png")))
+      (is (= "/project/categories/" (clogem.markdown/rewrite-href ctx "/categories/")))
+      (is (= "/project/assets/x.png" (clogem.markdown/rewrite-href ctx "/project/assets/x.png")) "not doubled")
+      (is (= "/assets/x.png" (clogem.markdown/rewrite-href (assoc ctx :cfg {:site {:base "/"}}) "/assets/x.png"))))
+    (let [html (str (hiccup2.core/html (clogem.markdown/render "![demo](/assets/demo.png)" {:cfg {:site {:base "/p/"}}})))]
+      (is (str/includes? html "src=\"/p/assets/demo.png\"") "image srcs are links too")
+      (is (str/includes? html "alt=\"demo\"")))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 — catalogue pages (D-P2-8), nav (D-P2-11), doctor
+
+(deftest catalogue-pages-render-a-card-grid-instead-of-the-body
+  (let [guide (slurp-out "pages" "559f0f" "index.html")
+        deep  (slurp-out "pages" "c4d33p" "index.html")]
+    (is (str/includes? guide "clogem-catalogue__grid"))
+    (is (not (str/includes? guide "Catalogue pages render a card grid")) "the body is NOT rendered")
+    (is (str/includes? guide "<h3>Basics<span class=\"clogem-bar__count\">Articles: 4</span></h3>"))
+    (is (str/includes? guide "<h3>Advanced<span class=\"clogem-bar__count\">Articles: 1</span></h3>"))
+    (is (= 1 (count (re-seq #"/pages/643259/\"" guide))) "three variants, one row")
+    (is (str/includes? deep "<img alt=\"\" class=\"clogem-catalogue__img\" src=\"/assets/demo.png\" />") "imgUrl")
+    (is (str/includes? deep "three-level 03.Deep subtree") "description")
+    (is (str/includes? deep "<h3>Level2<span") "one card per child directory…")
+    (is (str/includes? deep "<div class=\"clogem-catalogue__sub\"><h4>Level3</h4>") "…nested to the tree's depth")
+    (is (str/includes? deep "/pages/ebaa6b/"))
+    (is (not (str/includes? deep "clogem-sidebar")) "no tree on a catalogue page")
+    (is (not (exists? "zh-Hans" "pages" "c4d33p" "index.html"))
+        "a catalogue page is an article with one variant: no /zh-Hans/ copy")))
+
+(deftest catalogue-model-table-feeds-breadcrumbs-and-nav
+  (is (= {"/01.Guide" "/pages/559f0f/" "/03.Deep" "/pages/c4d33p/"} (:catalogue *model*)))
+  (is (str/includes? (slurp-out "pages" "ebaa6b" "index.html") "<li><a href=\"/pages/c4d33p/\">Deep</a></li>")
+      "the Deep crumb links to the Deep catalogue"))
+
+(deftest unknown-or-unresolved-page-components-warn-and-fall-back
+  (let [dir (fs/create-temp-dir {:prefix "clogem-pc"})]
+    (try
+      (fs/create-dirs (fs/path dir "content" "01.Guide"))
+      (spit (fs/file (fs/path dir "content" "01.Guide" "01.a.md")) "---\ntitle: A\npermalink: /pages/aaaaaa/\n---\n\nbody\n")
+      (spit (fs/file (fs/path dir "content" "01.Guide" "02.bad.md"))
+            "---\ntitle: Bad\npermalink: /pages/bbbbbb/\npageComponent:\n  name: Widget\n---\n\nfallback body\n")
+      (spit (fs/file (fs/path dir "content" "01.Guide" "03.nowhere.md"))
+            "---\ntitle: Nowhere\npermalink: /pages/cccccc/\npageComponent:\n  name: Catalogue\n  data:\n    path: 09.Missing\n---\n\nnowhere body\n")
+      (let [cfg (first (diag/collecting (config/load-config (str dir) nil {:content {:write-front-matter false}})))
+            [m _] (diag/collecting (cli/analyse cfg))
+            [pm ds] (diag/collecting (let [pm (render/page-map m)] (doseq [[_ f] pm] (f)) pm))
+            html (fn [uri] (str (hiccup2.core/html ((get pm uri)))))
+            msgs (map :message (diag/warnings ds))]
+        (is (some #(re-find #"unknown pageComponent `Widget`" %) msgs))
+        (is (some #(re-find #"09\.Missing" %) msgs))
+        (is (str/includes? (html "/pages/bbbbbb/") "fallback body"))
+        (is (str/includes? (html "/pages/cccccc/") "nowhere body")))
+      (finally (fs/delete-tree dir)))))
+
+(deftest nav-links-are-prefixed-per-language-with-dropdowns
+  (let [zh (slurp-out "zh-Hans" "index.html")
+        en (slurp-out "index.html")]
+    (is (str/includes? zh "<a href=\"/zh-Hans/\">首页</a>") "`/` → `/zh-Hans/`")
+    (is (str/includes? zh "<a href=\"/zh-Hans/categories/\">分类</a>") "site pages get the prefix")
+    (is (str/includes? zh "<summary><a href=\"/pages/559f0f/\">指南</a></summary>")
+        "a permalink resolves to the article (en-only → bare), and a parent may carry both link and items")
+    (is (str/includes? zh "<ul class=\"clogem-navbar__menu\">") ":items make a dropdown")
+    (is (str/includes? en "<a href=\"/\">Home</a>"))
+    (is (str/includes? en "<a href=\"/categories/\">Categories</a>"))))
+
+(deftest doctor-is-clean-on-the-demo-apart-from-the-mechanism-2-warning
+  (testing "doctor-checks! and the in-memory render pass fire only the warning
+            the demo tree deliberately contains"
+    (let [{:keys [warnings errors]}
+          (binding [diag/*sink* (atom [])] ; keep the report off stderr
+            (cli/doctor {:site-dir demo}))]
+      (is (empty? errors))
+      (is (= 1 (count warnings)) (pr-str (map :message warnings)))
+      (is (re-find #"different directories" (:message (first warnings)))))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 — TOC bar (D-P2-9)
+
+(deftest articles-carry-a-toc-built-from-the-same-ast
+  (let [html (slurp-out "pages" "643259" "index.html")]
+    (is (str/includes? html "<aside class=\"clogem-toc\"><nav aria-label=\"On this page\"><ul>"))
+    (is (str/includes? html "<li class=\"level-2\"><a href=\"#numbered-directories\">Numbered directories</a></li>"))
+    (is (str/includes? html "<li class=\"level-2\"><a href=\"#language-suffixes\">Language suffixes</a></li>"))
+    (is (not (str/includes? html "<a href=\"#conventions\">")) "the leading h1 is not in the TOC")
+    (is (str/includes? html "clogem-shell--toc")))
+  (let [html (slurp-out "pages" "17c887" "index.html")]
+    (is (str/includes? html "<a href=\"#%E0%AE%B5%E0%AE%A3%E0%AE%95%E0%AF%8D%E0%AE%95%E0%AE%AE%E0%AF%8D-%E0%AE%89%E0%AE%B2%E0%AE%95%E0%AE%AE%E0%AF%8D\">வணக்கம் உலகம்</a>")
+        "Tamil: encoded href in the TOC…")
+    (is (str/includes? html "id=\"வணக்கம்-உலகம்\"") "…unencoded id on the heading — the scroll-spy must decode"))
+  (let [html (slurp-out "pages" "3ce486" "index.html")]
+    (is (not (str/includes? html "clogem-toc")) "no h2/h3 → no TOC aside at all")))
+
+(deftest the-scroll-spy-is-vendored-and-loaded-with-defer
+  (is (exists? "clogem" "js" "toc.js"))
+  (is (str/includes? (slurp-out "clogem" "js" "toc.js") "decodeURIComponent")
+      "ids are unencoded, hrefs are percent-encoded — mandatory for CJK/Tamil pages")
+  (is (str/includes? (slurp-out "index.html") "<script defer=\"defer\" src=\"/clogem/js/toc.js\"></script>")))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 — containers (D-P2-10)
+
+(deftest containers-render-with-titles-in-the-page-language
+  (let [en (slurp-out "pages" "c0nta1" "index.html")
+        zh (slurp-out "zh-Hans" "pages" "c0nta1" "index.html")]
+    (is (str/includes? en "<div class=\"custom-block tip\">\n<p class=\"custom-block-title\">TIP</p>"))
+    (is (str/includes? en "<p class=\"custom-block-title\">Custom title</p>"))
+    (is (str/includes? en "<details class=\"custom-block details\"><summary>Details</summary>"))
+    (is (str/includes? en "<div class=\"custom-block theorem\"><p class=\"title\">Theorem</p>"))
+    (is (str/includes? en "<div style=\"text-align:right\">"))
+    (is (str/includes? en "<div style=\"text-align:center\">"))
+    (is (str/includes? en "<p class=\"custom-block-title\">Inner</p>") "nested")
+    (is (str/includes? en "<li><p>An item</p><div class=\"custom-block note\">") "inside a list item")
+    (is (str/includes? en "::: tip\nThis is literal text, not a container.\n:::\n</code>") "immune inside a code fence")
+    (is (str/includes? en "<a href=\"#heading-inside-a-container\">Heading inside a container</a>")
+        "a heading inside a container is in the TOC")
+    (is (str/includes? zh "<p class=\"custom-block-title\">提示</p>") "zh-Hans default title")
+    (is (str/includes? zh "<p class=\"title\">定理</p>"))
+    (is (str/includes? zh "<summary>详情</summary>"))
+    (is (not (str/includes? zh ">TIP<")))))
+
+(deftest card-lists-render-with-rewritten-links
+  (let [en (slurp-out "pages" "ca4d51" "index.html")]
+    (is (str/includes? en "<div class=\"card-list row-2\">"))
+    (is (str/includes? en "href=\"/pages/643259/\""))
+    (is (str/includes? en "href=\"https://github.com/EchoJustus/clogem-press\" target=\"_blank\""))
+    (is (str/includes? en "style=\"background-color:#3eaf7c;color:#ffffff\""))
+    (is (str/includes? en "<div class=\"card-img-list row-3\">"))
+    (is (str/includes? en "src=\"/assets/demo.png\""))
+    (is (str/includes? en "style=\"height:80px\""))))
+
+(deftest a-bad-card-list-is-a-doctor-warning-naming-the-file
+  (let [dir (fs/create-temp-dir {:prefix "clogem-badcards"})]
+    (try
+      (fs/create-dirs (fs/path dir "content" "01.Guide"))
+      (fs/copy "examples/demo-site/doctor-cases/01.bad-cards.md.disabled"
+               (fs/path dir "content" "01.Guide" "01.bad-cards.md"))
+      (let [{:keys [warnings errors]}
+            (binding [diag/*sink* (atom [])]
+              (cli/doctor {:site-dir (str dir) :no-write true}))]
+        (is (empty? errors) "malformed card YAML is a warning, not a build error")
+        (is (some #(and (re-find #"could not parse the YAML" (:message %))
+                        (re-find #"01\.bad-cards\.md" (str (:path %))))
+                  warnings)
+            (pr-str warnings)))
+      (finally (fs/delete-tree dir)))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 — Unicode category/tag values and the tag union (D-P2-2, D-P2-3)
+
+(deftest cjk-and-tamil-category-and-tag-values
+  (testing "keys are kept verbatim as the directory name and the URL; hrefs are percent-encoded"
+    (is (exists? "categories" "中文笔记" "index.html"))
+    (is (exists? "tags" "中文" "index.html"))
+    (is (exists? "categories" "தமிழ்" "index.html"))
+    (is (exists? "tags" "தமிழ்" "index.html"))
+    (let [html (slurp-out "categories" "index.html")]
+      (is (str/includes? html "href=\"/categories/%E4%B8%AD%E6%96%87%E7%AC%94%E8%AE%B0/\">中文笔记</a>"))
+      (is (str/includes? html "href=\"/categories/%E0%AE%A4%E0%AE%AE%E0%AE%BF%E0%AE%B4%E0%AF%8D/\">தமிழ்</a>")))
+    (is (str/includes? (slurp-out "pages" "cjk001" "index.html") "lang=\"zh-Hans\"")
+        "a zh-Hans-only article serves zh-Hans at its bare URL")))
+
+(deftest tags-index-includes-a-tag-only-a-non-primary-variant-carries
+  (testing "§6.2: tags are the union across variants"
+    (let [g (group-titled "Containers")]
+      (is (= #{"markdown" "容器"} (set (:tags g))))
+      (is (= [(:permalink g)] (get-in *model* [:tags "容器"])))
+      (is (exists? "tags" "容器" "index.html"))
+      (is (str/includes? (slurp-out "tags" "index.html") ">容器<")))
+    (is (= 2 (count (get-in *model* [:tags "தமிழ்"]))) "the Tamil tag is on the tree article AND the post")))
+
+;; ---------------------------------------------------------------------------
+;; The four usage modes (§1, §8 Phase 2 exit criterion)
+
+(defn- temp-tree
+  "Materialize {rel-path → content} under a temp content/ tree; return [model uris]."
+  [files & [cfg-overrides]]
+  (let [dir (fs/create-temp-dir {:prefix "clogem-mode"})]
+    (try
+      (doseq [[rel content] files
+              :let [f (fs/path dir "content" rel)]]
+        (fs/create-dirs (fs/parent f))
+        (spit (fs/file f) content))
+      (let [cfg (first (diag/collecting
+                        (config/load-config (str dir) nil
+                                            (merge {:content {:write-front-matter false}} cfg-overrides))))
+            [m _] (diag/collecting (cli/analyse cfg))
+            ;; render everything NOW — the thunks read files under `dir`,
+            ;; which is deleted before the caller looks at the result
+            [rendered ds] (diag/collecting
+                           (into {} (map (fn [[u f]] [u (str (hiccup2.core/html (f)))]))
+                                 (render/page-map m)))]
+        (is (empty? (diag/errors ds)))
+        [m (set (keys rendered)) (fn [uri] (get rendered uri)) ds])
+      (finally (fs/delete-tree dir)))))
+
+(def ^:private a-post "---\ntitle: P\ndate: \"2026-01-01 00:00:00\"\npermalink: /pages/p00001/\ntags: [t]\n---\n\n# P\n\nbody\n")
+(def ^:private a-tree "---\ntitle: T\ndate: \"2026-02-01 00:00:00\"\npermalink: /pages/t00001/\n---\n\n# T\n\n## H2\n\nbody\n")
+
+(deftest blog-only-mode
+  (testing "only _posts/: empty sidebar, populated posts and indexes"
+    (let [[m uris] (temp-tree {"_posts/2026-01-01-p.md" a-post})]
+      (is (empty? (:sidebar m)))
+      (is (= ["/pages/p00001/"] (:posts m)))
+      (is (= {"Notes" ["/pages/p00001/"]} (:categories m)) ":content :category-text")
+      (is (= {"t" ["/pages/p00001/"]} (:tags m)))
+      (is (contains? uris "/categories/notes/"))
+      (is (contains? uris "/tags/t/"))
+      (is (contains? uris "/archives/"))
+      (is (contains? uris "/pages/p00001/")))))
+
+(deftest kb-only-mode
+  (testing "no _posts/: posts still populated from tree articles (D-P2-4)"
+    (let [[m uris] (temp-tree {"01.Guide/10.Basics/01.t.md" a-tree})]
+      (is (= ["01.Guide"] (keys (:sidebar m))))
+      (is (= ["/pages/t00001/"] (:posts m)))
+      (is (= {"Guide" ["/pages/t00001/"] "Basics" ["/pages/t00001/"]} (:categories m)))
+      (is (contains? uris "/categories/basics/"))
+      (is (contains? uris "/")))))
+
+(deftest docs-mode
+  (testing ":content {:category false :tag false :archive false} → no index URIs at all"
+    (let [[m uris] (temp-tree {"01.Guide/10.Basics/01.t.md" a-tree
+                               "_posts/2026-01-01-p.md" a-post}
+                              {:content {:category false :tag false :archive false}})]
+      (is (seq (:sidebar m)) "the tree still renders")
+      (is (not-any? #(re-find #"/(categories|tags|archives)/" %) uris))
+      (is (contains? uris "/pages/t00001/"))
+      (is (contains? uris "/")))))
+
+(deftest kb-plus-blog-mode
+  (testing "the demo itself: tree + posts, every index, every language"
+    (is (seq (:sidebar *model*)))
+    (is (some #(= :post (get-in *model* [:articles % :kind])) (:posts *model*)))
+    (is (some #(= :tree (get-in *model* [:articles % :kind])) (:posts *model*)))
+    (is (exists? "categories" "index.html"))
+    (is (exists? "ta" "archives" "index.html"))))
+
+
+;; ---------------------------------------------------------------------------
+;; Review pass — findings pinned
+
+(deftest a-user-authored-pages-body-renders-above-the-list-on-its-own-language
+  (testing "D-P2-6 + §6.4 rule 2: the body of @pages/categoriesPage.md renders
+            above the bar on the language that owns the file, and nowhere else"
+    (let [[_ _ html] (temp-tree {"01.Guide/10.Basics/01.t.md" a-tree
+                                 "@pages/categoriesPage.md" "---\ncategoriesPage: true\ntitle: Cats\npermalink: /categories/\narticle: false\n---\n\nUSER BODY HERE\n"
+                                 "@pages/categoriesPage.zh-Hans.md" "---\ncategoriesPage: true\ntitle: 分类页\narticle: false\n---\n\n用户正文\n"})
+          en (html "/categories/")
+          zh (html "/zh-Hans/categories/")
+          ms (html "/ms/categories/")]
+      (is (re-find #"USER BODY HERE.*clogem-bar" en) "above the generated list")
+      (is (str/includes? en "<h1>Cats</h1>"))
+      (is (str/includes? zh "用户正文") "zh-Hans owns a file of its own")
+      (is (str/includes? zh "<h1>分类页</h1>"))
+      (is (not (str/includes? ms "USER BODY HERE")) "ms has no file: no English body leaks in")
+      (is (str/includes? ms "<h1>Kategori</h1>")))))
+
+(deftest prefix-default-true-keeps-index-pages-bare-and-stubs-only-articles
+  (testing "D-P2-3: homes and index pages follow the site-default rule in
+            BOTH modes; under :prefix-default? true only articles get stubs"
+    (let [pm (first (diag/collecting (render/page-map (assoc-in *model* [:cfg :i18n :prefix-default?] true))))
+          uris (set (keys pm))
+          html (fn [uri] (str (hiccup2.core/html ((get pm uri)))))]
+      (is (contains? uris "/categories/"))
+      (is (not (contains? uris "/en/categories/")))
+      (is (contains? uris "/"))
+      (is (not (contains? uris "/en/")))
+      (is (contains? uris "/en/pages/643259/") "every variant prefixed")
+      (is (str/includes? (html "/pages/643259/") "http-equiv=\"refresh\"") "the bare URL is a stub")
+      (is (str/includes? (html "/categories/basics/") "href=\"/en/pages/643259/\"") "rows link the prefixed article")
+      (is (str/includes? (html "/en/pages/643259/") "href=\"/zh-Hans/pages/643259/\" hreflang=\"zh-Hans\"")))))
+
+(deftest sidebar-depth-front-matter-governs-the-toc
+  (let [body (fn [depth] (str "---\ntitle: T\npermalink: /pages/t00001/\nsidebarDepth: " depth "\n---\n\n# T\n\n## H2\n\n### H3\n\n#### H4\n"))]
+    (doseq [[depth expected] [[0 []] [1 ["H2"]] [3 ["H2" "H3" "H4"]]]]
+      (let [[_ _ html] (temp-tree {"01.Guide/01.t.md" (body depth)})
+            page (html "/pages/t00001/")
+            items (map second (re-seq #"<li class=\"level-\d\"><a href=\"#[^\"]*\">([^<]*)</a>" page))]
+        (is (= expected items) (str "sidebarDepth " depth))
+        (when (empty? expected)
+          (is (not (str/includes? page "clogem-toc")) "sidebarDepth: 0 = no TOC at all"))))))
+
+(deftest a-fourth-level-directory-renders-anyway
+  (testing "D-P2-1: deeper than level 3 renders; doctor warns (model_test covers the warning)"
+    (let [[m uris html] (temp-tree {"01.A/10.B/20.C/30.D/01.deep.md" a-tree})]
+      (is (contains? uris "/pages/t00001/"))
+      (is (str/includes? (html "/pages/t00001/") "<summary>D</summary>"))
+      (is (= 4 (count (model/tree-dirs (:tree m))))))))
+
+(deftest archives-span-two-years
+  (let [html (slurp-out "archives" "index.html")]
+    (is (str/includes? html "<h2>2025</h2>"))
+    (is (< (str/index-of html "<h2>2026</h2>") (str/index-of html "<h2>2025</h2>")) "newest year first")
+    (is (str/includes? html "<h3>2025-11</h3>"))
+    (is (re-find #"<h3>2025-11</h3>.*?/pages/y2025a/" html))))
+
+(deftest neighbours-are-not-skipped-for-being-non-articles
+  (testing "D-P2-7: in the tree, the Guide catalogue's next is the Deep
+            catalogue — a non-article leaf"
+    (is (str/includes? (slurp-out "pages" "559f0f" "index.html") "href=\"/pages/c4d33p/\" lang=\"en\" rel=\"next\"")))
+  (testing "…and among posts too"
+    (let [post (fn [d pl & [extra]] (str "---\ntitle: P" pl "\ndate: \"" d "\"\npermalink: /pages/" pl "/\n" (or extra "") "---\n\nbody\n"))
+          [_ _ html] (temp-tree {"_posts/2026-03-01-a.md" (post "2026-03-01 00:00:00" "aaaaaa")
+                                 "_posts/2026-02-01-b.md" (post "2026-02-01 00:00:00" "bbbbbb" "article: false\n")
+                                 "_posts/2026-01-01-c.md" (post "2026-01-01 00:00:00" "cccccc")})]
+      (is (str/includes? (html "/pages/aaaaaa/") "href=\"/pages/bbbbbb/\" lang=\"en\" rel=\"next\"")
+          "the article: false post is still the neighbour")
+      (is (str/includes? (html "/pages/bbbbbb/") "href=\"/pages/aaaaaa/\" lang=\"en\" rel=\"prev\""))
+      (is (str/includes? (html "/pages/bbbbbb/") "href=\"/pages/cccccc/\" lang=\"en\" rel=\"next\"")))))
+
+(deftest excerpt-paths-and-the-fallback-notice-toggle
+  (testing "first paragraph when there is no <!-- more -->"
+    (is (str/includes? (slurp-out "index.html") "This article exists in English only")))
+  (testing "the L variant's excerpt when it exists, else the primary's"
+    ;; one big page, so the conventions article is on it in every language
+    (let [big #(assoc-in % [:theme :per-page] 100)]
+      (is (str/includes? (page-html big "/zh-Hant/") "這三個檔案共用") "zh-Hant home, zh-Hant variant")
+      (is (str/includes? (page-html big "/ms/") "Three files share this number") "ms home, primary (en) variant")))
+  (testing ":show-fallback-notice false removes every marker"
+    (let [html (page-html #(assoc-in % [:i18n :show-fallback-notice] false) "/zh-Hans/categories/guide/")]
+      (is (str/includes? html "clogem-row"))
+      (is (not (str/includes? html "clogem-fallback"))))))
+
+(deftest html-lang-matches-on-filtered-and-paginated-pages
+  (doseq [[path lang] [[["zh-Hans" "categories" "basics" "index.html"] "zh-Hans"]
+                       [["ta" "tags" "meta" "index.html"] "ta"]
+                       [["ms" "page" "2" "index.html"] "ms"]
+                       [["zh-Hant" "categories" "guide" "page" "2" "index.html"] "zh-Hant"]
+                       [["zh-Hant" "pages" "643259" "index.html"] "zh-Hant"]]]
+    (is (str/includes? (apply slurp-out path) (str "<html dir=\"ltr\" lang=\"" lang "\">")) (pr-str path))))
+
+(deftest an-article-page-carries-exactly-one-h1
+  (testing "the theme renders the title; the body's leading `# Title` is dropped (D-P2-9)"
+    (let [html (slurp-out "pages" "643259" "index.html")]
+      (is (= 1 (count (re-seq #"<h1[ >]" html))))
+      (is (str/includes? html "<h1>conventions</h1>"))
+      (is (not (str/includes? html "<h1 id=\"conventions\"")))
+      (is (str/includes? html "<h2 id=\"numbered-directories\"") "the rest of the body is intact"))))
+
+(deftest a-one-language-site-has-no-switcher
+  (let [[m uris html] (temp-tree {"01.Guide/01.t.md" a-tree}
+                                 {:langs {:locales {:zh-Hans nil :zh-Hant nil :ms nil :ta nil}}})]
+    (is (= [:en] (config/lang-keys (:cfg m))))
+    (is (not-any? #(re-find #"^/(zh-Hans|zh-Hant|ms|ta)/" %) uris))
+    (is (not (str/includes? (html "/pages/t00001/") "clogem-langs")))))
+
+(deftest a-dangling-nav-permalink-is-base-only-and-a-doctor-warning
+  (let [[m _ html ds] (temp-tree {"01.Guide/01.t.md" a-tree}
+                                 {:nav [{:text "Gone" :link "/pages/nope00/"}]})
+        [_ dds] (diag/collecting (model/doctor-checks! m))]
+    (is (str/includes? (html "/zh-Hans/") "<a href=\"/pages/nope00/\">Gone</a>")
+        "no language prefix is invented for a permalink that names nothing")
+    (is (some #(re-find #":nav link /pages/nope00/ names no article" (:message %)) (diag/warnings dds)))
+    (is (empty? (diag/warnings ds)) "…and rendering itself stays quiet")))

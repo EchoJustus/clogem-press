@@ -1,0 +1,8 @@
+---
+title: Region-shaped near miss
+---
+
+`ta-IN` is not in the confusables set and is more than one edit from `ta`, but
+its primary subtag `ta` IS a configured language and `IN` is region-shaped
+(two letters), so DESIGN.md §6.1 rule (c) makes it a hard error — the author
+almost certainly meant `01.article.ta.md`.

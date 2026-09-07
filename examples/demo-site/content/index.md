@@ -1,6 +1,8 @@
 ---
 home: true
 title: clogem-press demo
+postList: detailed
+hideRightBar: true
 ---
 
 # clogem-press demo site
@@ -19,7 +21,11 @@ What it covers:
 - an explicit-permalink variant living elsewhere in the tree (§6.2 mechanism 2)
 - `_posts/` and `@pages/`, including two posts that share a slug and a date and are
   different articles anyway because one lives in `_posts/tech/` (§6.2)
-- a catalogue-page placeholder
+- catalogue pages, index pages, sticky articles, containers and card lists
 - a post carrying an **unquoted** `date:` the way a migrated vdoing tree does,
   beside auto-filled posts whose dates are quoted — two YAML spellings that
   parse to two different types, in one tree that still has to sort
+
+This English home uses `postList: detailed` with `hideRightBar: true`; the
+Simplified Chinese home (`index.zh-Hans.md`) uses `postList: simple` capped at
+three, and the other languages inherit the English options.

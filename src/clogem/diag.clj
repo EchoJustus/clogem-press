@@ -58,15 +58,18 @@
   ds)
 
 (defn throw-on-errors!
-  "Raise if any diagnostic is an :error, with every error in the message."
-  [ds]
-  (let [es (errors ds)]
-    (when (seq es)
-      (throw (ex-info (str (count es) " content error" (when (> (count es) 1) "s") ":\n"
-                           (str/join "\n" (map #(str "  - " (format-diagnostic %)) es)))
-                      {:clogem/errors es
-                       :babashka/exit  1}))))
-  ds)
+  "Raise if any diagnostic is an :error, with every error in the message.
+  `what` names the kind of error in the summary line (\"content error\" by
+  default; `clogem.cli/load-cfg!` passes \"config error\")."
+  ([ds] (throw-on-errors! ds "content error"))
+  ([ds what]
+   (let [es (errors ds)]
+     (when (seq es)
+       (throw (ex-info (str (count es) " " what (when (> (count es) 1) "s") ":\n"
+                            (str/join "\n" (map #(str "  - " (format-diagnostic %)) es)))
+                       {:clogem/errors es
+                        :babashka/exit  1}))))
+   ds))
 
 (defmacro collecting
   "Run body with a fresh diagnostic sink. Returns [result diagnostics]."

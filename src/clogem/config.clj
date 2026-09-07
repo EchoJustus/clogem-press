@@ -67,7 +67,10 @@
              :write-front-matter true
              :permalinks-file "permalinks.edn"
              :assets-dir "assets"}
-   :theme   {:default-mode :auto :page-style :card :sidebar-open true}
+   :theme   {:default-mode :auto :page-style :card
+             :sidebar-open true          ; true → every sidebar group open; false → only the active trail
+             :sidebar-depth 2            ; TOC depth: h2–h3 (front matter `sidebarDepth` overrides)
+             :per-page 10}               ; homepage / category / tag pagination
    :nav     []
    :search   {:provider :none}
    :comments {:provider :none}
@@ -94,11 +97,16 @@
   whatever the site wrote, and that is what `<html lang>` and filename matching
   use (§6.1: compare lowercased, emit the configured spelling)."
   [{:keys [default priority locales] :as langs}]
-  (let [locales  (into {} (map (fn [[k v]] [k (merge {:dir :ltr
-                                                      :label (name k)
-                                                      :html-lang (name k)}
-                                                     v)])
-                               locales))
+  (let [;; deep-merge lets an explicit nil win, so `{:locales {:ms nil}}`
+        ;; REMOVES a default locale — the only way a site can have fewer
+        ;; than the five defaults
+        locales  (into {}
+                       (comp (remove (fn [[_ v]] (nil? v)))
+                             (map (fn [[k v]] [k (merge {:dir :ltr
+                                                         :label (name k)
+                                                         :html-lang (name k)}
+                                                        v)])))
+                       locales)
         known    (set (keys locales))
         priority (vec (concat (filterv known priority)
                               (remove (set priority) (keys locales))))]

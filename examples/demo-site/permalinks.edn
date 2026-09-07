@@ -47,6 +47,28 @@
   {:key "_posts/tech||2026-08-01-hello",
    :langs ["en"],
    :paths ["_posts/tech/2026-08-01-hello.md"]},
+  "/pages/ap1de5/"
+  {:key "/02.Notes/10.Local|4|api-design",
+   :langs ["en"],
+   :paths ["02.Notes/10.Local/04.api-design.md"]},
+  "/pages/c0nta1/"
+  {:key "/01.Guide/10.Basics|4|containers",
+   :langs ["en" "zh-Hans"],
+   :paths
+   ["01.Guide/10.Basics/04.containers.md"
+    "01.Guide/10.Basics/04.containers.zh-Hans.md"]},
+  "/pages/c4d33p/"
+  {:key "/00.Catalogue|2|Deep",
+   :langs ["en"],
+   :paths ["00.Catalogue/02.Deep.md"]},
+  "/pages/ca4d51/"
+  {:key "/02.Notes/10.Local|5|cards",
+   :langs ["en"],
+   :paths ["02.Notes/10.Local/05.cards.md"]},
+  "/pages/cjk001/"
+  {:key "/04.中文笔记|1|first",
+   :langs ["zh-Hans"],
+   :paths ["04.中文笔记/01.first.zh-Hans.md"]},
   "/pages/ebaa6b/"
   {:key "/03.Deep/10.Level2/20.Level3|2|three-deep",
    :langs ["en"],
@@ -60,5 +82,13 @@
    :langs ["en" "zh-Hans"],
    :paths
    ["02.Notes/10.Local/02.relocated-variant.zh-Hans.md"
-    "03.Deep/10.Level2/20.Level3/01.relocated.md"]}},
+    "03.Deep/10.Level2/20.Level3/01.relocated.md"]},
+  "/pages/ta0001/"
+  {:key "_posts/தமிழ்||2026-03-01-tamil-post",
+   :langs ["ta"],
+   :paths ["_posts/தமிழ்/2026-03-01-tamil-post.ta.md"]},
+  "/pages/y2025a/"
+  {:key "_posts||2025-11-05-year-before",
+   :langs ["en"],
+   :paths ["_posts/2025-11-05-year-before.md"]}},
  :tombstones {}}

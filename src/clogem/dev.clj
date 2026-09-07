@@ -24,6 +24,7 @@
             [babashka.pods :as pods]
             [clojure.string :as str]
             [clogem.config :as config]
+            [clogem.diag :as diag]
             [org.httpkit.server :as http])
   (:import [java.io File]
            [java.net URLDecoder]))
@@ -321,9 +322,14 @@ var u=new URL(l.href);u.searchParams.set('t',Date.now());l.href=u.toString();});
 (defn dev!
   [{:keys [port poll interval probe-ms]
     :or {port 1888 interval 500 probe-ms default-probe-ms} :as opts}]
-  (let [cfg   (assoc (config/load-config (:site-dir opts) (:config-file opts)
-                                         (cond-> {} (:out opts) (assoc-in [:build :out] (:out opts))))
-                     :clogem/dev? true)
+  (let [;; D-P2-12: a config error is fatal here too — the rebuild loop would
+        ;; otherwise serve a site rendered under a repaired config for ever.
+        [cfg0 cds] (diag/collecting
+                    (config/load-config (:site-dir opts) (:config-file opts)
+                                        (cond-> {} (:out opts) (assoc-in [:build :out] (:out opts)))))
+        _     (diag/print-all! cds)
+        _     (diag/throw-on-errors! cds "config error")
+        cfg   (assoc cfg0 :clogem/dev? true)
         out   (config/out-dir cfg)
         rebuild (fn [changed]
                   (let [t0 (System/currentTimeMillis)]
