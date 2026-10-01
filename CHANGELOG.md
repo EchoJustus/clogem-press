@@ -47,6 +47,9 @@ items 16–29, and amendments to items 2, 5 and 8, record the decisions.
   linked nothing, and every home ended with an empty Tags card. Overviews now
   list every article, paginated, below the bar; empty bars and cards are
   omitted.
+- **"All N" no longer matched the list beneath it.** With 5 articles, 2 of
+  them tagged, `/tags/` read "All 2" above 5 rows. "All" counts every
+  article, which is what the overview lists.
 - **Filtered index pages reused the overview's `<title>`.**
 - **The article fallback notice could never render.** It is gone; switcher
   entries that land on a language home because the article is untranslated

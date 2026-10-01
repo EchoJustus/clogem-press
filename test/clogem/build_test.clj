@@ -1037,3 +1037,21 @@
         (let [errs (doctor-errors dir)]
           (is (= 1 (count errs)))
           (is (re-find #"@pages/tagsPage\.ms\.md and @pages/tagsPage\.MS\.md" (str (:message (first errs))))))))))
+
+(deftest the-all-count-equals-the-rows-it-lists
+  (testing "fix D: 5 articles, 2 tagged — \"All\" counts the 5 rows the overview lists"
+    (let [post (fn [n tags] (-> a-post (str/replace "p00001" (str "p0000" n))
+                                (str/replace "2026-01-01" (str "2026-01-0" n))
+                                (str/replace "tags: [t]" (str "tags: " tags))))
+          [_ uris html] (temp-tree (into {} (for [n (range 1 6)]
+                                              [(str "_posts/2026-01-0" n "-p" n ".md")
+                                               (post n (if (<= n 2) "[t]" "[]"))]))
+                                   {:theme {:per-page 2}})
+          all-count (fn [page] (some->> (re-find #"is-active\"><a [^>]*>[^<]*</a><span class=\"clogem-bar__count\">(\d+)<" page)
+                                        second parse-long))]
+      (doseq [root ["/tags/" "/zh-Hans/tags/" "/categories/"]
+              :let [pages (cons root (filter #(str/starts-with? % (str root "page/")) (sort uris)))
+                    rows  (reduce + (map #(count (re-seq #"<li class=\"clogem-row" (html %))) pages))]]
+        (is (= 3 (count pages)) root)
+        (is (= 5 rows) root)
+        (is (= rows (all-count (html root))) root)))))

@@ -22,13 +22,15 @@
 
 (defn- bar
   "The filter bar of vdoing's CategoriesBar/TagsBar: every name with its count,
-  the current one marked. `href-for` maps a raw name to a site URI."
+  the current one marked. `href-for` maps a raw name to a site URI. \"All\"
+  links to the overview, which lists EVERY article (§11.2 item 20), so it
+  counts every article — not just those the index holds (item 28)."
   [ctx index href-for current label-for]
   (into [:ul.clogem-bar]
         (cons
          [:li {:class (when (nil? current) "is-active")}
           [:a {:href (layout/href ctx (:root-uri ctx))} (i18n/tr ctx :index/all)]
-          [:span.clogem-bar__count (count (distinct (mapcat val index)))]]
+          [:span.clogem-bar__count (count (get-in ctx [:model :posts]))]]
          (for [[k ids] index]
            [:li {:class (when (= k current) "is-active")}
             [:a {:href (layout/href ctx (href-for k))} (label-for k)]
