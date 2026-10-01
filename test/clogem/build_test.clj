@@ -848,15 +848,18 @@
         (doseq [no-write [true false]]
           (let [e (build-fails dir out no-write)]
             (is (some? e))
+            (is (= 1 (:babashka/exit (ex-data e))) (str "no-write=" no-write))
             (is (re-find #"category names share the URL slug `notes`" (str (ex-message e))))
             (is (not (fs/exists? out))))))))
   (testing "…and two tags that differ only by case"
     (with-cli-site {"_posts/2026-01-01-p.md" a-post
                     "_posts/2026-01-02-q.md" (-> a-post (str/replace "p00001" "q00001") (str/replace "[t]" "[T]"))}
       (fn [dir out]
-        (let [e (build-fails dir out true)]
-          (is (re-find #"tag names share the URL slug `t`" (str (ex-message e))))
-          (is (not (fs/exists? out))))
+        (doseq [no-write [true false]]
+          (let [e (build-fails dir out no-write)]
+            (is (= 1 (:babashka/exit (ex-data e))) (str "no-write=" no-write))
+            (is (re-find #"tag names share the URL slug `t`" (str (ex-message e))))
+            (is (not (fs/exists? out)))))
         (let [e (try (cli/doctor {:site-dir (str dir)}) nil (catch clojure.lang.ExceptionInfo e e))]
           (is (= 1 (:babashka/exit (ex-data e))) "doctor exits 1 too"))
         (let [e (try (cli/fm-fix {:site-dir (str dir)}) nil (catch clojure.lang.ExceptionInfo e e))]
@@ -1055,3 +1058,34 @@
         (is (= 3 (count pages)) root)
         (is (= 5 rows) root)
         (is (= rows (all-count (html root))) root)))))
+
+(deftest catalogue-label-sites-are-each-covered
+  (testing "E item 3: the nested <h4> of a subdirectory inside a card"
+    (is (str/includes? (page-html #(assoc-in % [:i18n :category-labels "Level3"] "L3Label") "/pages/c4d33p/")
+                       "<h4>L3Label")))
+  (testing "…and the <h3> of the card holding articles directly under the target directory"
+    (let [[_ _ html] (temp-tree {"00.Catalogue/01.guide.md"
+                                 (str "---\ntitle: Guide catalogue\narticle: false\npermalink: /pages/cat001/\n"
+                                      "pageComponent:\n  name: Catalogue\n  data:\n    path: 01.Guide\n---\n\nx\n")
+                                 "01.Guide/01.t.md" a-tree}
+                                {:i18n {:category-labels {"Guide" "GuideLabel"}}})]
+      (is (str/includes? (html "/pages/cat001/") "<h3>GuideLabel</h3>"))
+      (is (str/includes? (html "/pages/cat001/") "/pages/t00001/") "the direct article is listed under it"))))
+
+(deftest doctor-reports-an-excerpt-dead-link-once
+  (testing "E item 4: the dead link before <!-- more --> is one doctor warning, not one per home"
+    (with-cli-site {"_posts/2026-01-01-p.md"
+                    (str/replace a-post "body\n" "See [x](missing-page.md).\n\n<!-- more -->\n\nRest.\n")}
+      (fn [dir _]
+        (let [{:keys [warnings]} (cli/doctor {:site-dir (str dir)})
+              dead (filter #(re-find #"missing-page" (str (:message %) (:hint %))) warnings)]
+          (is (= 1 (count dead)) (pr-str (map :message dead))))))))
+
+(deftest categories-off-means-no-categories-card
+  (testing "E item 11: with :content :category false no home has a categories card"
+    (let [[_ _ html] (temp-tree {"01.Notes/01.t.md" a-tree
+                                 "_posts/2026-01-01-p.md" a-post}
+                                {:content {:category false}})]
+      (doseq [home ["/" "/zh-Hans/" "/zh-Hant/" "/ms/" "/ta/"]]
+        (is (str/includes? (html home) "clogem-post-card") (str home " renders"))
+        (is (not (str/includes? (html home) "clogem-home-cats")) home)))))
