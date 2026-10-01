@@ -71,8 +71,10 @@
   "Optimal-string-alignment edit distance: insert, delete, substitute, and
   ONE adjacent transposition each cost 1. Used by the scanner's near-miss rule
   (DESIGN.md §6.1, D-P2-14): a filename segment within distance 1 of a
-  configured language code (`zh-hanz`, `zh-han`, `ta-`, `zh-hsna`) is a
-  misspelled tag, not a title."
+  configured language code (`zh-hanz`, `zh-han`, `ta-`) is a misspelled tag,
+  not a title. (`zh-hsna` is distance 2 from `zh-hans` — two substitutions,
+  since the swapped letters are not adjacent — so it is rule (c)'s
+  script-typo branch that catches it, not this distance.)"
   [^String a ^String b]
   (let [m (count a) n (count b)
         d (make-array Long/TYPE (inc m) (inc n))]
@@ -146,6 +148,21 @@
       ensure-leading-slash
       ensure-trailing-slash))
 
+(defn- percent-encode
+  "Percent-encode every character of `s` that does not match `keep`, as the
+  UTF-8 bytes of the whole CODE POINT. `(?s).` matches a surrogate pair as one
+  character; walking `s` as a seq of UTF-16 chars instead handed each lone
+  surrogate to `.getBytes`, which turned 😀 into `??` and then `%3F%3F`."
+  [keep s]
+  (->> (re-seq #"(?s)." (str s))
+       (map (fn [^String ch]
+              (if (re-matches keep ch)
+                ch
+                (->> (.getBytes ch "UTF-8")
+                     (map #(format "%%%02X" (bit-and % 0xff)))
+                     (apply str)))))
+       (apply str)))
+
 (defn url-encode-fragment
   "Percent-encode a heading slug for use in an href fragment.
 
@@ -154,15 +171,7 @@
   HTML id but must be encoded to appear in a URL. Characters that are legal and
   unambiguous inside a fragment are left alone so English anchors stay readable."
   [s]
-  (->> s
-       (map (fn [^Character c]
-              (let [ch (str c)]
-                (if (re-matches #"[A-Za-z0-9\-._~!$&'()*+,;=:@/?]" ch)
-                  ch
-                  (->> (.getBytes ch "UTF-8")
-                       (map #(format "%%%02X" (bit-and % 0xff)))
-                       (apply str))))))
-       (apply str)))
+  (percent-encode #"[A-Za-z0-9\-._~!$&'()*+,;=:@/?]" s))
 
 (defn url-encode-segment
   "Percent-encode one URL *path segment*: everything but RFC 3986 unreserved
@@ -171,15 +180,7 @@
   encodes the sub-delimiters too — a fragment can carry `?` unencoded, a path
   segment cannot."
   [s]
-  (->> (str s)
-       (map (fn [^Character c]
-              (let [ch (str c)]
-                (if (re-matches #"[A-Za-z0-9\-._~]" ch)
-                  ch
-                  (->> (.getBytes ch "UTF-8")
-                       (map #(format "%%%02X" (bit-and % 0xff)))
-                       (apply str))))))
-       (apply str)))
+  (percent-encode #"[A-Za-z0-9\-._~]" s))
 
 (defn url-encode-path
   "Percent-encode every segment of a site path for use in an href, keeping the
@@ -211,21 +212,33 @@
               (or (some-> h parse-long) 0) (or (some-> mi parse-long) 0) (or (some-> sec parse-long) 0))
       s)))
 
+(def ^:private windows-reserved-re
+  "Windows device names, which stay reserved whatever extension follows."
+  #"^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$")
+
 (defn slug
   "The URL slug of a category or tag (DESIGN.md D-P2-3): lower-cased, with
   whitespace runs and path separators collapsed to `-`; Unicode letters (CJK,
   Tamil) are kept verbatim, percent-encoding being the href side's job
   (`url-encode-segment`) — the same policy the heading slugger follows.
 
-  `.` and `..` are not slugs but directory names, and would escape the index
-  directory; they, and the empty string, become `_`."
+  The slug is also a DIRECTORY NAME, and the output must check out on
+  Windows, so the characters Windows forbids in a file name (`< > : \" | ? *`
+  and control characters) collapse to `-` with the separators, and trailing
+  dots and spaces are trimmed. A device name (`con`, `aux.txt`, `lpt1`) gets
+  `_` after its stem. `.` and `..` would escape the index directory; they,
+  and the empty string, become `_`."
   [s]
   (let [out (-> (str s)
                 str/trim
                 lower
-                (str/replace #"[\s/\\]+" "-")
-                (str/replace #"^-+|-+$" ""))]
-    (if (or (str/blank? out) (#{"." ".."} out)) "_" out)))
+                (str/replace #"[\s/\\<>:\"|?*\x00-\x1F\x7F]+" "-")
+                (str/replace #"^-+|[-. ]+$" ""))]
+    (cond
+      (or (str/blank? out) (#{"." ".."} out)) "_"
+      (re-matches windows-reserved-re out)
+      (str/replace-first out #"^(con|prn|aux|nul|com[1-9]|lpt[1-9])" "$1_")
+      :else out)))
 
 (defn html-escape
   [s]

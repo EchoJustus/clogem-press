@@ -862,3 +862,13 @@
   (let [[_ _ html ds] (temp-tree {"01.Guide/01.t.md" "---\ntitle: T\npermalink: /pages/t00001/\nsidebarDepth: \"1\"\n---\n\n# T\n\n## H2\n\n### H3\n"})]
     (is (empty? (diag/warnings ds)) "a digit string is accepted")
     (is (not (re-find #"level-3" (html "/pages/t00001/"))))))
+
+(deftest emoji-categories-and-headings-link-to-real-targets
+  (testing "fix 1, end to end: no `%3F%3F` href, and the href decodes to the directory"
+    (let [[_ uris html] (temp-tree {"01.😀Fun/01.t.md" (str/replace a-tree "## H2" "## Hello 😀 world")})
+          page (html "/pages/t00001/")]
+      (is (contains? uris "/categories/😀fun/"))
+      (is (str/includes? page "href=\"/categories/%F0%9F%98%80fun/\""))
+      (is (str/includes? page "href=\"#hello-%F0%9F%98%80-world\""))
+      (is (str/includes? page "id=\"hello-😀-world\""))
+      (is (not (str/includes? page "%3F%3F"))))))
