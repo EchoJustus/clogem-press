@@ -77,6 +77,13 @@
     (is (= "aux_.txt" (u/slug "aux.txt")) "the stem is what Windows reserves")
     (is (= "lpt1_" (u/slug "LPT1")))
     (is (= "console" (u/slug "console")) "only the exact device names")
+    ;; D.2.1 fix F: the rest of Windows' reserved list
+    (is (= "com0_" (u/slug "COM0")))
+    (is (= "lpt0_" (u/slug "LPT0")))
+    (is (= "conin$_" (u/slug "CONIN$")) "the whole name is the stem, not `con`")
+    (is (= "conout$_" (u/slug "CONOUT$")))
+    (is (= "conin$_.txt" (u/slug "conin$.txt")))
+    (is (= "com10" (u/slug "com10")) "one digit only")
     (is (= "_" (u/slug ".")))
     (is (= "_" (u/slug "..")))
     (is (= "_" (u/slug "")))

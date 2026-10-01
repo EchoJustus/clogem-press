@@ -231,10 +231,12 @@
                         [:a (cond-> {:href (href ctx (switch-target ctx l))
                                      :lang (config/html-lang cfg l)
                                      :hreflang (config/html-lang cfg l)}
-                              fallback? (assoc :class "is-untranslated")
-                              notice    (assoc :title notice))
+                              fallback? (assoc :class "is-untranslated"))
                          (get-in locales [l :label])
-                         ;; the notice is in the PAGE's language (§6.4 rule 2)
+                         ;; the notice is in the PAGE's language (§6.4 rule 2),
+                         ;; and said ONCE: a `title` as well made screen readers
+                         ;; announce it twice, from an element whose `lang` is
+                         ;; the target language's rather than the notice's
                          (when notice
                            [:span.clogem-visually-hidden {:lang (config/html-lang cfg lang)}
                             (str " (" notice ")")])]))]))])))

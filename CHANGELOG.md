@@ -33,6 +33,7 @@ items 16–29, and amendments to items 2, 5 and 8, record the decisions.
 - **`:generator :min-version` ignored pre-releases and malformed floors.**
   Versions compare by semver precedence (`0.1.0-phase1` < `0.1.0`), and a
   floor that is not a `MAJOR.MINOR.PATCH(-pre)?` string is a config error.
+  A floor written like a tag (`"v0.1.1"`) is told to drop the leading `v`.
 - **Hand-written dates sorted as strings.** `"2026-9-5"` sorted after
   `"2026-10-01"` on the home list, archives, sticky ranks and post prev/next.
 - **Post prev/next re-sorted every post on every article page.** The order is
@@ -53,14 +54,14 @@ items 16–29, and amendments to items 2, 5 and 8, record the decisions.
 - **Filtered index pages reused the overview's `<title>`.**
 - **The article fallback notice could never render.** It is gone; switcher
   entries that land on a language home because the article is untranslated
-  are marked, with visually-hidden text from `:page/fallback-notice`.
+  are marked, with visually-hidden text from `:page/fallback-notice`. The
+  notice is said once, in the page's language: no duplicate `title`.
 - **`index.<lang>.md` and `@pages/` suffixes were case-sensitive**, so
   `index.zh-hant.md` was ignored on Linux while the tree accepted the same
   spelling; `render/localized-file` returns `{:path :own?}`.
 - Homes without a body of their own had no `<h1>`; `toc.js` loaded on pages
   without a TOC; no `<meta name="description">`; zh-Hant's archive string was
   封存 ("sealed") rather than 歸檔.
-- The 0.1.0 notes below claimed a `v0.1.0` tag that was never pushed.
 
 ### Changed
 
@@ -69,8 +70,9 @@ These change published URLs or what builds.
 - **Slugs are legal Windows file names.** `< > : " | ? *` and control
   characters collapse to `-`, trailing dots and spaces are trimmed, and
   reserved device names get `_` after the stem: `Q&A: why?` → `q&a-why`
-  (was `q&a:-why?`), `etc.` → `etc`, `CON` → `con_`. A tag or category
-  containing those characters moves to a new URL.
+  (was `q&a:-why?`), `etc.` → `etc`, `CON` → `con_`; `COM0`, `LPT0`, `CONIN$`
+  and `CONOUT$` are reserved too. A tag or category containing those
+  characters moves to a new URL.
 - **Category and tag slug collisions are a build error.** `Notes` beside a
   `_posts/notes/` subfolder, or tags `Clojure` and `clojure`, fail `build`,
   `fm-fix` and `doctor` instead of silently overwriting one index page (it

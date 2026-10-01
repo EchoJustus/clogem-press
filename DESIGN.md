@@ -2018,8 +2018,9 @@ The 0.1.1 fix round (items 16–29; items 25–29 are its follow-up review) amen
 22. **The in-page fallback notice is gone; the switcher carries it (§6.4 rule 3, §6.8, D-P2-13).**
     An article page is always its own language's variant, so the notice could never render. A
     switcher entry that lands on a language's home because the article is untranslated is marked
-    (`is-untranslated`, a `title`, and visually-hidden text from `:page/fallback-notice`, in the
-    page's language), gated by `:show-fallback-notice`.
+    (`is-untranslated`, and visually-hidden text from `:page/fallback-notice` in the page's
+    language), the text gated by `:show-fallback-notice`. (A `title` carrying the same notice was
+    dropped in the follow-up review — item 29.)
 23. **`index.md` and `@pages/` suffixes match case-insensitively (§6.1, D-P2-6).** `index.zh-hant.md`
     and `@pages/tagsPage.MS.md` were ignored on case-sensitive filesystems while the tree accepted
     the same spelling. The exact canonical spelling is preferred (item 27).

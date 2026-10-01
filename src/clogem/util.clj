@@ -212,9 +212,14 @@
               (or (some-> h parse-long) 0) (or (some-> mi parse-long) 0) (or (some-> sec parse-long) 0))
       s)))
 
+(def ^:private windows-reserved-stem
+  "Windows device names. `conin$`/`conout$` come before `con`, so the stem
+  that gets the `_` is the whole name; `com0` and `lpt0` are reserved too."
+  "(conin\\$|conout\\$|con|prn|aux|nul|com[0-9]|lpt[0-9])")
+
 (def ^:private windows-reserved-re
   "Windows device names, which stay reserved whatever extension follows."
-  #"^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$")
+  (re-pattern (str "^" windows-reserved-stem "(\\..*)?$")))
 
 (defn slug
   "The URL slug of a category or tag (DESIGN.md D-P2-3): lower-cased, with
@@ -225,8 +230,8 @@
   The slug is also a DIRECTORY NAME, and the output must check out on
   Windows, so the characters Windows forbids in a file name (`< > : \" | ? *`
   and control characters) collapse to `-` with the separators, and trailing
-  dots and spaces are trimmed. A device name (`con`, `aux.txt`, `lpt1`) gets
-  `_` after its stem. `.` and `..` would escape the index directory; they,
+  dots and spaces are trimmed. A device name (`con`, `aux.txt`, `lpt1`,
+  `com0`, `conin$`) gets `_` after its stem. `.` and `..` would escape the index directory; they,
   and the empty string, become `_`."
   [s]
   (let [out (-> (str s)
@@ -237,7 +242,7 @@
     (cond
       (or (str/blank? out) (#{"." ".."} out)) "_"
       (re-matches windows-reserved-re out)
-      (str/replace-first out #"^(con|prn|aux|nul|com[1-9]|lpt[1-9])" "$1_")
+      (str/replace-first out (re-pattern (str "^" windows-reserved-stem)) "$1_")
       :else out)))
 
 (defn html-escape

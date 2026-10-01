@@ -159,7 +159,11 @@
       (not (and (string? floor) (re-matches u/version-re floor)))
       (do (diag/error! nil (str ":generator :min-version is " (pr-str floor)
                                 ", which is not a version string like \"0.1.1\".")
-                       "Write the floor as a quoted MAJOR.MINOR.PATCH string (D-14).")
+                       (if (and (string? floor) (re-matches u/version-re (subs floor (min 1 (count floor))))
+                                (#{\v \V} (first floor)))
+                         (str "Drop the leading v: write " (pr-str (subs floor 1))
+                              " — the floor is a version, not a tag name (D-14).")
+                         "Write the floor as a quoted MAJOR.MINOR.PATCH string (D-14)."))
           (update cfg :generator dissoc :min-version))
 
       :else

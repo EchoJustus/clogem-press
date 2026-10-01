@@ -4,6 +4,7 @@
             [babashka.process]
             [clojure.test :refer [deftest is testing]]
             [clojure.set]
+            [clojure.string :as str]
             [clogem.cli :as cli]
             [clogem.config :as config]
             [clogem.diag :as diag]
@@ -114,7 +115,14 @@
       (is (some #(re-find #":min-version is" (:message %)) (diag/errors ds)) (pr-str floor))
       (is (nil? (get-in cfg [:generator :min-version])) "repaired to no floor")))
   (let [[_ ds] (with-site {:generator {:min-version "0.1.0-phase1"}})]
-    (is (empty? (diag/errors ds)) "a pre-release floor is well-formed")))
+    (is (empty? (diag/errors ds)) "a pre-release floor is well-formed"))
+  (testing "D.2.1 fix F: a tag-shaped floor is told to drop the leading v"
+    (doseq [floor ["v0.1.1" "V0.1.1"]]
+      (let [[_ ds] (with-site {:generator {:min-version floor}})
+            msg    (str/join "\n" (map diag/format-diagnostic (diag/errors ds)))]
+        (is (re-find #"Drop the leading v: write \"0\.1\.1\"" msg) msg)))
+    (let [[_ ds] (with-site {:generator {:min-version "abc"}})]
+      (is (not-any? #(re-find #"leading v" (str (:hint %))) (diag/errors ds)) "only when the rest is a version"))))
 
 (defn- content-site
   "A valid one-article content tree under `edn`."
