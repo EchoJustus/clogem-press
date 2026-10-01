@@ -423,18 +423,28 @@
 
 (defn newest-first
   "The one sort every index shares (§6.8: sort order is language-invariant
-  because `date` comes from the primary). Date descending; undated groups
-  last; permalink as the final tie-break so the order is total and a rebuild
-  cannot reshuffle two same-day articles."
+  because `date` comes from the primary). Date descending BY VALUE
+  (`util/date-sort-key`, so a hand-written `\"2026-9-5\"` sorts as the date
+  it is, not as a string); undated groups last; permalink as the final
+  tie-break so the order is total and a rebuild cannot reshuffle two
+  same-day articles. The key is computed once per group, not per comparison."
   [groups]
-  (sort (fn [a b]
-          (let [da (:date a) db (:date b)]
-            (cond
-              (and da db (not= da db)) (compare db da)
-              (and da (nil? db)) -1
-              (and db (nil? da)) 1
-              :else (compare (:permalink a) (:permalink b)))))
-        groups))
+  (->> groups
+       (map (fn [g] [(some-> (:date g) u/date-sort-key) g]))
+       (sort (fn [[da a] [db b]]
+               (cond
+                 (and da db (not= da db)) (compare db da)
+                 (and da (nil? db)) -1
+                 (and db (nil? da)) 1
+                 :else (compare (:permalink a) (:permalink b)))))
+       (map second)))
+
+(defn post-order-of
+  "Every `:post` group's permalink, newest first — `article: false` posts
+  included, since a post is a neighbour whether or not it is indexed
+  (D-P2-7). Computed once per model; `neighbours` reads it."
+  [groups]
+  (mapv :permalink (newest-first (filter #(= :post (:kind %)) groups))))
 
 ;; ---------------------------------------------------------------------------
 ;; Indexes (§5.2 step 3 — ids, never page refs)
@@ -587,11 +597,13 @@
   articles — the leaves of its top-level directory, non-articles included,
   as vdoing does — and newest-first date order among posts for :post
   articles (prev = newer, next = older). nil at either end."
-  [{:keys [sidebar articles]} group]
+  [{:keys [sidebar articles post-order]} group]
   (let [ids (if (= :post (:kind group))
               ;; every post, article or not — a `article: false` post is
-              ;; still a neighbour, as a catalogue page is in the tree
-              (map :permalink (newest-first (filter #(= :post (:kind %)) (vals articles))))
+              ;; still a neighbour, as a catalogue page is in the tree.
+              ;; `:post-order` is computed once in build-model; the fallback
+              ;; serves hand-built models (tests).
+              (or post-order (post-order-of (vals articles)))
               (when-let [top (top-dir group)]
                 (map :permalink (tree-leaves (get sidebar top)))))
         v   (vec ids)
@@ -603,6 +615,23 @@
 ;; ---------------------------------------------------------------------------
 ;; Assembly
 
+(defn- check-slug-collisions!
+  "Two category (or tag) names that share a URL slug — `Notes` and `notes` —
+  would be written to ONE index directory, the second silently overwriting the
+  first, and the bar would carry two links to the same page. That is a content
+  error raised here, in analyse, so build, fm-fix and doctor all stop before
+  anything is rendered. Slugs are never auto-renamed: a renamed URL is a
+  broken one."
+  [cfg categories tags]
+  (doseq [[what toggle index] [["category" :category categories] ["tag" :tag tags]]
+          :when (get-in cfg [:content toggle] true)
+          [slug ks] (group-by u/slug (keys index))
+          :when (> (count ks) 1)]
+    (diag/error! nil (str "these " what " names share the URL slug `" slug "`: "
+                          (str/join ", " (map pr-str (sort ks))))
+                 (str "Only one index page can exist at that URL. Rename one so the names "
+                      "differ by more than case, spacing or punctuation."))))
+
 (defn build-model
   [cfg entries ledger]
   (let [[entries taken] (resolve-permalinks cfg entries ledger)
@@ -612,7 +641,10 @@
                              (keep #(when-let [r (sticky-rank (:sticky %))] [r %]))
                              (sort-by first)
                              (mapv (comp :permalink second)))
-        tree            (sidebar-tree groups)]
+        tree            (sidebar-tree groups)
+        categories      (index-by :categories articles)
+        tags            (index-by :tags articles)]
+    (check-slug-collisions! cfg categories tags)
     {:cfg      cfg
      :entries  entries
      :articles groups
@@ -632,9 +664,11 @@
      ;; enters an index.
      :posts    (mapv :permalink articles)        ; ALL article groups, tree and post kinds (D-P2-4)
      :sticky   sticky                            ; ascending rank; true → 1
-     :categories (index-by :categories articles)
-     :tags       (index-by :tags articles)
+     :categories categories
+     :tags       tags
      :archives   (archives articles)
+     ;; post prev/next order (D-P2-7), sorted once rather than per article page
+     :post-order (post-order-of (vals groups))
      ;; {dir-key → permalink} for every Catalogue page, so breadcrumbs and nav
      ;; can point at the catalogue that covers a directory (D-P2-7, D-P2-8).
      :catalogue  (into (sorted-map)
@@ -663,7 +697,7 @@
   inside `build-model` so that `analyse` stays exactly as quiet as Phase 1
   left it (build_test pins its single expected warning) and so that they
   fire once per report rather than once per render."
-  [{:keys [articles tree catalogue categories tags] :as _model}]
+  [{:keys [articles tree catalogue] :as _model}]
   (doseq [g (vals articles)
           :when (and (:article? g) (nil? (archive-key (:date g))))]
     (diag/warn! (:permalink g)
@@ -694,11 +728,6 @@
                        (nil? (get articles (u/clean-url link))))]
       (diag/warn! nil (str ":nav link " link " names no article; it is emitted with the base only.")
                   "Nav conventionally points at a catalogue page's permalink (D-P2-11).")))
-  (doseq [[what index] [["category" categories] ["tag" tags]]
-          [slug ks] (group-by u/slug (keys index))
-          :when (> (count ks) 1)]
-    (diag/warn! nil (str "these " what " names share the URL slug `" slug "`: "
-                         (str/join ", " (map pr-str ks)) "; only one index page can be emitted.")))
   nil)
 
 (defn ledger-from-model

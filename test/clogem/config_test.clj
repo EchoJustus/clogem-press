@@ -93,9 +93,85 @@
   (is (u/version>= "0.3.1" "0.3.0"))
   (is (u/version>= "1.0.0" "0.9.9"))
   (is (u/version>= "v0.3.0" "0.3.0") "a leading v is tolerated")
-  (is (u/version>= "0.3.0-rc1" "0.3.0") "pre-release trailers are ignored")
+  (is (not (u/version>= "0.3.0-rc1" "0.3.0")) "a pre-release sorts below its release")
   (is (not (u/version>= "0.2.9" "0.3.0")))
   (is (u/version>= "0.3" "0.3.0") "missing segments are zero"))
+
+(deftest version-comparison-follows-semver-precedence
+  (testing "fix 16: the Phase 1 generator `0.1.0-phase1` must not satisfy a `0.1.0` floor"
+    (is (not (u/version>= "0.1.0-phase1" "0.1.0")))
+    (is (u/version>= "0.1.1" "0.1.0"))
+    (is (u/version>= "0.1.0" "0.1.0-phase1"))
+    (is (u/version>= "0.1.1-rc.1" "0.1.0"))
+    (is (not (u/version>= "1.0.0-alpha" "1.0.0-alpha.1")) "a shorter identifier list is lower")
+    (is (not (u/version>= "1.0.0-alpha.1" "1.0.0-alpha.beta")) "numeric < alphanumeric")
+    (is (not (u/version>= "1.0.0-rc.2" "1.0.0-rc.10")) "numeric identifiers compare numerically")
+    (is (u/version>= "1.0.0-beta" "1.0.0-alpha.9"))))
+
+(deftest a-malformed-min-version-is-a-config-error
+  (doseq [floor ["abc" 0.1 "0.1" "v0.1.0" ""]]
+    (let [[cfg ds] (with-site {:generator {:min-version floor}})]
+      (is (some #(re-find #":min-version is" (:message %)) (diag/errors ds)) (pr-str floor))
+      (is (nil? (get-in cfg [:generator :min-version])) "repaired to no floor")))
+  (let [[_ ds] (with-site {:generator {:min-version "0.1.0-phase1"}})]
+    (is (empty? (diag/errors ds)) "a pre-release floor is well-formed")))
+
+(defn- content-site
+  "A valid one-article content tree under `edn`."
+  [edn]
+  (let [dir (fs/create-temp-dir {:prefix "clogem-site"})]
+    (spit (fs/file dir "site.edn") (pr-str edn))
+    (fs/create-dirs (fs/path dir "content" "01.Guide"))
+    (spit (fs/file (fs/path dir "content" "01.Guide" "01.a.md"))
+          "---\ntitle: A\ndate: \"2026-01-01 00:00:00\"\npermalink: /pages/aaaaaa/\n---\n\n# A\n\n## H\n\nbody\n")
+    dir))
+
+(deftest min-version-abc-fails-doctor
+  (let [dir (content-site {:generator {:min-version "abc"}})]
+    (try
+      (binding [diag/*sink* (atom [])]
+        (let [e (is (thrown? clojure.lang.ExceptionInfo (cli/doctor {:site-dir (str dir)})))]
+          (when (instance? clojure.lang.ExceptionInfo e)
+            (is (= 1 (:babashka/exit (ex-data e)))))))
+      (finally (fs/delete-tree dir)))))
+
+(deftest theme-integers-are-type-checked-and-repaired
+  (doseq [[k bad] [[:per-page "10"] [:per-page 0] [:per-page :ten]
+                   [:sidebar-depth "2"] [:sidebar-depth 6] [:sidebar-depth -1] [:sidebar-depth 1.5]]]
+    (let [[cfg ds] (with-site {:theme {k bad}})]
+      (is (some #(re-find (re-pattern (str ":theme " k " is")) (:message %)) (diag/errors ds))
+          (str k " " (pr-str bad)))
+      (is (= (get-in config/defaults [:theme k]) (get-in cfg [:theme k])) "repaired to the default")))
+  (testing "an explicit nil means the default, and is not an error"
+    (let [[cfg ds] (with-site {:theme {:per-page nil :sidebar-depth nil}})]
+      (is (empty? (diag/errors ds)))
+      (is (= 10 (get-in cfg [:theme :per-page])))
+      (is (= 2 (get-in cfg [:theme :sidebar-depth])))))
+  (let [[_ ds] (with-site {:theme {:per-page 3 :sidebar-depth 0}})]
+    (is (empty? (diag/errors ds)) "valid values pass")))
+
+(deftest a-string-theme-integer-fails-build-and-doctor-with-no-dist
+  (doseq [k [:per-page :sidebar-depth]]
+    (let [dir (content-site {:theme {k "3"}})
+          out (fs/path dir "dist")]
+      (try
+        (binding [diag/*sink* (atom [])]
+          (testing (str k " — doctor")
+            (let [e (is (thrown? clojure.lang.ExceptionInfo (cli/doctor {:site-dir (str dir)})))]
+              (when (instance? clojure.lang.ExceptionInfo e)
+                (is (= 1 (:babashka/exit (ex-data e))))
+                (is (some #(re-find (re-pattern (str ":theme " k " is \"3\"")) (:message %))
+                          (:clogem/errors (ex-data e)))
+                    "the readable message, not a ClassCastException"))))
+          (doseq [no-write [false true]]
+            (testing (str k " — build, no-write " no-write)
+              (let [e (is (thrown? clojure.lang.ExceptionInfo
+                                   (cli/build {:site-dir (str dir) :out (str out) :no-write no-write})))]
+                (when (instance? clojure.lang.ExceptionInfo e)
+                  (is (= 1 (:babashka/exit (ex-data e))))
+                  (is (re-find (re-pattern (str ":theme " k)) (ex-message e)))))
+              (is (not (fs/exists? out)) "no dist/"))))
+        (finally (fs/delete-tree dir))))))
 
 (deftest paths-are-normalized
   (let [[cfg _] (with-site {})]

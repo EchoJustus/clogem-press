@@ -485,6 +485,70 @@
         "date desc, permalink tie-break, undated last")
     (is (= (model/newest-first gs) (model/newest-first (reverse gs))))))
 
+(deftest newest-first-sorts-hand-written-dates-by-value
+  (testing "fix 6: a quoted, unpadded date is a date, not a string"
+    (let [gs [{:permalink "/pages/a/" :date "2026-9-5"}
+              {:permalink "/pages/b/" :date "2026-10-01"}
+              {:permalink "/pages/c/" :date "2026-9-20"}
+              {:permalink "/pages/d/" :date "2026-9-20 8:5"}]]
+      (is (= ["/pages/b/" "/pages/d/" "/pages/c/" "/pages/a/"]
+             (map :permalink (model/newest-first gs))))
+      (is (= (model/newest-first gs) (model/newest-first (reverse gs))))))
+  (testing "date-sort-key pads, and leaves non-dates alone"
+    (is (= "2026-09-05 00:00:00" (u/date-sort-key "2026-9-5")))
+    (is (= "2026-09-05 08:05:00" (u/date-sort-key "2026-9-5 8:5")))
+    (is (= "2026-09-05 08:05:07" (u/date-sort-key "2026-09-05 08:05:07")))
+    (is (= "yesterday" (u/date-sort-key "yesterday")))))
+
+(defn- post [pl date & [fm]]
+  (-> (dated {:dir "_posts" :base pl :order nil :kind :post :permalink (str "/pages/" pl "/")} date fm)
+      (assoc :categories ["Notes"])))
+
+(deftest post-order-is-computed-once
+  (let [entries [(post "p1" "2026-9-5") (post "p2" "2026-10-01")
+                 (post "p3" "2026-9-20" {:article false}) (post "p4" nil)]
+        m       (full-model entries)
+        groups  (vals (:articles m))]
+    (is (= ["/pages/p2/" "/pages/p3/" "/pages/p1/" "/pages/p4/"] (:post-order m))
+        "by value, article: false included, undated last")
+    (testing "neighbours with :post-order agree with the old per-call sort"
+      (doseq [g groups]
+        (is (= (model/neighbours m g) (model/neighbours (dissoc m :post-order) g)) (:permalink g))))
+    (testing "newest-first is not called per article"
+      (let [calls (atom 0)
+            orig  model/newest-first]
+        (with-redefs [model/newest-first (fn [gs] (swap! calls inc) (orig gs))]
+          (doseq [g groups] (model/neighbours m g)))
+        (is (zero? @calls))))))
+
+(deftest slug-collisions-are-an-analyse-error
+  (testing "fix 12: categories that differ only by case share a URL"
+    (let [[m ds] (diag/collecting
+                  (model/build-model cfg [(assoc (dated {:base "a" :order 1} "2026-08-01") :categories ["Notes"])
+                                          (assoc (dated {:base "b" :order 2} "2026-08-02") :categories ["notes"])]
+                                     model/empty-ledger))]
+      (is (some? m))
+      (is (some #(re-find #"category names share the URL slug `notes`: \"Notes\", \"notes\"" (:message %))
+                (diag/errors ds)))))
+  (testing "…and tags"
+    (let [[_ ds] (diag/collecting
+                  (model/build-model cfg [(dated {:base "a" :order 1} "2026-08-01" {:tags ["Clojure"]})
+                                          (dated {:base "b" :order 2} "2026-08-02" {:tags ["clojure"]})]
+                                     model/empty-ledger))]
+      (is (some #(re-find #"tag names share the URL slug `clojure`" (:message %)) (diag/errors ds)))))
+  (testing "not when the index system is switched off"
+    (let [[_ ds] (diag/collecting
+                  (model/build-model (assoc-in cfg [:content :tag] false)
+                                     [(dated {:base "a" :order 1} "2026-08-01" {:tags ["Clojure"]})
+                                      (dated {:base "b" :order 2} "2026-08-02" {:tags ["clojure"]})]
+                                     model/empty-ledger))]
+      (is (empty? (diag/errors ds)))))
+  (testing "doctor-checks! no longer reports it a second time"
+    (let [m (full-model [(dated {:base "a" :order 1} "2026-08-01" {:tags ["Clojure"]})
+                         (dated {:base "b" :order 2} "2026-08-02" {:tags ["clojure"]})])
+          [_ ds] (diag/collecting (model/doctor-checks! m))]
+      (is (not-any? #(re-find #"URL slug" (:message %)) ds)))))
+
 (deftest doctor-reports-every-kind-of-variant-disagreement
   (doseq [[k a b] [[:pageComponent {:name "Catalogue" :data {:path "01.Guide"}} nil]
                    [:comment false true]

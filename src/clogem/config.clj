@@ -121,6 +121,56 @@
            ;; lowercased tag → canonical keyword, the lookup the scanner uses
            :by-lower (into {} (map (fn [k] [(u/lower (name k)) k])) known))))
 
+(def ^:private theme-int-rules
+  "Typed `:theme` integers: [key valid? what-it-must-be]. Render reads both
+  as numbers, so a string or keyword used to surface as a raw
+  ClassCastException — for `:sidebar-depth`, half-way through writing dist/."
+  [[:per-page      #(and (integer? %) (pos? %))    "a positive integer"]
+   [:sidebar-depth #(and (integer? %) (<= 0 % 5))  "an integer from 0 to 5"]])
+
+(defn- check-theme!
+  "Repair-then-report, like :langs :default: a bad value is a config error AND
+  is replaced by its default, so `doctor` can keep going under the repaired
+  config. An explicit nil (deep-merge lets it win) means \"use the default\"
+  and is not an error — it is how a site un-sets an inherited value."
+  [cfg]
+  (reduce (fn [cfg [k ok? what]]
+            (let [v       (get-in cfg [:theme k])
+                  default (get-in defaults [:theme k])]
+              (cond
+                (nil? v) (assoc-in cfg [:theme k] default)
+                (ok? v)  cfg
+                :else
+                (do (diag/error! nil (str ":theme " k " is " (pr-str v) ", but it must be " what ".")
+                                 (str "Using " default " so the rest of the report is readable, "
+                                      "but the build will not run."))
+                    (assoc-in cfg [:theme k] default)))))
+          cfg theme-int-rules))
+
+(defn- check-floor!
+  "D-14: the compatibility floor, hard-failed. A floor that is not a
+  `MAJOR.MINOR.PATCH(-pre)?` string is itself a config error, repaired to
+  \"no floor\" — `\"abc\"` and the number `0.1` used to pass silently."
+  [{:keys [generator] :as cfg}]
+  (let [floor (:min-version generator)]
+    (cond
+      (nil? floor) cfg
+
+      (not (and (string? floor) (re-matches u/version-re floor)))
+      (do (diag/error! nil (str ":generator :min-version is " (pr-str floor)
+                                ", which is not a version string like \"0.1.1\".")
+                       "Write the floor as a quoted MAJOR.MINOR.PATCH string (D-14).")
+          (update cfg :generator dissoc :min-version))
+
+      :else
+      (let [have (generator-version)]
+        (when-not (u/version>= have floor)
+          (diag/error! nil (str "this generator is " have " but site.edn requires :generator "
+                                ":min-version " floor ".")
+                       (str "Bump the `ref:` in publish.yml — that is the authoritative pin "
+                            "(DESIGN.md D-14); site.edn carries the floor, not the pin.")))
+        cfg))))
+
 (defn- validate!
   [{:keys [langs comments generator] :as cfg}]
   (let [{:keys [locales priority default default-declared]} langs]
@@ -153,15 +203,7 @@
           (diag/error! nil (str ":comments " k " is required when :provider is :giscus.")))))
     (when (< (count priority) (count locales))
       (diag/warn! nil ":langs :priority does not cover every locale; missing ones were appended.")))
-  ;; D-14: the compatibility floor, hard-failed.
-  (when-let [floor (:min-version generator)]
-    (let [have (generator-version)]
-      (when-not (u/version>= have floor)
-        (diag/error! nil (str "this generator is " have " but site.edn requires :generator "
-                              ":min-version " floor ".")
-                     (str "Bump the `ref:` in publish.yml — that is the authoritative pin "
-                          "(DESIGN.md D-14); site.edn carries the floor, not the pin.")))))
-  cfg)
+  (-> cfg check-theme! check-floor!))
 
 (defn load-config
   "Read site config from `site-dir`, deep-merge over defaults and `overrides`,

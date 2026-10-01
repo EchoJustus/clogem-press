@@ -266,6 +266,26 @@
                             "Use the numbered directory names exactly, e.g. `01.Guide/10.Basics`.")
                 nil))))))
 
+(defn toc-depth
+  "The TOC depth of an article page: front matter `sidebarDepth` when it is an
+  integer 0–5 (or a digit string — YAML authors quote things), else
+  `[:theme :sidebar-depth]`. Anything else is a warning naming the file, not
+  a silent fallback."
+  [cfg variant]
+  (let [v       (get-in variant [:front-matter :sidebarDepth])
+        default (get-in cfg [:theme :sidebar-depth])
+        n       (cond
+                  (integer? v) v
+                  (and (string? v) (re-matches #"\s*\d+\s*" v)) (parse-long (str/trim v))
+                  :else nil)]
+    (cond
+      (nil? v)          default
+      (and n (<= 0 n 5)) n
+      :else (do (diag/warn! (:rel-path variant)
+                            (str "front matter sidebarDepth: " (pr-str v)
+                                 " is not an integer from 0 to 5; using " default "."))
+                default))))
+
 (defn page-map
   "{uri → (fn [] hiccup)} for every emitted document.
 
@@ -311,8 +331,7 @@
                ;; parse ONCE: the body hiccup and the TOC come from the same
                ;; AST, so TOC ids and heading anchors agree by construction
                (let [ast   (markdown/parse (:body variant) lc)
-                     depth (or (some-> (get-in variant [:front-matter :sidebarDepth]) str parse-long)
-                               (get-in cfg [:theme :sidebar-depth]))]
+                     depth (toc-depth cfg variant)]
                  (page/article (assoc ctx :toc (markdown/toc ast depth))
                                ;; the theme renders the title; the body's own
                                ;; `# Title` would be a second <h1>

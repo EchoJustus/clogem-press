@@ -792,3 +792,73 @@
         "no language prefix is invented for a permalink that names nothing")
     (is (some #(re-find #":nav link /pages/nope00/ names no article" (:message %)) (diag/warnings dds)))
     (is (empty? (diag/warnings ds)) "…and rendering itself stays quiet")))
+
+;; ---------------------------------------------------------------------------
+;; Fix round 0.1.1
+
+(defn- with-cli-site
+  "Write {rel-path → content} under a temp site's content/ (plus an optional
+  site.edn) and call (f dir out)."
+  [files f & [site-edn]]
+  (let [dir (fs/create-temp-dir {:prefix "clogem-cli"})]
+    (try
+      (when site-edn (spit (fs/file dir "site.edn") (pr-str site-edn)))
+      (doseq [[rel content] files
+              :let [p (fs/path dir "content" rel)]]
+        (fs/create-dirs (fs/parent p))
+        (spit (fs/file p) content))
+      (binding [diag/*sink* (atom [])]
+        (f dir (fs/path dir "dist")))
+      (finally (fs/delete-tree dir)))))
+
+(defn- build-fails
+  "Run `build` (optionally --no-write) and return the ExceptionInfo it raises."
+  [dir out no-write]
+  (try (cli/build {:site-dir (str dir) :out (str out) :no-write no-write}) nil
+       (catch clojure.lang.ExceptionInfo e e)))
+
+(deftest a-content-error-under-no-write-leaves-no-dist
+  (testing "fix 2: --no-write skips pass 1, so analyse errors must gate render"
+    (doseq [[what files] [["malformed YAML" {"01.Guide/01.a.md" "---\ntitle: [unclosed\n---\n\nbody\n"}]
+                          ["duplicate permalink" {"01.Guide/01.a.md" a-tree
+                                                  "01.Guide/02.b.md" a-tree}]]]
+      (with-cli-site files
+        (fn [dir out]
+          (let [e (build-fails dir out true)]
+            (is (some? e) what)
+            (is (= 1 (:babashka/exit (ex-data e))) what)
+            (is (not (fs/exists? out)) (str what ": no dist/ directory at all"))
+            (is (not (fs/exists? (fs/path dir "permalinks.edn"))) (str what ": no ledger"))))))))
+
+(deftest slug-collisions-fail-the-build
+  (testing "fix 12: `_posts/notes/` beside the default category \"Notes\""
+    (with-cli-site {"_posts/2026-01-01-p.md" a-post
+                    "_posts/notes/2026-01-02-q.md" (str/replace a-post "p00001" "q00001")}
+      (fn [dir out]
+        (doseq [no-write [true false]]
+          (let [e (build-fails dir out no-write)]
+            (is (some? e))
+            (is (re-find #"category names share the URL slug `notes`" (str (ex-message e))))
+            (is (not (fs/exists? out))))))))
+  (testing "…and two tags that differ only by case"
+    (with-cli-site {"_posts/2026-01-01-p.md" a-post
+                    "_posts/2026-01-02-q.md" (-> a-post (str/replace "p00001" "q00001") (str/replace "[t]" "[T]"))}
+      (fn [dir out]
+        (let [e (build-fails dir out true)]
+          (is (re-find #"tag names share the URL slug `t`" (str (ex-message e))))
+          (is (not (fs/exists? out))))
+        (let [e (try (cli/doctor {:site-dir (str dir)}) nil (catch clojure.lang.ExceptionInfo e e))]
+          (is (= 1 (:babashka/exit (ex-data e))) "doctor exits 1 too"))
+        (let [e (try (cli/fm-fix {:site-dir (str dir)}) nil (catch clojure.lang.ExceptionInfo e e))]
+          (is (= 1 (:babashka/exit (ex-data e))) "…and fm-fix"))))))
+
+(deftest a-bad-front-matter-sidebar-depth-warns-with-the-path
+  (doseq [bad ["auto" "9" "-1" "1.5"]]
+    (let [[_ _ html ds] (temp-tree {"01.Guide/01.t.md" (str "---\ntitle: T\npermalink: /pages/t00001/\nsidebarDepth: " bad "\n---\n\n# T\n\n## H2\n\n### H3\n")})]
+      (is (some #(and (= "01.Guide/01.t.md" (:path %)) (re-find #"sidebarDepth" (:message %)))
+                (diag/warnings ds))
+          bad)
+      (is (str/includes? (html "/pages/t00001/") ">H3<") "falls back to the default depth 2")))
+  (let [[_ _ html ds] (temp-tree {"01.Guide/01.t.md" "---\ntitle: T\npermalink: /pages/t00001/\nsidebarDepth: \"1\"\n---\n\n# T\n\n## H2\n\n### H3\n"})]
+    (is (empty? (diag/warnings ds)) "a digit string is accepted")
+    (is (not (re-find #"level-3" (html "/pages/t00001/"))))))

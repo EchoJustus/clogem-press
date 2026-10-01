@@ -198,6 +198,19 @@
       (format "%s-%02d-%02d" y (parse-long m) (parse-long dd))   ; `2026-8-1` → 2026-08-01
       (str d))))
 
+(defn date-sort-key
+  "A sort key that orders hand-written dates by VALUE: a leading
+  `YYYY-M-D[ H:m[:s]]` is zero-padded to `YYYY-MM-DD HH:mm:ss`, so the quoted,
+  unpadded `\"2026-9-5\"` sorts before `\"2026-10-01\"` instead of after it.
+  Anything that does not start with a date is returned unchanged."
+  [d]
+  (let [s (str d)]
+    (if-let [[_ y mo dd h mi sec]
+             (re-find #"^\s*(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?" s)]
+      (format "%s-%02d-%02d %02d:%02d:%02d" y (parse-long mo) (parse-long dd)
+              (or (some-> h parse-long) 0) (or (some-> mi parse-long) 0) (or (some-> sec parse-long) 0))
+      s)))
+
 (defn slug
   "The URL slug of a category or tag (DESIGN.md D-P2-3): lower-cased, with
   whitespace runs and path separators collapsed to `-`; Unicode letters (CJK,
@@ -225,16 +238,51 @@
 ;; ---------------------------------------------------------------------------
 ;; Versions
 
+(def version-re
+  "MAJOR.MINOR.PATCH with an optional semver pre-release — the only shape a
+  `:generator :min-version` floor may take (D-14)."
+  #"\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?")
+
 (defn parse-version
-  "\"1.2.3-rc1\" → [1 2 3]. Non-numeric trailers are ignored for comparison."
+  "\"1.2.3-rc.1\" → {:release [1 2 3] :pre [\"rc\" 1]}; `:pre` is nil for a
+  release. A leading `v` and `+build` metadata are ignored, and non-numeric
+  release segments are dropped, so the generator's own version string parses
+  leniently; a site's FLOOR is checked against `version-re` before it gets
+  here."
   [v]
-  (->> (str/split (str/replace (str v) #"^v" "") #"[.\-+]")
-       (keep #(when (re-matches #"\d+" %) (parse-long %)))
-       vec))
+  (let [s          (-> (str v) str/trim (str/replace #"^v" "") (str/replace #"\+.*$" ""))
+        [core pre] (str/split s #"-" 2)]
+    {:release (into [] (keep #(when (re-matches #"\d+" %) (parse-long %))) (str/split core #"\."))
+     :pre     (when-not (str/blank? pre)
+                (mapv #(if (re-matches #"\d+" %) (parse-long %) %) (str/split pre #"\.")))}))
+
+(defn- compare-pre
+  "Semver §11 precedence of two pre-release identifier lists; nil (a release)
+  ranks above every pre-release."
+  [a b]
+  (cond
+    (and (nil? a) (nil? b)) 0
+    (nil? a) 1
+    (nil? b) -1
+    :else
+    (or (some (fn [[x y]]
+                (let [c (cond
+                          (and (number? x) (number? y)) (compare x y)
+                          (number? x) -1               ; numeric < alphanumeric
+                          (number? y) 1
+                          :else (compare x y))]
+                  (when-not (zero? c) c)))
+              (map vector a b))
+        (compare (count a) (count b)))))
 
 (defn version>=
+  "Semver precedence: `0.1.0-phase1` is BELOW `0.1.0`, so a pre-release
+  generator does not satisfy the floor of the release it precedes. Missing
+  release segments count as zero."
   [a b]
-  (let [av (parse-version a) bv (parse-version b)
-        n  (max (count av) (count bv))
-        pad (fn [v] (vec (take n (concat v (repeat 0)))))]
-    (>= (compare (pad av) (pad bv)) 0)))
+  (let [{ar :release ap :pre} (parse-version a)
+        {br :release bp :pre} (parse-version b)
+        n   (max (count ar) (count br) 3)
+        pad (fn [v] (vec (take n (concat v (repeat 0)))))
+        c   (compare (pad ar) (pad br))]
+    (>= (if (zero? c) (compare-pre ap bp) c) 0)))

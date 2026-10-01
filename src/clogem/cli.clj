@@ -119,12 +119,20 @@
         ;; the author has something to edit.
         (doseq [f (pages/ensure-files! cfg)]
           (println "clogem-press: created" f))))
-    (let [[result ds]
+    ;; Pass 2 — analyse, GATED before anything is written. `--no-write` skips
+    ;; pass 1, so this is its only gate: a malformed YAML block or a
+    ;; duplicate permalink used to be reported only after render/build! had
+    ;; populated dist/. Content errors now stop the build here, before the
+    ;; ledger write and before dist/ exists. (Render-time exceptions can
+    ;; still leave a partial dist/ — DESIGN.md §11.2 records that limit.)
+    (let [[m ads]    (diag/collecting (analyse cfg))
+          _          (when (seq (diag/errors ads)) (report! ads))
+          [result rds]
           (diag/collecting
-           (let [m (analyse cfg)]
-             (when (config/write-front-matter? cfg)
-               (model/write-ledger! cfg (model/ledger-from-model m)))
-             (render/build! cfg m)))]
+           (when (config/write-front-matter? cfg)
+             (model/write-ledger! cfg (model/ledger-from-model m)))
+           (render/build! cfg m))
+          ds         (into (vec ads) rds)]
       (report! ds)
       (println (format "clogem-press: %d pages (%d articles, %d variants) → %s"
                        (:pages result) (:articles result) (:variants result) (:out result)))
@@ -163,7 +171,7 @@
                 (let [m (analyse cfg)]
                   ;; findings that must not fire inside analyse (undated
                   ;; articles, disagreeing variants, over-deep directories,
-                  ;; unresolved catalogue paths, slug collisions) …
+                  ;; unresolved catalogue paths) …
                   (model/doctor-checks! m)
                   ;; … and the render-time ones (dead links, unknown
                   ;; containers, bad card-list YAML), by rendering every page
