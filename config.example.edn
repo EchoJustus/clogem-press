@@ -28,7 +28,9 @@
  ;; using a convention the pinned generator does not have yet" — and stays
  ;; correct whether the workflow pins a tag, a branch, or a sha.
  :generator {:repo "EchoJustus/clogem-press"
-             ;; :min-version "0.3.0"
+             ;; :min-version "0.3.0"   ; a quoted MAJOR.MINOR.PATCH(-pre)? string;
+             ;;                          ; semver precedence, so a pre-release
+             ;;                          ; generator is BELOW its release
              }
 
  ;; --------------------------------------------------------------- langs ----
@@ -89,10 +91,11 @@
          :page-style   :card          ; :card | :line
          :sidebar-open true           ; true → every sidebar group starts open;
                                       ; false → only the current article's trail
-         :sidebar-depth 2             ; right-hand TOC depth: 1 = h2, 2 = h2–h3, 3 = h2–h4;
-                                      ; front matter `sidebarDepth:` overrides per page
-         :per-page 10                 ; articles per page on the homepage and on
-                                      ; category / tag pages (/page/2/, …)
+         :sidebar-depth 2             ; right-hand TOC depth, an integer 0–5: 0 = no TOC,
+                                      ; 1 = h2, 2 = h2–h3, 3 = h2–h4; front matter
+                                      ; `sidebarDepth:` overrides per page
+         :per-page 10                 ; a positive integer: articles per page on the
+                                      ; homepage and on category / tag pages (/page/2/, …)
          :fonts {:tamil :system}      ; :system | :self-hosted  (§6.9)
          :html-modules {}}            ; raw HTML injected into named regions
 
