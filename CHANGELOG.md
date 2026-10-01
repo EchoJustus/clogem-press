@@ -91,11 +91,13 @@ These change published URLs or what builds.
 - **Homepage excerpts are marker-only.** Without `<!-- more -->` a card
   shows no excerpt and no read-more link (VuePress/vdoing behaviour); add the
   marker where an excerpt is wanted. The demo now carries explicit markers.
-- `render/localized-file` is a single 3-arity function returning a map.
+- `localized-file` lives in `clogem.pages` (`render/localized-file` is an
+  alias): a single 3-arity function returning a map, with `:ambiguous` when
+  two files name the language. `render/index-paths` takes the model.
 
 ### Tests
 
-276 tests / 1483 assertions (from 249 / 975).
+283 tests / 1629 assertions (from 249 / 975).
 
 ## 0.1.0 — Phase 2: core vdoing parity
 
