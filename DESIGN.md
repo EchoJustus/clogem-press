@@ -1928,10 +1928,13 @@ Recorded as the Phase 2 work (§8) landed; each item names the section it amends
    error repaired to no floor) and is compared by semver precedence, so `0.1.0-phase1` does not
    satisfy `0.1.0`. `build` also gates on **analyse** errors before it writes the ledger or creates
    `dist/` — under `--no-write`, which skips pass 1, a malformed YAML block or a duplicate permalink
-   used to be reported only after a populated `dist/` existed. **Known limitation:** this gates
-   analyse-time errors only. An exception thrown *during render* can still leave a partial `dist/`,
-   and `build` never removes stale files from an existing `dist/`; every error check therefore
-   belongs in config loading or analyse, never in render.
+   used to be reported only after a populated `dist/` existed. Analyse also resolves and parses
+   `index*.md` and every `@pages/*` file (item 26), so **every content error diagnostic** — the
+   numbered tree's and those files' — stops `build` before the ledger write and before `dist/`
+   exists; render emits warnings only. **Known limitation:** an *exception* thrown during render
+   (a bug, or a file deleted mid-build) can still leave a partial `dist/`, and `build` never removes
+   stale files from an existing `dist/`; every error check therefore belongs in config loading or
+   analyse, never in render.
 3. **`:catalogue` is keyed by dir-key, not by category title (§5.2 step 3).** The sketch wrote
    `{"Guide" "/pages/xyz/"}`; category titles repeat across levels (`Local` under `Notes` and under
    `Guide`), so the table is keyed by the numbered directory path a Catalogue page's `data.path`
@@ -1988,7 +1991,7 @@ Recorded as the Phase 2 work (§8) landed; each item names the section it amends
 15. **A `:nav` permalink that names no article is emitted with the base only**, never with an invented
     language prefix, and `doctor` reports it.
 
-The 0.1.1 fix round (items 16–24) amends the sections named; items 2, 5 and 8 above carry
+The 0.1.1 fix round (items 16–29; items 25–29 are its follow-up review) amends the sections named; items 2, 5 and 8 above carry
 *Amended in 0.1.1* notes for the changes that refine them.
 
 16. **Near-miss rule (c) reads the original case (§6.1, D-P2-14).** Lower-casing before the shape test
@@ -2019,10 +2022,31 @@ The 0.1.1 fix round (items 16–24) amends the sections named; items 2, 5 and 8 
     page's language), gated by `:show-fallback-notice`.
 23. **`index.md` and `@pages/` suffixes match case-insensitively (§6.1, D-P2-6).** `index.zh-hant.md`
     and `@pages/tagsPage.MS.md` were ignored on case-sensitive filesystems while the tree accepted
-    the same spelling.
+    the same spelling. The exact canonical spelling is preferred (item 27).
 24. **Smaller output fixes.** A home without a body of its own renders the site title as its `<h1>`;
     `toc.js` loads only on pages that render a TOC; every page carries `<meta name="description">`
     from the localized `:site :description`; zh-Hant's archive string is 歸檔 (封存 means "sealed").
+25. **Rule (c) catches upper-case tags again (§6.1).** Reading the original case (item 16) also let
+    `02.title.ZH-HANT-HK.md` — an error in 0.1.0 — become an article titled `title.ZH-HANT-HK`. A
+    configured script (or a typo of one) now anchors the primary case-insensitively as well, and an
+    ALL-CAPS configured primary followed only by UPPERCASE or 3-digit regions is a tag (`EN-NZ`). A
+    Title-case word after an upper-case primary is not (`MS-Word`); an all-caps `TA-DA.md` errors.
+26. **`index*.md` and `@pages/*` are parsed during analyse (item 2, D-P2-6).** They were read at
+    render time, so a YAML error in `content/index.md` was raised after `dist/` had been written (29
+    files on a clean site), under `--no-write` and in a normal build alike, and doctor counted it
+    once per language home that falls back to the file. `pages/site-files` resolves every
+    `[file, language]` pair through `localized-file`, parses each distinct file once, and the model
+    carries the result (`:site-files`); render reads the cached front matter and body.
+27. **`localized-file` prefers the exact canonical spelling (§6.1).** It took the first of the
+    case-insensitive matches in byte order, so `index.ZH-HANT.md` silently beat `index.zh-Hant.md`.
+    The exact `<rel>.<lang>.md` wins, a single mis-cased file is still read, and two files naming
+    the same language are an analyse error naming both — as two such files in the content tree are.
+28. **"All N" counts what it lists (§1, D-P2-3).** With the overview listing every article (item 20),
+    the bar's "All" counted only the articles in the index: `/tags/` read "All 2" above five rows.
+29. **Smaller fixes.** The switcher's untranslated notice is visually-hidden text in the page's
+    language only (the `title` duplicated it for screen readers and sat on an element whose `lang`
+    is the target's); `COM0`, `LPT0`, `CONIN$` and `CONOUT$` are reserved slug stems; a
+    `:min-version` floor written `v0.1.1` is told to drop the leading `v`.
 
 ---
 

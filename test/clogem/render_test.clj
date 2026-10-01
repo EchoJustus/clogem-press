@@ -129,6 +129,12 @@
         (testing "a mis-cased suffix is the language's own file, as the scanner would read it"
           (is (= {:path "index.zh-hant.md" :own? true} (lf "index" :zh-Hant)))
           (is (= {:path "tagsPage.MS.md" :own? true} (lf "@pages/tagsPage" :ms))))
+        (testing "fix C: the exact canonical spelling wins over a case-insensitive match"
+          (put "index.zh-Hant.md" "---\n---\n\nCANONICAL\n")
+          (let [r (render/localized-file cfg "index" :zh-Hant)]
+            (is (= "index.zh-Hant.md" (str (fs/file-name (:path r)))))
+            (is (= ["index.zh-Hant.md" "index.zh-hant.md"] (mapv #(str (fs/file-name %)) (:ambiguous r)))))
+          (fs/delete (fs/path dir "content" "index.zh-Hant.md")))
         (testing "end to end: the zh-Hant home renders the mis-cased file's body"
           (let [[m _] (diag/collecting (cli/analyse cfg))
                 pm   (first (diag/collecting (render/page-map m)))

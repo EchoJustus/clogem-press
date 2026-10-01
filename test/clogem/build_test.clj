@@ -986,3 +986,54 @@
   (testing "the demo's map label localizes the sidebar group on zh-Hans"
     (is (str/includes? (slurp-out "zh-Hans" "pages" "643259" "index.html") "<summary>基础</summary>"))
     (is (str/includes? (slurp-out "pages" "643259" "index.html") "<summary>Basics</summary>"))))
+
+;; ---------------------------------------------------------------------------
+;; Fix round D.2.1
+
+(def ^:private bad-yaml "---\npostList: [bad\n---\n\nbody\n")
+
+(defn- doctor-errors
+  "Run `doctor` over `dir`; return its error diagnostics whether or not it raised."
+  [dir]
+  (try (:errors (cli/doctor {:site-dir (str dir)}))
+       (catch clojure.lang.ExceptionInfo e (:clogem/errors (ex-data e)))))
+
+(deftest bad-yaml-outside-the-tree-fails-the-build-before-dist
+  (testing "fix A: index*.md and @pages/* are parsed during analyse, so a YAML
+            error there stops build (both modes) before dist/ exists, and
+            doctor reports it exactly once — not once per language home"
+    (doseq [rel ["index.md" "index.zh-Hans.md" "@pages/tagsPage.md" "@pages/tagsPage.MS.md"]]
+      (with-cli-site {"01.Guide/01.t.md" a-tree rel bad-yaml}
+        (fn [dir out]
+          (doseq [no-write [true false]]
+            (let [e (build-fails dir out no-write)]
+              (is (some? e) (str rel " no-write=" no-write))
+              (is (= 1 (:babashka/exit (ex-data e))) rel)
+              (is (re-find #"malformed YAML" (str (ex-message e))) rel)
+              (is (not (fs/exists? out)) (str rel " no-write=" no-write ": no dist/ at all"))))
+          (let [errs (doctor-errors dir)]
+            (is (= 1 (count errs)) (str rel ": " (pr-str (map :message errs))))
+            (is (re-find #"malformed YAML" (str (:message (first errs)))) rel)
+            (is (str/ends-with? (str (:path (first errs))) (last (str/split rel #"/"))) rel)))))))
+
+(deftest two-spellings-of-one-language-are-an-error
+  (testing "fix C: index.zh-Hant.md beside index.ZH-HANT.md is an analyse error naming both"
+    (with-cli-site {"01.Guide/01.t.md" a-tree
+                    "index.zh-Hant.md" "---\n---\n\nCANONICAL\n"
+                    "index.ZH-HANT.md" "---\n---\n\nUPPER\n"}
+      (fn [dir out]
+        (let [errs (doctor-errors dir)]
+          (is (= 1 (count errs)) (pr-str (map :message errs)))
+          (is (re-find #"two files claim to be the zh-Hant version of index\.md: index\.zh-Hant\.md and index\.ZH-HANT\.md"
+                       (str (:message (first errs))))))
+        (let [e (build-fails dir out true)]
+          (is (= 1 (:babashka/exit (ex-data e))))
+          (is (not (fs/exists? out)))))))
+  (testing "…the same for @pages/"
+    (with-cli-site {"01.Guide/01.t.md" a-tree
+                    "@pages/tagsPage.ms.md" "---\ntitle: A\n---\n"
+                    "@pages/tagsPage.MS.md" "---\ntitle: B\n---\n"}
+      (fn [dir _]
+        (let [errs (doctor-errors dir)]
+          (is (= 1 (count errs)))
+          (is (re-find #"@pages/tagsPage\.ms\.md and @pages/tagsPage\.MS\.md" (str (:message (first errs))))))))))

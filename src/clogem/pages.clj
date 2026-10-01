@@ -11,11 +11,21 @@
   files — a `--no-write` build renders the indexes from nothing — but a
   file, once present, contributes its `permalink:` (the index root), its
   `title:` (on its own language's page) and its body (rendered above the
-  generated list)."
+  generated list).
+
+  Those files, and the homepage's `index.md` / `index.<lang>.md`, sit outside
+  the numbered tree, so the scanner never reads them. `site-files` resolves
+  and parses every one of them during ANALYSE, so a malformed YAML block or
+  two files claiming the same language is a content error that stops `build`
+  before `dist/` exists, reported once per file; render reads the cached
+  front matter and body from the model."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clogem.config :as config]
-            [clogem.i18n :as i18n]))
+            [clogem.diag :as diag]
+            [clogem.frontmatter :as fm]
+            [clogem.i18n :as i18n]
+            [clogem.util :as u]))
 
 (def index-kinds
   "The three index systems. `:toggle` is the `:content` key that switches
@@ -31,7 +41,7 @@
 
 (defn file-rel
   "`@pages/<flag>` — the content-relative base name (no extension), as
-  `clogem.render/localized-file` expects it."
+  `localized-file` expects it."
   [{:keys [flag]}]
   (str "@pages/" flag))
 
@@ -68,3 +78,94 @@
          (do (fs/create-dirs dir)
              (spit (fs/file f) (generated-content cfg strings kind))
              (str "@pages/" flag ".md")))))))
+
+;; ---------------------------------------------------------------------------
+;; Files outside the numbered tree: index.md and @pages/
+
+(defn- suffixed-files
+  "Every `<rel>.<suffix>.md` whose suffix names `lang`, matched
+  case-insensitively as the scanner matches suffixes (§6.1). The exact
+  canonical spelling `<rel>.<lang>.md` sorts first; the rest follow by name."
+  [cfg rel lang]
+  (let [base   (fs/path (config/content-dir cfg) rel)
+        parent (fs/parent base)
+        prefix (str (fs/file-name base) ".")
+        exact  (str prefix (name lang) ".md")]
+    (when (fs/directory? parent)
+      (->> (fs/list-dir parent)
+           (filter (fn [p]
+                     (let [fname (str (fs/file-name p))]
+                       (and (str/starts-with? fname prefix)
+                            (str/ends-with? (u/lower fname) ".md")
+                            (> (count fname) (+ (count prefix) 3))
+                            (fs/regular-file? p)
+                            (= lang (config/lang-for-suffix
+                                     cfg (subs fname (count prefix) (- (count fname) 3))))))))
+           (sort-by (fn [p] (let [fname (str (fs/file-name p))]
+                              [(if (= fname exact) 0 1) fname])))
+           vec))))
+
+(defn localized-file
+  "The file a language reads for `content/<rel>.md`, the convention
+  `index.md` / `index.zh-Hans.md` and `@pages/*.md` share:
+
+    {:path <rel>.<suffix>.md :own? true}   when a file whose suffix names
+                                           `lang` exists: the exact canonical
+                                           `<rel>.<lang>.md` first, else a
+                                           case-insensitive match, as the
+                                           scanner matches suffixes (§6.1), so
+                                           `index.zh-hant.md` counts for zh-Hant
+    {:path <rel>.md :own? <default?>}      else the unsuffixed file, which is
+                                           the language's OWN only on the site
+                                           default language
+    nil                                    when neither exists
+
+  When more than one file names `lang` (`index.zh-Hant.md` beside
+  `index.ZH-HANT.md`) the map also carries `:ambiguous`, every one of them;
+  `site-files` reports that as an error, as the content tree does."
+  [cfg rel lang]
+  (let [base  (fs/path (config/content-dir cfg) (str rel ".md"))
+        found (suffixed-files cfg rel lang)]
+    (cond
+      (seq found)        (cond-> {:path (first found) :own? true}
+                           (next found) (assoc :ambiguous found))
+      (fs/exists? base)  {:path base :own? (= lang (config/default-lang cfg))}
+      :else              nil)))
+
+(defn site-file-rels
+  "The content-relative base names read outside the numbered tree: the
+  homepage and every enabled index kind's `@pages/` file."
+  [cfg]
+  (into ["index"] (map file-rel) (enabled-kinds cfg)))
+
+(defn site-files
+  "{[rel lang] → {:path :own? :front-matter :body}} for every language and
+  every `site-file-rels` entry that resolves to a file. Called from
+  `clogem.cli/analyse`: each distinct file is parsed exactly ONCE, so its
+  YAML error is one diagnostic however many languages fall back to it, and
+  two files naming the same language are one error naming both."
+  [cfg]
+  (let [content  (config/content-dir cfg)
+        rel-name (fn [p] (str (fs/relativize content p)))
+        resolved (for [rel  (site-file-rels cfg)
+                       lang (config/lang-keys cfg)
+                       :let [lf (localized-file cfg rel lang)]
+                       :when lf]
+                   [[rel lang] lf])
+        _        (doseq [[[rel lang] {paths :ambiguous}] resolved
+                         :when paths]
+                   (diag/error! (rel-name (first paths))
+                                (str "two files claim to be the " (name lang) " version of "
+                                     rel ".md: " (str/join " and " (map rel-name paths)))
+                                "Keep one spelling; until then the exact canonical suffix is the one read."))
+        parsed   (reduce (fn [m p]
+                           (let [k (str p)]
+                             (if (contains? m k) m (assoc m k (fm/read-file p)))))
+                         {} (map (comp :path second) resolved))]
+    (into {}
+          (map (fn [[k {:keys [path own?]}]]
+                 (let [parts (get parsed (str path))]
+                   [k {:path path :own? own?
+                       :front-matter (or (:front-matter parts) {})
+                       :body (:body parts)}])))
+          resolved)))

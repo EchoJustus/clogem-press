@@ -4,7 +4,7 @@
 
 Defects found in 0.1.0 by review and by building the real site, each fixed
 with a regression test that fails on 0.1.0. DESIGN.md §11.2
-items 16–24, and amendments to items 2, 5 and 8, record the decisions.
+items 16–29, and amendments to items 2, 5 and 8, record the decisions.
 
 ### Fixed
 
@@ -15,6 +15,16 @@ items 16–24, and amendments to items 2, 5 and 8, record the decisions.
   Analyse errors now stop `build` before the ledger write and before `dist/`
   exists. Render-time exceptions can still leave a partial `dist/` (a known
   limitation, DESIGN.md §11.2 item 2).
+- **A YAML error in `index*.md` or `@pages/*` still bypassed that gate.**
+  Those files were read at render time, so `postList: [bad` in
+  `content/index.md` failed `build` (with or without `--no-write`) after 29
+  files were in `dist/`, and doctor counted it once per language home. They
+  are now resolved and parsed during analyse; each bad file is one error, and
+  the build stops before `dist/` exists.
+- **Two spellings of one language's `index`/`@pages` file.** With
+  `index.zh-Hant.md` and `index.ZH-HANT.md` both present the ALL-CAPS file
+  won silently. The exact canonical spelling is preferred, and two files
+  naming the same language are an error naming both, as in the content tree.
 - **`:theme :per-page` and `:theme :sidebar-depth` were untyped.** A string
   crashed render with a ClassCastException, for `:sidebar-depth` after 55
   pages had been written. Both are config errors now, repaired to their

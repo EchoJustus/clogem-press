@@ -18,7 +18,6 @@
             [hiccup2.core :as h]
             [clogem.config :as config]
             [clogem.diag :as diag]
-            [clogem.frontmatter :as fm]
             [clogem.i18n :as i18n]
             [clogem.markdown :as markdown]
             [clogem.model :as model]
@@ -65,50 +64,29 @@
 
 ;; ---------------------------------------------------------------------------
 ;; Files outside the numbered tree: index.md and @pages/
+;;
+;; Resolved and parsed during analyse (`pages/site-files`, D.2.1 fix A); a
+;; model built some other way gets them resolved here, as a fallback.
 
-(defn localized-file
-  "The file a language reads for `content/<rel>.md`, the convention
-  `index.md` / `index.zh-Hans.md` and `@pages/*.md` share:
+(def localized-file
+  "See `clogem.pages/localized-file`."
+  pages/localized-file)
 
-    {:path <rel>.<suffix>.md :own? true}   when a file whose suffix names
-                                           `lang` exists — matched
-                                           case-insensitively, as the scanner
-                                           matches suffixes (§6.1), so
-                                           `index.zh-hant.md` counts for zh-Hant
-    {:path <rel>.md :own? <default?>}      else the unsuffixed file, which is
-                                           the language's OWN only on the site
-                                           default language
-    nil                                    when neither exists"
-  [cfg rel lang]
-  (let [base   (fs/path (config/content-dir cfg) (str rel ".md"))
-        parent (fs/parent base)
-        prefix (str (fs/file-name (fs/path (config/content-dir cfg) rel)) ".")
-        own    (when (fs/directory? parent)
-                 (->> (fs/list-dir parent)
-                      (sort-by str)
-                      (some (fn [p]
-                              (let [fname (str (fs/file-name p))]
-                                (when (and (str/starts-with? fname prefix)
-                                           (str/ends-with? (u/lower fname) ".md")
-                                           (> (count fname) (+ (count prefix) 3))
-                                           (fs/regular-file? p)
-                                           (= lang (config/lang-for-suffix
-                                                    cfg (subs fname (count prefix) (- (count fname) 3)))))
-                                  p))))))]
-    (cond
-      own                {:path own :own? true}
-      (fs/exists? base)  {:path base :own? (= lang (config/default-lang cfg))}
-      :else              nil)))
+(defn- site-file
+  "The cached {:path :own? :front-matter :body} `lang` reads for `rel`, or nil."
+  [model rel lang]
+  (get-in model [:site-files [rel lang]]))
 
 (defn index-paths
-  "{kind → site-relative root path} for every enabled index, read once per
-  build: the `@pages/` file's `permalink:` when it has one, else the default."
-  [cfg]
-  (into {}
-        (for [{:keys [kind default-path] :as k} (pages/enabled-kinds cfg)
-              :let [f  (:path (localized-file cfg (pages/file-rel k) (config/default-lang cfg)))
-                    pl (when f (get-in (fm/read-file f) [:front-matter :permalink]))]]
-          [kind (u/clean-url (or (u/blank->nil (str pl)) default-path))])))
+  "{kind → site-relative root path} for every enabled index: the `@pages/`
+  file's `permalink:` when it has one, else the default."
+  [model]
+  (let [cfg (:cfg model)]
+    (into {}
+          (for [{:keys [kind default-path] :as k} (pages/enabled-kinds cfg)
+                :let [pl (get-in (site-file model (pages/file-rel k) (config/default-lang cfg))
+                                 [:front-matter :permalink])]]
+            [kind (u/clean-url (or (u/blank->nil (str pl)) default-path))]))))
 
 ;; ---------------------------------------------------------------------------
 ;; Page map
@@ -121,9 +99,10 @@
 
 (defn- index-pages
   "Every `/categories/…`, `/tags/…` and `/archives/` URI, per language, for the
-  enabled kinds (D-P2-3). Slugs are the raw keys lower-cased with whitespace
-  hyphenated; the URI keeps them verbatim (that is the directory written),
-  hrefs percent-encode them."
+  enabled kinds (D-P2-3). Slugs are `util/slug` of the raw key — lower-cased,
+  whitespace and Windows-illegal characters collapsed to `-`, a reserved
+  device name suffixed with `_` (§11.2 item 5); the URI keeps Unicode
+  verbatim (that is the directory written) and hrefs percent-encode it."
   [model ctx-for]
   (let [{:keys [cfg]} model
         paths    (:index-paths model)
@@ -132,19 +111,19 @@
            (for [lang (config/lang-keys cfg)
                  {:keys [kind title-key] :as k} (pages/enabled-kinds cfg)
                  :let [root  (get paths kind)
-                       {file* :path own? :own?} (localized-file cfg (pages/file-rel k) lang)
+                       {file* :path own? :own? :as sf} (site-file model (pages/file-rel k) lang)
                        ;; the page's own language decides the title (§6.4 rule 2):
                        ;; a user-written `title:` counts only from that language's
                        ;; own @pages file (or the site default's, on the default
                        ;; language); everywhere else the theme string is used
                        title (or (when own?
-                                   (some-> file* fm/read-file :front-matter :title u/blank->nil))
+                                   (some-> sf :front-matter :title u/blank->nil))
                                  (i18n/tr (ctx-for lang {}) title-key))
                        ;; a user-authored body renders above the list (D-P2-6) —
                        ;; only from the language's OWN file (§6.4 rule 2)
                        body  (fn []
                                (when (and file* own?)
-                                 (let [b (:body (fm/read-file file*))]
+                                 (let [b (:body sf)]
                                    (when-not (str/blank? b)
                                      (markdown/render b (link-context model model lang (str file*)))))))
                        base  {:kind kind :page-kind kind :title title
@@ -196,11 +175,10 @@
   one, else the site-default `index.md` — list options are site-wide unless
   a language overrides them. The BODY, by contrast, comes only from the
   language's own file (§6.4 rule 2: chrome language ≡ content language)."
-  [cfg lang]
-  (let [{f :path own? :own?} (localized-file cfg "index" lang)
-        parts (when f (fm/read-file f))]
-    {:fm   (or (:front-matter parts) {})
-     :body (when (and own? parts (not (str/blank? (:body parts)))) (:body parts))
+  [model lang]
+  (let [{f :path own? :own? :as sf} (site-file model "index" lang)]
+    {:fm   (or (:front-matter sf) {})
+     :body (when (and own? sf (not (str/blank? (:body sf)))) (:body sf))
      :path (some-> f str)}))
 
 (defn- home-pages
@@ -214,7 +192,7 @@
         ids      (home/home-ids model)
         plan     (into {}
                        (for [lang (config/lang-keys cfg)
-                             :let [{:keys [fm body path]} (home-front-matter cfg lang)
+                             :let [{:keys [fm body path]} (home-front-matter model lang)
                                    mode (home/post-list-mode fm)
                                    pages (if (= mode :detailed) (paginate ids per-page) [[1 ids]])]]
                          [lang {:fm fm :body body :path path :pages pages}]))
@@ -331,8 +309,11 @@
   [model]
   (let [{:keys [cfg articles]} model
         strings (i18n/load-strings cfg)
-        ;; read the @pages/ files ONCE per build, not once per rendered page
-        paths   (index-paths cfg)
+        ;; index*.md and @pages/ are parsed by analyse; a model built without
+        ;; it (a test calling model/build-model directly) resolves them here
+        model   (cond-> model
+                  (not (contains? model :site-files)) (assoc :site-files (pages/site-files cfg)))
+        paths   (index-paths model)
         model   (assoc model :by-rel-path (rel-path-index model) :strings strings :index-paths paths)
         prefix-all? (get-in cfg [:i18n :prefix-default?])
         ctx-for (fn [lang m]
