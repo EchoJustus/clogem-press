@@ -7,8 +7,9 @@
   INSTEAD of the markdown body: a header with the image and description, then
   one card per child directory listing its articles per §6.8, nested to the
   tree's depth. Articles directly under the target directory get a card of
-  their own, titled with the directory. Every row is an identity group, so
-  a three-variant article is one row."
+  their own, titled with the directory. Directory titles are category names,
+  so every heading goes through `layout/category-label` (D-12). Every row is
+  an identity group, so a three-variant article is one row."
   (:require [clogem.config :as config]
             [clogem.i18n :as i18n]
             [clogem.model :as model]
@@ -27,7 +28,7 @@
   subdirectories recursively."
   [ctx node]
   (into [:div.clogem-catalogue__sub
-         [:h4 (:title node)]
+         [:h4 (layout/category-label ctx (:title node))]
          (rows ctx node)]
         (for [c (:children node) :when (= :dir (:kind c))]
           (subtree ctx c))))
@@ -36,7 +37,7 @@
   [{:keys [model] :as ctx} node]
   (let [n (count (model/tree-leaves node))]
     (into [:section.clogem-catalogue__card
-           [:h3 (:title node)
+           [:h3 (layout/category-label ctx (:title node))
             [:span.clogem-bar__count (i18n/tr ctx :index/count {:n n})]]
            (rows ctx node)]
           (for [c (:children node) :when (= :dir (:kind c))]
@@ -65,7 +66,7 @@
               (concat
                (when (seq direct)
                  [[:section.clogem-catalogue__card
-                   [:h3 (:title node)]
+                   [:h3 (layout/category-label ctx (:title node))]
                    (rows ctx node)]])
                (map #(card ctx %) dirs)))]
        ;; a catalogue page is a leaf of its directory's tree like any other,

@@ -67,20 +67,38 @@
 ;; Files outside the numbered tree: index.md and @pages/
 
 (defn localized-file
-  "`content/<rel>.<lang>.md` when it exists, else `content/<rel>.md`, else nil —
-  the convention `index.md` / `index.zh-Hans.md` and `@pages/*.md` share.
-  The four-arity form returns [path own?], where `own?` says the file is the
-  language's OWN (or the site default's, on the default language) rather than
-  the fallback."
-  ([cfg rel lang]
-   (first (localized-file cfg rel lang true)))
-  ([cfg rel lang _with-flag]
-   (let [dir (config/content-dir cfg)
-         l   (fs/path dir (str rel "." (name lang) ".md"))
-         d   (fs/path dir (str rel ".md"))]
-     (cond (fs/exists? l) [l true]
-           (fs/exists? d) [d (= lang (config/default-lang cfg))]
-           :else nil))))
+  "The file a language reads for `content/<rel>.md`, the convention
+  `index.md` / `index.zh-Hans.md` and `@pages/*.md` share:
+
+    {:path <rel>.<suffix>.md :own? true}   when a file whose suffix names
+                                           `lang` exists — matched
+                                           case-insensitively, as the scanner
+                                           matches suffixes (§6.1), so
+                                           `index.zh-hant.md` counts for zh-Hant
+    {:path <rel>.md :own? <default?>}      else the unsuffixed file, which is
+                                           the language's OWN only on the site
+                                           default language
+    nil                                    when neither exists"
+  [cfg rel lang]
+  (let [base   (fs/path (config/content-dir cfg) (str rel ".md"))
+        parent (fs/parent base)
+        prefix (str (fs/file-name (fs/path (config/content-dir cfg) rel)) ".")
+        own    (when (fs/directory? parent)
+                 (->> (fs/list-dir parent)
+                      (sort-by str)
+                      (some (fn [p]
+                              (let [fname (str (fs/file-name p))]
+                                (when (and (str/starts-with? fname prefix)
+                                           (str/ends-with? (u/lower fname) ".md")
+                                           (> (count fname) (+ (count prefix) 3))
+                                           (fs/regular-file? p)
+                                           (= lang (config/lang-for-suffix
+                                                    cfg (subs fname (count prefix) (- (count fname) 3)))))
+                                  p))))))]
+    (cond
+      own                {:path own :own? true}
+      (fs/exists? base)  {:path base :own? (= lang (config/default-lang cfg))}
+      :else              nil)))
 
 (defn index-paths
   "{kind → site-relative root path} for every enabled index, read once per
@@ -88,7 +106,7 @@
   [cfg]
   (into {}
         (for [{:keys [kind default-path] :as k} (pages/enabled-kinds cfg)
-              :let [f  (localized-file cfg (pages/file-rel k) (config/default-lang cfg))
+              :let [f  (:path (localized-file cfg (pages/file-rel k) (config/default-lang cfg)))
                     pl (when f (get-in (fm/read-file f) [:front-matter :permalink]))]]
           [kind (u/clean-url (or (u/blank->nil (str pl)) default-path))])))
 
@@ -114,7 +132,7 @@
            (for [lang (config/lang-keys cfg)
                  {:keys [kind title-key] :as k} (pages/enabled-kinds cfg)
                  :let [root  (get paths kind)
-                       [file* own?] (localized-file cfg (pages/file-rel k) lang true)
+                       {file* :path own? :own?} (localized-file cfg (pages/file-rel k) lang)
                        ;; the page's own language decides the title (§6.4 rule 2):
                        ;; a user-written `title:` counts only from that language's
                        ;; own @pages file (or the site default's, on the default
@@ -179,7 +197,7 @@
   a language overrides them. The BODY, by contrast, comes only from the
   language's own file (§6.4 rule 2: chrome language ≡ content language)."
   [cfg lang]
-  (let [[f own?] (localized-file cfg "index" lang true)
+  (let [{f :path own? :own?} (localized-file cfg "index" lang)
         parts (when f (fm/read-file f))]
     {:fm   (or (:front-matter parts) {})
      :body (when (and own? parts (not (str/blank? (:body parts)))) (:body parts))
@@ -333,7 +351,7 @@
          (fn []
            (let [[prev-pl next-pl] (model/neighbours model group)
                  lc  (link-context model model lang (:rel-path variant))
-                 ctx (ctx-for lang {:group group :variant (assoc variant :lang lang)
+                 ctx (ctx-for lang {:group group :variant variant
                                     :page-kind :article
                                     :rewrite-href (fn [h] (markdown/rewrite-href lc h))
                                     :prev (neighbour model lang variant group :prev prev-pl)

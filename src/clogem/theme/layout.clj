@@ -183,8 +183,9 @@
   (§6.4 rule 3, D-P2-13):
 
     - an article that has an `l` variant → that variant's URL;
-    - an article without one            → `l`'s home (the fallback notice on
-                                          arrival already covers \"not translated\");
+    - an article without one            → `l`'s home. Nothing on arrival
+                                          says why, so `lang-switcher` marks
+                                          that entry (`untranslated?`);
     - an index / catalogue / paginated
       page                              → the same page under `l` (:alt-url);
     - anything else                     → `l`'s home."
@@ -194,6 +195,12 @@
     group    (model/home-url cfg l)
     alt-url  (alt-url l)
     :else    (model/home-url cfg l)))
+
+(defn untranslated?
+  "Does the switcher entry for `l` land on `l`'s home only because this
+  article has no `l` variant?"
+  [{:keys [group]} l]
+  (boolean (and group (not (contains? (:variants group) l)))))
 
 (defn lang-switcher
   "Navbar language switcher — site-wide, on every page, listing every
@@ -217,10 +224,20 @@
                       [:span.is-current {:lang (config/html-lang cfg l)
                                          :aria-current "true"}
                        (get-in locales [l :label])]
-                      [:a {:href (href ctx (switch-target ctx l))
-                           :lang (config/html-lang cfg l)
-                           :hreflang (config/html-lang cfg l)}
-                       (get-in locales [l :label])])]))])))
+                      (let [fallback? (untranslated? ctx l)
+                            notice    (when (and fallback? (get-in cfg [:i18n :show-fallback-notice]))
+                                        (i18n/tr ctx :page/fallback-notice
+                                                 {:lang (get-in locales [lang :label])}))]
+                        [:a (cond-> {:href (href ctx (switch-target ctx l))
+                                     :lang (config/html-lang cfg l)
+                                     :hreflang (config/html-lang cfg l)}
+                              fallback? (assoc :class "is-untranslated")
+                              notice    (assoc :title notice))
+                         (get-in locales [l :label])
+                         ;; the notice is in the PAGE's language (§6.4 rule 2)
+                         (when notice
+                           [:span.clogem-visually-hidden {:lang (config/html-lang cfg lang)}
+                            (str " (" notice ")")])]))]))])))
 
 (defn nav-href
   "Where a `:nav` link goes on a page in `lang` (D-P2-11):
@@ -274,7 +291,8 @@
     (into [:details.clogem-sidebar__dir
            (cond-> {:class (when (contains? trail (:dir-key node)) "is-active-trail")}
              (or open-all? (contains? trail (:dir-key node))) (assoc :open true))
-           [:summary (:title node)]]
+           ;; a directory title IS a category name: D-12 labels apply
+           [:summary (category-label ctx (:title node))]]
           [(into [:ul]
                  (for [c (:children node)]
                    (if (= :dir (:kind c))
@@ -397,10 +415,13 @@
       [:title (str title
                    (when-let [st (i18n/resolve-str ctx (get-in cfg [:site :title]))]
                      (when (not= st title) (str " · " st))))]
+      (when-let [d (u/blank->nil (i18n/resolve-str ctx (get-in cfg [:site :description])))]
+        [:meta {:name "description" :content d}])
       [:link {:rel "stylesheet" :href (asset-href ctx "css/theme.css")}]
-      ;; vendored vanilla scroll-spy (D-P2-9); no CDN, no deps — deferred, so
-      ;; a page without a TOC pays one cached request and nothing else
-      [:script {:src (asset-href ctx "js/toc.js") :defer true}]]
+      ;; vendored vanilla scroll-spy (D-P2-9); no CDN, no deps — deferred,
+      ;; and only on a page that renders a TOC for it to spy on
+      (when (seq (:toc ctx))
+        [:script {:src (asset-href ctx "js/toc.js") :defer true}])]
      (into [:body {:class (str "theme-mode-" (name (get-in cfg [:theme :default-mode] :auto))
                                " theme-style-" (name (get-in cfg [:theme :page-style] :card))
                                " lang-" (name lang)

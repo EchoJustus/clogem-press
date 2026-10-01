@@ -534,7 +534,17 @@
   (is (exists? "clogem" "js" "toc.js"))
   (is (str/includes? (slurp-out "clogem" "js" "toc.js") "decodeURIComponent")
       "ids are unencoded, hrefs are percent-encoded — mandatory for CJK/Tamil pages")
-  (is (str/includes? (slurp-out "index.html") "<script defer=\"defer\" src=\"/clogem/js/toc.js\"></script>")))
+  (is (str/includes? (slurp-out "pages" "643259" "index.html") "<script defer=\"defer\" src=\"/clogem/js/toc.js\"></script>"))
+  (testing "fix 18: only pages that render a TOC load it"
+    (is (not (str/includes? (slurp-out "index.html") "toc.js")))
+    (is (not (str/includes? (slurp-out "categories" "index.html") "toc.js")))))
+
+(deftest pages-carry-the-localized-site-description
+  (testing "fix 18: <meta name=description> from :site :description, per language"
+    (let [cfg-f #(assoc-in % [:site :description] {:en "English desc" :zh-Hans "中文描述"})]
+      (is (str/includes? (page-html cfg-f "/") "<meta content=\"English desc\" name=\"description\" />"))
+      (is (str/includes? (page-html cfg-f "/zh-Hans/categories/") "<meta content=\"中文描述\" name=\"description\" />"))
+      (is (not (str/includes? (page-html #(assoc-in % [:site :description] nil) "/") "name=\"description\""))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Phase 2 — containers (D-P2-10)
@@ -950,3 +960,29 @@
     (let [html (slurp-out "zh-Hant" "archives" "index.html")]
       (is (str/includes? html "<h1>歸檔</h1>"))
       (is (not (str/includes? html "封存"))))))
+
+(deftest the-switcher-marks-an-untranslated-target
+  (testing "fix 14: on an English-only article the ta entry lands on /ta/ and says why"
+    (let [html (slurp-out "pages" "3ce486" "index.html")]
+      (is (re-find #"<a class=\"is-untranslated\" href=\"/ta/\" hreflang=\"ta\" lang=\"ta\" title=\"Shown in English — not yet translated\">தமிழ்<span class=\"clogem-visually-hidden\" lang=\"en\"> \(Shown in English — not yet translated\)</span></a>" html))
+      (is (= 4 (count (re-seq #"class=\"is-untranslated\"" html))) "every language the article lacks, not the current one")))
+  (testing "a translated target is not marked"
+    (let [html (slurp-out "pages" "643259" "index.html")]
+      (is (re-find #"<a href=\"/zh-Hans/pages/643259/\" hreflang=\"zh-Hans\"" html))
+      (is (re-find #"class=\"is-untranslated\" href=\"/ms/\"" html))))
+  (testing "index pages have no untranslated entries"
+    (is (not (str/includes? (slurp-out "categories" "index.html") "is-untranslated"))))
+  (testing ":show-fallback-notice false drops the text but keeps the class"
+    (let [html (page-html #(assoc-in % [:i18n :show-fallback-notice] false) "/pages/3ce486/")]
+      (is (str/includes? html "class=\"is-untranslated\" href=\"/ta/\""))
+      (is (not (str/includes? html "clogem-visually-hidden"))))))
+
+(deftest category-labels-apply-to-sidebar-groups-and-catalogue-headings
+  (testing "fix 3: a string label goes through category-label's string branch in every language"
+    (let [cfg-f #(assoc-in % [:i18n :category-labels "Basics"] "BasicsLabel")]
+      (is (str/includes? (page-html cfg-f "/pages/559f0f/") "<h3>BasicsLabel") "catalogue card heading")
+      (doseq [l ["" "/zh-Hans" "/zh-Hant"]]
+        (is (str/includes? (page-html cfg-f (str l "/pages/643259/")) "<summary>BasicsLabel</summary>") (str l " sidebar")))))
+  (testing "the demo's map label localizes the sidebar group on zh-Hans"
+    (is (str/includes? (slurp-out "zh-Hans" "pages" "643259" "index.html") "<summary>基础</summary>"))
+    (is (str/includes? (slurp-out "pages" "643259" "index.html") "<summary>Basics</summary>"))))
