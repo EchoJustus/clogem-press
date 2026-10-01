@@ -717,6 +717,10 @@ Worked examples (the first four are byte-identical to vdoing's behaviour):
 | `01.article.zh-han.md` | — | — | **error**: did you mean `zh-Hans`? (one edit from a configured code) |
 | `01.article.zh-hsna.md` | — | — | **error**: did you mean `zh-Hans`? (a lower-case typo, distance 2, of the configured script `Hans`) |
 | `01.article.zh-hant-hk.md` | — | — | **error**: did you mean `zh-Hant`? (a configured script anchors the region, matched case-insensitively) |
+| `01.article.ZH-HANT-HK.md` | — | — | **error**: did you mean `zh-Hant`? (anchored by a configured script, the primary too matches in any case) |
+| `01.article.ZH-HSNA.md` | — | — | **error**: did you mean `zh-Hans`? (an all-caps typo of the configured script `Hans` anchors) |
+| `01.article.EN-NZ.md` | — | — | **error**: did you mean `en`? (an ALL-CAPS configured primary followed only by UPPERCASE regions) |
+| `01.MS-Word.md` | 1 | `MS-Word` | article default (a Title-case word after an upper-case primary is not a tag) |
 
 Three deliberate choices, each with its reason:
 
@@ -736,12 +740,22 @@ Three deliberate choices, each with its reason:
   a configured code is ≤ 1 *and* the segment or that code contains a hyphen (`zh-hanz`, `zh-han`,
   `ta-`, `zhhans`, `zh_Hans`) — the hyphen condition is what keeps `01.Vue.js.md` a file titled
   `Vue.js` even though `js` is one edit from `ms`, as `tax` is from `ta`; **or** (c) in its
-  **original case**, its primary subtag is lower-case `[a-z]{2,3}` and a *configured* primary (`zh`,
+  **original case**, its primary subtag is lower-case `[a-z]{2,3}` (but see the anchor and ALL-CAPS
+  cases below) and a *configured* primary (`zh`,
   `en`, `ms`, `ta` on the demo), and every remaining subtag is a Title-case script (`Hanz`), an
   UPPERCASE region (`IN`) or a 3-digit region (`001`), or a 4-letter typo, in any case, within
   Damerau-Levenshtein 2 of a script configured for that primary (`hsna` → `Hans`). When the first
   subtag is a configured script or such a typo, it anchors the rest, which are then matched
-  case-insensitively against `[a-z]{2}|\d{3}` — so `zh-hant-hk` and `zh-hans-sg` stay errors. So
+  case-insensitively against `[a-z]{2}|\d{3}` — so `zh-hant-hk` and `zh-hans-sg` stay errors. The
+  anchor also lifts the lower-case requirement on the primary: `ZH-HANT-HK`, `Zh-Hant-HK`,
+  `ZH-HANS-SG` and `ZH-HSNA` are errors (0.1.1, §11.2 item 25), which is safe because only a
+  *configured* script anchors. Without an anchor there is one more shape: an **ALL-CAPS** segment
+  whose upper-case primary is configured and whose remaining subtags are all UPPERCASE 2-letter or
+  3-digit regions (`EN-NZ`, `MS-BN`, `TA-MY`) — all-caps authors exist, and §6.1 itself lists
+  `10.article.ZH-HANS.md` as valid. A Title-case subtag after an upper-case primary does *not*
+  qualify, so `MS-Word` stays a title. **Accepted trade-off:** an all-caps title `TA-DA.md` is
+  an error; `ta-da`, `Ta-Da`, `en-dash`, `ms-word`, `MS-Word`, `en-bloc` and `ms-access-tips` stay
+  titles. So
   `zh-Hanz`, `ta-IN`, `zh-hsna` are caught while `api-design`, `my-notes`, `re-frame`, `en-passant`,
   `en-dash`, `ta-da`, `ms-word` and `en-bloc` are ordinary titles. **Matching stays
   case-insensitive** — `05.article.zh-hans.md` is zh-Hans — and casing is a signal *only* in rule

@@ -82,27 +82,43 @@
   configured primary? Casing is the signal here, and only here: BCP 47
   writes scripts Title-case (`Hans`) and regions UPPER-case (`TW`), while an
   ordinary hyphenated title is lower-case (`en-dash`, `ta-da`, `ms-word`).
-  Every subtag after the primary must be a Title-case script, an UPPERCASE
-  region or a 3-digit region — or a 4-letter typo (any case, Damerau-
-  Levenshtein ≤ 2) of a script configured for that primary, which keeps
-  `zh-hsna` an error. When the first subtag is such a script (or the script
-  itself), the rest is anchored by it and matched case-insensitively, so
-  `zh-hant-hk` and `zh-hans-sg` stay errors."
+
+  Anchored: when the first subtag is a script configured for the primary,
+  or a 4-letter typo of one (any case, Damerau-Levenshtein ≤ 2), the whole
+  segment is matched case-insensitively — primary included — so
+  `zh-hant-hk`, `ZH-HANT-HK`, `Zh-Hant-HK` and `zh-hsna` / `ZH-HSNA` stay
+  errors. Only configured scripts anchor, so no plain word does.
+
+  Un-anchored, the primary must be lower-case and every later subtag a
+  Title-case script, an UPPERCASE region or a 3-digit region (`ta-IN`,
+  `zh-Latn-TW`, `en-001`) — or the segment is ALL CAPS: an upper-case
+  primary followed only by UPPERCASE 2-letter or 3-digit regions (`EN-NZ`,
+  `MS-BN`). A Title-case word after an upper-case primary is a title
+  (`MS-Word`). The accepted cost: an all-caps `TA-DA` errors (§6.1)."
   [cfg segment]
   (let [[primary & subs] (str/split segment #"-" -1)
-        scripts     (configured-scripts cfg primary)
+        p           (u/lower primary)
+        scripts     (configured-scripts cfg p)
         script-ish? (fn [sub]
                       (and (re-matches #"[A-Za-z]{4}" sub)
                            (some #(<= (u/damerau-levenshtein (u/lower sub) %) 2) scripts)))]
     (boolean
-     (and (re-matches #"[a-z]{2,3}" primary)
-          (contains? (configured-primaries cfg) primary)
+     (and (re-matches #"(?i)[a-z]{2,3}" primary)
+          (contains? (configured-primaries cfg) p)
           (seq subs)
-          (if (script-ish? (first subs))
+          (cond
+            (script-ish? (first subs))
             (every? #(re-matches #"(?i)[a-z]{2}|\d{3}" %) (rest subs))
+
+            (re-matches #"[a-z]{2,3}" primary)
             (every? #(or (re-matches #"[A-Z][a-z]{3}" %)
                          (re-matches #"[A-Z]{2}|\d{3}" %))
-                    subs))))))
+                    subs)
+
+            (re-matches #"[A-Z]{2,3}" primary)
+            (every? #(re-matches #"[A-Z]{2}|\d{3}" %) subs)
+
+            :else false)))))
 
 (defn near-miss?
   "Is a last dot-segment a misspelled language tag rather than title text?
@@ -124,8 +140,9 @@
         invariant (`js` is one edit from `ms`, as `tax` is from `ta`), OR
     (c) in its ORIGINAL case, it is tag-shaped for a configured primary
         (`tag-shaped?`): `zh-Hanz`, `ta-IN`, `en-001`, `zh-hsna`,
-        `zh-hant-hk` are caught while `en-dash`, `ta-da`, `ms-word`,
-        `en-bloc`, `api-design` and `en-passant` are titles. Rule (c) used
+        `zh-hant-hk`, `ZH-HANT-HK`, `EN-NZ` are caught while `en-dash`,
+        `ta-da`, `Ta-Da`, `ms-word`, `MS-Word`, `en-bloc`, `api-design` and
+        `en-passant` are titles. Rule (c) used
         to lower-case first, which made every `<configured primary>-<2 or 4
         letters>` title an error."
   [cfg segment]

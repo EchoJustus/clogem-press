@@ -66,6 +66,13 @@ These change published URLs or what builds.
   `ms-word` and `en-bloc` are titles again; a tag needs BCP 47 casing
   (`ta-IN`, `zh-Hanz`) or to be a typo of a configured script (`zh-hsna`).
   Suffix *matching* is still case-insensitive.
+- **Rule (c) catches upper-case tags again.** The case-sensitive rule let
+  `02.title.ZH-HANT-HK.md` (an error in 0.1.0) become an English article
+  titled `title.ZH-HANT-HK`. A configured script now anchors the primary
+  case-insensitively too (`ZH-HANT-HK`, `Zh-Hant-HK`, `ZH-HSNA`), and an
+  ALL-CAPS configured primary followed only by UPPERCASE or 3-digit regions
+  is a tag (`EN-NZ`, `MS-BN`, `TA-MY`). `MS-Word`, `Ta-Da` and `ms-access-tips`
+  stay titles; an all-caps `TA-DA.md` is now an error (DESIGN.md §6.1).
 - **Homepage excerpts are marker-only.** Without `<!-- more -->` a card
   shows no excerpt and no read-more link (VuePress/vdoing behaviour); add the
   marker where an excerpt is wanted. The demo now carries explicit markers.

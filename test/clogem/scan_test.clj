@@ -38,7 +38,9 @@
            ["05.a.b.c.md"            5  "a.b.c"       nil]
            ;; 0.1.1: lower-case hyphenated titles are not tags (rule (c) reads case)
            ["01.en-dash.md"          1  "en-dash"     nil]
-           ["01.ta-da.md"            1  "ta-da"       nil]]]
+           ["01.ta-da.md"            1  "ta-da"       nil]
+           ;; 0.1.1: a Title-case word after an upper-case primary is a title
+           ["01.MS-Word.md"          1  "MS-Word"     nil]]]
       (let [r (parse fname)]
         (is (= order (:order r)) (str fname " → order"))
         (is (= title (:title r)) (str fname " → title"))
@@ -51,7 +53,11 @@
                                 ["01.article.ta-IN.md"      "ta"]
                                 ["01.article.zh-han.md"     "zh-Hans"]
                                 ["01.article.zh-hsna.md"    "zh-Hans"]
-                                ["01.article.zh-hant-hk.md" "zh-Hant"]]]
+                                ["01.article.zh-hant-hk.md" "zh-Hant"]
+                                ;; 0.1.1: all-caps authors (§6.1 lists ZH-HANS as valid)
+                                ["01.article.ZH-HANT-HK.md" "zh-Hant"]
+                                ["01.article.ZH-HSNA.md"    "zh-Hans"]
+                                ["01.article.EN-NZ.md"      "en"]]]
       (let [r (parse fname)]
         (is (:error r) fname)
         (is (re-find (re-pattern (str "did you mean `" suggestion "`")) (str (:hint r))) fname)))))
@@ -125,6 +131,13 @@
     (doseq [[fname title] [["01.en-dash.md" "en-dash"] ["01.ta-da.md" "ta-da"]
                            ["01.ms-word.md" "ms-word"] ["01.en-bloc.md" "en-bloc"]
                            ["01.a.en-dash.md" "a.en-dash"] ["01.zh-dash.md" "zh-dash"]]]
+      (let [r (parse fname)]
+        (is (nil? (:error r)) (str fname ": " (:error r)))
+        (is (= title (:title r)) fname)
+        (is (nil? (:lang r)) fname))))
+  (testing "D.2.1 fix B: Title-case and mixed-case spellings of plain words stay titles"
+    (doseq [[fname title] [["01.Ta-Da.md" "Ta-Da"] ["01.MS-Word.md" "MS-Word"]
+                           ["01.ms-access-tips.md" "ms-access-tips"]]]
       (let [r (parse fname)]
         (is (nil? (:error r)) (str fname ": " (:error r)))
         (is (= title (:title r)) fname)
@@ -354,3 +367,24 @@
                                   "_posts/2026-01-01-re-frame.md"       post-body})]
     (is (empty? (diag/errors ds)) (pr-str (map :message (diag/errors ds))))
     (is (= 4 (count (:articles model))))))
+
+(deftest rule-c-catches-upper-case-tags
+  (testing "D.2.1 fix B: anchored by a configured script, the primary matches in any case"
+    (doseq [seg ["ZH-HANT-HK" "ZH-HANS-SG" "ZH-Hant-HK" "Zh-Hant-HK" "ZH-HSNA" "ZH-HANT-MO"]]
+      (let [r (parse (str "02.title." seg ".md"))]
+        (is (:error r) seg)
+        (is (nil? (:title r)) (str seg " must not become an article title")))))
+  (testing "un-anchored: an ALL-CAPS configured primary + UPPERCASE / 3-digit regions"
+    (doseq [seg ["EN-NZ" "MS-BN" "TA-MY" "EN-001"]]
+      (is (:error (parse (str "02.title." seg ".md"))) seg)))
+  (testing "the accepted trade-off (DESIGN.md §6.1): an all-caps TA-DA errors"
+    (is (:error (parse "01.TA-DA.md"))))
+  (testing "titles that must stay titles"
+    (doseq [[fname title] [["01.ta-da.md" "ta-da"] ["01.Ta-Da.md" "Ta-Da"]
+                           ["01.en-dash.md" "en-dash"] ["01.ms-word.md" "ms-word"]
+                           ["01.MS-Word.md" "MS-Word"] ["01.en-bloc.md" "en-bloc"]
+                           ["01.ms-access-tips.md" "ms-access-tips"]
+                           ["01.ZH-DASH.md" "ZH-DASH"]]]
+      (let [r (parse fname)]
+        (is (nil? (:error r)) (str fname ": " (:error r)))
+        (is (= title (:title r)) fname)))))
