@@ -87,16 +87,36 @@
 
 (deftest near-misses-by-distance-and-by-subtag-shape
   (testing "rule (b): one edit from a configured code, with a hyphen on either side"
-    (doseq [fname ["01.article.zh-han.md" "01.a.ta-.md" "01.a.zh-hsna.md" "01.a.zhhans.md"]]
+    (doseq [fname ["01.article.zh-han.md" "01.a.ta-.md" "01.a.zhhans.md" "01.a.zh_Hans.md" "01.a.zhHans.md"]]
       (is (:error (parse fname)) fname)))
-  (testing "rule (c): a configured primary subtag + only script/region-shaped subtags"
-    (doseq [fname ["01.article.ta-IN.md" "01.a.en-us.md" "01.a.ms-MY.md" "01.a.zh-Hanz-CN.md" "01.a.en-001.md"]]
+  (testing "rule (a): `en-us` is a confusable — rule (c) no longer catches a lower-case region"
+    (is (:error (parse "01.a.en-us.md"))))
+  (testing "rule (c): a configured primary + Title-case script / UPPERCASE or 3-digit region subtags"
+    (doseq [fname ["01.article.ta-IN.md" "01.a.ms-MY.md" "01.a.zh-Hanz-CN.md" "01.a.en-001.md"
+                   "01.a.zh-Latn-TW.md"]]
       (is (:error (parse fname)) fname))
+    (is (:error (parse "01.a.zh-hsna.md"))
+        "a lower-case script typo, distance 2 from zh-Hans, so rule (b) never caught it")
+    (doseq [fname ["01.a.zh-hant-hk.md" "01.a.zh-hans-sg.md" "01.a.zh-Hans-sg.md"]]
+      (is (:error (parse fname)) (str fname " — a configured script anchors the region case-insensitively")))
     (is (nil? (:error (parse "01.a.fr-CA.md"))) "`fr` is not a configured primary, so it is a title")
     (is (nil? (:error (parse "01.a.en-passant.md"))) "`passant` is neither script- nor region-shaped"))
   (testing "the suggestion still names the intended code"
     (is (re-find #"did you mean `ta`" (:hint (parse "01.article.ta-IN.md"))))
     (is (re-find #"did you mean `zh-Hans`" (:hint (parse "01.article.zh-han.md"))))))
+
+(deftest rule-c-reads-the-original-case
+  (testing "fix 8: ordinary lower-case hyphenated titles are not language tags"
+    (doseq [[fname title] [["01.en-dash.md" "en-dash"] ["01.ta-da.md" "ta-da"]
+                           ["01.ms-word.md" "ms-word"] ["01.en-bloc.md" "en-bloc"]
+                           ["01.a.en-dash.md" "a.en-dash"] ["01.zh-dash.md" "zh-dash"]]]
+      (let [r (parse fname)]
+        (is (nil? (:error r)) (str fname ": " (:error r)))
+        (is (= title (:title r)) fname)
+        (is (nil? (:lang r)) fname))))
+  (testing "…while a configured code still matches case-insensitively"
+    (is (= :zh-Hans (:lang (parse "05.article.zh-hans.md"))))
+    (is (= "article" (:title (parse "05.article.zh-hans.md"))))))
 
 (deftest configured-language-wins-over-near-miss
   (testing "a configured code is a match, never a near miss"
