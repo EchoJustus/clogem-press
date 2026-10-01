@@ -3,5 +3,6 @@
 ;;
 ;; The authoritative *pin* is the content repo's publish.yml `ref:` — this file
 ;; is what the running generator knows about itself, so the floor can be checked.
-;; 0.1.0 = Phase 2 complete (DESIGN.md §8); tagged v0.1.0.
-{:version "0.1.0"}
+;; 0.1.0 = Phase 2 complete (DESIGN.md §8); 0.1.1 = the Phase 2 fix round.
+;; No release tag has been pushed yet — pin publish.yml's `ref:` to a commit.
+{:version "0.1.1"}

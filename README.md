@@ -18,7 +18,7 @@ The full design rationale, with every external claim verified against primary
 sources, is in [DESIGN.md](DESIGN.md); thirteen research reports back it in
 [`research/`](research/).
 
-> **Status: Phase 2 complete (v0.1.0).** The generator scans a content tree,
+> **Status: Phase 2 complete (0.1.1).** The generator scans a content tree,
 > resolves identity groups, normalizes front matter, and renders a multilingual
 > site with vdoing's core surface: collapsible sidebar tree, category / tag /
 > archive index pages, a paginated blog homepage with sticky posts, breadcrumbs

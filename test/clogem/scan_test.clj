@@ -35,11 +35,26 @@
            ;; numbers need not be consecutive, and gaps are recommended
            ["30.deep.md"             30 "deep"        nil]
            ;; a dotted title survives intact
-           ["05.a.b.c.md"            5  "a.b.c"       nil]]]
+           ["05.a.b.c.md"            5  "a.b.c"       nil]
+           ;; 0.1.1: lower-case hyphenated titles are not tags (rule (c) reads case)
+           ["01.en-dash.md"          1  "en-dash"     nil]
+           ["01.ta-da.md"            1  "ta-da"       nil]]]
       (let [r (parse fname)]
         (is (= order (:order r)) (str fname " → order"))
         (is (= title (:title r)) (str fname " → title"))
         (is (= lang  (:lang r))  (str fname " → lang"))))))
+
+(deftest design-6-1-worked-error-rows
+  (testing "the table's error rows, with the suggestion each names"
+    (doseq [[fname suggestion] [["01.article.zh-Hanz.md"    "zh-Hans"]
+                                ["01.article.en-us.md"      "en"]
+                                ["01.article.ta-IN.md"      "ta"]
+                                ["01.article.zh-han.md"     "zh-Hans"]
+                                ["01.article.zh-hsna.md"    "zh-Hans"]
+                                ["01.article.zh-hant-hk.md" "zh-Hant"]]]
+      (let [r (parse fname)]
+        (is (:error r) fname)
+        (is (re-find (re-pattern (str "did you mean `" suggestion "`")) (str (:hint r))) fname)))))
 
 (deftest skipped-with-a-warning
   (testing "vdoing's warn-and-skip cases, unchanged"
