@@ -57,12 +57,17 @@
 ;; scan → front matter → identity groups → (optional write-back) → model
 
 (defn analyse
-  "Everything up to and including the site model. Pure apart from reads."
+  "Everything up to and including the site model. Pure apart from reads.
+
+  The files outside the numbered tree — `index*.md` and `@pages/*` — are
+  resolved and parsed here too (`pages/site-files`), not at render time, so
+  their errors gate `build` like every other content error."
   [cfg]
   (let [entries (scan/scan cfg)
         loaded  (model/load-entries cfg entries)
         ledger  (model/read-ledger cfg)]
-    (model/build-model cfg loaded ledger)))
+    (assoc (model/build-model cfg loaded ledger)
+           :site-files (pages/site-files cfg))))
 
 (defn- fill-plan
   "Which files auto-fill would touch, and with what. Computed from the model so
@@ -119,12 +124,22 @@
         ;; the author has something to edit.
         (doseq [f (pages/ensure-files! cfg)]
           (println "clogem-press: created" f))))
-    (let [[result ds]
+    ;; Pass 2 — analyse, GATED before anything is written. `--no-write` skips
+    ;; pass 1, so this is its only gate: a malformed YAML block or a
+    ;; duplicate permalink used to be reported only after render/build! had
+    ;; populated dist/. Every content ERROR — the numbered tree's, and
+    ;; index*.md's and @pages/*'s, which analyse parses too — stops the build
+    ;; here, before the ledger write and before dist/ exists. Render reports
+    ;; only warnings. What remains (DESIGN.md §11.2 item 2) is an EXCEPTION
+    ;; thrown during render, which can still leave a partial dist/.
+    (let [[m ads]    (diag/collecting (analyse cfg))
+          _          (when (seq (diag/errors ads)) (report! ads))
+          [result rds]
           (diag/collecting
-           (let [m (analyse cfg)]
-             (when (config/write-front-matter? cfg)
-               (model/write-ledger! cfg (model/ledger-from-model m)))
-             (render/build! cfg m)))]
+           (when (config/write-front-matter? cfg)
+             (model/write-ledger! cfg (model/ledger-from-model m)))
+           (render/build! cfg m))
+          ds         (into (vec ads) rds)]
       (report! ds)
       (println (format "clogem-press: %d pages (%d articles, %d variants) → %s"
                        (:pages result) (:articles result) (:variants result) (:out result)))
@@ -163,7 +178,7 @@
                 (let [m (analyse cfg)]
                   ;; findings that must not fire inside analyse (undated
                   ;; articles, disagreeing variants, over-deep directories,
-                  ;; unresolved catalogue paths, slug collisions) …
+                  ;; unresolved catalogue paths) …
                   (model/doctor-checks! m)
                   ;; … and the render-time ones (dead links, unknown
                   ;; containers, bad card-list YAML), by rendering every page

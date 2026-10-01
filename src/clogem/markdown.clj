@@ -39,6 +39,7 @@
   TOC, so the two can never disagree. `clogem.util/url-encode-fragment` handles
   the href side."
   (:require [clojure.string :as str]
+            [clojure.walk :as walk]
             [hiccup2.core :as h]
             [nextjournal.markdown :as md]
             [clogem.containers :as containers]
@@ -216,17 +217,23 @@
       ast)))
 
 (defn excerpt
-  "The homepage excerpt of an article (D-P2-5): everything before
-  `<!-- more -->` when the marker is present, else the first paragraph —
-  with the leading h1 dropped either way. nil when there is nothing to show."
+  "The homepage excerpt of an article (D-P2-5, as amended in 0.1.1):
+  everything before `<!-- more -->`, with the leading h1 dropped — and nil
+  when there is no marker, as in VuePress and vdoing, which take an excerpt
+  only from the marker. (A first-paragraph fallback cut real cards off
+  mid-sentence.)
+
+  Rendered under `diag/quietly`: the article page is the authoritative render
+  and reports every real problem once; the excerpt would repeat each one per
+  language home, and the slice can cut a `::: tip` open and warn about a
+  container the article closes. The hiccup is realized inside the binding."
   [source link-ctx]
   (let [src (str source)]
-    (if (re-find more-marker-re src)
-      (let [ast (drop-leading-h1 (parse (first (str/split src more-marker-re 2)) link-ctx))]
-        (when (seq (:content ast)) (->hiccup ast link-ctx)))
-      (let [ast (drop-leading-h1 (parse src link-ctx))]
-        (when-let [para (some #(when (= :paragraph (:type %)) %) (:content ast))]
-          (->hiccup (assoc ast :content [para]) link-ctx))))))
+    (when (re-find more-marker-re src)
+      (diag/quietly
+       (let [ast (drop-leading-h1 (parse (first (str/split src more-marker-re 2)) link-ctx))]
+         (when (seq (:content ast))
+           (walk/postwalk identity (->hiccup ast link-ctx))))))))
 
 (defn toc-entries
   "Flatten the AST's :toc into [{:level :id :text :href}] with repaired ids,

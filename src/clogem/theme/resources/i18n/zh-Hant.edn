@@ -15,7 +15,7 @@
  :page/fallback-notice "目前顯示的是{{lang}}版本 — 尚未翻譯"
  :index/categories     "分類"
  :index/tags           "標籤"
- :index/archives       "封存"
+ :index/archives       "歸檔"
  :index/count          "文章數：{{n}}"
  :container/tip        "提示"
  :container/warning    "注意"

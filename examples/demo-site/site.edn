@@ -53,7 +53,7 @@
        {:text {:en "Browse" :zh-Hans "浏览" :zh-Hant "瀏覽" :ms "Semak imbas" :ta "உலாவு"}
         :items [{:text {:en "Categories" :zh-Hans "分类" :zh-Hant "分類" :ms "Kategori" :ta "பிரிவுகள்"} :link "/categories/"}
                 {:text {:en "Tags" :zh-Hans "标签" :zh-Hant "標籤" :ms "Tag" :ta "குறிச்சொற்கள்"} :link "/tags/"}
-                {:text {:en "Archives" :zh-Hans "归档" :zh-Hant "封存" :ms "Arkib" :ta "காப்பகம்"} :link "/archives/"}]}]
+                {:text {:en "Archives" :zh-Hans "归档" :zh-Hant "歸檔" :ms "Arkib" :ta "காப்பகம்"} :link "/archives/"}]}]
 
  :theme {:default-mode :auto :page-style :card
          :per-page 3}                    ; small, so the demo has a /page/2/

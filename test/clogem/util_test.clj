@@ -1,6 +1,7 @@
 ;; Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).
 (ns clogem.util-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [clogem.util :as u]))
 
 (deftest clean-url-normalizes
@@ -52,3 +53,41 @@
   (is (= 2 (u/levenshtein "zh-hnas" "zh-hans")) "…which plain Levenshtein counts as two")
   (is (= 3 (u/damerau-levenshtein "" "abc")))
   (is (= 3 (u/damerau-levenshtein "api-design" "api-designs-x")) "far from any code"))
+
+(deftest non-bmp-characters-encode-as-their-four-utf8-bytes
+  (testing "fix 1: a surrogate pair is one code point, not two `?`s"
+    (doseq [f [u/url-encode-segment u/url-encode-fragment]]
+      (is (= "%F0%9F%98%80" (f "😀")))
+      (is (= "%F0%A0%80%80" (f "𠀀")))
+      (is (not (str/includes? (f "a😀b") "%3F"))))
+    (is (= "/categories/%F0%9F%98%80fun/" (u/url-encode-path "/categories/😀fun/")))
+    (doseq [s ["😀" "𠀀" "a😀b你好" "hello-😀-world"]]
+      (is (= s (java.net.URLDecoder/decode (u/url-encode-segment s) "UTF-8")))
+      (is (= s (java.net.URLDecoder/decode (u/url-encode-fragment s) "UTF-8"))))))
+
+(deftest slugs-are-legal-windows-file-names
+  (testing "fix 9"
+    (is (= "q&a-why" (u/slug "Q&A: why?")))
+    (is (= "c#-tips" (u/slug "C#: Tips?")))
+    (is (not (re-find #"[<>:\"|?*]" (u/slug "a<b>|c*"))))
+    (is (not (re-find #"[\x00-\x1F\x7F]" (u/slug "a\u0001b\u007Fc"))))
+    (is (= "etc" (u/slug "etc.")))
+    (is (= "a" (u/slug "a. . ")))
+    (is (= "con_" (u/slug "CON")))
+    (is (= "aux_.txt" (u/slug "aux.txt")) "the stem is what Windows reserves")
+    (is (= "lpt1_" (u/slug "LPT1")))
+    (is (= "console" (u/slug "console")) "only the exact device names")
+    ;; D.2.1 fix F: the rest of Windows' reserved list
+    (is (= "com0_" (u/slug "COM0")))
+    (is (= "lpt0_" (u/slug "LPT0")))
+    (is (= "conin$_" (u/slug "CONIN$")) "the whole name is the stem, not `con`")
+    (is (= "conout$_" (u/slug "CONOUT$")))
+    (is (= "conin$_.txt" (u/slug "conin$.txt")))
+    (is (= "com10" (u/slug "com10")) "one digit only")
+    (is (= "_" (u/slug ".")))
+    (is (= "_" (u/slug "..")))
+    (is (= "_" (u/slug "")))
+    (is (= "a-b" (u/slug "a/b")))
+    (is (= "中文笔记" (u/slug "中文笔记")) "Unicode kept verbatim")
+    (is (= "a--b" (u/slug "a--b")) "no general dash collapse")
+    (is (= ".hidden" (u/slug ".hidden")) "no leading-dot trim")))

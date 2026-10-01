@@ -534,7 +534,17 @@
   (is (exists? "clogem" "js" "toc.js"))
   (is (str/includes? (slurp-out "clogem" "js" "toc.js") "decodeURIComponent")
       "ids are unencoded, hrefs are percent-encoded — mandatory for CJK/Tamil pages")
-  (is (str/includes? (slurp-out "index.html") "<script defer=\"defer\" src=\"/clogem/js/toc.js\"></script>")))
+  (is (str/includes? (slurp-out "pages" "643259" "index.html") "<script defer=\"defer\" src=\"/clogem/js/toc.js\"></script>"))
+  (testing "fix 18: only pages that render a TOC load it"
+    (is (not (str/includes? (slurp-out "index.html") "toc.js")))
+    (is (not (str/includes? (slurp-out "categories" "index.html") "toc.js")))))
+
+(deftest pages-carry-the-localized-site-description
+  (testing "fix 18: <meta name=description> from :site :description, per language"
+    (let [cfg-f #(assoc-in % [:site :description] {:en "English desc" :zh-Hans "中文描述"})]
+      (is (str/includes? (page-html cfg-f "/") "<meta content=\"English desc\" name=\"description\" />"))
+      (is (str/includes? (page-html cfg-f "/zh-Hans/categories/") "<meta content=\"中文描述\" name=\"description\" />"))
+      (is (not (str/includes? (page-html #(assoc-in % [:site :description] nil) "/") "name=\"description\""))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Phase 2 — containers (D-P2-10)
@@ -749,7 +759,7 @@
       (is (str/includes? (html "/pages/bbbbbb/") "href=\"/pages/cccccc/\" lang=\"en\" rel=\"next\"")))))
 
 (deftest excerpt-paths-and-the-fallback-notice-toggle
-  (testing "first paragraph when there is no <!-- more -->"
+  (testing "the content before <!-- more -->"
     (is (str/includes? (slurp-out "index.html") "This article exists in English only")))
   (testing "the L variant's excerpt when it exists, else the primary's"
     ;; one big page, so the conventions article is on it in every language
@@ -792,3 +802,293 @@
         "no language prefix is invented for a permalink that names nothing")
     (is (some #(re-find #":nav link /pages/nope00/ names no article" (:message %)) (diag/warnings dds)))
     (is (empty? (diag/warnings ds)) "…and rendering itself stays quiet")))
+
+;; ---------------------------------------------------------------------------
+;; Fix round 0.1.1
+
+(defn- with-cli-site
+  "Write {rel-path → content} under a temp site's content/ (plus an optional
+  site.edn) and call (f dir out)."
+  [files f & [site-edn]]
+  (let [dir (fs/create-temp-dir {:prefix "clogem-cli"})]
+    (try
+      (when site-edn (spit (fs/file dir "site.edn") (pr-str site-edn)))
+      (doseq [[rel content] files
+              :let [p (fs/path dir "content" rel)]]
+        (fs/create-dirs (fs/parent p))
+        (spit (fs/file p) content))
+      (binding [diag/*sink* (atom [])]
+        (f dir (fs/path dir "dist")))
+      (finally (fs/delete-tree dir)))))
+
+(defn- build-fails
+  "Run `build` (optionally --no-write) and return the ExceptionInfo it raises."
+  [dir out no-write]
+  (try (cli/build {:site-dir (str dir) :out (str out) :no-write no-write}) nil
+       (catch clojure.lang.ExceptionInfo e e)))
+
+(deftest a-content-error-under-no-write-leaves-no-dist
+  (testing "fix 2: --no-write skips pass 1, so analyse errors must gate render"
+    (doseq [[what files] [["malformed YAML" {"01.Guide/01.a.md" "---\ntitle: [unclosed\n---\n\nbody\n"}]
+                          ["duplicate permalink" {"01.Guide/01.a.md" a-tree
+                                                  "01.Guide/02.b.md" a-tree}]]]
+      (with-cli-site files
+        (fn [dir out]
+          (let [e (build-fails dir out true)]
+            (is (some? e) what)
+            (is (= 1 (:babashka/exit (ex-data e))) what)
+            (is (not (fs/exists? out)) (str what ": no dist/ directory at all"))
+            (is (not (fs/exists? (fs/path dir "permalinks.edn"))) (str what ": no ledger"))))))))
+
+(deftest slug-collisions-fail-the-build
+  (testing "fix 12: `_posts/notes/` beside the default category \"Notes\""
+    (with-cli-site {"_posts/2026-01-01-p.md" a-post
+                    "_posts/notes/2026-01-02-q.md" (str/replace a-post "p00001" "q00001")}
+      (fn [dir out]
+        (doseq [no-write [true false]]
+          (let [e (build-fails dir out no-write)]
+            (is (some? e))
+            (is (= 1 (:babashka/exit (ex-data e))) (str "no-write=" no-write))
+            (is (re-find #"category names share the URL slug `notes`" (str (ex-message e))))
+            (is (not (fs/exists? out))))))))
+  (testing "…and two tags that differ only by case"
+    (with-cli-site {"_posts/2026-01-01-p.md" a-post
+                    "_posts/2026-01-02-q.md" (-> a-post (str/replace "p00001" "q00001") (str/replace "[t]" "[T]"))}
+      (fn [dir out]
+        (doseq [no-write [true false]]
+          (let [e (build-fails dir out no-write)]
+            (is (= 1 (:babashka/exit (ex-data e))) (str "no-write=" no-write))
+            (is (re-find #"tag names share the URL slug `t`" (str (ex-message e))))
+            (is (not (fs/exists? out)))))
+        (let [e (try (cli/doctor {:site-dir (str dir)}) nil (catch clojure.lang.ExceptionInfo e e))]
+          (is (= 1 (:babashka/exit (ex-data e))) "doctor exits 1 too"))
+        (let [e (try (cli/fm-fix {:site-dir (str dir)}) nil (catch clojure.lang.ExceptionInfo e e))]
+          (is (= 1 (:babashka/exit (ex-data e))) "…and fm-fix"))))))
+
+(deftest a-bad-front-matter-sidebar-depth-warns-with-the-path
+  (doseq [bad ["auto" "9" "-1" "1.5"]]
+    (let [[_ _ html ds] (temp-tree {"01.Guide/01.t.md" (str "---\ntitle: T\npermalink: /pages/t00001/\nsidebarDepth: " bad "\n---\n\n# T\n\n## H2\n\n### H3\n")})]
+      (is (some #(and (= "01.Guide/01.t.md" (:path %)) (re-find #"sidebarDepth" (:message %)))
+                (diag/warnings ds))
+          bad)
+      (is (str/includes? (html "/pages/t00001/") ">H3<") "falls back to the default depth 2")))
+  (let [[_ _ html ds] (temp-tree {"01.Guide/01.t.md" "---\ntitle: T\npermalink: /pages/t00001/\nsidebarDepth: \"1\"\n---\n\n# T\n\n## H2\n\n### H3\n"})]
+    (is (empty? (diag/warnings ds)) "a digit string is accepted")
+    (is (not (re-find #"level-3" (html "/pages/t00001/"))))))
+
+(deftest emoji-categories-and-headings-link-to-real-targets
+  (testing "fix 1, end to end: no `%3F%3F` href, and the href decodes to the directory"
+    (let [[_ uris html] (temp-tree {"01.😀Fun/01.t.md" (str/replace a-tree "## H2" "## Hello 😀 world")})
+          page (html "/pages/t00001/")]
+      (is (contains? uris "/categories/😀fun/"))
+      (is (str/includes? page "href=\"/categories/%F0%9F%98%80fun/\""))
+      (is (str/includes? page "href=\"#hello-%F0%9F%98%80-world\""))
+      (is (str/includes? page "id=\"hello-😀-world\""))
+      (is (not (str/includes? page "%3F%3F"))))))
+
+(deftest excerpt-diagnostics-are-reported-once
+  (testing "fix 4: a dead link before the marker warns once — from the article
+            page — not once per language home as well"
+    (let [[_ _ _ ds] (temp-tree {"_posts/2026-01-01-p.md"
+                                 (str/replace a-post "body\n" "See [x](missing-page.md).\n\n<!-- more -->\n\nRest.\n")})
+          dead (filter #(re-find #"missing-page" (str (:message %) (:hint %))) (diag/warnings ds))]
+      (is (= 1 (count dead)) (pr-str (map :message dead)))))
+  (testing "a marker inside `::: tip` is not an unclosed container"
+    (let [[_ _ html ds] (temp-tree {"_posts/2026-01-01-p.md"
+                                    (str/replace a-post "body\n" "::: tip\nBefore.\n\n<!-- more -->\n\nAfter.\n:::\n")})]
+      (is (not-any? #(re-find #"(?i)unclosed" (:message %)) (diag/warnings ds)))
+      (is (str/includes? (html "/") "clogem-post-card__excerpt")))))
+
+(deftest no-marker-means-no-excerpt
+  (testing "fix 15: VuePress/vdoing take an excerpt only from <!-- more -->"
+    (let [[_ _ html] (temp-tree {"_posts/2026-01-01-p.md" a-post})]
+      (doseq [home ["/" "/zh-Hans/" "/ta/"]]
+        (is (str/includes? (html home) "clogem-post-card") home)
+        (is (not (str/includes? (html home) "clogem-post-card__excerpt")) home)
+        (is (not (str/includes? (html home) "clogem-post-card__more")) "nothing to read more of")))))
+
+(deftest homes-without-tags-have-no-empty-tags-card
+  (testing "fix 11: `tags: []` everywhere → no Tags box on any home"
+    (let [[m _ html] (temp-tree {"01.Notes/01.t.md" a-tree})]
+      (is (empty? (:tags m)))
+      (doseq [home ["/" "/zh-Hans/" "/zh-Hant/" "/ms/" "/ta/"]]
+        (is (not (str/includes? (html home) "clogem-home-tags")) home)
+        (is (str/includes? (html home) "clogem-home-cats") "categories exist, so that card stays")))))
+
+(deftest every-demo-page-has-exactly-one-h1
+  (testing "fix 18: homes without a body of their own get the site title as h1"
+    (doseq [f (fs/glob *out-dir* "**/index.html")
+            :let [html (slurp (fs/file f))]]
+      (is (= 1 (count (re-seq #"<h1[ >]" html))) (str (fs/relativize *out-dir* f))))))
+
+(deftest overview-pages-list-every-article
+  (testing "fix 11: no tags at all → no \"All 0\" bar, but the posts are listed"
+    (let [[_ uris html] (temp-tree {"01.Notes/01.t.md" a-tree
+                                    "_posts/2026-01-01-p.md" (str/replace a-post "tags: [t]\n" "tags: []\n")})]
+      (doseq [l ["" "/zh-Hans" "/ta"]
+              :let [tags (html (str l "/tags/"))
+                    cats (html (str l "/categories/"))]]
+        (is (not (str/includes? tags "clogem-bar")) "no bar over an empty index")
+        (is (str/includes? tags "/pages/t00001/") "the post list is shown anyway")
+        (is (str/includes? tags "/pages/p00001/"))
+        (is (str/includes? cats "clogem-bar"))
+        (is (str/includes? cats "/pages/t00001/") "/categories/ lists every article")
+        (is (str/includes? cats "/pages/p00001/")))
+      (is (not (contains? uris "/tags/page/2/")) "one page at :per-page 10")))
+  (testing "an empty site shows the empty notice"
+    (let [[_ _ html] (temp-tree {"01.Notes/01.cat.md" "---\ntitle: C\npermalink: /pages/c00001/\narticle: false\n---\n\nx\n"})]
+      (is (str/includes? (html "/tags/") "clogem-empty"))))
+  (testing "the overview paginates at :per-page"
+    (let [[_ uris html] (temp-tree {"01.Notes/01.t.md" a-tree
+                                    "_posts/2026-01-01-p.md" a-post}
+                                   {:theme {:per-page 1}})]
+      (is (contains? uris "/categories/page/2/"))
+      (is (contains? uris "/zh-Hans/tags/page/2/"))
+      (is (str/includes? (html "/categories/") "href=\"/categories/page/2/\" rel=\"next\""))
+      (is (str/includes? (html "/categories/page/2/") "hreflang=\"ms\"")))))
+
+(deftest filtered-index-pages-have-their-own-title
+  (testing "fix 13: <title> follows the <h1>, in every language"
+    (let [[_ _ html] (temp-tree {"_posts/2026-01-01-p.md" a-post
+                                 "_posts/2026-01-02-q.md" (str/replace a-post "p00001" "q00001")}
+                                {:theme {:per-page 1}})]
+      (doseq [[l cat tag] [["" "Category: " "Tag: "] ["/zh-Hans" "分类：" "标签："]
+                           ["/zh-Hant" "分類：" "標籤："] ["/ms" "Kategori: " "Tag: "]
+                           ["/ta" "பிரிவு: " "குறிச்சொல்: "]]]
+        (is (str/includes? (html (str l "/categories/notes/")) (str "<title>" cat "Notes")) l)
+        (is (str/includes? (html (str l "/tags/t/page/2/")) (str "<title>" tag "t")) l)))))
+
+(deftest zh-hant-archives-reads-gui-dang
+  (testing "fix 18: 封存 means \"sealed\"; the archive page is 歸檔"
+    (let [html (slurp-out "zh-Hant" "archives" "index.html")]
+      (is (str/includes? html "<h1>歸檔</h1>"))
+      (is (not (str/includes? html "封存"))))))
+
+(deftest the-switcher-marks-an-untranslated-target
+  (testing "fix 14: on an English-only article the ta entry lands on /ta/ and says why"
+    (let [html (slurp-out "pages" "3ce486" "index.html")]
+      (is (re-find #"<a class=\"is-untranslated\" href=\"/ta/\" hreflang=\"ta\" lang=\"ta\">தமிழ்<span class=\"clogem-visually-hidden\" lang=\"en\"> \(Shown in English — not yet translated\)</span></a>" html))
+      (is (= 1 (count (re-seq #"Shown in English — not yet translated" (re-find #"(?s)<a class=\"is-untranslated\" href=\"/ta/\".*?</a>" html))))
+          "fix F: the notice is said once — visually-hidden text, no duplicate `title`")
+      (is (not (re-find #"is-untranslated[^>]* title=" html)))
+      (is (= 4 (count (re-seq #"class=\"is-untranslated\"" html))) "every language the article lacks, not the current one")))
+  (testing "a translated target is not marked"
+    (let [html (slurp-out "pages" "643259" "index.html")]
+      (is (re-find #"<a href=\"/zh-Hans/pages/643259/\" hreflang=\"zh-Hans\"" html))
+      (is (re-find #"class=\"is-untranslated\" href=\"/ms/\"" html))))
+  (testing "index pages have no untranslated entries"
+    (is (not (str/includes? (slurp-out "categories" "index.html") "is-untranslated"))))
+  (testing ":show-fallback-notice false drops the text but keeps the class"
+    (let [html (page-html #(assoc-in % [:i18n :show-fallback-notice] false) "/pages/3ce486/")]
+      (is (str/includes? html "class=\"is-untranslated\" href=\"/ta/\""))
+      (is (not (str/includes? html "clogem-visually-hidden"))))))
+
+(deftest category-labels-apply-to-sidebar-groups-and-catalogue-headings
+  (testing "fix 3: a string label goes through category-label's string branch in every language"
+    (let [cfg-f #(assoc-in % [:i18n :category-labels "Basics"] "BasicsLabel")]
+      (is (str/includes? (page-html cfg-f "/pages/559f0f/") "<h3>BasicsLabel") "catalogue card heading")
+      (doseq [l ["" "/zh-Hans" "/zh-Hant"]]
+        (is (str/includes? (page-html cfg-f (str l "/pages/643259/")) "<summary>BasicsLabel</summary>") (str l " sidebar")))))
+  (testing "the demo's map label localizes the sidebar group on zh-Hans"
+    (is (str/includes? (slurp-out "zh-Hans" "pages" "643259" "index.html") "<summary>基础</summary>"))
+    (is (str/includes? (slurp-out "pages" "643259" "index.html") "<summary>Basics</summary>"))))
+
+;; ---------------------------------------------------------------------------
+;; Fix round D.2.1
+
+(def ^:private bad-yaml "---\npostList: [bad\n---\n\nbody\n")
+
+(defn- doctor-errors
+  "Run `doctor` over `dir`; return its error diagnostics whether or not it raised."
+  [dir]
+  (try (:errors (cli/doctor {:site-dir (str dir)}))
+       (catch clojure.lang.ExceptionInfo e (:clogem/errors (ex-data e)))))
+
+(deftest bad-yaml-outside-the-tree-fails-the-build-before-dist
+  (testing "fix A: index*.md and @pages/* are parsed during analyse, so a YAML
+            error there stops build (both modes) before dist/ exists, and
+            doctor reports it exactly once — not once per language home"
+    (doseq [rel ["index.md" "index.zh-Hans.md" "@pages/tagsPage.md" "@pages/tagsPage.MS.md"]]
+      (with-cli-site {"01.Guide/01.t.md" a-tree rel bad-yaml}
+        (fn [dir out]
+          (doseq [no-write [true false]]
+            (let [e (build-fails dir out no-write)]
+              (is (some? e) (str rel " no-write=" no-write))
+              (is (= 1 (:babashka/exit (ex-data e))) rel)
+              (is (re-find #"malformed YAML" (str (ex-message e))) rel)
+              (is (not (fs/exists? out)) (str rel " no-write=" no-write ": no dist/ at all"))))
+          (let [errs (doctor-errors dir)]
+            (is (= 1 (count errs)) (str rel ": " (pr-str (map :message errs))))
+            (is (re-find #"malformed YAML" (str (:message (first errs)))) rel)
+            (is (str/ends-with? (str (:path (first errs))) (last (str/split rel #"/"))) rel)))))))
+
+(deftest two-spellings-of-one-language-are-an-error
+  (testing "fix C: index.zh-Hant.md beside index.ZH-HANT.md is an analyse error naming both"
+    (with-cli-site {"01.Guide/01.t.md" a-tree
+                    "index.zh-Hant.md" "---\n---\n\nCANONICAL\n"
+                    "index.ZH-HANT.md" "---\n---\n\nUPPER\n"}
+      (fn [dir out]
+        (let [errs (doctor-errors dir)]
+          (is (= 1 (count errs)) (pr-str (map :message errs)))
+          (is (re-find #"two files claim to be the zh-Hant version of index\.md: index\.zh-Hant\.md and index\.ZH-HANT\.md"
+                       (str (:message (first errs))))))
+        (let [e (build-fails dir out true)]
+          (is (= 1 (:babashka/exit (ex-data e))))
+          (is (not (fs/exists? out)))))))
+  (testing "…the same for @pages/"
+    (with-cli-site {"01.Guide/01.t.md" a-tree
+                    "@pages/tagsPage.ms.md" "---\ntitle: A\n---\n"
+                    "@pages/tagsPage.MS.md" "---\ntitle: B\n---\n"}
+      (fn [dir _]
+        (let [errs (doctor-errors dir)]
+          (is (= 1 (count errs)))
+          (is (re-find #"@pages/tagsPage\.ms\.md and @pages/tagsPage\.MS\.md" (str (:message (first errs))))))))))
+
+(deftest the-all-count-equals-the-rows-it-lists
+  (testing "fix D: 5 articles, 2 tagged — \"All\" counts the 5 rows the overview lists"
+    (let [post (fn [n tags] (-> a-post (str/replace "p00001" (str "p0000" n))
+                                (str/replace "2026-01-01" (str "2026-01-0" n))
+                                (str/replace "tags: [t]" (str "tags: " tags))))
+          [_ uris html] (temp-tree (into {} (for [n (range 1 6)]
+                                              [(str "_posts/2026-01-0" n "-p" n ".md")
+                                               (post n (if (<= n 2) "[t]" "[]"))]))
+                                   {:theme {:per-page 2}})
+          all-count (fn [page] (some->> (re-find #"is-active\"><a [^>]*>[^<]*</a><span class=\"clogem-bar__count\">(\d+)<" page)
+                                        second parse-long))]
+      (doseq [root ["/tags/" "/zh-Hans/tags/" "/categories/"]
+              :let [pages (cons root (filter #(str/starts-with? % (str root "page/")) (sort uris)))
+                    rows  (reduce + (map #(count (re-seq #"<li class=\"clogem-row" (html %))) pages))]]
+        (is (= 3 (count pages)) root)
+        (is (= 5 rows) root)
+        (is (= rows (all-count (html root))) root)))))
+
+(deftest catalogue-label-sites-are-each-covered
+  (testing "E item 3: the nested <h4> of a subdirectory inside a card"
+    (is (str/includes? (page-html #(assoc-in % [:i18n :category-labels "Level3"] "L3Label") "/pages/c4d33p/")
+                       "<h4>L3Label")))
+  (testing "…and the <h3> of the card holding articles directly under the target directory"
+    (let [[_ _ html] (temp-tree {"00.Catalogue/01.guide.md"
+                                 (str "---\ntitle: Guide catalogue\narticle: false\npermalink: /pages/cat001/\n"
+                                      "pageComponent:\n  name: Catalogue\n  data:\n    path: 01.Guide\n---\n\nx\n")
+                                 "01.Guide/01.t.md" a-tree}
+                                {:i18n {:category-labels {"Guide" "GuideLabel"}}})]
+      (is (str/includes? (html "/pages/cat001/") "<h3>GuideLabel</h3>"))
+      (is (str/includes? (html "/pages/cat001/") "/pages/t00001/") "the direct article is listed under it"))))
+
+(deftest doctor-reports-an-excerpt-dead-link-once
+  (testing "E item 4: the dead link before <!-- more --> is one doctor warning, not one per home"
+    (with-cli-site {"_posts/2026-01-01-p.md"
+                    (str/replace a-post "body\n" "See [x](missing-page.md).\n\n<!-- more -->\n\nRest.\n")}
+      (fn [dir _]
+        (let [{:keys [warnings]} (cli/doctor {:site-dir (str dir)})
+              dead (filter #(re-find #"missing-page" (str (:message %) (:hint %))) warnings)]
+          (is (= 1 (count dead)) (pr-str (map :message dead))))))))
+
+(deftest categories-off-means-no-categories-card
+  (testing "E item 11: with :content :category false no home has a categories card"
+    (let [[_ _ html] (temp-tree {"01.Notes/01.t.md" a-tree
+                                 "_posts/2026-01-01-p.md" a-post}
+                                {:content {:category false}})]
+      (doseq [home ["/" "/zh-Hans/" "/zh-Hant/" "/ms/" "/ta/"]]
+        (is (str/includes? (html home) "clogem-post-card") (str home " renders"))
+        (is (not (str/includes? (html home) "clogem-home-cats")) home)))))

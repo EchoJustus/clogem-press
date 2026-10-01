@@ -78,3 +78,14 @@
      (binding [*sink* sink#]
        (let [r# (do ~@body)]
          [r# @sink#]))))
+
+(defmacro quietly
+  "Run body with diagnostics DISCARDED: a throwaway sink. For renders that
+  duplicate an authoritative one — a homepage excerpt re-renders a slice of
+  an article whose own page already reports every real problem once, and a
+  slice cut at `<!-- more -->` can invent problems the article does not have
+  (a container cut open). The body must be eager; anything it leaves lazy
+  would emit after the binding is gone."
+  [& body]
+  `(binding [*sink* (atom [])]
+     ~@body))

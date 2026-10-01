@@ -2,13 +2,16 @@
 (ns clogem.theme.page
   "Page templates: article, home, and the redirect stub."
   (:require [clojure.string :as str]
-            [clogem.i18n :as i18n]
             [clogem.theme.layout :as layout]))
 
 (defn article
-  [{:keys [cfg lang group variant] :as ctx} content-hiccup]
-  (let [fallback? (not= lang (:lang variant))]
-    (layout/document
+  [{:keys [group variant] :as ctx} content-hiccup]
+  ;; No in-page fallback notice: every article page IS the variant in its own
+  ;; language, so there was never a case to show one (the old `fallback?`
+  ;; was always false). An untranslated article is flagged where the reader
+  ;; meets it — on the switcher entry (layout/lang-switcher) and on index
+  ;; rows (layout/fallback-badge).
+  (layout/document
      (assoc ctx :title (:title variant))
      (layout/navbar ctx)
      (layout/shell
@@ -18,14 +21,10 @@
        [:article.clogem-article
         [:h1 (:title variant) (layout/title-tag variant)]
         (layout/article-info ctx group variant)
-        (when (and fallback? (get-in cfg [:i18n :show-fallback-notice]))
-          [:p.clogem-notice
-           (i18n/tr ctx :page/fallback-notice
-                    {:lang (get-in cfg [:langs :locales (:lang variant) :label])})])
         (layout/variant-bar ctx)
         [:div.clogem-content content-hiccup]]
        (layout/prev-next ctx)])
-     (layout/footer ctx))))
+     (layout/footer ctx)))
 
 (defn redirect-stub
   "D-10 / D-15: a retired or de-canonicalized URL redirects rather than 404s.

@@ -710,9 +710,17 @@ Worked examples (the first four are byte-identical to vdoing's behaviour):
 | `03.my-notes.md` | 3 | `my-notes` | article default |
 | `05.re-frame.md` | 5 | `re-frame` | article default |
 | `01.en-passant.md` | 1 | `en-passant` | article default (`passant` is neither script- nor region-shaped) |
-| `01.article.en-us.md` | — | — | **error**: did you mean `en`? (configured primary + region-shaped subtag) |
-| `01.article.ta-IN.md` | — | — | **error**: did you mean `ta`? |
+| `01.en-dash.md` | 1 | `en-dash` | article default (lower-case `dash` is not a Title-case script, and `en` has no configured script it could be a typo of) |
+| `01.ta-da.md` | 1 | `ta-da` | article default (lower-case `da` is not an UPPERCASE region) |
+| `01.article.en-us.md` | — | — | **error**: did you mean `en`? (confusable — `en-US` is in the confusables set) |
+| `01.article.ta-IN.md` | — | — | **error**: did you mean `ta`? (configured primary + UPPERCASE region) |
 | `01.article.zh-han.md` | — | — | **error**: did you mean `zh-Hans`? (one edit from a configured code) |
+| `01.article.zh-hsna.md` | — | — | **error**: did you mean `zh-Hans`? (a lower-case typo, distance 2, of the configured script `Hans`) |
+| `01.article.zh-hant-hk.md` | — | — | **error**: did you mean `zh-Hant`? (a configured script anchors the region, matched case-insensitively) |
+| `01.article.ZH-HANT-HK.md` | — | — | **error**: did you mean `zh-Hant`? (anchored by a configured script, the primary too matches in any case) |
+| `01.article.ZH-HSNA.md` | — | — | **error**: did you mean `zh-Hans`? (an all-caps typo of the configured script `Hans` anchors) |
+| `01.article.EN-NZ.md` | — | — | **error**: did you mean `en`? (an ALL-CAPS configured primary followed only by UPPERCASE regions) |
+| `01.MS-Word.md` | 1 | `MS-Word` | article default (a Title-case word after an upper-case primary is not a tag) |
 
 Three deliberate choices, each with its reason:
 
@@ -726,15 +734,34 @@ Three deliberate choices, each with its reason:
   by *requiring* lowercase in filenames; we cannot, because the emitted `<html lang>` should read
   `zh-Hans`. So: match lowercased, emit the configured spelling.
 - **Near-miss codes are a hard error, not silently part of the title.** A last dot-segment that is
-  not itself a configured code is a "near miss" iff, compared lower-cased, **any** of:
-  (a) it is in the small confusables set derived from `:langs` (`zh`, `zh-CN`, `zh-TW`, `zh-HK`,
-  `en-US`, …); **or** (b) its Damerau-Levenshtein distance to a configured code is ≤ 1 *and* the
-  segment or that code contains a hyphen (`zh-hanz`, `zh-han`, `ta-`, `zhhans`) — the hyphen
-  condition is what keeps `01.Vue.js.md` a file titled `Vue.js` even though `js` is one edit from
-  `ms`, as `tax` is from `ta`; **or** (c) it contains a hyphen, its primary subtag is a *configured*
-  primary (`zh`, `en`, `ms`, `ta` on the demo) and every remaining subtag is script-shaped (4 letters)
-  or region-shaped (2 letters / 3 digits) — so `zh-Hanz`, `en-us`, `ta-IN` are caught while
-  `api-design`, `my-notes`, `re-frame` and `en-passant` are ordinary titles. (Phase 1 used a pattern,
+  not itself a configured code is a "near miss" iff **any** of:
+  (a) compared lower-cased, it is in the small confusables set derived from `:langs` (`zh`, `zh-CN`,
+  `zh-TW`, `zh-HK`, `en-US`, …); **or** (b) compared lower-cased, its Damerau-Levenshtein distance to
+  a configured code is ≤ 1 *and* the segment or that code contains a hyphen (`zh-hanz`, `zh-han`,
+  `ta-`, `zhhans`, `zh_Hans`) — the hyphen condition is what keeps `01.Vue.js.md` a file titled
+  `Vue.js` even though `js` is one edit from `ms`, as `tax` is from `ta`; **or** (c) in its
+  **original case**, its primary subtag is lower-case `[a-z]{2,3}` (but see the anchor and ALL-CAPS
+  cases below) and a *configured* primary (`zh`,
+  `en`, `ms`, `ta` on the demo), and every remaining subtag is a Title-case script (`Hanz`), an
+  UPPERCASE region (`IN`) or a 3-digit region (`001`), or a 4-letter typo, in any case, within
+  Damerau-Levenshtein 2 of a script configured for that primary (`hsna` → `Hans`). When the first
+  subtag is a configured script or such a typo, it anchors the rest, which are then matched
+  case-insensitively against `[a-z]{2}|\d{3}` — so `zh-hant-hk` and `zh-hans-sg` stay errors. The
+  anchor also lifts the lower-case requirement on the primary: `ZH-HANT-HK`, `Zh-Hant-HK`,
+  `ZH-HANS-SG` and `ZH-HSNA` are errors (0.1.1, §11.2 item 25), which is safe because only a
+  *configured* script anchors. Without an anchor there is one more shape: an **ALL-CAPS** segment
+  whose upper-case primary is configured and whose remaining subtags are all UPPERCASE 2-letter or
+  3-digit regions (`EN-NZ`, `MS-BN`, `TA-MY`) — all-caps authors exist, and §6.1 itself lists
+  `10.article.ZH-HANS.md` as valid. A Title-case subtag after an upper-case primary does *not*
+  qualify, so `MS-Word` stays a title. **Accepted trade-off:** an all-caps title `TA-DA.md` is
+  an error; `ta-da`, `Ta-Da`, `en-dash`, `ms-word`, `MS-Word`, `en-bloc` and `ms-access-tips` stay
+  titles. So
+  `zh-Hanz`, `ta-IN`, `zh-hsna` are caught while `api-design`, `my-notes`, `re-frame`, `en-passant`,
+  `en-dash`, `ta-da`, `ms-word` and `en-bloc` are ordinary titles. **Matching stays
+  case-insensitive** — `05.article.zh-hans.md` is zh-Hans — and casing is a signal *only* in rule
+  (c), where BCP 47's conventional casing is what tells a tag from a lower-case hyphenated word
+  (0.1.1; until then rule (c) lower-cased first and `01.en-dash.md` hard-errored — §11.2 item 16).
+  (Phase 1 used a pattern,
   `^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})+$`, which made every hyphenated two- or three-letter word a
   misspelled tag; `02.api-design.md`, `03.my-notes.md` and `05.re-frame.md` were confirmed false
   positives on a real tree — D-P2-14.) Rationale for the error: a silent misparse costs both a wrong
@@ -1121,9 +1148,15 @@ cheap to do well). The link target follows the same rule: `/L/pages/<id>/` when 
 **Sort order is language-invariant.** `date` and `sticky` come from the primary variant, so the same
 articles appear in the same order in every language's index. The alternative — sorting by each
 variant's own date — would silently reshuffle the archive between languages, which reads as a bug.
+Dates sort by **value**: a hand-written, unpadded `"2026-9-5"` is zero-padded for comparison and sorts
+before `"2026-10-01"`, not after it as a string would. Post prev/next order is computed once per
+build (`:post-order`), not per article page (§11.2 item 18).
 
 **Categories and tags** are language-neutral values (derived from directory names). Their *display*
 names can be localized via `:i18n :category-labels`, defaulting to the raw directory-derived string.
+A label applies to **every** display of a category name — index bars and headings, breadcrumbs, the
+article info line, the home card, sidebar group titles and Catalogue card headings (a numbered
+directory's title *is* its category name) — while the key and the URL slug stay raw (§11.2 item 17).
 Whether the owner wants English directory names with localized labels, or something else, is **D-12**.
 
 **Comments: one giscus thread per article identity.** Verified from giscus's source, the mapping
@@ -1886,7 +1919,22 @@ Recorded as the Phase 2 work (§8) landed; each item names the section it amends
 2. **Config validation is fatal (§5.6, §6.2, D-P2-12).** `validate!` repaired a bad `:langs :default`
    "so the rest of the report is readable, but the build will not run" — and the build ran. `build`,
    `doctor` and `fm-fix` now exit non-zero on a config error, `build` writes nothing, and `doctor`
-   still produces the content findings under the repaired config.
+   still produces the content findings under the repaired config. *Amended in 0.1.1:* `[:theme
+   :per-page]` (a positive integer) and `[:theme :sidebar-depth]` (an integer 0–5) are typed, and a
+   bad value is a config error repaired to its default (10, 2) — it used to crash render with a
+   ClassCastException, mid-write for `:sidebar-depth`; an explicit `nil` means the default and is not
+   an error. Front matter `sidebarDepth` accepts 0–5 or a digit string and otherwise warns, naming
+   the file. `:generator :min-version` must be a `MAJOR.MINOR.PATCH(-pre)?` string (else a config
+   error repaired to no floor) and is compared by semver precedence, so `0.1.0-phase1` does not
+   satisfy `0.1.0`. `build` also gates on **analyse** errors before it writes the ledger or creates
+   `dist/` — under `--no-write`, which skips pass 1, a malformed YAML block or a duplicate permalink
+   used to be reported only after a populated `dist/` existed. Analyse also resolves and parses
+   `index*.md` and every `@pages/*` file (item 26), so **every content error diagnostic** — the
+   numbered tree's and those files' — stops `build` before the ledger write and before `dist/`
+   exists; render emits warnings only. **Known limitation:** an *exception* thrown during render
+   (a bug, or a file deleted mid-build) can still leave a partial `dist/`, and `build` never removes
+   stale files from an existing `dist/`; every error check therefore belongs in config loading or
+   analyse, never in render.
 3. **`:catalogue` is keyed by dir-key, not by category title (§5.2 step 3).** The sketch wrote
    `{"Guide" "/pages/xyz/"}`; category titles repeat across levels (`Local` under `Notes` and under
    `Guide`), so the table is keyed by the numbered directory path a Catalogue page's `data.path`
@@ -1898,6 +1946,15 @@ Recorded as the Phase 2 work (§8) landed; each item names the section it amends
    D-P2-3).** Only articles have a per-article primary; `/categories/`, `/tags/`, `/archives/`,
    `/page/N/` and the homes are bare for `:langs :default` and under `/<lang>/` otherwise. Slugs are
    the raw key lower-cased with whitespace → `-`, Unicode kept verbatim, percent-encoded in hrefs.
+   *Amended in 0.1.1:* a slug is also a directory name that must check out on Windows, so
+   `< > : " | ? *` and control characters collapse to `-` with the separators, trailing dots and
+   spaces are trimmed, and a reserved device name gets `_` after its stem (`con` → `con_`, `aux.txt`
+   → `aux_.txt`); `.`, `..` and the empty string stay `_`. No general `-` collapse and no leading-dot
+   trim, which would change more published URLs than needed. Two category (or tag) names sharing a
+   slug are an **analyse-time error** — never auto-renamed — so `build`, `fm-fix` and `doctor` all
+   stop before rendering (it was a doctor-only warning, and `build` silently overwrote one index page
+   with the other). Percent-encoding works per **code point**: non-BMP characters (😀, 𠀀) encode as
+   their four UTF-8 bytes, not as two `%3F`s.
 6. **Category index pages link only values that an article carries.** A category held solely by a
    catalogue page (`article: false`) has no index page, so breadcrumbs and info lines render it as
    plain text rather than a dangling link. `:i18n :category-labels` resolve through the §6.5 chain
@@ -1909,7 +1966,11 @@ Recorded as the Phase 2 work (§8) landed; each item names the section it amends
 8. **`doctor` renders every page in memory.** Dead links, unknown containers, malformed card-list
    YAML, unresolved catalogue paths and unknown `pageComponent` names are render-time findings; the
    doctor report includes them by rendering the page map and discarding the output, so "report content
-   problems without building" still holds (nothing is written).
+   problems without building" still holds (nothing is written). *Amended in 0.1.1:* homepage
+   excerpts render with diagnostics **discarded** (`diag/quietly`): the article page is the
+   authoritative render and reports each problem once, where the excerpt repeated it per language
+   home (and inflated doctor's count the same way), and a `<!-- more -->` inside `::: tip` made the
+   slice warn about a container the article closes.
 9. **`sidebarDepth` governs the TOC, not sidebar nesting (D-P2-9).** vdoing's default `2` shows
    h2–h3; the body's h1 never enters the TOC. The scroll-spy decodes the percent-encoded fragment
    before `getElementById`, because ids are stored unencoded (Appendix A item 18).
@@ -1929,6 +1990,64 @@ Recorded as the Phase 2 work (§8) landed; each item names the section it amends
 14. **`sidebarDepth: 0` means no TOC**, as in vdoing; the default remains `[:theme :sidebar-depth 2]`.
 15. **A `:nav` permalink that names no article is emitted with the base only**, never with an invented
     language prefix, and `doctor` reports it.
+
+The 0.1.1 fix round (items 16–29; items 25–29 are its follow-up review) amends the sections named; items 2, 5 and 8 above carry
+*Amended in 0.1.1* notes for the changes that refine them.
+
+16. **Near-miss rule (c) reads the original case (§6.1, D-P2-14).** Lower-casing before the shape test
+    made `01.en-dash.md`, `ta-da`, `ms-word` and `en-bloc` hard errors. Rule (c) now requires BCP 47
+    casing (Title-case script, UPPERCASE or 3-digit region) or a typo of a configured script, with a
+    configured script anchoring the remaining subtags case-insensitively. Matching itself stays
+    case-insensitive. `zh-hsna` moved from rule (b) to rule (c): it is distance 2, not 1.
+17. **Category labels apply to every display of a category name (§6.8, D-12).** Sidebar group titles
+    and Catalogue card headings bypassed `:i18n :category-labels`.
+18. **Dates sort by value; post order is computed once (§6.8, D-P2-4, D-P2-7).** `newest-first`
+    compares `util/date-sort-key` (zero-padded `YYYY-MM-DD HH:mm:ss`), computed once per group; the
+    model carries `:post-order`, which `neighbours` reads instead of re-sorting every post per page.
+19. **Homepage excerpts are marker-only (D-P2-5, §1.2).** Everything before `<!-- more -->`, the
+    leading h1 dropped; **no marker, no excerpt** — and no read-more link — as in VuePress and vdoing.
+    Phase 2 fell back to the first paragraph, which cut real cards off mid-sentence; DESIGN.md never
+    specified the fallback. Diagnostics: item 8.
+20. **`/categories/` and `/tags/` list every article (§1, D-P2-3).** The overview is the bar *plus*
+    every article, paginated at `[:theme :per-page]` under `<root>/page/N/`; the bar is omitted when
+    the index is empty, and the home's Categories/Tags cards render only when there is something to
+    list. A site whose articles all carry `tags: []` showed an "All 0" bar and an empty card on
+    every home, and `/categories/` linked no article.
+21. **Filtered index pages title themselves (D-P2-3).** `<title>` is the page's heading
+    (`Category: Notes`), not the overview's.
+22. **The in-page fallback notice is gone; the switcher carries it (§6.4 rule 3, §6.8, D-P2-13).**
+    An article page is always its own language's variant, so the notice could never render. A
+    switcher entry that lands on a language's home because the article is untranslated is marked
+    (`is-untranslated`, and visually-hidden text from `:page/fallback-notice` in the page's
+    language), the text gated by `:show-fallback-notice`. (A `title` carrying the same notice was
+    dropped in the follow-up review — item 29.)
+23. **`index.md` and `@pages/` suffixes match case-insensitively (§6.1, D-P2-6).** `index.zh-hant.md`
+    and `@pages/tagsPage.MS.md` were ignored on case-sensitive filesystems while the tree accepted
+    the same spelling. The exact canonical spelling is preferred (item 27).
+24. **Smaller output fixes.** A home without a body of its own renders the site title as its `<h1>`;
+    `toc.js` loads only on pages that render a TOC; every page carries `<meta name="description">`
+    from the localized `:site :description`; zh-Hant's archive string is 歸檔 (封存 means "sealed").
+25. **Rule (c) catches upper-case tags again (§6.1).** Reading the original case (item 16) also let
+    `02.title.ZH-HANT-HK.md` — an error in 0.1.0 — become an article titled `title.ZH-HANT-HK`. A
+    configured script (or a typo of one) now anchors the primary case-insensitively as well, and an
+    ALL-CAPS configured primary followed only by UPPERCASE or 3-digit regions is a tag (`EN-NZ`). A
+    Title-case word after an upper-case primary is not (`MS-Word`); an all-caps `TA-DA.md` errors.
+26. **`index*.md` and `@pages/*` are parsed during analyse (item 2, D-P2-6).** They were read at
+    render time, so a YAML error in `content/index.md` was raised after `dist/` had been written (29
+    files on a clean site), under `--no-write` and in a normal build alike, and doctor counted it
+    once per language home that falls back to the file. `pages/site-files` resolves every
+    `[file, language]` pair through `localized-file`, parses each distinct file once, and the model
+    carries the result (`:site-files`); render reads the cached front matter and body.
+27. **`localized-file` prefers the exact canonical spelling (§6.1).** It took the first of the
+    case-insensitive matches in byte order, so `index.ZH-HANT.md` silently beat `index.zh-Hant.md`.
+    The exact `<rel>.<lang>.md` wins, a single mis-cased file is still read, and two files naming
+    the same language are an analyse error naming both — as two such files in the content tree are.
+28. **"All N" counts what it lists (§1, D-P2-3).** With the overview listing every article (item 20),
+    the bar's "All" counted only the articles in the index: `/tags/` read "All 2" above five rows.
+29. **Smaller fixes.** The switcher's untranslated notice is visually-hidden text in the page's
+    language only (the `title` duplicated it for screen readers and sat on an element whose `lang`
+    is the target's); `COM0`, `LPT0`, `CONIN$` and `CONOUT$` are reserved slug stems; a
+    `:min-version` floor written `v0.1.1` is told to drop the leading `v`.
 
 ---
 

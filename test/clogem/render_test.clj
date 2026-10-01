@@ -13,7 +13,8 @@
             [clogem.cli :as cli]
             [clogem.config :as config]
             [clogem.diag :as diag]
-            [clogem.render :as render]))
+            [clogem.render :as render]
+            [hiccup2.core]))
 
 (def demo "examples/demo-site")
 
@@ -103,6 +104,41 @@
     (let [out (build-with-base "/project/")]
       (try
         (is (fs/regular-file? (fs/path out "clogem" "js" "toc.js")))
-        (is (str/includes? (slurp (fs/file (fs/path out "index.html")))
+        (is (str/includes? (slurp (fs/file (fs/path out "pages" "643259" "index.html")))
                            "src=\"/project/clogem/js/toc.js\""))
         (finally (fs/delete-tree out))))))
+
+;; ---------------------------------------------------------------------------
+;; localized-file (fix 10)
+
+(deftest localized-file-returns-a-map-and-matches-suffixes-case-insensitively
+  (let [dir (fs/create-temp-dir {:prefix "clogem-lf"})
+        put (fn [rel s] (let [p (fs/path dir "content" rel)]
+                          (fs/create-dirs (fs/parent p)) (spit (fs/file p) s)))]
+    (try
+      (put "index.md" "---\ntitle: Home\n---\n\nEnglish body\n")
+      (put "index.zh-hant.md" "---\ntitle: 首頁\n---\n\n繁體正文\n")
+      (put "@pages/tagsPage.MS.md" "---\ntitle: Tag\n---\n")
+      (put "01.Guide/01.a.md" "---\ntitle: A\npermalink: /pages/aaaaaa/\n---\n\nbody\n")
+      (let [cfg (first (diag/collecting (config/load-config (str dir) nil {:content {:write-front-matter false}})))
+            lf  (fn [rel lang] (some-> (render/localized-file cfg rel lang) (update :path #(str (fs/file-name %)))))]
+        (testing "own, default and missing shapes"
+          (is (= {:path "index.md" :own? true} (lf "index" :en)) "the default file is the default language's own")
+          (is (= {:path "index.md" :own? false} (lf "index" :ta)) "…and only a fallback elsewhere")
+          (is (nil? (lf "@pages/categoriesPage" :en))))
+        (testing "a mis-cased suffix is the language's own file, as the scanner would read it"
+          (is (= {:path "index.zh-hant.md" :own? true} (lf "index" :zh-Hant)))
+          (is (= {:path "tagsPage.MS.md" :own? true} (lf "@pages/tagsPage" :ms))))
+        (testing "fix C: the exact canonical spelling wins over a case-insensitive match"
+          (put "index.zh-Hant.md" "---\n---\n\nCANONICAL\n")
+          (let [r (render/localized-file cfg "index" :zh-Hant)]
+            (is (= "index.zh-Hant.md" (str (fs/file-name (:path r)))))
+            (is (= ["index.zh-Hant.md" "index.zh-hant.md"] (mapv #(str (fs/file-name %)) (:ambiguous r)))))
+          (fs/delete (fs/path dir "content" "index.zh-Hant.md")))
+        (testing "end to end: the zh-Hant home renders the mis-cased file's body"
+          (let [[m _] (diag/collecting (cli/analyse cfg))
+                pm   (first (diag/collecting (render/page-map m)))
+                html (fn [u] (str (hiccup2.core/html ((get pm u)))))]
+            (is (str/includes? (html "/zh-Hant/") "繁體正文"))
+            (is (not (str/includes? (html "/zh-Hans/") "繁體正文"))))))
+      (finally (fs/delete-tree dir)))))

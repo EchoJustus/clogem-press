@@ -71,8 +71,10 @@
   "Optimal-string-alignment edit distance: insert, delete, substitute, and
   ONE adjacent transposition each cost 1. Used by the scanner's near-miss rule
   (DESIGN.md §6.1, D-P2-14): a filename segment within distance 1 of a
-  configured language code (`zh-hanz`, `zh-han`, `ta-`, `zh-hsna`) is a
-  misspelled tag, not a title."
+  configured language code (`zh-hanz`, `zh-han`, `ta-`) is a misspelled tag,
+  not a title. (`zh-hsna` is distance 2 from `zh-hans` — two substitutions,
+  since the swapped letters are not adjacent — so it is rule (c)'s
+  script-typo branch that catches it, not this distance.)"
   [^String a ^String b]
   (let [m (count a) n (count b)
         d (make-array Long/TYPE (inc m) (inc n))]
@@ -146,6 +148,21 @@
       ensure-leading-slash
       ensure-trailing-slash))
 
+(defn- percent-encode
+  "Percent-encode every character of `s` that does not match `keep`, as the
+  UTF-8 bytes of the whole CODE POINT. `(?s).` matches a surrogate pair as one
+  character; walking `s` as a seq of UTF-16 chars instead handed each lone
+  surrogate to `.getBytes`, which turned 😀 into `??` and then `%3F%3F`."
+  [keep s]
+  (->> (re-seq #"(?s)." (str s))
+       (map (fn [^String ch]
+              (if (re-matches keep ch)
+                ch
+                (->> (.getBytes ch "UTF-8")
+                     (map #(format "%%%02X" (bit-and % 0xff)))
+                     (apply str)))))
+       (apply str)))
+
 (defn url-encode-fragment
   "Percent-encode a heading slug for use in an href fragment.
 
@@ -154,15 +171,7 @@
   HTML id but must be encoded to appear in a URL. Characters that are legal and
   unambiguous inside a fragment are left alone so English anchors stay readable."
   [s]
-  (->> s
-       (map (fn [^Character c]
-              (let [ch (str c)]
-                (if (re-matches #"[A-Za-z0-9\-._~!$&'()*+,;=:@/?]" ch)
-                  ch
-                  (->> (.getBytes ch "UTF-8")
-                       (map #(format "%%%02X" (bit-and % 0xff)))
-                       (apply str))))))
-       (apply str)))
+  (percent-encode #"[A-Za-z0-9\-._~!$&'()*+,;=:@/?]" s))
 
 (defn url-encode-segment
   "Percent-encode one URL *path segment*: everything but RFC 3986 unreserved
@@ -171,15 +180,7 @@
   encodes the sub-delimiters too — a fragment can carry `?` unencoded, a path
   segment cannot."
   [s]
-  (->> (str s)
-       (map (fn [^Character c]
-              (let [ch (str c)]
-                (if (re-matches #"[A-Za-z0-9\-._~]" ch)
-                  ch
-                  (->> (.getBytes ch "UTF-8")
-                       (map #(format "%%%02X" (bit-and % 0xff)))
-                       (apply str))))))
-       (apply str)))
+  (percent-encode #"[A-Za-z0-9\-._~]" s))
 
 (defn url-encode-path
   "Percent-encode every segment of a site path for use in an href, keeping the
@@ -198,21 +199,51 @@
       (format "%s-%02d-%02d" y (parse-long m) (parse-long dd))   ; `2026-8-1` → 2026-08-01
       (str d))))
 
+(defn date-sort-key
+  "A sort key that orders hand-written dates by VALUE: a leading
+  `YYYY-M-D[ H:m[:s]]` is zero-padded to `YYYY-MM-DD HH:mm:ss`, so the quoted,
+  unpadded `\"2026-9-5\"` sorts before `\"2026-10-01\"` instead of after it.
+  Anything that does not start with a date is returned unchanged."
+  [d]
+  (let [s (str d)]
+    (if-let [[_ y mo dd h mi sec]
+             (re-find #"^\s*(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?" s)]
+      (format "%s-%02d-%02d %02d:%02d:%02d" y (parse-long mo) (parse-long dd)
+              (or (some-> h parse-long) 0) (or (some-> mi parse-long) 0) (or (some-> sec parse-long) 0))
+      s)))
+
+(def ^:private windows-reserved-stem
+  "Windows device names. `conin$`/`conout$` come before `con`, so the stem
+  that gets the `_` is the whole name; `com0` and `lpt0` are reserved too."
+  "(conin\\$|conout\\$|con|prn|aux|nul|com[0-9]|lpt[0-9])")
+
+(def ^:private windows-reserved-re
+  "Windows device names, which stay reserved whatever extension follows."
+  (re-pattern (str "^" windows-reserved-stem "(\\..*)?$")))
+
 (defn slug
   "The URL slug of a category or tag (DESIGN.md D-P2-3): lower-cased, with
   whitespace runs and path separators collapsed to `-`; Unicode letters (CJK,
   Tamil) are kept verbatim, percent-encoding being the href side's job
   (`url-encode-segment`) — the same policy the heading slugger follows.
 
-  `.` and `..` are not slugs but directory names, and would escape the index
-  directory; they, and the empty string, become `_`."
+  The slug is also a DIRECTORY NAME, and the output must check out on
+  Windows, so the characters Windows forbids in a file name (`< > : \" | ? *`
+  and control characters) collapse to `-` with the separators, and trailing
+  dots and spaces are trimmed. A device name (`con`, `aux.txt`, `lpt1`,
+  `com0`, `conin$`) gets `_` after its stem. `.` and `..` would escape the index directory; they,
+  and the empty string, become `_`."
   [s]
   (let [out (-> (str s)
                 str/trim
                 lower
-                (str/replace #"[\s/\\]+" "-")
-                (str/replace #"^-+|-+$" ""))]
-    (if (or (str/blank? out) (#{"." ".."} out)) "_" out)))
+                (str/replace #"[\s/\\<>:\"|?*\x00-\x1F\x7F]+" "-")
+                (str/replace #"^-+|[-. ]+$" ""))]
+    (cond
+      (or (str/blank? out) (#{"." ".."} out)) "_"
+      (re-matches windows-reserved-re out)
+      (str/replace-first out (re-pattern (str "^" windows-reserved-stem)) "$1_")
+      :else out)))
 
 (defn html-escape
   [s]
@@ -225,16 +256,51 @@
 ;; ---------------------------------------------------------------------------
 ;; Versions
 
+(def version-re
+  "MAJOR.MINOR.PATCH with an optional semver pre-release — the only shape a
+  `:generator :min-version` floor may take (D-14)."
+  #"\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?")
+
 (defn parse-version
-  "\"1.2.3-rc1\" → [1 2 3]. Non-numeric trailers are ignored for comparison."
+  "\"1.2.3-rc.1\" → {:release [1 2 3] :pre [\"rc\" 1]}; `:pre` is nil for a
+  release. A leading `v` and `+build` metadata are ignored, and non-numeric
+  release segments are dropped, so the generator's own version string parses
+  leniently; a site's FLOOR is checked against `version-re` before it gets
+  here."
   [v]
-  (->> (str/split (str/replace (str v) #"^v" "") #"[.\-+]")
-       (keep #(when (re-matches #"\d+" %) (parse-long %)))
-       vec))
+  (let [s          (-> (str v) str/trim (str/replace #"^v" "") (str/replace #"\+.*$" ""))
+        [core pre] (str/split s #"-" 2)]
+    {:release (into [] (keep #(when (re-matches #"\d+" %) (parse-long %))) (str/split core #"\."))
+     :pre     (when-not (str/blank? pre)
+                (mapv #(if (re-matches #"\d+" %) (parse-long %) %) (str/split pre #"\.")))}))
+
+(defn- compare-pre
+  "Semver §11 precedence of two pre-release identifier lists; nil (a release)
+  ranks above every pre-release."
+  [a b]
+  (cond
+    (and (nil? a) (nil? b)) 0
+    (nil? a) 1
+    (nil? b) -1
+    :else
+    (or (some (fn [[x y]]
+                (let [c (cond
+                          (and (number? x) (number? y)) (compare x y)
+                          (number? x) -1               ; numeric < alphanumeric
+                          (number? y) 1
+                          :else (compare x y))]
+                  (when-not (zero? c) c)))
+              (map vector a b))
+        (compare (count a) (count b)))))
 
 (defn version>=
+  "Semver precedence: `0.1.0-phase1` is BELOW `0.1.0`, so a pre-release
+  generator does not satisfy the floor of the release it precedes. Missing
+  release segments count as zero."
   [a b]
-  (let [av (parse-version a) bv (parse-version b)
-        n  (max (count av) (count bv))
-        pad (fn [v] (vec (take n (concat v (repeat 0)))))]
-    (>= (compare (pad av) (pad bv)) 0)))
+  (let [{ar :release ap :pre} (parse-version a)
+        {br :release bp :pre} (parse-version b)
+        n   (max (count ar) (count br) 3)
+        pad (fn [v] (vec (take n (concat v (repeat 0)))))
+        c   (compare (pad ar) (pad br))]
+    (>= (if (zero? c) (compare-pre ap bp) c) 0)))

@@ -35,11 +35,32 @@
            ;; numbers need not be consecutive, and gaps are recommended
            ["30.deep.md"             30 "deep"        nil]
            ;; a dotted title survives intact
-           ["05.a.b.c.md"            5  "a.b.c"       nil]]]
+           ["05.a.b.c.md"            5  "a.b.c"       nil]
+           ;; 0.1.1: lower-case hyphenated titles are not tags (rule (c) reads case)
+           ["01.en-dash.md"          1  "en-dash"     nil]
+           ["01.ta-da.md"            1  "ta-da"       nil]
+           ;; 0.1.1: a Title-case word after an upper-case primary is a title
+           ["01.MS-Word.md"          1  "MS-Word"     nil]]]
       (let [r (parse fname)]
         (is (= order (:order r)) (str fname " → order"))
         (is (= title (:title r)) (str fname " → title"))
         (is (= lang  (:lang r))  (str fname " → lang"))))))
+
+(deftest design-6-1-worked-error-rows
+  (testing "the table's error rows, with the suggestion each names"
+    (doseq [[fname suggestion] [["01.article.zh-Hanz.md"    "zh-Hans"]
+                                ["01.article.en-us.md"      "en"]
+                                ["01.article.ta-IN.md"      "ta"]
+                                ["01.article.zh-han.md"     "zh-Hans"]
+                                ["01.article.zh-hsna.md"    "zh-Hans"]
+                                ["01.article.zh-hant-hk.md" "zh-Hant"]
+                                ;; 0.1.1: all-caps authors (§6.1 lists ZH-HANS as valid)
+                                ["01.article.ZH-HANT-HK.md" "zh-Hant"]
+                                ["01.article.ZH-HSNA.md"    "zh-Hans"]
+                                ["01.article.EN-NZ.md"      "en"]]]
+      (let [r (parse fname)]
+        (is (:error r) fname)
+        (is (re-find (re-pattern (str "did you mean `" suggestion "`")) (str (:hint r))) fname)))))
 
 (deftest skipped-with-a-warning
   (testing "vdoing's warn-and-skip cases, unchanged"
@@ -87,16 +108,43 @@
 
 (deftest near-misses-by-distance-and-by-subtag-shape
   (testing "rule (b): one edit from a configured code, with a hyphen on either side"
-    (doseq [fname ["01.article.zh-han.md" "01.a.ta-.md" "01.a.zh-hsna.md" "01.a.zhhans.md"]]
+    (doseq [fname ["01.article.zh-han.md" "01.a.ta-.md" "01.a.zhhans.md" "01.a.zh_Hans.md" "01.a.zhHans.md"]]
       (is (:error (parse fname)) fname)))
-  (testing "rule (c): a configured primary subtag + only script/region-shaped subtags"
-    (doseq [fname ["01.article.ta-IN.md" "01.a.en-us.md" "01.a.ms-MY.md" "01.a.zh-Hanz-CN.md" "01.a.en-001.md"]]
+  (testing "rule (a): `en-us` is a confusable — rule (c) no longer catches a lower-case region"
+    (is (:error (parse "01.a.en-us.md"))))
+  (testing "rule (c): a configured primary + Title-case script / UPPERCASE or 3-digit region subtags"
+    (doseq [fname ["01.article.ta-IN.md" "01.a.ms-MY.md" "01.a.zh-Hanz-CN.md" "01.a.en-001.md"
+                   "01.a.zh-Latn-TW.md"]]
       (is (:error (parse fname)) fname))
+    (is (:error (parse "01.a.zh-hsna.md"))
+        "a lower-case script typo, distance 2 from zh-Hans, so rule (b) never caught it")
+    (doseq [fname ["01.a.zh-hant-hk.md" "01.a.zh-hans-sg.md" "01.a.zh-Hans-sg.md"]]
+      (is (:error (parse fname)) (str fname " — a configured script anchors the region case-insensitively")))
     (is (nil? (:error (parse "01.a.fr-CA.md"))) "`fr` is not a configured primary, so it is a title")
     (is (nil? (:error (parse "01.a.en-passant.md"))) "`passant` is neither script- nor region-shaped"))
   (testing "the suggestion still names the intended code"
     (is (re-find #"did you mean `ta`" (:hint (parse "01.article.ta-IN.md"))))
     (is (re-find #"did you mean `zh-Hans`" (:hint (parse "01.article.zh-han.md"))))))
+
+(deftest rule-c-reads-the-original-case
+  (testing "fix 8: ordinary lower-case hyphenated titles are not language tags"
+    (doseq [[fname title] [["01.en-dash.md" "en-dash"] ["01.ta-da.md" "ta-da"]
+                           ["01.ms-word.md" "ms-word"] ["01.en-bloc.md" "en-bloc"]
+                           ["01.a.en-dash.md" "a.en-dash"] ["01.zh-dash.md" "zh-dash"]]]
+      (let [r (parse fname)]
+        (is (nil? (:error r)) (str fname ": " (:error r)))
+        (is (= title (:title r)) fname)
+        (is (nil? (:lang r)) fname))))
+  (testing "D.2.1 fix B: Title-case and mixed-case spellings of plain words stay titles"
+    (doseq [[fname title] [["01.Ta-Da.md" "Ta-Da"] ["01.MS-Word.md" "MS-Word"]
+                           ["01.ms-access-tips.md" "ms-access-tips"]]]
+      (let [r (parse fname)]
+        (is (nil? (:error r)) (str fname ": " (:error r)))
+        (is (= title (:title r)) fname)
+        (is (nil? (:lang r)) fname))))
+  (testing "…while a configured code still matches case-insensitively"
+    (is (= :zh-Hans (:lang (parse "05.article.zh-hans.md"))))
+    (is (= "article" (:title (parse "05.article.zh-hans.md"))))))
 
 (deftest configured-language-wins-over-near-miss
   (testing "a configured code is a match, never a near miss"
@@ -319,3 +367,24 @@
                                   "_posts/2026-01-01-re-frame.md"       post-body})]
     (is (empty? (diag/errors ds)) (pr-str (map :message (diag/errors ds))))
     (is (= 4 (count (:articles model))))))
+
+(deftest rule-c-catches-upper-case-tags
+  (testing "D.2.1 fix B: anchored by a configured script, the primary matches in any case"
+    (doseq [seg ["ZH-HANT-HK" "ZH-HANS-SG" "ZH-Hant-HK" "Zh-Hant-HK" "ZH-HSNA" "ZH-HANT-MO"]]
+      (let [r (parse (str "02.title." seg ".md"))]
+        (is (:error r) seg)
+        (is (nil? (:title r)) (str seg " must not become an article title")))))
+  (testing "un-anchored: an ALL-CAPS configured primary + UPPERCASE / 3-digit regions"
+    (doseq [seg ["EN-NZ" "MS-BN" "TA-MY" "EN-001"]]
+      (is (:error (parse (str "02.title." seg ".md"))) seg)))
+  (testing "the accepted trade-off (DESIGN.md §6.1): an all-caps TA-DA errors"
+    (is (:error (parse "01.TA-DA.md"))))
+  (testing "titles that must stay titles"
+    (doseq [[fname title] [["01.ta-da.md" "ta-da"] ["01.Ta-Da.md" "Ta-Da"]
+                           ["01.en-dash.md" "en-dash"] ["01.ms-word.md" "ms-word"]
+                           ["01.MS-Word.md" "MS-Word"] ["01.en-bloc.md" "en-bloc"]
+                           ["01.ms-access-tips.md" "ms-access-tips"]
+                           ["01.ZH-DASH.md" "ZH-DASH"]]]
+      (let [r (parse fname)]
+        (is (nil? (:error r)) (str fname ": " (:error r)))
+        (is (= title (:title r)) fname)))))

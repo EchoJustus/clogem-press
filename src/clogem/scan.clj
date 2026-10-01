@@ -13,7 +13,7 @@
       if (count(body) ≥ 2) and (lower(last(body)) ∈ lower(configured :langs codes)):
           lang ← the configured canonical spelling ; \"zh-hans\" → :zh-Hans
           body ← drop-last(body)
-      else if (last(body) looks like a near-miss language tag):
+      else if (last(body) looks like a near-miss language tag):   ; see near-miss?
           ERROR with a suggestion
       else:
           lang ← the article's default
@@ -67,10 +67,58 @@
          (remove configured)
          set)))
 
-(defn- subtag-shaped?
-  "BCP 47 script (4 letters) or region (2 letters / 3 digits) subtag shape."
-  [sub]
-  (boolean (re-matches #"[A-Za-z]{4}|[A-Za-z]{2}|\d{3}" sub)))
+(defn- configured-scripts
+  "Lower-cased 4-letter script subtags configured for `primary`:
+  `zh` → #{\"hans\" \"hant\"} on the demo, `en` → #{}."
+  [cfg primary]
+  (into #{}
+        (keep (fn [code]
+                (let [[p sc] (str/split code #"-")]
+                  (when (and (= p primary) sc (= 4 (count sc))) sc))))
+        (configured-codes cfg)))
+
+(defn- tag-shaped?
+  "Rule (c): does the ORIGINAL-case `segment` read as a BCP 47 tag for a
+  configured primary? Casing is the signal here, and only here: BCP 47
+  writes scripts Title-case (`Hans`) and regions UPPER-case (`TW`), while an
+  ordinary hyphenated title is lower-case (`en-dash`, `ta-da`, `ms-word`).
+
+  Anchored: when the first subtag is a script configured for the primary,
+  or a 4-letter typo of one (any case, Damerau-Levenshtein ≤ 2), the whole
+  segment is matched case-insensitively — primary included — so
+  `zh-hant-hk`, `ZH-HANT-HK`, `Zh-Hant-HK` and `zh-hsna` / `ZH-HSNA` stay
+  errors. Only configured scripts anchor, so no plain word does.
+
+  Un-anchored, the primary must be lower-case and every later subtag a
+  Title-case script, an UPPERCASE region or a 3-digit region (`ta-IN`,
+  `zh-Latn-TW`, `en-001`) — or the segment is ALL CAPS: an upper-case
+  primary followed only by UPPERCASE 2-letter or 3-digit regions (`EN-NZ`,
+  `MS-BN`). A Title-case word after an upper-case primary is a title
+  (`MS-Word`). The accepted cost: an all-caps `TA-DA` errors (§6.1)."
+  [cfg segment]
+  (let [[primary & subs] (str/split segment #"-" -1)
+        p           (u/lower primary)
+        scripts     (configured-scripts cfg p)
+        script-ish? (fn [sub]
+                      (and (re-matches #"[A-Za-z]{4}" sub)
+                           (some #(<= (u/damerau-levenshtein (u/lower sub) %) 2) scripts)))]
+    (boolean
+     (and (re-matches #"(?i)[a-z]{2,3}" primary)
+          (contains? (configured-primaries cfg) p)
+          (seq subs)
+          (cond
+            (script-ish? (first subs))
+            (every? #(re-matches #"(?i)[a-z]{2}|\d{3}" %) (rest subs))
+
+            (re-matches #"[a-z]{2,3}" primary)
+            (every? #(or (re-matches #"[A-Z][a-z]{3}" %)
+                         (re-matches #"[A-Z]{2}|\d{3}" %))
+                    subs)
+
+            (re-matches #"[A-Z]{2,3}" primary)
+            (every? #(re-matches #"[A-Z]{2}|\d{3}" %) subs)
+
+            :else false)))))
 
 (defn near-miss?
   "Is a last dot-segment a misspelled language tag rather than title text?
@@ -79,34 +127,33 @@
   `^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})+$`, which made every hyphenated two- or
   three-letter word a language tag: `02.api-design.md`, `03.my-notes.md` and
   `05.re-frame.md` all hard-errored on a real tree. The pattern is gone
-  (D-P2-14). A segment is a near-miss iff, after lower-casing:
+  (D-P2-14). A segment that is not itself a configured code is a near-miss
+  iff:
 
-    (a) it is in the confusables set derived from `:langs` (`zh`, `zh-CN`,
-        `en-US`, …), OR
-    (b) its Damerau-Levenshtein distance to some configured code is ≤ 1 AND
-        the segment or that code contains a hyphen (`zh-hanz`, `zh-han`,
-        `ta-`, `zhhans`) — without the hyphen condition every two-letter
-        word one edit from a two-letter code would be a tag, and
-        `01.Vue.js.md` → `Vue.js` is a §6.1 invariant (`js` is one edit
-        from `ms`, as `tax` is from `ta`), OR
-    (c) it contains a hyphen, its primary subtag is a CONFIGURED primary
-        (`zh`, `en`, `ms`, `ta` on the demo), and every remaining subtag is
-        script-shaped (4 letters) or region-shaped (2 letters / 3 digits) —
-        so `zh-Hanz`, `en-us`, `ta-IN` are caught while `api-design`,
-        `my-notes`, `re-frame`, `en-passant` are not."
+    (a) lower-cased, it is in the confusables set derived from `:langs`
+        (`zh`, `zh-CN`, `en-US`, … — so `en-us` is caught here), OR
+    (b) lower-cased, its Damerau-Levenshtein distance to some configured
+        code is ≤ 1 AND the segment or that code contains a hyphen
+        (`zh-hanz`, `zh-han`, `ta-`, `zhhans`, `zh_Hans`) — without the
+        hyphen condition every two-letter word one edit from a two-letter
+        code would be a tag, and `01.Vue.js.md` → `Vue.js` is a §6.1
+        invariant (`js` is one edit from `ms`, as `tax` is from `ta`), OR
+    (c) in its ORIGINAL case, it is tag-shaped for a configured primary
+        (`tag-shaped?`): `zh-Hanz`, `ta-IN`, `en-001`, `zh-hsna`,
+        `zh-hant-hk`, `ZH-HANT-HK`, `EN-NZ` are caught while `en-dash`,
+        `ta-da`, `Ta-Da`, `ms-word`, `MS-Word`, `en-bloc`, `api-design` and
+        `en-passant` are titles. Rule (c) used
+        to lower-case first, which made every `<configured primary>-<2 or 4
+        letters>` title an error."
   [cfg segment]
   (let [s (u/lower segment)]
     (and (not (config/lang-for-suffix cfg segment))
-         (or (contains? (confusables cfg) s)
-             (some #(and (or (str/includes? s "-") (str/includes? % "-"))
-                         (<= (u/damerau-levenshtein s %) 1))
-                   (configured-codes cfg))
-             (let [[primary & rest-subs] (str/split s #"-" -1)]
-               (and (str/includes? s "-")
-                    (contains? (configured-primaries cfg) primary)
-                    (seq rest-subs)
-                    (every? subtag-shaped? rest-subs))))
-         true)))
+         (boolean
+          (or (contains? (confusables cfg) s)
+              (some #(and (or (str/includes? s "-") (str/includes? % "-"))
+                          (<= (u/damerau-levenshtein s %) 1))
+                    (configured-codes cfg))
+              (tag-shaped? cfg segment))))))
 
 (defn near-miss-hint
   [cfg segment]
@@ -143,19 +190,14 @@
       {:skip (str "not a markdown file: " filename)}
 
       :else
-      (let [body0 (vec (butlast segs))
+      (let [body0    (vec (butlast segs))
             last-seg (peek body0)
-            lang-hit (when (>= (count body0) 2) (config/lang-for-suffix cfg last-seg))
-            [lang body suffix?]
-            (cond
-              lang-hit [lang-hit (vec (butlast body0)) true]
-              (and (>= (count body0) 2) (near-miss? cfg last-seg))
-              [::near-miss body0 false]
-              :else [nil body0 false])]
-        (if (= ::near-miss lang)
+            lang-hit (when (>= (count body0) 2) (config/lang-for-suffix cfg last-seg))]
+        (if (and (not lang-hit) (>= (count body0) 2) (near-miss? cfg last-seg))
           {:error (str "unknown language `" last-seg "` in filename " filename)
            :hint  (near-miss-hint cfg last-seg)}
-          (let [order (parse-order (first body))
+          (let [body  (if lang-hit (vec (butlast body0)) body0)
+                order (parse-order (first body))
                 title (str/join "." (rest body))]
             (cond
               (nil? order)
@@ -168,7 +210,7 @@
               {:skip (str "filename has a number but no title: " filename)}
 
               :else
-              {:order order :title title :lang lang :suffix? suffix?})))))))
+              {:order order :title title :lang lang-hit :suffix? (boolean lang-hit)})))))))
 
 (defn parse-dirname
   "Directory rule, unchanged from vdoing: number before the first dot, title is

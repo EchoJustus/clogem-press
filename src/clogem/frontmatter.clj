@@ -116,10 +116,11 @@
   right reading of it).
 
   A String is returned byte-identical. Normalizing the *type* is what stops the
-  crash; rewriting what an author typed is not this function's business, and the
-  canonical form already sorts correctly against it. The residual cost is that a
-  hand-written non-canonical string (`2026-8-1`) still sorts lexicographically —
-  a display-order wrinkle, not an exception."
+  crash; rewriting what an author typed is not this function's business. Note
+  that a String does NOT sort correctly as a string against the canonical
+  form: a hand-written, unpadded `\"2026-9-5\"` is lexicographically after
+  `\"2026-10-01\"`. Ordering is therefore done on `clogem.util/date-sort-key`,
+  which zero-pads both to `YYYY-MM-DD HH:mm:ss` (see `clogem.model/newest-first`)."
   [v]
   (cond
     (nil? v)     nil

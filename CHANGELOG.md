@@ -1,5 +1,104 @@
 # Changelog
 
+## 0.1.1 — Phase 2 fix round
+
+Defects found in 0.1.0 by review and by building the real site, each fixed
+with a regression test that fails on 0.1.0. DESIGN.md §11.2
+items 16–29, and amendments to items 2, 5 and 8, record the decisions.
+
+### Fixed
+
+- **Non-BMP characters percent-encoded as `%3F%3F`.** A category `😀Fun`
+  linked to `/categories/%3F%3Ffun/` (a 404) and a heading `## Hello 😀 world`
+  got anchors no id matched. Encoding now walks code points.
+- **`build --no-write` wrote `dist/` before reporting content errors.**
+  Analyse errors now stop `build` before the ledger write and before `dist/`
+  exists. Render-time exceptions can still leave a partial `dist/` (a known
+  limitation, DESIGN.md §11.2 item 2).
+- **A YAML error in `index*.md` or `@pages/*` still bypassed that gate.**
+  Those files were read at render time, so `postList: [bad` in
+  `content/index.md` failed `build` (with or without `--no-write`) after 29
+  files were in `dist/`, and doctor counted it once per language home. They
+  are now resolved and parsed during analyse; each bad file is one error, and
+  the build stops before `dist/` exists.
+- **Two spellings of one language's `index`/`@pages` file.** With
+  `index.zh-Hant.md` and `index.ZH-HANT.md` both present the ALL-CAPS file
+  won silently. The exact canonical spelling is preferred, and two files
+  naming the same language are an error naming both, as in the content tree.
+- **`:theme :per-page` and `:theme :sidebar-depth` were untyped.** A string
+  crashed render with a ClassCastException, for `:sidebar-depth` after 55
+  pages had been written. Both are config errors now, repaired to their
+  defaults so `doctor` keeps reporting; an explicit `nil` means the default.
+  A bad front-matter `sidebarDepth` warns, naming the file.
+- **`:generator :min-version` ignored pre-releases and malformed floors.**
+  Versions compare by semver precedence (`0.1.0-phase1` < `0.1.0`), and a
+  floor that is not a `MAJOR.MINOR.PATCH(-pre)?` string is a config error.
+  A floor written like a tag (`"v0.1.1"`) is told to drop the leading `v`.
+- **Hand-written dates sorted as strings.** `"2026-9-5"` sorted after
+  `"2026-10-01"` on the home list, archives, sticky ranks and post prev/next.
+- **Post prev/next re-sorted every post on every article page.** The order is
+  computed once per build (`:post-order`).
+- **Category labels skipped sidebar groups and Catalogue headings.**
+  `:i18n :category-labels` now applies to every display of a category name.
+- **Homepage excerpts reported their problems once per language home**, and
+  a `<!-- more -->` inside `::: tip` warned about an unclosed container.
+  Excerpt diagnostics are discarded; the article page reports each once.
+- **`/tags/` and `/categories/` could list no article.** On a site whose
+  articles carry `tags: []`, `/tags/` showed only "All 0", `/categories/`
+  linked nothing, and every home ended with an empty Tags card. Overviews now
+  list every article, paginated, below the bar; empty bars and cards are
+  omitted.
+- **"All N" no longer matched the list beneath it.** With 5 articles, 2 of
+  them tagged, `/tags/` read "All 2" above 5 rows. "All" counts every
+  article, which is what the overview lists.
+- **Filtered index pages reused the overview's `<title>`.**
+- **The article fallback notice could never render.** It is gone; switcher
+  entries that land on a language home because the article is untranslated
+  are marked, with visually-hidden text from `:page/fallback-notice`. The
+  notice is said once, in the page's language: no duplicate `title`.
+- **`index.<lang>.md` and `@pages/` suffixes were case-sensitive**, so
+  `index.zh-hant.md` was ignored on Linux while the tree accepted the same
+  spelling; `render/localized-file` returns `{:path :own?}`.
+- Homes without a body of their own had no `<h1>`; `toc.js` loaded on pages
+  without a TOC; no `<meta name="description">`; zh-Hant's archive string was
+  封存 ("sealed") rather than 歸檔.
+
+### Changed
+
+These change published URLs or what builds.
+
+- **Slugs are legal Windows file names.** `< > : " | ? *` and control
+  characters collapse to `-`, trailing dots and spaces are trimmed, and
+  reserved device names get `_` after the stem: `Q&A: why?` → `q&a-why`
+  (was `q&a:-why?`), `etc.` → `etc`, `CON` → `con_`; `COM0`, `LPT0`, `CONIN$`
+  and `CONOUT$` are reserved too. A tag or category containing those
+  characters moves to a new URL.
+- **Category and tag slug collisions are a build error.** `Notes` beside a
+  `_posts/notes/` subfolder, or tags `Clojure` and `clojure`, fail `build`,
+  `fm-fix` and `doctor` instead of silently overwriting one index page (it
+  was a doctor-only warning). Slugs are never renamed automatically.
+- **Near-miss rule (c) is case-sensitive.** `01.en-dash.md`, `ta-da`,
+  `ms-word` and `en-bloc` are titles again; a tag needs BCP 47 casing
+  (`ta-IN`, `zh-Hanz`) or to be a typo of a configured script (`zh-hsna`).
+  Suffix *matching* is still case-insensitive.
+- **Rule (c) catches upper-case tags again.** The case-sensitive rule let
+  `02.title.ZH-HANT-HK.md` (an error in 0.1.0) become an English article
+  titled `title.ZH-HANT-HK`. A configured script now anchors the primary
+  case-insensitively too (`ZH-HANT-HK`, `Zh-Hant-HK`, `ZH-HSNA`), and an
+  ALL-CAPS configured primary followed only by UPPERCASE or 3-digit regions
+  is a tag (`EN-NZ`, `MS-BN`, `TA-MY`). `MS-Word`, `Ta-Da` and `ms-access-tips`
+  stay titles; an all-caps `TA-DA.md` is now an error (DESIGN.md §6.1).
+- **Homepage excerpts are marker-only.** Without `<!-- more -->` a card
+  shows no excerpt and no read-more link (VuePress/vdoing behaviour); add the
+  marker where an excerpt is wanted. The demo now carries explicit markers.
+- `localized-file` lives in `clogem.pages` (`render/localized-file` is an
+  alias): a single 3-arity function returning a map, with `:ambiguous` when
+  two files name the language. `render/index-paths` takes the model.
+
+### Tests
+
+283 tests / 1629 assertions (from 249 / 975).
+
 ## 0.1.0 — Phase 2: core vdoing parity
 
 Implements DESIGN.md §8 Phase 2 in full (all seven line items) plus the
@@ -25,7 +124,8 @@ demo site and test suite prove it rather than describe it.
   keep CJK and Tamil verbatim and are percent-encoded in hrefs.
 - **Homepage** — `postList: detailed | simple | none`, `simplePostListLength`,
   `hideRightBar`, `features`; sticky articles first (`sticky: true` = rank 1);
-  excerpts from `<!-- more -->` or the first paragraph; `/page/N/` pagination
+  excerpts from `<!-- more -->` or the first paragraph (marker-only since
+  0.1.1); `/page/N/` pagination
   at `[:theme :per-page]`; an update bar linking to `/archives/`.
 - **Article chrome** — breadcrumbs (catalogue page when one covers the
   directory, else the category index), the ArticleInfo line (author, ISO date,
@@ -81,8 +181,9 @@ demo site and test suite prove it rather than describe it.
 - `build_test`'s mechanism-2 assertion reads the categories as three linked
   names rather than one plain string; same invariant.
 - `clogem.markdown/parse` takes the page context (one-arity form kept).
-- Version `0.1.0` (`src/clogem/version.edn`), tagged `v0.1.0`, so the content
-  repo can pin `ref: v0.1.0` and declare `:generator {:min-version "0.1.0"}`.
+- Version `0.1.0` (`src/clogem/version.edn`), so the content repo can declare
+  `:generator {:min-version "0.1.0"}`. (No `v0.1.0` tag was pushed with this
+  release; pin publish.yml's `ref:` to a commit sha until a tag exists.)
 
 ### Review pass
 

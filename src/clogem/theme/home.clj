@@ -12,8 +12,9 @@
 
   The list is sticky ++ (posts minus sticky), from the model's two id lists,
   so a pinned article never appears twice and the order is the same in every
-  language. Detailed rows carry an excerpt taken from the reader's own variant
-  when the article has one, else the primary's."
+  language. Detailed rows carry an excerpt — the content before `<!-- more -->`,
+  none without the marker — taken from the reader's own variant when the
+  article has one, else the primary's."
   (:require [clojure.string :as str]
             [clogem.config :as config]
             [clogem.i18n :as i18n]
@@ -58,10 +59,13 @@
       [:a {:href href :lang (config/html-lang cfg lang)} title]
       (layout/title-tag v)
       (when fallback? (layout/fallback-badge ctx lang))]
-     (when-let [x ((:excerpt ctx) g lang)]
-       [:div.clogem-post-card__excerpt {:lang (config/html-lang cfg lang)} x])
-     (layout/article-info ctx g v)
-     [:p.clogem-post-card__more [:a {:href href} (i18n/tr ctx :index/read-more)]]]))
+     ;; marker-only (D-P2-5 as amended): no `<!-- more -->`, no excerpt —
+     ;; and then nothing to read "more" of, so no link either
+     (let [x ((:excerpt ctx) g lang)]
+       (list
+        (when x [:div.clogem-post-card__excerpt {:lang (config/html-lang cfg lang)} x])
+        (layout/article-info ctx g v)
+        (when x [:p.clogem-post-card__more [:a {:href href} (i18n/tr ctx :index/read-more)]])))]))
 
 (defn- post-list
   [{:keys [model] :as ctx} mode home-fm ids page total page-url]
@@ -86,14 +90,16 @@
         (into [:ul.clogem-list] (map #(layout/article-row ctx (get-in model [:articles %])) recent))
         (when-let [root (:archives index-paths)]
           [:p [:a {:href (layout/href ctx (model/site-url cfg lang root))} (i18n/tr ctx :index/more) " →"]])]))
-   (when-let [root (:categories index-paths)]
+   ;; a card only when there is something to list: a site whose articles
+   ;; all carry `tags: []` gets no empty Tags box
+   (when-let [root (and (seq (:categories model)) (:categories index-paths))]
      [:section.clogem-home-cats
       [:h2 [:a {:href (layout/href ctx (model/site-url cfg lang root))} (i18n/tr ctx :index/categories)]]
       (into [:ul.clogem-bar]
             (for [[c ids] (:categories model)]
               [:li [:a {:href (layout/href ctx (layout/index-href ctx :categories c))} (layout/category-label ctx c)]
                [:span.clogem-bar__count (count ids)]]))])
-   (when-let [root (:tags index-paths)]
+   (when-let [root (and (seq (:tags model)) (:tags index-paths))]
      [:section.clogem-home-tags
       [:h2 [:a {:href (layout/href ctx (model/site-url cfg lang root))} (i18n/tr ctx :index/tags)]]
       (into [:ul.clogem-bar]
@@ -112,7 +118,12 @@
      (layout/navbar ctx)
      (into [:div.clogem-shell {:class (if hide-right? "clogem-shell--single" "clogem-shell--home")}
             [:main.clogem-main
-             [:div.clogem-content (or body [:p (i18n/resolve-str ctx (get-in cfg [:site :description]))])]
+             ;; a home without a body of its own still has a heading — the
+             ;; body's `# Title` is the h1 when there is one
+             [:div.clogem-content
+              (or body
+                  (list [:h1 (i18n/resolve-str ctx (get-in cfg [:site :title]))]
+                        [:p (i18n/resolve-str ctx (get-in cfg [:site :description]))]))]
              (features ctx home-fm)
              (post-list ctx mode home-fm ids page total page-url)]]
            (when-not hide-right? [(right-bar ctx)]))

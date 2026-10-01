@@ -22,13 +22,15 @@
 
 (defn- bar
   "The filter bar of vdoing's CategoriesBar/TagsBar: every name with its count,
-  the current one marked. `href-for` maps a raw name to a site URI."
+  the current one marked. `href-for` maps a raw name to a site URI. \"All\"
+  links to the overview, which lists EVERY article (§11.2 item 20), so it
+  counts every article — not just those the index holds (item 28)."
   [ctx index href-for current label-for]
   (into [:ul.clogem-bar]
         (cons
          [:li {:class (when (nil? current) "is-active")}
           [:a {:href (layout/href ctx (:root-uri ctx))} (i18n/tr ctx :index/all)]
-          [:span.clogem-bar__count (count (distinct (mapcat val index)))]]
+          [:span.clogem-bar__count (count (get-in ctx [:model :posts]))]]
          (for [[k ids] index]
            [:li {:class (when (= k current) "is-active")}
             [:a {:href (layout/href ctx (href-for k))} (label-for k)]
@@ -51,14 +53,19 @@
 ;; Pages
 
 (defn overview
-  "`/categories/` or `/tags/`: bars with counts (D-P2-3)."
-  [{:keys [index kind] :as ctx}]
+  "`/categories/` or `/tags/` and their `/page/N/` continuations: the bar
+  with counts (D-P2-3) when there is anything to filter by, then every
+  article, paginated (DESIGN.md §1: \"filterable bars + paginated lists\").
+  An empty index renders no bar — an \"All 0\" bar filters nothing."
+  [{:keys [index kind ids page total] :as ctx}]
   (let [label-for (if (= kind :categories) #(layout/category-label ctx %) str)]
     (layout/page ctx
                  [:section.clogem-index {:class (str "clogem-index--" (name kind))}
                   [:h1 (:title ctx)]
                   (user-body ctx)
-                  (bar ctx index (:href-for ctx) nil label-for)])))
+                  (when (seq index) (bar ctx index (:href-for ctx) nil label-for))
+                  (listing ctx ids)
+                  (layout/pagination ctx page total (:page-url ctx))])))
 
 (defn filtered
   "`/categories/<slug>/`, `/tags/<slug>/` and their `/page/N/` continuations."
@@ -66,7 +73,8 @@
   (let [label-for (if (= kind :categories) #(layout/category-label ctx %) str)
         heading   (i18n/tr ctx (if (= kind :categories) :index/category-title :index/tag-title)
                            {:name (label-for current)})]
-    (layout/page ctx
+    ;; the <title> is the heading, not the overview's title (fix 13)
+    (layout/page (assoc ctx :title heading)
                  [:section.clogem-index {:class (str "clogem-index--" (name kind))}
                   [:h1 heading]
                   (bar ctx index (:href-for ctx) current label-for)
