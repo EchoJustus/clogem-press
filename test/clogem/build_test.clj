@@ -749,7 +749,7 @@
       (is (str/includes? (html "/pages/bbbbbb/") "href=\"/pages/cccccc/\" lang=\"en\" rel=\"next\"")))))
 
 (deftest excerpt-paths-and-the-fallback-notice-toggle
-  (testing "first paragraph when there is no <!-- more -->"
+  (testing "the content before <!-- more -->"
     (is (str/includes? (slurp-out "index.html") "This article exists in English only")))
   (testing "the L variant's excerpt when it exists, else the primary's"
     ;; one big page, so the conventions article is on it in every language
@@ -872,3 +872,81 @@
       (is (str/includes? page "href=\"#hello-%F0%9F%98%80-world\""))
       (is (str/includes? page "id=\"hello-😀-world\""))
       (is (not (str/includes? page "%3F%3F"))))))
+
+(deftest excerpt-diagnostics-are-reported-once
+  (testing "fix 4: a dead link before the marker warns once — from the article
+            page — not once per language home as well"
+    (let [[_ _ _ ds] (temp-tree {"_posts/2026-01-01-p.md"
+                                 (str/replace a-post "body\n" "See [x](missing-page.md).\n\n<!-- more -->\n\nRest.\n")})
+          dead (filter #(re-find #"missing-page" (str (:message %) (:hint %))) (diag/warnings ds))]
+      (is (= 1 (count dead)) (pr-str (map :message dead)))))
+  (testing "a marker inside `::: tip` is not an unclosed container"
+    (let [[_ _ html ds] (temp-tree {"_posts/2026-01-01-p.md"
+                                    (str/replace a-post "body\n" "::: tip\nBefore.\n\n<!-- more -->\n\nAfter.\n:::\n")})]
+      (is (not-any? #(re-find #"(?i)unclosed" (:message %)) (diag/warnings ds)))
+      (is (str/includes? (html "/") "clogem-post-card__excerpt")))))
+
+(deftest no-marker-means-no-excerpt
+  (testing "fix 15: VuePress/vdoing take an excerpt only from <!-- more -->"
+    (let [[_ _ html] (temp-tree {"_posts/2026-01-01-p.md" a-post})]
+      (doseq [home ["/" "/zh-Hans/" "/ta/"]]
+        (is (str/includes? (html home) "clogem-post-card") home)
+        (is (not (str/includes? (html home) "clogem-post-card__excerpt")) home)
+        (is (not (str/includes? (html home) "clogem-post-card__more")) "nothing to read more of")))))
+
+(deftest homes-without-tags-have-no-empty-tags-card
+  (testing "fix 11: `tags: []` everywhere → no Tags box on any home"
+    (let [[m _ html] (temp-tree {"01.Notes/01.t.md" a-tree})]
+      (is (empty? (:tags m)))
+      (doseq [home ["/" "/zh-Hans/" "/zh-Hant/" "/ms/" "/ta/"]]
+        (is (not (str/includes? (html home) "clogem-home-tags")) home)
+        (is (str/includes? (html home) "clogem-home-cats") "categories exist, so that card stays")))))
+
+(deftest every-demo-page-has-exactly-one-h1
+  (testing "fix 18: homes without a body of their own get the site title as h1"
+    (doseq [f (fs/glob *out-dir* "**/index.html")
+            :let [html (slurp (fs/file f))]]
+      (is (= 1 (count (re-seq #"<h1[ >]" html))) (str (fs/relativize *out-dir* f))))))
+
+(deftest overview-pages-list-every-article
+  (testing "fix 11: no tags at all → no \"All 0\" bar, but the posts are listed"
+    (let [[_ uris html] (temp-tree {"01.Notes/01.t.md" a-tree
+                                    "_posts/2026-01-01-p.md" (str/replace a-post "tags: [t]\n" "tags: []\n")})]
+      (doseq [l ["" "/zh-Hans" "/ta"]
+              :let [tags (html (str l "/tags/"))
+                    cats (html (str l "/categories/"))]]
+        (is (not (str/includes? tags "clogem-bar")) "no bar over an empty index")
+        (is (str/includes? tags "/pages/t00001/") "the post list is shown anyway")
+        (is (str/includes? tags "/pages/p00001/"))
+        (is (str/includes? cats "clogem-bar"))
+        (is (str/includes? cats "/pages/t00001/") "/categories/ lists every article")
+        (is (str/includes? cats "/pages/p00001/")))
+      (is (not (contains? uris "/tags/page/2/")) "one page at :per-page 10")))
+  (testing "an empty site shows the empty notice"
+    (let [[_ _ html] (temp-tree {"01.Notes/01.cat.md" "---\ntitle: C\npermalink: /pages/c00001/\narticle: false\n---\n\nx\n"})]
+      (is (str/includes? (html "/tags/") "clogem-empty"))))
+  (testing "the overview paginates at :per-page"
+    (let [[_ uris html] (temp-tree {"01.Notes/01.t.md" a-tree
+                                    "_posts/2026-01-01-p.md" a-post}
+                                   {:theme {:per-page 1}})]
+      (is (contains? uris "/categories/page/2/"))
+      (is (contains? uris "/zh-Hans/tags/page/2/"))
+      (is (str/includes? (html "/categories/") "href=\"/categories/page/2/\" rel=\"next\""))
+      (is (str/includes? (html "/categories/page/2/") "hreflang=\"ms\"")))))
+
+(deftest filtered-index-pages-have-their-own-title
+  (testing "fix 13: <title> follows the <h1>, in every language"
+    (let [[_ _ html] (temp-tree {"_posts/2026-01-01-p.md" a-post
+                                 "_posts/2026-01-02-q.md" (str/replace a-post "p00001" "q00001")}
+                                {:theme {:per-page 1}})]
+      (doseq [[l cat tag] [["" "Category: " "Tag: "] ["/zh-Hans" "分类：" "标签："]
+                           ["/zh-Hant" "分類：" "標籤："] ["/ms" "Kategori: " "Tag: "]
+                           ["/ta" "பிரிவு: " "குறிச்சொல்: "]]]
+        (is (str/includes? (html (str l "/categories/notes/")) (str "<title>" cat "Notes")) l)
+        (is (str/includes? (html (str l "/tags/t/page/2/")) (str "<title>" tag "t")) l)))))
+
+(deftest zh-hant-archives-reads-gui-dang
+  (testing "fix 18: 封存 means \"sealed\"; the archive page is 歸檔"
+    (let [html (slurp-out "zh-Hant" "archives" "index.html")]
+      (is (str/includes? html "<h1>歸檔</h1>"))
+      (is (not (str/includes? html "封存"))))))

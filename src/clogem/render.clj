@@ -134,15 +134,29 @@
                               :href-for (fn [k] (model/site-url cfg lang (str root (u/slug k) "/")))}
                        index (get model kind)]]
              (concat
-              ;; the overview page
-              [[(model/site-url cfg lang root)
-                (fn []
-                  (let [ctx (ctx-for lang (assoc base
-                                                 :alt-url (fn [l] (model/site-url cfg l root))
-                                                 :page-body (body)))]
-                    (if (= kind :archives)
-                      (indexes/archives (assoc ctx :archives index))
-                      (indexes/overview (assoc ctx :index index)))))]]
+              (if (= kind :archives)
+                [[(model/site-url cfg lang root)
+                  (fn []
+                    (indexes/archives
+                     (ctx-for lang (assoc base
+                                          :alt-url (fn [l] (model/site-url cfg l root))
+                                          :page-body (body)
+                                          :archives index))))]]
+                ;; the overview: the bar, then EVERY article paginated below
+                ;; it (DESIGN.md §1, as vdoing's /categories/ and /tags/ do) —
+                ;; a site whose articles carry no tags still lists them
+                (let [pages (paginate (:posts model) per-page)
+                      total (count pages)]
+                  (for [[n page-ids] pages]
+                    [(model/paged-url cfg lang root n)
+                     (fn []
+                       (indexes/overview
+                        (ctx-for lang (assoc base
+                                             :index index :ids page-ids
+                                             :page n :total total
+                                             :page-url (fn [n] (model/paged-url cfg lang root n))
+                                             :alt-url (fn [l] (model/paged-url cfg l root n))
+                                             :page-body (when (= 1 n) (body))))))])))
               ;; one filtered list per category/tag, paginated
               (when (not= kind :archives)
                 (for [[k ids] index

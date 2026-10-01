@@ -51,14 +51,19 @@
 ;; Pages
 
 (defn overview
-  "`/categories/` or `/tags/`: bars with counts (D-P2-3)."
-  [{:keys [index kind] :as ctx}]
+  "`/categories/` or `/tags/` and their `/page/N/` continuations: the bar
+  with counts (D-P2-3) when there is anything to filter by, then every
+  article, paginated (DESIGN.md §1: \"filterable bars + paginated lists\").
+  An empty index renders no bar — an \"All 0\" bar filters nothing."
+  [{:keys [index kind ids page total] :as ctx}]
   (let [label-for (if (= kind :categories) #(layout/category-label ctx %) str)]
     (layout/page ctx
                  [:section.clogem-index {:class (str "clogem-index--" (name kind))}
                   [:h1 (:title ctx)]
                   (user-body ctx)
-                  (bar ctx index (:href-for ctx) nil label-for)])))
+                  (when (seq index) (bar ctx index (:href-for ctx) nil label-for))
+                  (listing ctx ids)
+                  (layout/pagination ctx page total (:page-url ctx))])))
 
 (defn filtered
   "`/categories/<slug>/`, `/tags/<slug>/` and their `/page/N/` continuations."
@@ -66,7 +71,8 @@
   (let [label-for (if (= kind :categories) #(layout/category-label ctx %) str)
         heading   (i18n/tr ctx (if (= kind :categories) :index/category-title :index/tag-title)
                            {:name (label-for current)})]
-    (layout/page ctx
+    ;; the <title> is the heading, not the overview's title (fix 13)
+    (layout/page (assoc ctx :title heading)
                  [:section.clogem-index {:class (str "clogem-index--" (name kind))}
                   [:h1 heading]
                   (bar ctx index (:href-for ctx) current label-for)
