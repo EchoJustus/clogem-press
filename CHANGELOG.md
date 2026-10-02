@@ -35,18 +35,63 @@ unchanged until the phase is released.
 
 ### Changed
 
-- With a blank `:site :url` none of the above is emitted and analyse warns
-  once; the site still builds.
+- With a blank `:site :url` none of the URL-bearing output above is
+  emitted and analyse warns once; the site still builds.
 - Redirect stubs no longer carry `rel=canonical` (they are `noindex`), and
   their `<html lang>` is the default language's, not a hard-coded `en`.
 - The demo site's `:url` is `https://clogem-demo.example` (reserved TLD), so
   it no longer emits canonicals on the real domain.
+- `og:locale` and `og:locale:alternate` are emitted even with a blank
+  `:site :url` (they name languages, not URLs), and a site's own
+  `assets/robots.txt` is copied to the root without one too.
+- `:site :url` is validated: no scheme and host is a config error (every
+  canonical came out relative); a path that repeats `:base`
+  (`https://u.github.io/repo` with `:base "/repo/"`) is a config warning
+  saying to drop the path (the base was doubled). A trailing slash is fine.
+- `:seo :x-default` is read and validated; `:primary` is the only legal
+  value, anything else a config error.
+- The orphaned-translation heuristic is quieter: the distance allowed scales
+  with the shorter base name (0 up to 3 characters, 1 up to 6, 2 above), and
+  a post compares its date-stripped slug with posts of the same date only,
+  so a weekly series or `01.css.md` beside `02.js.ta.md` no longer warns.
+- `doctor`'s raised ex-info now carries `:clogem/warnings` beside
+  `:clogem/errors`, so a caller can see the warnings of a run that failed.
 
 ### Fixed
 
 - **The Tamil-only checks were vacuous.** CI and `build_test` grepped
   `lang="ta"`, which the switcher's `hreflang="ta" lang="ta"` matches on
   every page; both now assert on the `<html>` element of `/pages/171a98/`.
+- **A date that does not exist crashed `build` and `doctor`.** A
+  date-shaped but invalid `date:` (`"2026-02-30 10:00:00"`, `"2026-13-01"`,
+  `24:00:00`, `10:61:00`, an offset of `+25:00`) threw
+  `DateTimeException` from the feed code with no file named and no dist/;
+  0.1.1 built the same tree. It is now an analyse warning naming the file,
+  "`date:` value `…` is not a valid date", reported once by `doctor`, and the
+  article is treated as undated (sorts last, left out of feeds and
+  `/archives/`).
+- **An unquoted zoned YAML timestamp lost its zone.** `date:
+  2026-08-01T10:00:00+08:00` became `2026-08-01T02:00:00+08:00` in feeds
+  under `TZ=Asia/Singapore`. The instant is now kept at the written offset
+  (an EDN `#inst` gets `…Z`); a quoted `"…+08"` is read instead of silently
+  treated as zoneless.
+- **robots.txt named a sitemap that did not exist** under `:seo {:sitemap
+  false}`; the `Sitemap:` line is written only when the sitemap is.
+- **Feed summaries carried the heading anchor's `#`** ("…#Sub heading…");
+  `aria-hidden` elements are dropped before tags are stripped.
+- **One orphaned translation could draw two contradictory diagnostics** —
+  the duplicate-number error suggesting one rename and a warning suggesting
+  another. A file covered by the duplicate-number error is now skipped by
+  the orphan check.
+- **Removing `:en` changed the fallback chain from 0.1.1's.** The default
+  `[:site-default :en]` was filtered to the configured languages, so a
+  config map's `:en` value lost to its first value; only a chain the site
+  wrote is now validated, and the default is kept as is.
+- **A per-language `:site :author`** (`{:en "Jane" :zh-Hans "简"}`) was
+  ignored by feeds and the byline; it is resolved per language.
+- **Article hrefs were not percent-encoded** (since 0.1.1): lists, the
+  sidebar, prev/next, the variant bar and markdown links emitted a CJK or
+  spaced permalink raw, unlike every other href.
 
 ### Documentation
 

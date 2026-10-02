@@ -1094,7 +1094,7 @@ Rules and their sources (all from Google's *Localized versions of your pages*, v
   (`…/page/N/`) is self-canonical with **no** hreflang, because page N holds different articles in
   each language. Every canonical, hreflang, sitemap, feed and robots.txt URL is `:site :url` plus the
   base-inclusive path; with a blank `:site :url` none of them is emitted and analyse warns once
-  (§11.2 item 30).
+  (§11.2 item 30). `og:locale` needs no URL and is emitted either way.
 - **Sitemap.** One `<url>` per indexable page — articles, catalogue pages, homes, index overviews,
   filtered indexes and pagination pages; not redirect stubs — and every page with a set carries
   `<xhtml:link rel="alternate" hreflang>` children for the whole set, itself and x-default included,
@@ -1103,15 +1103,17 @@ Rules and their sources (all from Google's *Localized versions of your pages*, v
   as equivalent; emitting both is allowed and costs nothing. (HTTP `Link:` headers are the third
   documented method and are unavailable — GitHub Pages does not allow custom headers.) sitemaps.org's
   XSD rejects `xhtml:link`, so CI does not schema-check the sitemap. **robots.txt** (`User-agent: *`,
-  `Allow: /`, `Sitemap: …`) is emitted only under base `/`, since it counts only at the host root; a
-  site's own `assets/robots.txt` is copied there instead (§11.2 item 33).
+  `Allow: /`, and `Sitemap: …` when the sitemap is on) is emitted only under base `/`, since it counts
+  only at the host root; a site's own `assets/robots.txt` is copied there instead, URL or not (§11.2
+  item 33).
 - **Feeds.** One Atom feed per language (`/feed.xml` for the default language, `/zh-Hans/feed.xml`, …),
   `xml:lang` on the root, each listing only that language's own variants — the 20 newest by `date`,
   in `newest-first` order — with an `hreflang` alternate link per other translation (RFC 4287
   §4.2.7.4), a plain-text `summary` only from a `<!-- more -->` excerpt, and a `category` per
   category and tag. Dates are RFC 3339 with an offset; a zoneless date is read in the JVM default
   zone, which is `TZ` (the site's CI sets `Asia/Singapore`, so `+08:00`) — the same zone fm-fix fills
-  dates in. Every page links its own language's feed for autodiscovery. Details: §11.2 item 32.
+  dates in — and a zoned one, quoted or not, keeps its instant. A date that does not exist is a
+  warning and the article is treated as undated. Every page links its own language's feed for autodiscovery. Details: §11.2 item 32.
 
 ### 6.7 Search: Pagefind across five languages
 
@@ -2110,6 +2112,12 @@ and canonical pages, ogp.me, Facebook's locale list, RFC 4287 and sitemaps.org.
     dropped) plus the base-inclusive, percent-encoded path — the pattern the redirect stub already
     used. A blank `:site :url` skips every one of them, and analyse warns once, so `build` and
     `doctor` both say it; it is not an error, because a new site must build before it has a domain.
+    Only what needs a URL is skipped: `og:locale` and `og:locale:alternate` name languages and are
+    emitted anyway, and a site's own `assets/robots.txt` is still copied to the root (P3-A.1). A
+    non-blank `:site :url` must be an origin: one with no scheme and host (`u.github.io`) is a config
+    error, since every canonical would come out relative; one whose path repeats `:base`
+    (`https://u.github.io/repo` with `:base "/repo/"`) is a config warning telling the site to drop
+    the path, since every absolute URL would carry the base twice. A trailing slash is accepted.
     The demo's `:url` is `https://clogem-demo.example`: `.example` is reserved (RFC 2606), and the
     demo used to emit canonicals on the real `echojustus.github.io`.
 31. **`<head>` carries canonical, hreflang and `og:locale` (§6.6, D-P3-2).** `layout/document` emits
@@ -2120,7 +2128,10 @@ and canonical pages, ogp.me, Facebook's locale list, RFC 4287 and sitemaps.org.
     `og:locale:alternate` per other language in the set. The sets are listed in §6.6; pagination past
     page 1 has none. §6.6's example `og:locale` `zh_Hans` / `en` was invalid (ogp.me's
     `language_TERRITORY`; Facebook's list) and is corrected; `:og` defaults to `en_US`, `zh_CN`,
-    `zh_TW`, `ms_MY`, `ta_IN` and is a config error unless it matches `[a-z]{2}_[A-Z]{2}`. Redirect
+    `zh_TW`, `ms_MY`, `ta_IN` and is a config error unless it matches `[a-z]{2}_[A-Z]{2}`.
+    `:seo :x-default` is read and validated: `:primary` (the bare identity URL, as above) is its only
+    legal value and any other is a config error repaired to it, so a future option has a home rather
+    than a key nothing reads (P3-A.1). Redirect
     stubs: **no canonical** — the stub's old `rel=canonical` to its target is dropped, since the stub
     is `noindex` and noindex beside a canonical is a conflicting signal; never in a set; not in the
     sitemap; `<html lang>` is the default language's `:html-lang`, not a hard-coded `en`. There is no
@@ -2130,15 +2141,30 @@ and canonical pages, ogp.me, Facebook's locale list, RFC 4287 and sitemaps.org.
     `/<lang>/feed.xml` otherwise (model.clj's prefix rule; the name stays `feed.xml`). Each lists that
     language's own variants: the 20 newest by `date`, in `newest-first` order. Feed: `xml:lang`, `id`
     = `rel=self` = the feed's absolute URL, `rel=alternate` → the language's home, the localized site
-    title, `updated` = the newest entry's date, `author` = `:site :author` (a string or `{:name}`)
-    else the site title. Entry: `id` = `rel=alternate` = the variant's absolute URL, one
+    title, `updated` = the newest entry's date, `author` = `:site :author` resolved for the feed's
+    language — a string, `{:name … :link …}` whose `:name` may be per-language, or a per-language map
+    `{:en "Jane" :zh-Hans "简"}` (`i18n/resolve-author`, which the article byline uses too; 0.1.1
+    ignored the last shape) — else the site title. Entry: `id` = `rel=alternate` = the variant's absolute URL, one
     `rel=alternate hreflang` link per other variant (RFC 4287 §4.2.7.4), `title`, `published` =
     `updated` = `date`, a plain-text `summary` only when there is a `<!-- more -->` excerpt (block
     tags become spaces, inline tags vanish, so a CJK sentence is not split), and a `category` per
     category and tag. Dates are RFC 3339 with an offset; a date that carries a zone keeps it, and a
     zoneless one is read in the JVM default zone (`TZ`; the site's CI sets `Asia/Singapore`, so
-    `+08:00`, the zone fm-fix already fills dates in). Two choices the decision left open: an
-    **undated** article is left out (Atom requires `updated`; `doctor` already reports it), and a
+    `+08:00`, the zone fm-fix already fills dates in). A quoted zone may be `Z`, `±hh:mm`, `±hhmm`
+    or `±hh` (`"…+08"` used to be dropped silently). An **unquoted** YAML timestamp is a special
+    case: SnakeYAML resolves `date: 2026-08-01T10:00:00+08:00` and `date: 2026-08-01 10:00:00` alike
+    to a bare `java.util.Date`, and 0.1.1's `canonical-date` rendered both zoneless in UTC, which
+    `TZ` then re-read — 8 hours early under `Asia/Singapore` for the zoned one. `canonical-date` now
+    reads the zone off the raw `date:` line and, when there is one, keeps the instant at the
+    written offset (`2026-08-01T10:00:00+08:00`; an EDN `#inst` is always an instant, so it gets
+    `…Z`); a zoneless unquoted timestamp keeps 0.1.1's reading. fm-fix never rewrites a `date:`
+    that exists, so a second fm-fix changes nothing (P3-A.1). A date that is date-shaped but does
+    not exist — `2026-02-30`, `2026-13-01`, `24:00:00`, `10:61:00`, an offset of `+25:00` — used to
+    reach `java.time` at render and crash `build` and `doctor` with no file named (§11.2 item 2's
+    invariant); it is now an analyse warning naming the file ("`date:` value `2026-02-30 10:00:00`
+    is not a valid date"), and the article is treated as undated everywhere: it sorts last and
+    feeds and `/archives/` leave it out (`util/parse-date`, P3-A.1). Two choices the decision left
+    open: an **undated** article is left out (Atom requires `updated`; `doctor` already reports it), and a
     language with no articles yet gets an **empty** feed whose `updated` is the site's newest date —
     deterministic, unlike the build time — so the autodiscovery link every page carries
     (`<link rel=alternate type=application/atom+xml hreflang=…>`) never names a missing file, and a
@@ -2146,26 +2172,35 @@ and canonical pages, ogp.me, Facebook's locale list, RFC 4287 and sitemaps.org.
     which has English articles only. Gated by `:seo {:feeds true}`, a new default. clojure.data.xml
     under bb 1.13 turns an unqualified `:xmlns` attribute into `xmlns:b="…Atom"`, so the tags are
     `alias-uri`-qualified keywords with the namespace declared on the root. All five demo feeds
-    validate against RFC 4287 Appendix B's RELAX NG schema (Jing).
+    validate against RFC 4287 Appendix B's RELAX NG schema (Jing), as do EchoJustus.github.io's
+    five. A feed `summary` drops `aria-hidden` elements before stripping tags, so a heading's `#`
+    anchor no longer reads "…#Sub heading…" (P3-A.1).
 33. **`/sitemap.xml` and `/robots.txt` (§6.6, D-P3-4).** The sitemap (base-inclusive, at the deploy
     root) has one `<url>` per indexable page and the whole set, x-default included, as `xhtml:link` on
     every page that has one; no `lastmod`, `priority` or `changefreq`. `:seo :sitemap false` and
     `:seo :hreflang false` switch the sitemap, and hreflang in heads and sitemap, off. robots.txt
-    (`User-agent: *`, `Allow: /`, `Sitemap: <absolute sitemap URL>`) is written only when the base is
-    `/`, because robots.txt counts only at the host root. A site's own `assets/robots.txt` wins: it
-    is copied to the root (user assets otherwise land under `/assets/`, where robots.txt means
-    nothing) and none is generated. No XSD check in CI — sitemaps.org's XSD rejects `xhtml:link`.
+    (`User-agent: *`, `Allow: /`, and `Sitemap: <absolute sitemap URL>` only when the sitemap is on —
+    under `:seo :sitemap false` the line used to name a 404) is written only when the base is `/`,
+    because robots.txt counts only at the host root. A site's own `assets/robots.txt` wins: it is
+    copied to the root (user assets otherwise land under `/assets/`, where robots.txt means
+    nothing) and none is generated — with or without a `:site :url`, since it needs none. No XSD check in CI — sitemaps.org's XSD rejects `xhtml:link`.
 34. **`doctor` and `build` warn on a translation orphaned by a renamed source (§6.1, §6.2, §8 Phase 3,
     D-P3-5).** It fires, in analyse, when an identity group has exactly one variant, that variant is
     not in the default language, its file has no explicit `lang:` front matter (writing one is how
     an author confirms the article stands alone), and the same directory holds a default-language
-    group lacking that language whose base name equals it case-insensitively or is within
-    Damerau-Levenshtein distance 2: "`<file>` looks like a translation of `<other file>` whose source
+    group lacking that language whose base name equals it case-insensitively or is within a
+    Damerau-Levenshtein distance scaled by the shorter name's length — 0 for 3 characters or fewer,
+    1 for 4–6, 2 above (a flat 2 paired `01.css.md` with `02.js.ta.md`). A post compares its
+    date-stripped slug, and only with a post of the same date: `2026-08-01-weekly.md` and
+    `2026-08-08-weekly.ms.md` are two posts of a series, not a rename (P3-A.1). The message: "`<file>` looks like a translation of `<other file>` whose source
     was renamed — rename it to `<suggested name>`, or add `lang: <code>` to its front matter to keep
     it as a standalone article." When the two share a sidebar number the scanner's
     duplicate-sidebar-number error already fires; that error keeps its level and gains the hint
-    (without the `lang:` alternative, which would not resolve a collision), and the model check skips
-    same-number candidates so there is never a second diagnostic. The demo's four legitimate
+    (without the `lang:` alternative, which would not resolve a collision), and the model check
+    skips any file that shares its number with another article in its directory, so there is never
+    a second diagnostic. (It used to skip only the same-number *candidate*: `06.timing.md`,
+    `07.timings.md` and `06.Timing.ms.md` drew the error suggesting `06.timing.ms.md` AND a warning
+    suggesting `07.timings.ms.md` — P3-A.1.) The demo's four legitimate
     single-language articles (`tamil-only.ta`, `hawker-guide.ms`, `04.中文笔记/01.first.zh-Hans`, the
     Tamil post) do not fire it, and its one-warning invariant holds.
 35. **`doctor` and `build` check the site's string files (§6.5, D-P3-6).** In analyse, over every
@@ -2179,9 +2214,11 @@ and canonical pages, ogp.me, Facebook's locale list, RFC 4287 and sitemaps.org.
     now `requested lang → :i18n :fallback`, default `[:site-default :en]` (§5.6), with
     `:site-default` read as `:langs :default`, for `tr`, `resolve-str` and category labels alike
     (`config/fallback-chain`). A value that is not a vector of configured language keywords or
-    `:site-default` is a config error, repaired to the default. The built-in default names `:en`,
-    which a site may have removed from `:locales`; that is not the site's error, so the default
-    alone is filtered silently. Past the last fallback, production still renders the key's name and
+    `:site-default` is a config error, repaired to the default. Only a chain the site wrote is
+    validated: the built-in default names `:en`, which a site may have removed from `:locales`, and
+    it is kept **unfiltered**, so a config map's `:en` value still beats its first value (0.1.1's
+    behaviour; filtering it made `:title {:ta "TA" :en "EN"}` show TA on a site with default
+    `:zh-Hans` — P3-A.1). Past the last fallback, production still renders the key's name and
     dev `⟦k⟧`.
 37. **Pagefind does not word-segment zh-Hant (§6.7, §10, Appendix A item 7).** v2.1 read "zh-Hant is
     segmented" off the primary-subtag match in `should_segment`; it is routed to charabia, but
