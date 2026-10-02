@@ -90,9 +90,11 @@ a:hover { text-decoration: underline; }
   padding: 0.4rem 0.8rem; background: var(--bodyBg); border: 1px solid var(--borderColor); border-radius: 6px; z-index: 20; }
 .clogem-navbar__menu li { padding: 0.2rem 0; }
 
-.clogem-langs { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; }
+/* the list wraps, like the navbar around it: a long :label used to widen a
+ * 360 px page past the viewport */
+.clogem-langs { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
 .clogem-langs__label { color: var(--textColorSubtle); font-size: 0.85rem; }
-.clogem-langs ul { list-style: none; display: flex; gap: 0.6rem; margin: 0; padding: 0; }
+.clogem-langs ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; margin: 0; padding: 0; }
 .clogem-langs .is-current { color: var(--textColorSubtle); font-weight: 600; }
 
 .clogem-shell {
@@ -121,6 +123,9 @@ a:hover { text-decoration: underline; }
 }
 
 .clogem-main { min-width: 0; }
+/* focus lands here when the banner is dismissed (js/lang.js); the column
+ * itself is not a control, so it draws no ring */
+.clogem-main[tabindex="-1"]:focus { outline: none; }
 .clogem-article h1 { margin-top: 0; }
 .clogem-meta { color: var(--textColorSubtle); font-size: 0.85rem; display: flex; gap: 1rem; flex-wrap: wrap; }
 .clogem-langs a.is-untranslated { opacity: 0.6; }
@@ -130,6 +135,30 @@ a:hover { text-decoration: underline; }
 }
 .clogem-variants { font-size: 0.9rem; display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: baseline; }
 .clogem-variants__links { display: flex; gap: 0.6rem; }
+
+/* D-P3-14: the "also available" note js/lang.js inserts at the top of the
+ * main column — in the flow, so it moves the page down by its own height and
+ * covers nothing */
+.clogem-lang-banner {
+  display: flex; align-items: center; gap: 0.75rem; margin: 0 0 1rem;
+  padding: 0.5rem 0.75rem; border: 1px solid var(--borderColor);
+  border-left: 3px solid var(--accent); border-radius: 4px; font-size: 0.9rem;
+}
+/* min-width:0 lets the text shrink below its longest word, and the link may
+ * break anywhere: a long :label used to push the dismiss button off-screen
+ * at 360 px */
+.clogem-lang-banner__text { flex: 1; min-width: 0; }
+.clogem-lang-banner__text a { overflow-wrap: anywhere; }
+.clogem-lang-banner__dismiss {
+  flex: none; font: inherit; font-size: 1.1rem; line-height: 1; color: inherit;
+  background: none; border: 1px solid transparent; border-radius: 4px;
+  padding: 0.15rem 0.45rem; cursor: pointer;
+}
+.clogem-lang-banner__dismiss:hover { border-color: var(--borderColor); }
+.clogem-lang-banner__dismiss:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* D-P3-15: the giscus widget below the article */
+.clogem-comments { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--borderColor); }
 
 .clogem-content :is(h2, h3, h4, h5, h6) { scroll-margin-top: 4rem; }
 .header-anchor { opacity: 0; margin-left: 0.35rem; text-decoration: none; }

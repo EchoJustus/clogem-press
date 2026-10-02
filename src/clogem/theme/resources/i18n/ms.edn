@@ -66,4 +66,10 @@
  :search/filter-selected-one  "[COUNT] dipilih"
  :search/filter-selected-many "[COUNT] dipilih"
  :search/input-hint           "Hasil akan dipaparkan semasa anda menaip"
- :search/loading              "Memuatkan"}
+ :search/loading              "Memuatkan"
+ ;; The "also available" banner (D-P3-14): written in the READER'S chosen
+ ;; language, {{lang}} being that language's own :label.
+ ;; New in 0.2.0, and these strings need native review (DESIGN §10).
+ :banner/available            "Halaman ini juga tersedia dalam {{lang}}."
+ :banner/read                 "Baca dalam {{lang}} →"
+ :banner/dismiss              "Tutup"}

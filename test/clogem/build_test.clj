@@ -974,20 +974,20 @@
 (deftest the-switcher-marks-an-untranslated-target
   (testing "fix 14: on an English-only article the ta entry lands on /ta/ and says why"
     (let [html (slurp-out "pages" "3ce486" "index.html")]
-      (is (re-find #"<a class=\"is-untranslated\" href=\"/ta/\" hreflang=\"ta\" lang=\"ta\">தமிழ்<span class=\"clogem-visually-hidden\" lang=\"en\"> \(Shown in English — not yet translated\)</span></a>" html))
-      (is (= 1 (count (re-seq #"Shown in English — not yet translated" (re-find #"(?s)<a class=\"is-untranslated\" href=\"/ta/\".*?</a>" html))))
+      (is (re-find #"<a class=\"is-untranslated\" data-clogem-lang=\"ta\" href=\"/ta/\" hreflang=\"ta\" lang=\"ta\">தமிழ்<span class=\"clogem-visually-hidden\" lang=\"en\"> \(Shown in English — not yet translated\)</span></a>" html))
+      (is (= 1 (count (re-seq #"Shown in English — not yet translated" (re-find #"(?s)<a class=\"is-untranslated\" data-clogem-lang=\"ta\" href=\"/ta/\".*?</a>" html))))
           "fix F: the notice is said once — visually-hidden text, no duplicate `title`")
       (is (not (re-find #"is-untranslated[^>]* title=" html)))
       (is (= 4 (count (re-seq #"class=\"is-untranslated\"" html))) "every language the article lacks, not the current one")))
   (testing "a translated target is not marked"
     (let [html (slurp-out "pages" "643259" "index.html")]
-      (is (re-find #"<a href=\"/zh-Hans/pages/643259/\" hreflang=\"zh-Hans\"" html))
-      (is (re-find #"class=\"is-untranslated\" href=\"/ms/\"" html))))
+      (is (re-find #"<a data-clogem-lang=\"zh-Hans\" href=\"/zh-Hans/pages/643259/\" hreflang=\"zh-Hans\"" html))
+      (is (re-find #"class=\"is-untranslated\" data-clogem-lang=\"ms\" href=\"/ms/\"" html))))
   (testing "index pages have no untranslated entries"
     (is (not (str/includes? (slurp-out "categories" "index.html") "is-untranslated"))))
   (testing ":show-fallback-notice false drops the text but keeps the class"
     (let [html (page-html #(assoc-in % [:i18n :show-fallback-notice] false) "/pages/3ce486/")]
-      (is (str/includes? html "class=\"is-untranslated\" href=\"/ta/\""))
+      (is (str/includes? html "class=\"is-untranslated\" data-clogem-lang=\"ta\" href=\"/ta/\""))
       (is (not (str/includes? html "clogem-visually-hidden"))))))
 
 (deftest category-labels-apply-to-sidebar-groups-and-catalogue-headings
@@ -1704,3 +1704,38 @@
       (is (str/includes? h "<a class=\"clogem-tag\" data-pagefind-filter=\"tag\" href=\"/tags/meta/\">meta</a>"))
       (is (str/includes? h "<a data-pagefind-filter=\"category\" href=\"/categories/notes/\">Notes</a>"))
       (is (str/includes? h "<div class=\"clogem-content\" data-clogem-terms=\"Notes meta archive\" data-pagefind-index-attrs=\"data-clogem-terms\">")))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 3 part C on the demo (D-P3-13 … D-P3-15)
+
+(deftest the-demo-opens-one-giscus-thread-per-identity
+  (testing "every variant of every demo article carries one giscus script whose
+            data-term is the bare permalink; catalogues, homes and indexes none"
+    (let [giscus-of (fn [& parts]
+                      (re-seq #"<script [^>]*data-term=\"([^\"]*)\"[^>]*src=\"https://giscus\.app/client\.js\"" (apply slurp-out parts)))]
+      (doseq [[pl g] (:articles *model*)
+              [l _] (:variants g)
+              :let [uri  (str/replace (model/variant-url (:cfg *model*) g l) #"^/|/$" "")
+                    tags (giscus-of uri "index.html")]]
+        (cond
+          (:page-component g)
+          (is (empty? tags) (str uri " is a catalogue"))
+          ;; §6.2: the primary's `comment: false` turns every variant off
+          (false? (get-in g [:variants (:primary g) :front-matter :comment]))
+          (is (empty? tags) (str uri " has comments off"))
+          :else
+          (is (= [pl] (map second tags)) uri)))
+      (testing "the demo exercises a whole identity with comments off (check_giscus.py
+                must accept it)"
+        (is (empty? (giscus-of "pages" "284c67" "index.html")))
+        (is (empty? (giscus-of "zh-Hans" "pages" "284c67" "index.html"))))
+      (is (empty? (giscus-of "index.html")))
+      (is (empty? (giscus-of "zh-Hans" "categories" "index.html"))))))
+
+(deftest the-demo-offers-the-banner-on-a-bare-translated-article
+  (let [h (slurp-out "pages" "643259" "index.html")]
+    (is (str/includes? h "<script id=\"clogem-lang-data\" type=\"application/json\">{\"id\":\"/pages/643259/\",\"lang\":\"en\",\"mode\":\"banner\""))
+    (is (str/includes? h "\"zh-Hans\":{\"url\":\"/zh-Hans/pages/643259/\",\"lang\":\"zh-Hans\",\"dir\":\"ltr\",\"available\":\"本页也有简体中文版本。\""))
+    (is (not (str/includes? (slurp-out "zh-Hans" "pages" "643259" "index.html") "clogem-lang-data")))
+    (is (exists? "clogem" "js" "lang.js"))
+    (is (exists? "clogem" "js" "comments.js"))))

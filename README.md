@@ -18,14 +18,17 @@ The full design rationale, with every external claim verified against primary
 sources, is in [DESIGN.md](DESIGN.md); thirteen research reports back it in
 [`research/`](research/).
 
-> **Status: Phase 2 complete (0.1.1).** The generator scans a content tree,
-> resolves identity groups, normalizes front matter, and renders a multilingual
+> **Status: Phase 3 complete (0.2.0).** The generator scans a content tree,
+> resolves identity groups, normalizes front matter, and renders a five-language
 > site with vdoing's core surface: collapsible sidebar tree, category / tag /
 > archive index pages, a paginated blog homepage with sticky posts, breadcrumbs
 > and prev/next, catalogue pages, `@pages/` auto-creation, a TOC bar with
 > scroll-spy, and the eight markdown containers plus `cardList` /
-> `cardImgList`. Search, syntax highlighting, hreflang/feeds and the full
-> theme are Phases 3–4 — see
+> `cardImgList`. Phase 3 adds canonical and hreflang links, per-language Atom
+> feeds and a sitemap, Pagefind search with one index per language, a
+> remembered language choice with an "also available in …" banner, and giscus
+> comments with one thread per article across its languages. Syntax
+> highlighting and the full theme are Phase 4 — see
 > [the implementation plan](DESIGN.md#8-implementation-plan).
 
 ## Install

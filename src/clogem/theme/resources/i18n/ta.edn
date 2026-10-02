@@ -64,4 +64,10 @@
  :search/filter-selected-one  "[COUNT] தேர்ந்தெடுக்கப்பட்டது"
  :search/filter-selected-many "[COUNT] தேர்ந்தெடுக்கப்பட்டன"
  :search/input-hint           "நீங்கள் தட்டச்சு செய்யும்போது முடிவுகள் தோன்றும்"
- :search/loading              "ஏற்றுகிறது"}
+ :search/loading              "ஏற்றுகிறது"
+ ;; The "also available" banner (D-P3-14): written in the READER'S chosen
+ ;; language, {{lang}} being that language's own :label.
+ ;; New in 0.2.0, and these strings need native review (DESIGN §10).
+ :banner/available            "இந்தப் பக்கம் {{lang}} மொழியிலும் உள்ளது."
+ :banner/read                 "{{lang}} மொழியில் படிக்க →"
+ :banner/dismiss              "மூடு"}

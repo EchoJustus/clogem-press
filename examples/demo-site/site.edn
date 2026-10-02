@@ -32,6 +32,7 @@
 
  :i18n {:strings-dir "i18n"
         :prefix-default? false          ; D-10: primary variant at the bare /pages/…/
+        :preference :banner             ; D-11: a stored preference offers a banner, never redirects
         :missing-key :warn
         ;; D-12: display-only labels; the category key and URL slug stay "Basics"
         :category-labels {"Basics" {:zh-Hans "基础" :zh-Hant "基礎"}}
@@ -58,4 +59,11 @@
  :theme {:default-mode :auto :page-style :card
          :per-page 3}                    ; small, so the demo has a /page/2/
  :search   {:provider :pagefind}   ; D-P3-8: CI indexes the demo in all five languages
- :comments {:provider :none}}
+ ;; D-P3-15: giscus on every article, one thread per identity. The ids are
+ ;; well-formed placeholders for a repository that does not exist, so the
+ ;; markup is real and testable but the widget itself never loads.
+ :comments {:provider    :giscus
+            :repo        "example/clogem-demo"
+            :repo-id     "R_kgDOdemo0001"
+            :category    "Announcements"
+            :category-id "DIC_kwDOdemo0001"}}
