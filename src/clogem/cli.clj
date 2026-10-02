@@ -15,7 +15,8 @@
             [clogem.pages :as pages]
             [clogem.render :as render]
             [clogem.scan :as scan]
-            [clogem.search :as search]))
+            [clogem.search :as search]
+            [clogem.tools :as tools]))
 
 ;; ---------------------------------------------------------------------------
 ;; Shared option spec
@@ -180,13 +181,25 @@
           (assoc result :search {:languages languages :pages pages}))
         result))))
 
-(defn ^{:org.babashka/cli {:spec common-spec}}
+(defn ^{:org.babashka/cli
+        {:spec (assoc common-spec
+                      :tool {:desc "The tool to fetch: pagefind, chroma or fswatcher."
+                             :default "pagefind" :ref "<name>"})}}
   fetch-tool
-  "§4's fetch-tool helper: fetch, verify and cache the Pagefind binary this
-  site pins, and print its path — what CI exports as CLOGEM_PAGEFIND."
+  "§4's fetch-tool helper: fetch, verify and cache a binary tool this site
+  pins — Pagefind by default, or `--tool chroma` / `--tool fswatcher` — and
+  print its path, which is what CI exports as CLOGEM_PAGEFIND."
   [opts]
-  (let [cfg (load-cfg! opts)
-        bin (search/ensure-binary! cfg)]
+  (let [id   (str/lower-case (str (or (:tool opts) "pagefind")))
+        tool (get tools/descriptors (keyword id))
+        _    (when-not tool
+               (throw (ex-info (str "clogem-press: fetch-tool: unknown tool " (pr-str id) "; "
+                                    "the tools are " (str/join ", " (map name (sort (keys tools/descriptors)))) ".")
+                               {:babashka/exit 1})))
+        cfg  (load-cfg! opts)
+        bin  (if (= :pagefind (:id tool))
+               (search/ensure-binary! cfg)
+               (tools/ensure-binary! tool cfg))]
     (println bin)
     bin))
 

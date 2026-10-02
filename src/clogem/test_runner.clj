@@ -21,6 +21,7 @@
     clogem.build-test
     clogem.write-test
     clogem.search-test
+    clogem.tools-test
     clogem.lang-test
     clogem.comments-test])
 

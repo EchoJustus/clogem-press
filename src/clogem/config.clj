@@ -102,10 +102,14 @@
    :analytics {:provider :none}
    :seo     {:sitemap true :hreflang true :x-default :primary :feeds true}
    :build   {:out "dist"}
-   ;; D-P3-8: the per-platform hashes for the default version live in
-   ;; `clogem.search/known-sha256`, so a site that pins another version
-   ;; does not inherit hashes that cannot match it
-   :tools   {:pagefind {:version "1.5.2"}}})
+   ;; D-P3-8: the per-platform hashes for the default version live in the
+   ;; tool's descriptor (`clogem.tools`), so a site that pins another
+   ;; version does not inherit hashes that cannot match it. Chroma and the
+   ;; fswatcher pod are fetchable (`bb fetch-tool --tool …`) but not yet
+   ;; used by the build (Phase 4 Tasks C and D).
+   :tools   {:pagefind  {:version "1.5.2"}
+             :chroma    {:version "2.27.0"}
+             :fswatcher {:version "0.0.7"}}})
 
 ;; ---------------------------------------------------------------------------
 ;; Loading
@@ -307,18 +311,23 @@
                              "Pagefind is the only search provider (DESIGN.md §6.7).")
                 (check-enum! [:theme :fonts :tamil] #{:system :self-hosted}
                              ":self-hosted serves a subset Noto Sans Tamil from the site (DESIGN.md §6.9)."))
-        {:keys [version sha256]} (get-in cfg [:tools :pagefind])]
-    (when-not (and (string? version) (re-matches u/version-re version))
-      (diag/error! nil (str ":tools :pagefind :version is " (pr-str version)
-                            ", which is not a version string like \"1.5.2\".")))
-    (when (some? sha256)
-      (when-not (and (map? sha256)
-                     (every? (fn [[k v]] (and (string? k) (string? v) (re-matches #"(?i)[0-9a-f]{64}" v)))
-                             sha256))
-        (diag/error! nil (str ":tools :pagefind :sha256 must map each platform to its hex sha256, e.g. "
-                              "{\"x86_64-unknown-linux-musl\" \"aeb1…\"}.")
-                     (str "One hash cannot cover several release assets (DESIGN.md §11.2, D-P3-8); "
-                          "copy each from the release's .sha256 file."))))
+        tool-pins {:pagefind  ["1.5.2"  "x86_64-unknown-linux-musl" "aeb1…" "the release's .sha256 file"]
+                   :chroma    ["2.27.0" "linux-amd64"               "91e1…" "the release's checksums.txt"]
+                   :fswatcher ["0.0.7"  "linux-amd64"               "f94c…" "your own sha256 of the zip"]}]
+    ;; every pinned tool is validated alike (Phase 4 Task A)
+    (doseq [[id [eg-version eg-plat eg-hash source]] tool-pins
+            :let [{:keys [version sha256]} (get-in cfg [:tools id])]]
+      (when-not (and (string? version) (re-matches u/version-re version))
+        (diag/error! nil (str ":tools " id " :version is " (pr-str version)
+                              ", which is not a version string like \"" eg-version "\".")))
+      (when (some? sha256)
+        (when-not (and (map? sha256)
+                       (every? (fn [[k v]] (and (string? k) (string? v) (re-matches #"(?i)[0-9a-f]{64}" v)))
+                               sha256))
+          (diag/error! nil (str ":tools " id " :sha256 must map each platform to its hex sha256, e.g. "
+                                "{\"" eg-plat "\" \"" eg-hash "\"}.")
+                       (str "One hash cannot cover several release assets (DESIGN.md §11.2, D-P3-8); "
+                            "copy each from " source ".")))))
     cfg))
 
 (def comments-keys
