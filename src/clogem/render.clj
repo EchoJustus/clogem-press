@@ -16,6 +16,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [hiccup2.core :as h]
+            [clogem.assets :as assets]
             [clogem.config :as config]
             [clogem.diag :as diag]
             [clogem.i18n :as i18n]
@@ -488,17 +489,84 @@
       (fs/path out "index.html")
       (fs/path out rel "index.html"))))
 
-(defn export-pages!
-  "Write every page. Returns the files written."
-  [cfg pages]
-  (let [out  (config/out-dir cfg)
-        base (config/base-path cfg)]
-    (vec
-     (for [[uri render-fn] (sort-by key pages)]
-       (let [f (uri->file base out uri)]
-         (fs/create-dirs (fs/parent f))
-         (spit (fs/file f) (str doctype (h/html (render-fn))))
-         f)))))
+(def jobs-env
+  "The environment variable that bounds the render pool (D-P4-11)."
+  "CLOGEM_JOBS")
+
+(defn jobs
+  "How many pages render at once: `CLOGEM_JOBS` when it is a positive
+  integer, else the number of available processors. `CLOGEM_JOBS=1` renders
+  on the calling thread, page by page, exactly as 0.2.0 did. A value that
+  is not a positive integer is a warning, not an error."
+  []
+  (let [raw (u/blank->nil (str (System/getenv jobs-env)))
+        n   (some-> raw str/trim parse-long)]
+    (cond
+      (nil? raw) (.availableProcessors (Runtime/getRuntime))
+      (and n (pos? n)) n
+      :else (do (diag/warn! nil (str jobs-env " is " (pr-str raw) ", which is not a positive integer; "
+                                     "using the number of processors."))
+                (.availableProcessors (Runtime/getRuntime))))))
+
+(defn- render-page
+  "One page's bytes, rendered under its own diagnostic sink: [bytes ds]."
+  [render-fn]
+  (diag/collecting
+   (.getBytes (str doctype (h/html (render-fn))) "UTF-8")))
+
+(defn- render-failure
+  "An exception while rendering `uri`, as a build failure naming the page.
+  The cause is kept; so is its ex-data, under a guaranteed exit status."
+  [uri ^Throwable t]
+  (ex-info (str "could not render " uri ": " (or (ex-message t) (.getName (class t))))
+           (merge (ex-data t) {:babashka/exit 1 :clogem/uri uri})
+           t))
+
+(defn render-pages
+  "Render every page of a page map to bytes, in memory: a vector of
+  [uri bytes] sorted by URI, and the pages' diagnostics in the deterministic
+  order `diag/sorted` gives them, whatever order the pages finished in.
+
+  At most `n` pages (default `jobs`) render at once, on a bounded set of
+  worker threads that take the next page from a shared counter. Each worker
+  runs with the caller's dynamic bindings (`bound-fn`), and each page with
+  its own diagnostic sink, so the sinks never race. The first page that
+  throws — anything, `Throwable` included — stops the rest and is raised,
+  naming its URI; nothing has been written by then.
+
+  **Thread safety.** Everything a page render reads must be safe to share
+  between threads: the model and config are immutable values, and the
+  per-language search UI strings are `delay`s. Any cache a later change adds
+  to the render path (Phase 4 adds a Chroma highlighting cache) must be a
+  `ConcurrentHashMap`, an atom updated with pure functions, or otherwise
+  thread-safe — or it must be filled before rendering starts."
+  ([pages] (render-pages pages (jobs)))
+  ([pages n]
+   (let [entries (vec (sort-by key pages))
+         total   (count entries)
+         results (object-array total)
+         n       (max 1 (min (long n) total))]
+     (if (<= n 1)
+       (dotimes [i total]
+         (let [[uri f] (nth entries i)]
+           (aset results i (try (render-page f)
+                                (catch Throwable t (throw (render-failure uri t)))))))
+       (let [next-i  (java.util.concurrent.atomic.AtomicLong. 0)
+             failure (atom nil)
+             work    (bound-fn []
+                       (loop []
+                         (let [i (.getAndIncrement next-i)]
+                           (when (and (< i total) (nil? @failure))
+                             (let [[uri f] (nth entries i)]
+                               (try (aset results i (render-page f))
+                                    (catch Throwable t
+                                      (swap! failure #(or % (render-failure uri t))))))
+                             (recur)))))
+             workers (doall (repeatedly n #(future (work))))]
+         (doseq [w workers] @w)
+         (when-let [e @failure] (throw e))))
+     [(mapv (fn [i] [(key (nth entries i)) (first (aget results i))]) (range total))
+      (diag/sorted (mapcat #(second (aget results %)) (range total)))])))
 
 (defn copy-tree!
   "Copy a directory tree, never symlink (see the ns docstring). `skip?`, given
@@ -516,42 +584,26 @@
           target))))))
 
 (defn theme-resource-dir
-  "Locate the theme's static resources on the classpath, so they are found
-  regardless of the working directory — which matters because the generator is
-  normally invoked from the *site's* directory via `bb --config`."
+  "See `clogem.assets/theme-resource-dir`."
   []
-  (some-> (io/resource "clogem/theme/resources/css/theme.css")
-          .toURI fs/path fs/parent fs/parent))
+  (assets/theme-resource-dir))
 
-(defn export-assets!
-  "Copy the theme's and the site's assets. Returns the files written."
-  [cfg]
+(defn asset-outputs
+  "The theme's and the site's assets as outputs ({:file :bytes} or
+  {:file :source}): the theme's from `clogem.assets/files` — the exact bytes
+  their `?v=` fingerprints hash — and the site's own `assets/` tree, copied
+  (never linked) at write time."
+  [cfg theme-files]
   (let [out (config/out-dir cfg)]
     (vec
      (concat
-      (when-let [themed (theme-resource-dir)]
-        ;; the i18n EDN maps are build-time inputs, not site output; the
-        ;; fonts ship only to a site that asked for them (D-P3-12)
-        (mapcat (fn [sub]
-                  (let [from (fs/path themed sub)]
-                    (when (fs/directory? from)
-                      ;; a script ships only to a site that loads it: search.js
-                      ;; serves the Pagefind UI (D-P3-10), lang.js the
-                      ;; language switcher's preference (D-P3-13), comments.js
-                      ;; the giscus widget (D-P3-15)
-                      (copy-tree! from (fs/path out "clogem" sub)
-                                  (fn [rel]
-                                    (and (= "js" sub)
-                                         (case rel
-                                           "search.js"   (not (search/enabled? cfg))
-                                           "lang.js"     (not (layout/multilingual? cfg))
-                                           "comments.js" (not= :giscus (get-in cfg [:comments :provider]))
-                                           false)))))))
-                (cond-> ["css" "js" "icons"]
-                  (= :self-hosted (get-in cfg [:theme :fonts :tamil])) (conj "fonts"))))
+      (for [[rel bytes] theme-files]
+        {:file (fs/path out "clogem" rel) :bytes bytes})
       (let [user (config/assets-dir cfg)]
         (when (fs/directory? user)
-          (copy-tree! user (fs/path out "assets"))))))))
+          (for [p (sort (map str (fs/glob user "**")))
+                :when (fs/regular-file? p)]
+            {:file (fs/path out "assets" (fs/relativize user p)) :source (fs/path p)})))))))
 
 (defn- html-file? [p]
   (boolean (re-find #"(?i)\.html$" (str (fs/file-name p)))))
@@ -620,49 +672,142 @@
         rel (if (str/starts-with? s b) (subs s (count b)) (str/replace s #"^/+" ""))]
     (fs/path (config/out-dir cfg) rel)))
 
-(defn export-seo!
-  "Atom feeds, sitemap.xml and robots.txt (D-P3-3, D-P3-4). Feeds and the
-  sitemap need an absolute URL, so neither is written when `:site :url` is
-  blank (D-P3-1). robots.txt counts only at the host root, so it is written
-  only when the base is `/`: a site's own `<assets>/robots.txt` is copied
-  there — URL or not, since it needs none — and otherwise one is generated
-  when there is a URL. Returns the site-relative paths written."
+(defn seo-outputs
+  "Atom feeds, sitemap.xml and robots.txt (D-P3-3, D-P3-4), as outputs
+  ({:file :bytes :uri}). Feeds and the sitemap need an absolute URL, so
+  neither is produced when `:site :url` is blank (D-P3-1). robots.txt counts
+  only at the host root, so it is produced only when the base is `/`: a
+  site's own `<assets>/robots.txt` is copied there — URL or not, since it
+  needs none — and otherwise one is generated when there is a URL."
   [cfg model pages]
   (let [url?  (config/site-url-root cfg)
         model (cond-> model
                 (not (contains? model :site-files)) (assoc :site-files (pages/site-files cfg)))
         model (assoc model :by-rel-path (rel-path-index model) :strings (i18n/load-strings cfg))
-        write! (fn [uri content]
-                 (let [f (file-for cfg uri)]
-                   (fs/create-dirs (fs/parent f))
-                   (spit (fs/file f) content)
-                   uri))
+        out   (fn [uri content]
+                {:uri uri :file (file-for cfg uri) :bytes (.getBytes (str content) "UTF-8")})
         user-robots (fs/path (config/assets-dir cfg) "robots.txt")]
     (vec
      (concat
       (for [l (seo/feed-langs model)]
-        (write! (seo/feed-uri cfg l)
-                (seo/emit-xml (seo/feed-xml model l #(feed-summary model %1 %2)))))
+        (out (seo/feed-uri cfg l)
+             (seo/emit-xml (seo/feed-xml model l #(feed-summary model %1 %2)))))
       (when (and url? (get-in cfg [:seo :sitemap] true))
-        [(write! (seo/sitemap-uri cfg)
-                 (seo/emit-xml (seo/sitemap-xml cfg (keep (comp page-seo val) pages))))])
+        [(out (seo/sitemap-uri cfg)
+              (seo/emit-xml (seo/sitemap-xml cfg (keep (comp page-seo val) pages))))])
       (when (= "/" (config/base-path cfg))
         (cond
-          (fs/regular-file? user-robots) [(write! "/robots.txt" (slurp (fs/file user-robots)))]
-          url?                           [(write! "/robots.txt" (seo/robots-txt cfg))]))))))
+          (fs/regular-file? user-robots) [(out "/robots.txt" (slurp (fs/file user-robots)))]
+          url?                           [(out "/robots.txt" (seo/robots-txt cfg))]))))))
+
+;; ---------------------------------------------------------------------------
+;; Writing (D-P4-11)
+;;
+;; A build renders EVERYTHING into memory first — pages, theme assets, feeds,
+;; the sitemap — and only then touches `dist/`. An exception half-way through
+;; rendering used to leave a mixed tree: 150 new pages and 86 old ones, the
+;; new site title on some, a deleted variant's page still served, and the
+;; old feed.xml, sitemap.xml and pagefind/. Now it leaves `dist/` exactly as
+;; it was. Each file is then written atomically (a temp file in the same
+;; directory, renamed over the target) and only when its bytes changed, so a
+;; rebuild with no source change writes nothing at all.
+
+(def ^:private temp-marker ".clogem-tmp-")
+
+(defn- same-bytes?
+  "Does `f` already hold exactly `bytes`? A link is never \"the same\": the
+  rename replaces the link itself rather than writing through it."
+  [f ^bytes bytes]
+  (and (fs/regular-file? f {:nofollow-links true})
+       (= (alength bytes) (fs/size f))
+       (java.util.Arrays/equals bytes ^bytes (fs/read-all-bytes f))))
+
+(defn- write-atomically!
+  "Write `bytes` to `f` through a temp file in the same directory and an
+  atomic rename, so a reader (or a killed build) never sees half a file."
+  [f ^bytes bytes]
+  (let [dir (fs/parent f)
+        tmp (fs/path dir (str "." (fs/file-name f) temp-marker (System/nanoTime)))]
+    (fs/create-dirs dir)
+    (try
+      (java.nio.file.Files/write (fs/path tmp) bytes
+                                 ^"[Ljava.nio.file.OpenOption;"
+                                 (into-array java.nio.file.OpenOption []))
+      (fs/move tmp f {:replace-existing true :atomic-move true})
+      (finally (fs/delete-if-exists tmp)))))
+
+(defn- output-bytes
+  ^bytes [{:keys [bytes source]}]
+  (or bytes (fs/read-all-bytes source)))
+
+(defn- sweep-temp-files!
+  "Remove temp files a killed earlier build left in the directories this one
+  writes to — files only the build itself ever creates."
+  [files]
+  (doseq [d (distinct (map fs/parent files))
+          :when (fs/directory? d {:nofollow-links true})
+          p (fs/list-dir d)
+          :when (and (str/includes? (str (fs/file-name p)) temp-marker)
+                     (fs/regular-file? p {:nofollow-links true}))]
+    (fs/delete-if-exists p)))
+
+(defn write-outputs!
+  "Write each output whose bytes differ from what is on disk, atomically.
+  Returns {:written n :unchanged n :files [every output file]}."
+  [outputs]
+  (let [files (mapv :file outputs)]
+    (sweep-temp-files! files)
+    (reduce (fn [acc {:keys [file] :as o}]
+              (let [b (output-bytes o)]
+                (if (same-bytes? file b)
+                  (update acc :unchanged inc)
+                  (do (write-atomically! file b)
+                      (update acc :written inc)))))
+            {:written 0 :unchanged 0 :files files}
+            outputs)))
+
+(defn render-site
+  "Render the whole site into memory: every page, the theme's and the site's
+  assets, the feeds, the sitemap and robots.txt. Writes nothing. The pages'
+  diagnostics are emitted (in `diag/sorted` order) to the caller's sink.
+  Returns {:outputs [{:file :bytes|:source}] :pages n :articles n
+  :variants n :out dir}."
+  [cfg model]
+  (let [out         (config/out-dir cfg)
+        theme-files (assets/files cfg)
+        ;; the fingerprints every page's asset URLs carry are those of the
+        ;; very bytes asset-outputs writes (D-P4-7)
+        cfg         (assoc cfg :clogem/asset-versions (assets/versions theme-files))
+        model       (assoc model :cfg cfg)
+        pages       (page-map model)
+        base        (config/base-path cfg)
+        [rendered ds] (render-pages pages)
+        _           (diag/emit-all! ds)
+        page-outs   (mapv (fn [[uri bytes]] {:file (uri->file base out uri) :bytes bytes}) rendered)]
+    {:outputs  (vec (concat page-outs
+                            (asset-outputs cfg theme-files)
+                            (seo-outputs cfg model pages)))
+     :pages    (count page-outs)
+     :articles (count (:articles model))
+     :variants (reduce + (map #(count (:variants %)) (vals (:articles model))))
+     :out      (str out)}))
+
+(defn write-site!
+  "Write what `render-site` produced into the output directory, then sweep
+  the `.html` files no longer produced (§11.2 item 46). Never deletes
+  anything else — `CNAME`, `.nojekyll`, a verification file the site owner
+  or a CI step put there all stay. Returns the render summary plus
+  {:written :unchanged :stale}."
+  [{:keys [outputs out] :as rendered}]
+  (fs/create-dirs out)
+  (let [{:keys [written unchanged files]} (write-outputs! outputs)
+        stale (sweep-stale-html! out files)]
+    (-> rendered
+        (dissoc :outputs)
+        (assoc :written written :unchanged unchanged :stale (count stale)))))
 
 (defn build!
-  "Render and export. Returns a summary map."
+  "Render, then export: `render-site`, then `write-site!`. Returns a summary
+  map. A render failure raises before a single file is written."
   [cfg model]
-  (let [out (config/out-dir cfg)
-        pages (page-map model)]
-    (fs/create-dirs out)
-    (let [files  (export-pages! cfg pages)
-          assets (export-assets! cfg)
-          _      (export-seo! cfg model pages)
-          stale  (sweep-stale-html! out (concat files assets))]
-      {:pages (count files)
-       :stale (count stale)
-       :articles (count (:articles model))
-       :variants (reduce + (map #(count (:variants %)) (vals (:articles model))))
-       :out (str out)})))
+  (write-site! (render-site cfg model)))

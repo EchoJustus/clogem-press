@@ -343,8 +343,10 @@ var u=new URL(l.href);u.searchParams.set('t',Date.now());l.href=u.toString();});
                                          "initial")))
                       (notify-clients! (if (every? #(str/ends-with? (str %) ".css") changed)
                                          "css" "reload"))
-                      (catch Exception e
-                        (println "clogem-press: build failed —" (ex-message e))))))]
+                      ;; Throwable: a StackOverflowError or an
+                      ;; AssertionError in a render must not kill the loop
+                      (catch Throwable e
+                        (println "clogem-press: build failed —" (or (ex-message e) (str e)))))))]
     (rebuild [])
     (http/run-server (make-handler (fs/absolutize out) {:inject-reload? true}) {:port port})
     (println (format "clogem-press: dev server at http://localhost:%d/" port))

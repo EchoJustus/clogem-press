@@ -146,25 +146,32 @@
     ;; populated dist/. Every content ERROR — the numbered tree's, and
     ;; index*.md's and @pages/*'s, which analyse parses too — stops the build
     ;; here, before the ledger write and before dist/ exists. Render reports
-    ;; only warnings. What remains (DESIGN.md §11.2 item 2) is an EXCEPTION
-    ;; thrown during render, which can still leave a partial dist/.
+    ;; only warnings.
+    ;;
+    ;; D-P4-11: the whole site is then rendered into memory BEFORE the ledger
+    ;; or a single output file is written, so an exception thrown during
+    ;; render (§11.2 item 2) leaves dist/ and permalinks.edn exactly as they
+    ;; were, rather than a mix of this build's pages and the last one's.
     (let [[m ads]    (diag/collecting (analyse cfg))
           _          (when (seq (diag/errors ads)) (report! ads))
           [result rds]
           (diag/collecting
-           (when (config/write-front-matter? cfg)
-             (model/write-ledger! cfg (model/ledger-from-model m)))
-           (render/build! cfg m))
+           (let [rendered (render/render-site cfg m)]
+             (when (config/write-front-matter? cfg)
+               (model/write-ledger! cfg (model/ledger-from-model m)))
+             (render/write-site! rendered)))
           ds         (into (vec ads) rds)]
       (report! ds)
-      (println (format "clogem-press: %d pages (%d articles, %d variants) → %s"
-                       (:pages result) (:articles result) (:variants result) (:out result)))
+      (println (format "clogem-press: %d pages (%d articles, %d variants) → %s (%d written, %d unchanged)"
+                       (:pages result) (:articles result) (:variants result) (:out result)
+                       (:written result) (:unchanged result)))
       (when (pos? (:stale result 0))
         (println (format "clogem-press: removed %d stale page%s from %s"
                          (:stale result) (if (= 1 (:stale result)) "" "s") (:out result))))
       ;; D-P3-8: search runs last, over the finished dist/. A failure here is
       ;; a build error (exit 1) even though dist/ is already written — the
-      ;; known limitation of §11.2: CI stops before deploying it.
+      ;; known limitation of §11.2, left for Phase 5: CI stops before
+      ;; deploying it.
       (if (search/enabled? cfg)
         (let [{:keys [languages pages]} (search/index! cfg)]
           (println (format "clogem-press: search index → %s/%s (%d language%s, %d pages)"
