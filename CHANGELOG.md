@@ -1,5 +1,84 @@
 # Changelog
 
+## Unreleased
+
+Phase 4, Task A — foundations (DESIGN.md §8, §11.3 items 7, 11, 16, 18).
+The version stays 0.2.0.
+
+### Added
+
+- **Cache-busting** (D-P4-7). Every theme asset URL the layout emits
+  (`/clogem/…` CSS, JS and font CSS) carries `?v=<first 8 hex of the sha256
+  of the file as written to dist/>`, and Pagefind's UI files
+  `?v=<pinned Pagefind version>`, so GitHub Pages' 10-minute cache can no
+  longer pair new HTML with an old stylesheet. Our own CSS versions its
+  relative `url()`s too (the Tamil fonts). Implemented once, in
+  `clogem.assets/href`; the file layout is unchanged, and stripping every
+  `?v=` gives 0.2.0's bytes.
+- **Config key warnings** (part of D-P4-16). An unknown key anywhere in
+  `site.edn` warns with its path and the nearest known key; vdoing's
+  camelCase spellings (`pageStyle`, `htmlModules`, `bodyBgImg`, `updateBar`,
+  …) warn with the clogem-press key; keys planned for a later Phase 4 task
+  warn "planned, not implemented in 0.2.0"; a non-empty
+  `:theme :html-modules`, an `:analytics :provider` other than `:none` and
+  `:seo :indexnow :enabled true` warn that they have no effect. All
+  warnings, never errors. One table, `clogem.config/known-keys`.
+- **`bb fetch-tool --tool pagefind|chroma|fswatcher`** (default
+  `pagefind`). A new `clogem.tools` fetches, verifies and caches any pinned
+  binary from a descriptor; Chroma 2.27.0 (`CLOGEM_CHROMA`,
+  `:tools :chroma`) and the `org.babashka/fswatcher` 0.0.7 pod
+  (`CLOGEM_FSWATCHER`, `:tools :fswatcher`, a zip unpacked with
+  `java.util.zip`) are fetchable, though nothing uses them yet. The pod's
+  hashes are trust-on-first-use: upstream publishes none.
+- **`CLOGEM_JOBS`**: pages render on a bounded parallel pool, one worker per
+  processor by default; `CLOGEM_JOBS=1` renders on one thread. The output
+  and the diagnostics are identical either way.
+- **A CI `browser` job** (D-P4-18): Playwright 1.63.0 (pinned, `npm ci`)
+  over the built demo, running every `test/browser/*.test.mjs`; the first
+  asserts that no page scrolls sideways at 320 or 360 px. Nothing in
+  `test/browser/` ships.
+
+### Changed
+
+- **A build no longer leaves a mixed `dist/`** (D-P4-11). Every page and
+  generated file is rendered in memory first; only when all of it has
+  succeeded is each file written, atomically (temp file and rename), and
+  only if its bytes changed. A render failure — any `Throwable` — exits 1
+  naming the page and leaves `dist/` and `permalinks.edn` exactly as they
+  were; the ledger is now written after rendering. The summary line gains
+  `(N written, M unchanged)`; a rebuild with no source change writes 0
+  files. Files the build did not write (`CNAME`, `.nojekyll`) are still
+  never deleted. Pagefind failing after the pages are written is unchanged
+  (Phase 5).
+- **Faster builds** (D-P4-11): Damerau-Levenshtein keeps rolling rows
+  instead of a matrix (~40× faster; a 300-article site analyses in 0.25 s
+  instead of 4.4 s), and pages render in parallel (that site builds in
+  1.6 s instead of 7.7 s, the demo in 0.37 s instead of 0.68 s).
+- Render diagnostics are reported in a fixed order: severity, file, line,
+  message.
+
+### Fixed
+
+- `bb dev` survives a rebuild that throws an `Error` (it caught only
+  `Exception`).
+
+### Documentation
+
+- DESIGN.md §8 Phase 4 rebaselined to about 16 days in nine tasks (the
+  total is now 54 days), with its exit criterion, the deferred front-matter
+  keys `navbar: false` and `search: false`, and the dropped vdoing options.
+  New §11.3, the Phase 4 implementation changelog, records the phase's
+  decisions. Corrections: htmlModules has 7 slots plus 2 show-modes, not 9
+  regions, and the title badge is a random static icon (§1.2); Chroma's
+  `--html-styles` honours `--html-prefix` with `--html` (§10, research/08);
+  Pagefind falls back to the largest index for a language with none, and
+  merged indexes stem with the primary page's WASM (§6.7, §10); dev is a
+  fast full rebuild, not an incremental one (§5.4, §5.5); `:tools :chroma`
+  takes a per-platform hash map and styles go under `:highlight` (§5.6).
+- config.example.edn: a config map value falls back to the map's first
+  value, not "the key itself"; documents `:tools :chroma`,
+  `:tools :fswatcher` and `CLOGEM_JOBS`.
+
 ## 0.2.0 — Phase 3: internationalization
 
 Phase 3 is complete: the demo's five-language corpus builds with correct

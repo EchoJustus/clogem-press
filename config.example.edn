@@ -7,9 +7,17 @@
 ;; Any string-valued key may be either a plain string (same in all languages) or
 ;; a map keyed by language code. The §6.5 fallback chain applies uniformly:
 ;;
-;;     requested lang → :i18n :fallback (default [:site-default :en]) → the key itself
+;;     requested lang → :i18n :fallback (default [:site-default :en]) → the map's first value
 ;;
-;; so there is exactly one rule to learn.
+;; so there is exactly one rule to learn. (A map with none of the chain's
+;; languages resolves to its FIRST value — `{:ta "…" :zh-Hans "…"}` shows the
+;; Tamil one to an English reader. It is the theme's own UI strings, `i18n/<lang>.edn`,
+;; whose chain ends in the key itself.)
+;;
+;; A key clogem-press does not know is a WARNING naming its path and the
+;; nearest known key (`bb doctor` lists them); so is vdoing's camelCase spelling
+;; of one (`pageStyle` → :theme :page-style), and a key that is documented but
+;; not implemented yet. Never an error.
 
 {;; ---------------------------------------------------------------- site ----
  :site {:title       {:en "My knowledge base" :zh-Hans "我的知识库"}
@@ -116,7 +124,8 @@
                                       ; 400/700 woff2 (~24 KB each, SIL OFL) and
                                       ; links clogem/fonts/tamil.css; :system
                                       ; ships no font bytes at all
-         :html-modules {}}            ; raw HTML injected into named regions
+         :html-modules {}}            ; raw HTML for vdoing's 7 slots (Phase 4 Task E1);
+                                      ; anything here warns: no effect in 0.2.0
 
  :nav [{:text {:en "Home" :zh-Hans "首页"} :link "/"}]
 
@@ -134,11 +143,16 @@
  ;; --------------------------------------------------------------- tools ----
  ;; D-P3-8: fetched over HTTPS (honouring HTTPS_PROXY / HTTP_PROXY, NO_PROXY,
  ;; and user:pass@ in the proxy URL), sha256-checked against a per-platform
- ;; pin, unpacked with tar and cached OUTSIDE the site, in
- ;; $XDG_CACHE_HOME/clogem-press/tools/pagefind/<version>/<platform>/ (else
+ ;; pin, unpacked and cached OUTSIDE the site, in
+ ;; $XDG_CACHE_HOME/clogem-press/tools/<tool>/<version>/<platform>/ (else
  ;; ~/.cache/…), stamped with the hashes it was verified against and
  ;; re-checked on every use. `bb fetch-tool` does just that and prints the
- ;; binary's path.
+ ;; binary's path; `--tool chroma` or `--tool fswatcher` fetches the others.
+ ;; Each tool takes the same four keys — :version, :sha256 (a map, one hash per
+ ;; platform), :path (a preinstalled binary, relative to the site; skips
+ ;; download and verification) and :url (a mirror; {{version}} and
+ ;; {{platform}} are filled in) — and an environment variable, relative to the
+ ;; working directory, that beats :path.
  :tools {:pagefind {:version "1.5.2"}  ; its six platform hashes are built in
          ;; pinning another version? give every platform you build on its hash
          ;; from the release's .sha256 files:
@@ -153,6 +167,21 @@
          ;;                                                      ; CLOGEM_PAGEFIND (relative to the cwd):
          ;;                                                      ; skips download + verification
          ;;            :url  "https://mirror.example/v{{version}}/pagefind_extended-v{{version}}-{{platform}}.tar.gz"}
+         ;; Chroma, the syntax highlighter (MIT). Fetchable now; rendering uses
+         ;; it from Phase 4 Task C. Env CLOGEM_CHROMA. Its eight platform hashes
+         ;; are built in, from upstream's chroma-2.27.0-checksums.txt:
+         ;; {linux,darwin,windows}-{amd64,arm64}, linux-386, windows-386.
+         :chroma {:version "2.27.0"}
+         ;; :chroma {:version "2.27.0"
+         ;;          :sha256 {"linux-amd64" "91e1…" "darwin-arm64" "92f4…"}
+         ;;          :path   "/usr/local/bin/chroma"}
+         ;; The org.babashka/fswatcher pod `bb dev` will watch with (Phase 4
+         ;; Task D). Env CLOGEM_FSWATCHER. One zip per platform — linux-amd64,
+         ;; linux-aarch64, macos-amd64, macos-aarch64, windows-amd64 — with its
+         ;; hashes built in; upstream publishes none, so these were taken from
+         ;; the release zips on 2026-10-02 (trust on first use, DESIGN.md §11.3
+         ;; item 12).
+         :fswatcher {:version "0.0.7"}
          ;; :cache-dir ".tools"         ; relative to the site; env CLOGEM_TOOLS_DIR wins
          }
 
@@ -177,13 +206,21 @@
  ;; title, so retitling alone leaves the thread invisible and lets the next
  ;; comment open a duplicate. See §6.8 / §7.4 step 8.
 
- :analytics {:provider :none}   ; :ga4 | :plausible | :umami   (D-13)
+ :analytics {:provider :none}   ; :ga4 | :plausible | :umami   (D-13; Phase 4 Task F)
+                                ; anything but :none warns: no effect in 0.2.0
 
  :seo {:sitemap true :hreflang true
        :x-default :primary      ; x-default → the bare identity URL; the only value
        :feeds   true            ; /feed.xml + /<lang>/feed.xml, Atom (§6.6)
-       :indexnow {:enabled false :key nil}}
+       :indexnow {:enabled false :key nil}}   ; the push is Phase 5; :enabled true
+                                               ; warns: no effect in 0.2.0
 
  ;; --------------------------------------------------------------- build ----
+ ;; Every page is rendered in memory before anything is written; then each file
+ ;; is written atomically, and only when its bytes changed, so a failed build
+ ;; leaves dist/ exactly as it was and a no-change rebuild writes nothing.
+ ;; Pages render in parallel, one worker per processor; the environment
+ ;; variable CLOGEM_JOBS sets the number (CLOGEM_JOBS=1: one thread, as in
+ ;; 0.2.0). The output is byte-identical either way.
  :build {:out "dist"}}  ; a directory of its own: a build removes .html files
                          ; in it that it did not write (§11.2 item 46)
