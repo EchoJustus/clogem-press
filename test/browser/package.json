@@ -1,0 +1,16 @@
+{
+  "name": "clogem-press-browser-tests",
+  "private": true,
+  "description": "Browser tests over a built site (Phase 4, D-P4-18). CI only; nothing here ships.",
+  "type": "module",
+  "license": "EPL-2.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node run.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
