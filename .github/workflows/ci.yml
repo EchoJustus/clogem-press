@@ -161,6 +161,18 @@ jobs:
         working-directory: examples/demo-site
         run: bb ../../.github/scripts/check_search.clj dist / en zh-Hans zh-Hant ms ta
 
+      # Phase 3 exit criterion, "one giscus thread per article" (D-P3-15): for
+      # every identity group (pages sharing an hreflang x-default), every
+      # article variant carries exactly one giscus script with the same
+      # data-term — the bare permalink — terms are distinct across groups,
+      # data-lang is each page language's :giscus (ms and ta → en), and no
+      # catalogue, home or index page carries one. With the hreflang check
+      # and the per-language search check above, that is all of §8's Phase 3
+      # exit criterion, asserted on the bytes that would be uploaded.
+      - name: Assert one giscus thread per article identity
+        working-directory: examples/demo-site
+        run: python3 ../../.github/scripts/check_giscus.py dist / en=en zh-Hans=zh-CN zh-Hant=zh-TW ms=en ta=en
+
       # Only base "/" is exercised above, and that is exactly the base under
       # which stripping the base and not stripping it produce identical output
       # — so the whole class of "the base is baked into the layout" bug was
@@ -214,6 +226,11 @@ jobs:
       - name: Assert the search output under a non-root base
         working-directory: examples/demo-site
         run: bb ../../.github/scripts/check_search.clj dist-base /clogem-demo/ en zh-Hans zh-Hant ms ta
+
+      # The term must not pick up the base: /pages/xxxxxx/ under /clogem-demo/ too
+      - name: Assert the giscus terms under a non-root base
+        working-directory: examples/demo-site
+        run: python3 ../../.github/scripts/check_giscus.py dist-base /clogem-demo/ en=en zh-Hans=zh-CN zh-Hant=zh-TW ms=en ta=en
 
       # §11.2 item 46: --no-search builds pages with no search UI at all. It
       # used to skip the indexer but keep linking pagefind/…, so every page of
