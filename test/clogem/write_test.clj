@@ -32,6 +32,11 @@
   (let [dir (fs/create-temp-dir {:prefix "clogem-write"})]
     (try
       (fs/copy-tree demo dir)
+      ;; a local `bb build` of the demo leaves dist/ (gitignored) behind;
+      ;; the copy starts without any build output
+      (doseq [d (fs/list-dir dir)
+              :when (str/starts-with? (str (fs/file-name d)) "dist")]
+        (fs/delete-tree d))
       (binding [diag/*sink* (atom [])
                 search/*env* {}]
         (f dir (fs/path dir "dist")))
