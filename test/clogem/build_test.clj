@@ -6,6 +6,7 @@
   these are the tests that would catch a convention regression before a
   generator tag is cut and a content repo bumps to it."
   (:require [babashka.fs :as fs]
+            [babashka.process :as p]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hiccup2.core]
@@ -1523,12 +1524,24 @@
             (is (re-find #"is not a valid date" (:message (first about))) d)))
         url-site))))
 
-(defn- with-default-tz
-  [id f]
-  (let [old (java.util.TimeZone/getDefault)]
-    (try (java.util.TimeZone/setDefault (java.util.TimeZone/getTimeZone id))
-         (f)
-         (finally (java.util.TimeZone/setDefault old)))))
+(defn- bb-exe
+  "The babashka running this test, so the subprocess is the same version."
+  []
+  (or (-> (java.lang.ProcessHandle/current) .info .command (.orElse nil)) "bb"))
+
+(defn- bb-in-tz!
+  "Run `TZ=<tz> bb --config <this repo's bb.edn> <args…>` in `dir` — the
+  real-world way a zone reaches the generator. Setting it in-process through
+  `java.util.TimeZone/setDefault` is rejected reflectively by babashka
+  1.13.219, which :min-bb-version admits. Returns stdout+stderr; a non-zero
+  exit fails the test."
+  [dir tz & args]
+  (let [{:keys [exit out err]}
+        (apply p/shell {:dir (str dir) :out :string :err :string :continue true
+                        :extra-env {"TZ" tz}}
+               (bb-exe) "--config" (str (fs/absolutize "bb.edn")) args)]
+    (is (zero? exit) (str tz " " (str/join " " args) "\n" out err))
+    (str out err)))
 
 (deftest an-unquoted-zoned-timestamp-keeps-its-instant
   (testing "B: SnakeYAML turns `date: 2026-08-01T10:00:00+08:00` into a bare
@@ -1538,24 +1551,22 @@
                                 ["2026-08-01T02:00:00Z"      "2026-08-01T02:00:00Z"]
                                 ["2026-08-01 10:00:00 +8"    "2026-08-01T10:00:00+08:00"]]
             tz ["UTC" "Asia/Singapore"]]
-      (with-default-tz tz
-        (fn []
-          (with-cli-site {"01.Guide/01.t.md" (str/replace a-tree "\"2026-02-01 00:00:00\"" written)
-                          "01.Guide/01.t.zh-Hans.md" "---\ntitle: 中\n---\n\nbody\n"}
-            (fn [dir out]
-              (let [src (fs/file dir "content" "01.Guide" "01.t.md")
-                    tr  (fs/file dir "content" "01.Guide" "01.t.zh-Hans.md")]
-                (with-out-str (cli/fm-fix {:site-dir (str dir)}))
-                (is (str/includes? (slurp src) (str "date: " written "\n"))
-                    "fm-fix never rewrites a date the author wrote")
-                (let [before [(slurp src) (slurp tr)]]
-                  (with-out-str (cli/fm-fix {:site-dir (str dir)}))
-                  (is (= before [(slurp src) (slurp tr)]) (str tz " " written ": a second fm-fix changes nothing"))))
-              (build-err dir out)
-              (doseq [f [["feed.xml"] ["zh-Hans" "feed.xml"]]
-                      :let [feed (clojure.data.xml/parse-str (slurp (apply fs/file out f)))]]
-                (is (= expected (text (first (kids feed "entry")) "updated")) (str tz " " written " " f))))
-            url-site))))))
+      (with-cli-site {"01.Guide/01.t.md" (str/replace a-tree "\"2026-02-01 00:00:00\"" written)
+                      "01.Guide/01.t.zh-Hans.md" "---\ntitle: 中\n---\n\nbody\n"}
+        (fn [dir out]
+          (let [src (fs/file dir "content" "01.Guide" "01.t.md")
+                tr  (fs/file dir "content" "01.Guide" "01.t.zh-Hans.md")]
+            (bb-in-tz! dir tz "fm-fix")
+            (is (str/includes? (slurp src) (str "date: " written "\n"))
+                "fm-fix never rewrites a date the author wrote")
+            (let [before [(slurp src) (slurp tr)]]
+              (bb-in-tz! dir tz "fm-fix")
+              (is (= before [(slurp src) (slurp tr)]) (str tz " " written ": a second fm-fix changes nothing"))))
+          (bb-in-tz! dir tz "build" "--no-write" "--out" (str out))
+          (doseq [f [["feed.xml"] ["zh-Hans" "feed.xml"]]
+                  :let [feed (clojure.data.xml/parse-str (slurp (apply fs/file out f)))]]
+            (is (= expected (text (first (kids feed "entry")) "updated")) (str tz " " written " " f))))
+        url-site))))
 
 (deftest a-quoted-offset-without-minutes-is-read
   (testing "B: `\"…+08\"` used to be silently zoneless"
