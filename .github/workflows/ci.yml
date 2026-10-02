@@ -337,8 +337,9 @@ jobs:
           set -euo pipefail
           python3 -m http.server --bind 127.0.0.1 8000 --directory ../../examples/demo-site/dist \
             > "$RUNNER_TEMP/http.log" 2>&1 &
+          # wait for the server; curl stays quiet until it answers
           for _ in $(seq 50); do
-            curl -fsS -o /dev/null http://127.0.0.1:8000/ && break
+            curl -fs -o /dev/null http://127.0.0.1:8000/ && break
             sleep 0.2
           done
           npm test

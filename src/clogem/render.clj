@@ -364,7 +364,14 @@
     - the enabled index pages per language, bare for the site-default
       language and under /<lang>/ otherwise, in BOTH :prefix-default? modes"
   [model]
-  (let [{:keys [cfg articles]} model
+  (let [;; the theme assets' `?v=` fingerprints (D-P4-7), computed once per
+        ;; page map rather than once per asset URL; `render-site` passes the
+        ;; snapshot of the bytes it writes, and a page map built another way
+        ;; (`doctor`, a test) takes one here
+        model   (cond-> model
+                  (not (get-in model [:cfg :clogem/asset-versions]))
+                  (assoc-in [:cfg :clogem/asset-versions] (assets/versions (assets/files (:cfg model)))))
+        {:keys [cfg articles]} model
         strings (i18n/load-strings cfg)
         ;; index*.md and @pages/ are parsed by analyse; a model built without
         ;; it (a test calling model/build-model directly) resolves them here
