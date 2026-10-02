@@ -84,7 +84,7 @@
               real  page/article
               e     (with-redefs [page/article (fn [& args]
                                                  (if (= 6 (swap! calls inc))
-                                                   (throw (StackOverflowError. "boom"))
+                                                   (throw (AssertionError. "boom"))
                                                    (apply real args)))]
                       (try (build! dir) nil
                            (catch clojure.lang.ExceptionInfo e e)))]
