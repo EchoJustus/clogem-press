@@ -1295,8 +1295,9 @@
     url-site))
 
 (deftest a-site-without-a-url-builds-without-any-of-it
-  (testing "D-P3-1: no canonical, hreflang, og:locale, feed, sitemap or robots
-            — and ONE warning, in build and in doctor alike"
+  (testing "D-P3-1: no canonical, hreflang, feed, sitemap or robots — and ONE
+            warning, in build and in doctor alike. og:locale needs no URL and
+            stays (H)"
     (with-cli-site {"_posts/2026-01-01-p.md" a-post}
       (fn [dir out]
         (let [err (java.io.StringWriter.)]
@@ -1306,7 +1307,10 @@
         (let [html (slurp (fs/file out "pages" "p00001" "index.html"))]
           (is (nil? (canonical html)))
           (is (empty? (hreflangs html)))
-          (is (not (str/includes? html "og:locale")))
+          (is (= ["en_US"] (metas "og:locale" html)) "H: og:locale names a language, not a URL")
+          (is (= #{"zh_CN" "zh_TW" "ms_MY" "ta_IN"}
+                 (set (metas "og:locale:alternate" (slurp (fs/file out "index.html")))))
+              "…and so does og:locale:alternate")
           (is (not (str/includes? html "application/atom+xml"))))
         (doseq [f ["feed.xml" "sitemap.xml" "robots.txt"]]
           (is (not (fs/exists? (fs/path out f))) f))
@@ -1375,7 +1379,7 @@
   [dir]
   (try (:warnings (cli/doctor {:site-dir (str dir)}))
        (catch clojure.lang.ExceptionInfo e
-         (diag/warnings (:clogem/errors (ex-data e))))))
+         (:clogem/warnings (ex-data e)))))
 
 (defn- orphan-warnings [dir]
   (filter #(re-find #"looks like a translation of" (:message %)) (doctor-warnings dir)))
@@ -1480,3 +1484,186 @@
           (is (empty? (hreflangs html))))
         (is (not (str/includes? (slurp (fs/file out "sitemap.xml")) "xhtml:link rel"))))
       (assoc url-site :seo {:hreflang false}))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 3 part A, follow-up (P3-A.1)
+
+(defn- build-err
+  "Build `dir` --no-write into `out`; return what it printed to stderr."
+  [dir out]
+  (let [err (java.io.StringWriter.)]
+    (binding [*err* err] (cli/build {:site-dir (str dir) :out (str out) :no-write true}))
+    (str err)))
+
+(def ^:private dated-post
+  "---\ntitle: Q\ndate: \"2026-03-01 00:00:00\"\npermalink: /pages/q00001/\n---\n\nbody\n")
+
+(deftest a-date-that-does-not-exist-is-a-warning-not-a-crash
+  (testing "A: date-shaped but invalid — build exits 0, the warning names the
+            file, doctor says it once, and the article is left out of feeds"
+    (doseq [d ["2026-02-30 10:00:00" "2026-13-01" "2026-08-01 24:00:00"
+               "2026-08-01 10:61:00" "2026-08-01 10:00:00 +25:00" "2026-09-31"]]
+      (with-cli-site {"_posts/2026-01-01-p.md" (str/replace a-post "2026-01-01 00:00:00" d)
+                      "_posts/2026-03-01-q.md" dated-post}
+        (fn [dir out]
+          (let [err (build-err dir out)]
+            (is (str/includes? err (str "_posts/2026-01-01-p.md: `date:` value `" d "` is not a valid date."))
+                (str d "\n" err))
+            (is (= 1 (count (re-seq #"is not a valid date" err))) d))
+          (is (fs/exists? (fs/path out "pages" "p00001" "index.html")) d)
+          (let [feed (slurp (fs/file out "feed.xml"))]
+            (is (str/includes? feed "/pages/q00001/") d)
+            (is (not (str/includes? feed "/pages/p00001/")) (str d ": left out of the feed, like an undated one")))
+          (is (not (str/includes? (slurp (fs/file out "archives" "index.html")) "/pages/p00001/"))
+              (str d ": and out of /archives/"))
+          (let [{:keys [warnings errors]} (cli/doctor {:site-dir (str dir)})
+                about (filter #(str/includes? (str (:path %)) "2026-01-01-p.md") warnings)]
+            (is (empty? errors) d)
+            (is (= 1 (count about)) (str d ": " (pr-str (map :message about))))
+            (is (re-find #"is not a valid date" (:message (first about))) d)))
+        url-site))))
+
+(defn- with-default-tz
+  [id f]
+  (let [old (java.util.TimeZone/getDefault)]
+    (try (java.util.TimeZone/setDefault (java.util.TimeZone/getTimeZone id))
+         (f)
+         (finally (java.util.TimeZone/setDefault old)))))
+
+(deftest an-unquoted-zoned-timestamp-keeps-its-instant
+  (testing "B: SnakeYAML turns `date: 2026-08-01T10:00:00+08:00` into a bare
+            Date; the zone used to be dropped and the date re-read in TZ —
+            8 hours early under Asia/Singapore"
+    (doseq [[written expected] [["2026-08-01T10:00:00+08:00" "2026-08-01T10:00:00+08:00"]
+                                ["2026-08-01T02:00:00Z"      "2026-08-01T02:00:00Z"]
+                                ["2026-08-01 10:00:00 +8"    "2026-08-01T10:00:00+08:00"]]
+            tz ["UTC" "Asia/Singapore"]]
+      (with-default-tz tz
+        (fn []
+          (with-cli-site {"01.Guide/01.t.md" (str/replace a-tree "\"2026-02-01 00:00:00\"" written)
+                          "01.Guide/01.t.zh-Hans.md" "---\ntitle: 中\n---\n\nbody\n"}
+            (fn [dir out]
+              (let [src (fs/file dir "content" "01.Guide" "01.t.md")
+                    tr  (fs/file dir "content" "01.Guide" "01.t.zh-Hans.md")]
+                (with-out-str (cli/fm-fix {:site-dir (str dir)}))
+                (is (str/includes? (slurp src) (str "date: " written "\n"))
+                    "fm-fix never rewrites a date the author wrote")
+                (let [before [(slurp src) (slurp tr)]]
+                  (with-out-str (cli/fm-fix {:site-dir (str dir)}))
+                  (is (= before [(slurp src) (slurp tr)]) (str tz " " written ": a second fm-fix changes nothing"))))
+              (build-err dir out)
+              (doseq [f [["feed.xml"] ["zh-Hans" "feed.xml"]]
+                      :let [feed (clojure.data.xml/parse-str (slurp (apply fs/file out f)))]]
+                (is (= expected (text (first (kids feed "entry")) "updated")) (str tz " " written " " f))))
+            url-site))))))
+
+(deftest a-quoted-offset-without-minutes-is-read
+  (testing "B: `\"…+08\"` used to be silently zoneless"
+    (is (= "2026-08-01T10:00:00+08:00" (clogem.seo/rfc3339 "2026-08-01T10:00:00+08")))
+    (is (= "2026-08-01T10:00:00-05:00" (clogem.seo/rfc3339 "2026-08-01 10:00:00 -5")))))
+
+(deftest robots-txt-names-the-sitemap-only-when-there-is-one
+  (testing "C: :seo :sitemap false → no Sitemap: line pointing at a 404"
+    (with-cli-site {"_posts/2026-01-01-p.md" a-post}
+      (fn [dir out]
+        (cli/build {:site-dir (str dir) :out (str out) :no-write true})
+        (is (= "User-agent: *\nAllow: /\n" (slurp (fs/file out "robots.txt")))))
+      (assoc url-site :seo {:sitemap false}))))
+
+(deftest feed-summaries-carry-no-heading-anchor
+  (testing "D: the aria-hidden `#` of a heading anchor is not summary text"
+    (with-cli-site {"_posts/2026-01-01-p.md"
+                    (str/replace a-post "# P\n\nbody\n"
+                                 "Intro text.\n\n## Sub heading\n\nMore text.\n\n<!-- more -->\n\nRest.\n")}
+      (fn [dir out]
+        (build-err dir out)
+        (let [e (first (kids (clojure.data.xml/parse-str (slurp (fs/file out "feed.xml"))) "entry"))]
+          (is (= "Intro text. Sub heading More text." (text e "summary")))
+          (is (not (str/includes? (text e "summary") "#")))))
+      url-site)))
+
+(defn- diags-about
+  [dir file]
+  (let [{:keys [warnings errors]} (try (cli/doctor {:site-dir (str dir)})
+                                       (catch clojure.lang.ExceptionInfo e
+                                         {:errors   (:clogem/errors (ex-data e))
+                                          :warnings (:clogem/warnings (ex-data e))}))]
+    (filter #(str/includes? (str (:message %) " " (:path %)) file) (concat errors warnings))))
+
+(deftest a-same-number-orphan-gets-one-diagnostic
+  (testing "E: the duplicate-number error covers 06.Timing.ms.md; the orphan
+            check must not add a warning suggesting a different rename"
+    (with-cli-site {"01.Guide/06.timing.md"    src-body
+                    "01.Guide/07.timings.md"   (str/replace src-body "s00001" "s00002")
+                    "01.Guide/06.Timing.ms.md" tr-body}
+      (fn [dir _]
+        (let [cfg (first (diag/collecting (config/load-config (str dir) nil nil)))
+              ;; every analyse diagnostic, errors and warnings alike
+              ds  (->> (second (diag/collecting (cli/analyse cfg)))
+                       (filter #(str/includes? (:message %) "06.Timing.ms.md"))
+                       (filter #(str/includes? (:message %) "rename it to")))]
+          (is (= 1 (count ds)) (pr-str (map :message ds)))
+          (is (= :error (:level (first ds))))
+          (is (str/includes? (:message (first ds)) "rename it to `06.timing.ms.md`"))
+          (is (empty? (orphan-warnings dir)))))
+      url-site)))
+
+(deftest the-orphan-heuristic-is-quiet-on-distinct-articles
+  (testing "F: a weekly post series is distinct posts, not a rename"
+    (with-cli-site {"_posts/2026-08-01-weekly.md"    (str/replace src-body "title: S" "title: S\ndate: \"2026-08-01 00:00:00\"")
+                    "_posts/2026-08-08-weekly.ms.md" (str/replace tr-body "title: 译" "title: 译\ndate: \"2026-08-08 00:00:00\"")}
+      (fn [dir _] (is (empty? (orphan-warnings dir))))
+      url-site))
+  (testing "F: short names need an exact (case-insensitive) match — css is not js"
+    (with-cli-site {"01.Guide/01.css.md" src-body "01.Guide/02.js.ta.md" tr-body}
+      (fn [dir _] (is (empty? (orphan-warnings dir))))
+      url-site))
+  (testing "…while a renamed post slug on the same date, and a short case-only rename, still fire"
+    (with-cli-site {"_posts/2026-08-01-weekly-notes.md"   src-body
+                    "_posts/2026-08-01-weekly-note.ms.md" tr-body}
+      (fn [dir _]
+        (let [ws (orphan-warnings dir)]
+          (is (= 1 (count ws)))
+          (is (str/includes? (:message (first ws)) "rename it to `2026-08-01-weekly-notes.ms.md`"))))
+      url-site)
+    (with-cli-site {"01.Guide/01.CSS.ta.md" tr-body "01.Guide/05.css.md" src-body}
+      (fn [dir _] (is (= 1 (count (orphan-warnings dir)))))
+      url-site)))
+
+(deftest a-site-robots-txt-is-copied-without-a-url
+  (testing "H: a user's own robots.txt needs no :site :url"
+    (with-cli-site {"_posts/2026-01-01-p.md" a-post}
+      (fn [dir out]
+        (fs/create-dirs (fs/path dir "assets"))
+        (spit (fs/file dir "assets" "robots.txt") "User-agent: *\nDisallow: /private/\n")
+        (build-err dir out)
+        (is (= "User-agent: *\nDisallow: /private/\n" (slurp (fs/file out "robots.txt"))))
+        (is (not (fs/exists? (fs/path out "sitemap.xml")))))
+      {:site {:title "S"}})))
+
+(deftest a-localized-site-author
+  (testing "J: :site :author {:en … :zh-Hans …} resolves per language in feeds and on pages"
+    (with-cli-site {"01.Guide/01.t.md" a-tree
+                    "01.Guide/01.t.zh-Hans.md" (str/replace a-tree "title: T" "title: 中")}
+      (fn [dir out]
+        (build-err dir out)
+        (doseq [[f who] [[["feed.xml"] "Jane"] [["zh-Hans" "feed.xml"] "简"] [["ms" "feed.xml"] "Jane"]]]
+          (is (= who (text (first (kids (clojure.data.xml/parse-str (slurp (apply fs/file out f))) "author")) "name"))
+              (pr-str f)))
+        (is (str/includes? (slurp (fs/file out "zh-Hans" "pages" "t00001" "index.html"))
+                           "<span class=\"clogem-meta__author\" title=\"作者\">简</span>"))
+        (is (str/includes? (slurp (fs/file out "pages" "t00001" "index.html")) ">Jane</span>")))
+      (assoc-in url-site [:site :author] {:en "Jane" :zh-Hans "简"}))))
+
+(deftest article-hrefs-are-percent-encoded
+  (testing "J (since 0.1.1): a CJK or spaced permalink is encoded in every list, like every other href"
+    (with-cli-site {"_posts/2026-01-01-p.md" (str/replace a-post "/pages/p00001/" "/pages/中文 页/")
+                    "_posts/2026-01-02-q.md" (str/replace dated-post "\"2026-03-01 00:00:00\"" "\"2026-01-02 00:00:00\"")}
+      (fn [dir out]
+        (build-err dir out)
+        (doseq [f [["index.html"] ["archives" "index.html"] ["tags" "t" "index.html"]
+                   ["categories" "index.html"] ["pages" "q00001" "index.html"]]
+                :let [html (slurp (apply fs/file out f))]]
+          (is (str/includes? html "href=\"/pages/%E4%B8%AD%E6%96%87%20%E9%A1%B5/\"") (pr-str f))
+          (is (not (str/includes? html "href=\"/pages/中文")) (pr-str f))))
+      url-site)))

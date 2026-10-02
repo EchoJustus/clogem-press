@@ -55,10 +55,12 @@
 (defn article-link
   "§6.8: the reader's own variant when the article has one, else the primary,
   flagged as a fallback."
-  [{:keys [cfg lang]} group]
+  [{:keys [cfg lang] :as ctx} group]
   (let [vl (model/best-variant group lang)
         v  (get-in group [:variants vl])]
-    {:href      (model/variant-url cfg group vl)
+    ;; encoded like every other href: a front-matter permalink may hold
+    ;; CJK, Tamil or a space (0.1.1 emitted those raw)
+    {:href      (href ctx (model/variant-url cfg group vl))
      :title     (:title v)
      :lang      vl
      :fallback? (not= vl lang)}))
@@ -84,14 +86,9 @@
       (model/site-url cfg lang (str root (u/slug k) "/")))))
 
 (defn- author-of
-  "Front matter `author:` (a string or {:name :link}) else `:site :author`."
+  "Front matter `author:` else `:site :author`, per `i18n/resolve-author`."
   [{:keys [cfg] :as ctx} variant]
-  (let [a (or (get-in variant [:front-matter :author]) (get-in cfg [:site :author]))]
-    (cond
-      (nil? a)    nil
-      (map? a)    {:name (i18n/resolve-str ctx (or (:name a) (get a "name")))
-                   :link (or (:link a) (get a "link"))}
-      :else       {:name (i18n/resolve-str ctx a)})))
+  (i18n/resolve-author ctx (or (get-in variant [:front-matter :author]) (get-in cfg [:site :author]))))
 
 (defn title-tag
   "vdoing's `titleTag:` badge beside a title (原创 / 转载 / …). The plain
@@ -147,7 +144,8 @@
                                 (str "/" (str/join "/" (take (inc i) segs))))
                       cat-pl  (when dir-key (get-in model [:catalogue dir-key]))
                       target  (if-let [g (and cat-pl (get-in model [:articles cat-pl]))]
-                                (:href (article-link ctx g))
+                                ;; the URI, encoded once below
+                                (model/variant-url cfg g (model/best-variant g lang))
                                 (index-href ctx :categories c))]
                   [:li (if target
                          [:a {:href (href ctx target)} (category-label ctx c)]
@@ -160,10 +158,10 @@
   (when (or prev next)
     [:nav.clogem-prev-next
      (when prev
-       [:a.clogem-prev-next__prev {:href (:href prev) :rel "prev" :lang (config/html-lang cfg (:lang prev))}
+       [:a.clogem-prev-next__prev {:href (href ctx (:href prev)) :rel "prev" :lang (config/html-lang cfg (:lang prev))}
         [:span (i18n/tr ctx :page/prev)] " " (:title prev)])
      (when next
-       [:a.clogem-prev-next__next {:href (:href next) :rel "next" :lang (config/html-lang cfg (:lang next))}
+       [:a.clogem-prev-next__next {:href (href ctx (:href next)) :rel "next" :lang (config/html-lang cfg (:lang next))}
         [:span (i18n/tr ctx :page/next)] " " (:title next)])]))
 
 (defn article-row
@@ -373,7 +371,7 @@
                        {:lang (str/join ", " (map #(get-in cfg [:langs :locales % :label]) others))})]
        (into [:span.clogem-variants__links]
              (for [l others]
-               [:a {:href (model/variant-url cfg group l)
+               [:a {:href (href ctx (model/variant-url cfg group l))
                     :lang (config/html-lang cfg l)
                     :hreflang (config/html-lang cfg l)}
                 (get-in cfg [:langs :locales l :label])]))])))
@@ -404,8 +402,7 @@
 
 (defn seo-head
   "The `<head>` tags of D-P3-2 and D-P3-3, from the page's `:seo`
-  (`clogem.render/seo-info`), or nothing when the page has none or the site
-  has no `:site :url` (D-P3-1):
+  (`clogem.render/seo-info`), or nothing when the page has none:
 
     - `rel=canonical`, self-referencing;
     - one `rel=alternate hreflang` per member of the page's equivalence set,
@@ -413,18 +410,25 @@
       has a set (pagination past page 1 has none);
     - `og:locale` from the language's `:og`, and one `og:locale:alternate`
       per other language in the set;
-    - Atom autodiscovery for the page's own language, when that feed exists."
+    - Atom autodiscovery for the page's own language, when that feed exists.
+
+  The links need an absolute URL, so a site with no `:site :url` gets none
+  of them (D-P3-1); `og:locale` names a language, not a URL, and is emitted
+  either way."
   [{:keys [cfg lang seo model]}]
-  (when (and seo (config/site-url-root cfg))
-    (let [abs  #(config/absolute-url cfg %)
+  (when seo
+    (let [url? (config/site-url-root cfg)
+          abs  #(config/absolute-url cfg %)
           alts (when (get-in cfg [:seo :hreflang] true) (:alternates seo))
           og   (config/og-locale cfg lang)]
       (concat
-       [[:link {:rel "canonical" :href (abs (:canonical seo))}]]
-       (for [[l u] alts]
-         [:link {:rel "alternate" :hreflang (config/html-lang cfg l) :href (abs u)}])
-       (when (seq alts)
-         [[:link {:rel "alternate" :hreflang "x-default" :href (abs (:x-default seo))}]])
+       (when url?
+         (concat
+          [[:link {:rel "canonical" :href (abs (:canonical seo))}]]
+          (for [[l u] alts]
+            [:link {:rel "alternate" :hreflang (config/html-lang cfg l) :href (abs u)}])
+          (when (seq alts)
+            [[:link {:rel "alternate" :hreflang "x-default" :href (abs (:x-default seo))}]])))
        (when og
          (cons [:meta {:property "og:locale" :content og}]
                (for [o (distinct (keep (fn [[l _]] (config/og-locale cfg l)) (:alternates seo)))

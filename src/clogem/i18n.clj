@@ -70,6 +70,19 @@
                       (first (vals v))))
     :else       (str v)))
 
+(defn resolve-author
+  "An `author` value — front matter's or `:site :author` — as {:name :link}
+  for `lang`, or nil. Three shapes: a string; `{:name … :link …}`, whose
+  `:name` may itself be per-language; or a per-language map
+  `{:en \"Jane\" :zh-Hans \"简\"}`, resolved like every config string."
+  [ctx a]
+  (let [named? (and (map? a) (or (contains? a :name) (contains? a "name")))
+        nm     (if named? (or (:name a) (get a "name")) a)
+        nm     (u/blank->nil (str (resolve-str ctx nm)))]
+    (when nm
+      (cond-> {:name nm}
+        named? (assoc :link (or (:link a) (get a "link")))))))
+
 ;; ---------------------------------------------------------------------------
 ;; Site string checks (D-P3-6)
 

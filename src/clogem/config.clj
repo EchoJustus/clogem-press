@@ -188,21 +188,30 @@
                             "(DESIGN.md D-14); site.edn carries the floor, not the pin.")))
         cfg))))
 
+(defn- base-path*
+  "`base-path`, usable before it is defined."
+  [cfg]
+  (u/clean-url (or (get-in cfg [:site :base]) "/")))
+
 (defn- check-fallback!
   "D-P3-7: `:i18n :fallback` is a vector of configured language keywords or
-  `:site-default`. A bad value is a config error repaired to the default. The
-  built-in default names `:en`, which a site may have removed from :locales;
-  that is not the site's mistake, so the default alone is filtered silently."
+  `:site-default`. A bad value is a config error repaired to the default.
+
+  Only a chain the SITE wrote is validated. The built-in default names `:en`,
+  which a site may have removed from :locales; that is not the site's
+  mistake, and the default is kept as it is rather than filtered — 0.1.1's
+  chain, under which a config map's `:en` value (`:title {:ta … :en …}`)
+  still beats its first value for a language that has none of its own."
   [cfg]
   (let [v     (get-in cfg [:i18n :fallback])
         known (set (keys (get-in cfg [:langs :locales])))
         ok?   #(or (= :site-default %) (contains? known %))]
     (cond
       (nil? v)
-      (assoc-in cfg [:i18n :fallback] (filterv ok? default-fallback))
+      (assoc-in cfg [:i18n :fallback] default-fallback)
 
       (= v default-fallback)
-      (assoc-in cfg [:i18n :fallback] (filterv ok? v))
+      cfg
 
       (and (vector? v) (every? ok? v))
       cfg
@@ -214,7 +223,48 @@
                        (str "Configured languages: " (pr-str (vec (keys (get-in cfg [:langs :locales]))))
                             ". Using the default so the rest of the report is readable, "
                             "but the build will not run."))
-          (assoc-in cfg [:i18n :fallback] (filterv ok? default-fallback))))))
+          (assoc-in cfg [:i18n :fallback] default-fallback)))))
+
+(defn- check-site-url!
+  "D-P3-1: `:site :url` is the ORIGIN every absolute URL is built on. Blank
+  is legal (analyse warns once). Without a scheme every canonical comes out
+  relative, so that is an error. A path that repeats `:base` —
+  `https://u.github.io/repo` with `:base \"/repo/\"` — doubles the base in
+  every URL, so it is a warning naming the fix. A trailing slash is fine."
+  [cfg]
+  (let [url (some-> (get-in cfg [:site :url]) str str/trim u/blank->nil)]
+    (when url
+      (let [[_ scheme host path] (re-matches #"(?i)([a-z][a-z0-9+.-]*)://([^/?#\s]+)([^?#]*)?.*" url)
+            path (str/replace (str path) #"/+$" "")
+            base (str/replace (base-path* cfg) #"/+$" "")]
+        (cond
+          (not host)
+          (diag/error! nil (str ":site :url is " (pr-str url) ", which has no scheme and host.")
+                       (str "Write the site's origin with its scheme, e.g. \"https://example.github.io\" "
+                            "— without one every canonical, hreflang and feed URL comes out relative."))
+
+          (and (seq base) (seq path) (= (u/lower path) (u/lower base)))
+          (diag/warn! nil (str ":site :url " (pr-str url) " repeats the base path " base
+                               ", so every absolute URL would carry it twice.")
+                      (str "Drop the path: write " (pr-str (str scheme "://" host))
+                           " — :site :base already supplies " (base-path* cfg) "."))
+
+          :else nil)))
+    cfg))
+
+(defn- check-x-default!
+  "`:seo :x-default` says where the hreflang `x-default` points. `:primary`
+  — the bare identity URL, the article's own primary language (D-P3-2) — is
+  the only value so far; anything else is a config error repaired to it, so
+  a future option has a home rather than a silently ignored key."
+  [cfg]
+  (let [v (get-in cfg [:seo :x-default])]
+    (if (or (nil? v) (= :primary v))
+      (assoc-in cfg [:seo :x-default] :primary)
+      (do (diag/error! nil (str ":seo :x-default is " (pr-str v) ", but the only supported value is :primary.")
+                       (str ":primary points x-default at the bare identity URL (DESIGN.md D-P3-2). "
+                            "Using it so the rest of the report is readable, but the build will not run."))
+          (assoc-in cfg [:seo :x-default] :primary)))))
 
 (defn- validate!
   [{:keys [langs comments generator] :as cfg}]
@@ -254,7 +304,7 @@
           (diag/error! nil (str ":comments " k " is required when :provider is :giscus.")))))
     (when (< (count priority) (count locales))
       (diag/warn! nil ":langs :priority does not cover every locale; missing ones were appended.")))
-  (-> cfg check-theme! check-floor! check-fallback!))
+  (-> cfg check-theme! check-floor! check-fallback! check-site-url! check-x-default!))
 
 (defn load-config
   "Read site config from `site-dir`, deep-merge over defaults and `overrides`,

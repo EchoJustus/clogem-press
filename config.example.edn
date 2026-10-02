@@ -129,7 +129,8 @@
 
  :analytics {:provider :none}   ; :ga4 | :plausible | :umami   (D-13)
 
- :seo {:sitemap true :hreflang true :x-default :primary
+ :seo {:sitemap true :hreflang true
+       :x-default :primary      ; x-default → the bare identity URL; the only value
        :feeds   true            ; /feed.xml + /<lang>/feed.xml, Atom (§6.6)
        :indexnow {:enabled false :key nil}}
 

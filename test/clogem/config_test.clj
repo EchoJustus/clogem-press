@@ -323,9 +323,11 @@
   (let [[cfg ds] (with-site {:langs {:default :zh-Hans} :i18n {:fallback [:site-default :ta]}})]
     (is (= [:ms :zh-Hans :ta] (config/fallback-chain cfg :ms)))
     (is (empty? (diag/errors ds))))
-  (testing "the built-in default survives a site that removed :en"
+  (testing "the built-in default survives a site that removed :en — unfiltered,
+            as 0.1.1 had it: a config map's :en value still comes before its
+            first value"
     (let [[cfg ds] (with-site {:langs {:default :ms :locales {:en nil}}})]
-      (is (= [:ta :ms] (config/fallback-chain cfg :ta)))
+      (is (= [:ta :ms :en] (config/fallback-chain cfg :ta)))
       (is (empty? (diag/errors ds)))))
   (testing "D-P3-7: anything but configured languages and :site-default is a config error"
     (doseq [bad [[:fr] [:site-default "en"] :en '(:en) [:zh-hans]]]
@@ -342,6 +344,46 @@
     (is (= "⟦:x/only-en⟧" (first (diag/collecting (clogem.i18n/tr (assoc ctx :dev? true) :x/only-en))))
         "…and ⟦k⟧ in dev")
     (is (= "T" (clogem.i18n/resolve-str ctx {:ta "T" :en "E"})))))
+
+(deftest removing-en-keeps-0-1-1s-config-map-fallback
+  (testing "G: :locales {:en nil}, default :zh-Hans — a :ta page's title is the
+            map's :en value, not its first value"
+    (let [[cfg ds] (with-site {:langs {:default :zh-Hans :locales {:en nil}}
+                               :site {:title {:ta "TA-TITLE" :en "EN-TITLE"}}})]
+      (is (empty? (diag/errors ds)))
+      (is (= "EN-TITLE" (clogem.i18n/resolve-str {:cfg cfg :lang :ms} (get-in cfg [:site :title])))
+          ":ms → :zh-Hans (absent) → :en")
+      (is (= "TA-TITLE" (clogem.i18n/resolve-str {:cfg cfg :lang :ta} (get-in cfg [:site :title]))))))
+  (testing "a chain the site WROTE is still validated against :locales"
+    (let [[_ ds] (with-site {:langs {:locales {:en nil}} :i18n {:fallback [:site-default :ms :en]}})]
+      (is (some #(re-find #":i18n :fallback" (:message %)) (diag/errors ds))))))
+
+(deftest site-url-must-be-an-origin
+  (testing "I: no scheme is a config error — every canonical would be relative"
+    (doseq [bad ["u.github.io" "//u.github.io" "/repo/"]]
+      (let [[_ ds] (with-site {:site {:url bad}})]
+        (is (some #(re-find #":site :url .* has no scheme and host" (:message %)) (diag/errors ds)) bad))))
+  (testing "I: a path that repeats :base doubles it — a warning that says to drop the path"
+    (doseq [url ["https://u.github.io/repo" "https://u.github.io/repo/"]]
+      (let [[_ ds] (with-site {:site {:url url :base "/repo/"}})
+            ws (filter #(re-find #"repeats the base path" (:message %)) (diag/warnings ds))]
+        (is (empty? (diag/errors ds)) url)
+        (is (= 1 (count ws)) url)
+        (is (str/includes? (str (:hint (first ws))) "Drop the path: write \"https://u.github.io\"") url))))
+  (testing "a bare origin, with or without a trailing slash, is quiet"
+    (doseq [[url base] [["https://u.github.io" "/repo/"] ["https://u.github.io/" "/"] ["http://localhost:8080/" "/"]]]
+      (let [[_ ds] (with-site {:site {:url url :base base}})]
+        (is (empty? (filter #(re-find #":site :url" (:message %)) ds)) url)))))
+
+(deftest seo-x-default-is-validated
+  (testing "J: :primary is the only legal value; anything else is a config error repaired to it"
+    (let [[cfg ds] (with-site {})]
+      (is (= :primary (get-in cfg [:seo :x-default])))
+      (is (empty? (diag/errors ds))))
+    (doseq [bad [:first "primary" :en]]
+      (let [[cfg ds] (with-site {:seo {:x-default bad}})]
+        (is (some #(re-find #":seo :x-default" (:message %)) (diag/errors ds)) (pr-str bad))
+        (is (= :primary (get-in cfg [:seo :x-default])))))))
 
 (deftest absolute-urls-join-the-site-url-and-the-base-inclusive-path
   (let [[cfg _] (with-site {:site {:url "https://x.example/"}})]

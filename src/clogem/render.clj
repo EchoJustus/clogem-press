@@ -45,7 +45,7 @@
    :dev? (:clogem/dev? cfg)
    :by-rel-path (:by-rel-path model)
    :url-for (fn [group l]
-              (model/variant-url cfg group (model/best-variant group l)))})
+              (u/url-encode-path (model/variant-url cfg group (model/best-variant group l))))})
 
 (defn- rel-path-index
   "Index every variant's path — both its full repo-relative path and its bare
@@ -96,15 +96,19 @@
   "What a page's `<head>` and the sitemap say about it (D-P3-2): its own URI,
   its language and — on a page that has one — its equivalence set
   ({lang → uri} over every language copy, itself included) with the
-  `x-default` URI. `alt-for` nil means no set: a pagination page past the
-  first is self-canonical only, because page N of a list holds different
-  articles in each language."
-  [cfg lang self alt-for x-default]
+  `x-default` URI, which `:seo :x-default :primary` makes `primary`.
+  `alt-for` nil means no set: a pagination page past the first is
+  self-canonical only, because page N of a list holds different articles in
+  each language."
+  [cfg lang self alt-for primary]
   (cond-> {:lang lang :canonical self}
     alt-for (assoc :alternates (into (array-map)
                                      (keep (fn [l] (when-let [u (alt-for l)] [l u])))
                                      (config/lang-keys cfg))
-                   :x-default x-default)))
+                   ;; `:seo :x-default`; :primary, the only value config
+                   ;; accepts, is the bare identity URL `primary`
+                   :x-default (case (get-in cfg [:seo :x-default] :primary)
+                                :primary primary))))
 
 (defn- with-seo
   "Attach the page's `seo-info` to its render thunk, where the sitemap reads
@@ -516,10 +520,13 @@
         (copy-tree! user (fs/path out "assets"))))))
 
 (defn- strip-tags
-  "Plain text of an HTML string: block tags → a space, inline tags dropped, the five entities hiccup
+  "Plain text of an HTML string: aria-hidden elements dropped whole, block tags → a space, inline tags dropped, the five entities hiccup
   escapes decoded, whitespace collapsed (a feed `summary` is type=\"text\")."
   [html]
   (-> (str html)
+      ;; an aria-hidden element is decoration — the heading anchor's `#` —
+      ;; and says nothing a reader of the text would miss
+      (str/replace #"(?is)<([a-z][a-z0-9]*)\b[^>]*\baria-hidden=\"true\"[^>]*>.*?</\1\s*>" "")
       ;; a block boundary is a word boundary; an inline tag is not — `<strong>`
       ;; inside a CJK sentence must not split it with a space
       (str/replace #"(?i)</?(?:p|div|li|ul|ol|h[1-6]|br|blockquote|pre|tr|td|th|table|dt|dd|hr)\b[^>]*>" " ")
@@ -545,34 +552,35 @@
     (fs/path (config/out-dir cfg) rel)))
 
 (defn export-seo!
-  "Atom feeds, sitemap.xml and robots.txt (D-P3-3, D-P3-4) — all need an
-  absolute URL, so none is written when `:site :url` is blank (D-P3-1).
-  robots.txt counts only at the host root, so it is written only when the
-  base is `/`; a site's own `<assets>/robots.txt` is copied there instead of
-  a generated one. Returns the site-relative paths written."
+  "Atom feeds, sitemap.xml and robots.txt (D-P3-3, D-P3-4). Feeds and the
+  sitemap need an absolute URL, so neither is written when `:site :url` is
+  blank (D-P3-1). robots.txt counts only at the host root, so it is written
+  only when the base is `/`: a site's own `<assets>/robots.txt` is copied
+  there — URL or not, since it needs none — and otherwise one is generated
+  when there is a URL. Returns the site-relative paths written."
   [cfg model pages]
-  (when (config/site-url-root cfg)
-    (let [model (cond-> model
-                  (not (contains? model :site-files)) (assoc :site-files (pages/site-files cfg)))
-          model (assoc model :by-rel-path (rel-path-index model) :strings (i18n/load-strings cfg))
-          write! (fn [uri content]
-                   (let [f (file-for cfg uri)]
-                     (fs/create-dirs (fs/parent f))
-                     (spit (fs/file f) content)
-                     uri))]
-      (vec
-       (concat
-        (for [l (seo/feed-langs model)]
-          (write! (seo/feed-uri cfg l)
-                  (seo/emit-xml (seo/feed-xml model l #(feed-summary model %1 %2)))))
-        (when (get-in cfg [:seo :sitemap] true)
-          [(write! (seo/sitemap-uri cfg)
-                   (seo/emit-xml (seo/sitemap-xml cfg (keep (comp page-seo val) pages))))])
-        (when (= "/" (config/base-path cfg))
-          (let [user (fs/path (config/assets-dir cfg) "robots.txt")]
-            [(write! "/robots.txt" (if (fs/regular-file? user)
-                                     (slurp (fs/file user))
-                                     (seo/robots-txt cfg)))])))))))
+  (let [url?  (config/site-url-root cfg)
+        model (cond-> model
+                (not (contains? model :site-files)) (assoc :site-files (pages/site-files cfg)))
+        model (assoc model :by-rel-path (rel-path-index model) :strings (i18n/load-strings cfg))
+        write! (fn [uri content]
+                 (let [f (file-for cfg uri)]
+                   (fs/create-dirs (fs/parent f))
+                   (spit (fs/file f) content)
+                   uri))
+        user-robots (fs/path (config/assets-dir cfg) "robots.txt")]
+    (vec
+     (concat
+      (for [l (seo/feed-langs model)]
+        (write! (seo/feed-uri cfg l)
+                (seo/emit-xml (seo/feed-xml model l #(feed-summary model %1 %2)))))
+      (when (and url? (get-in cfg [:seo :sitemap] true))
+        [(write! (seo/sitemap-uri cfg)
+                 (seo/emit-xml (seo/sitemap-xml cfg (keep (comp page-seo val) pages))))])
+      (when (= "/" (config/base-path cfg))
+        (cond
+          (fs/regular-file? user-robots) [(write! "/robots.txt" (slurp (fs/file user-robots)))]
+          url?                           [(write! "/robots.txt" (seo/robots-txt cfg))]))))))
 
 (defn build!
   "Render and export. Returns a summary map."

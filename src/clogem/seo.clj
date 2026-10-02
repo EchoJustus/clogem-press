@@ -41,22 +41,12 @@
   every date auto-fill writes, and every vdoing date — is read in the JVM's
   default zone, which is `TZ`: the site's CI sets `TZ=Asia/Singapore`, so
   `2026-08-01 09:30:00` becomes `2026-08-01T09:30:00+08:00`. nil when the
-  value does not start with a date."
+  value does not start with a date, or names one that does not exist
+  (`2026-02-30`) — the article is then left out like an undated one, and
+  analyse has already warned about it by name (`util/parse-date`)."
   [d]
-  (when-let [[_ y mo dd h mi sec zone]
-             (re-find #"^\s*(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?(?:\.\d+)?\s*(Z|[+-]\d{2}:?\d{2})?)?"
-                      (str d))]
-    (let [ldt (java.time.LocalDateTime/of (int (parse-long y)) (int (parse-long mo)) (int (parse-long dd))
-                                          (int (or (some-> h parse-long) 0))
-                                          (int (or (some-> mi parse-long) 0))
-                                          (int (or (some-> sec parse-long) 0)))
-          off (if zone
-                (java.time.ZoneOffset/of (if (re-matches #"[+-]\d{4}" zone)
-                                           (str (subs zone 0 3) ":" (subs zone 3))
-                                           zone))
-                (.getOffset (.getRules (java.time.ZoneId/systemDefault)) ldt))]
-      (.format (java.time.OffsetDateTime/of ldt off)
-               java.time.format.DateTimeFormatter/ISO_OFFSET_DATE_TIME))))
+  (some-> (u/parse-date d)
+          (.format java.time.format.DateTimeFormatter/ISO_OFFSET_DATE_TIME)))
 
 ;; ---------------------------------------------------------------------------
 ;; Feeds (D-P3-3)
@@ -101,10 +91,8 @@
 
 (defn- author-name
   [ctx]
-  (let [cfg (:cfg ctx)
-        a   (get-in cfg [:site :author])
-        a   (if (map? a) (or (:name a) (get a "name")) a)]
-    (or (u/blank->nil (i18n/resolve-str ctx a))
+  (let [cfg (:cfg ctx)]
+    (or (:name (i18n/resolve-author ctx (get-in cfg [:site :author])))
         (i18n/resolve-str ctx (get-in cfg [:site :title])))))
 
 (defn feed-xml
@@ -175,8 +163,12 @@
 (defn sitemap-uri [cfg] (str (config/base-path cfg) "sitemap.xml"))
 
 (defn robots-txt
+  "Allow everything, and name the sitemap — only when one is written
+  (`:seo :sitemap`): a `Sitemap:` line pointing at a 404 is worse than none."
   [cfg]
-  (str "User-agent: *\nAllow: /\n\nSitemap: " (config/absolute-url cfg (sitemap-uri cfg)) "\n"))
+  (str "User-agent: *\nAllow: /\n"
+       (when (get-in cfg [:seo :sitemap] true)
+         (str "\nSitemap: " (config/absolute-url cfg (sitemap-uri cfg)) "\n"))))
 
 (defn emit-xml
   [el]

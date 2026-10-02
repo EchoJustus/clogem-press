@@ -97,6 +97,27 @@
 (def ^:private canonical-date-format
   (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd HH:mm:ss"))
 
+(def ^:private zoned-date-format
+  ;; `XXX` prints a zero offset as `Z`, which is what RFC 3339 and
+  ;; clogem.seo/rfc3339 read
+  (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd'T'HH:mm:ssXXX"))
+
+(def ^:private yaml-zoned-timestamp-re
+  "YAML 1.1's timestamp production, with the zone captured — `Z`, `±h`,
+  `±hh` or `±hh:mm`, optionally after spaces."
+  #"\d{4}-\d{1,2}-\d{1,2}(?:[Tt]|[ \t]+)\d{1,2}:\d{2}:\d{2}(?:\.\d*)?[ \t]*(Z|[-+]\d{1,2}(?::\d{2})?)")
+
+(defn yaml-date-zone
+  "The zone an UNQUOTED top-level `date:` in a YAML block was written with,
+  as a ZoneOffset, or nil when it has none (or is quoted, or absent).
+  SnakeYAML resolves both `2026-08-01 10:00:00` and
+  `2026-08-01T10:00:00+08:00` to a bare java.util.Date, so whether the author
+  gave a zone is only knowable from the text."
+  [fm-text]
+  (when-let [[_ v] (re-find #"(?m)^date[ \t]*:[ \t]*([^\s'\"#][^#\r\n]*?)[ \t]*(?:#.*)?\r?$" (str fm-text))]
+    (when-let [[_ z] (re-matches yaml-zoned-timestamp-re v)]
+      (try (u/zone-offset z) (catch java.time.DateTimeException _ nil)))))
+
 (defn canonical-date
   "Coerce a parsed `date:` value to a String, always.
 
@@ -109,11 +130,18 @@
   is entirely legal. Normalizing at parse time is the only place the fix belongs;
   every consumer downstream then has one type to reason about.
 
-  Date-likes are rendered in **UTC**, because SnakeYAML resolves a zoneless YAML
-  timestamp as UTC — so this round-trips what the author wrote rather than
-  shifting it by the build machine's offset (auto-fill's `format-date` is a
-  different case: a file birthtime is a real instant, and local time is the
-  right reading of it).
+  A date-like with no `zone` is rendered zoneless in **UTC**, because SnakeYAML
+  resolves a zoneless YAML timestamp as UTC — so this round-trips what the
+  author wrote rather than shifting it by the build machine's offset, and the
+  result is later read in `TZ` like every zoneless date (auto-fill's
+  `format-date` is a different case: a file birthtime is a real instant, and
+  local time is the right reading of it).
+
+  A date-like WITH a `zone` — an unquoted `2026-08-01T10:00:00+08:00`
+  (`yaml-date-zone`), or an EDN `#inst`, which is always an instant — keeps
+  its instant: it is rendered at that offset, `2026-08-01T10:00:00+08:00`, a
+  form `clogem.seo/rfc3339` reads back exactly. Dropping the zone, as 0.1.1
+  did, moved such a date by the difference between it and `TZ`.
 
   A String is returned byte-identical. Normalizing the *type* is what stops the
   crash; rewriting what an author typed is not this function's business. Note
@@ -121,25 +149,26 @@
   form: a hand-written, unpadded `\"2026-9-5\"` is lexicographically after
   `\"2026-10-01\"`. Ordering is therefore done on `clogem.util/date-sort-key`,
   which zero-pads both to `YYYY-MM-DD HH:mm:ss` (see `clogem.model/newest-first`)."
-  [v]
-  (cond
-    (nil? v)     nil
-    (string? v)  v
-    (instance? java.util.Date v)
-    (.format (java.time.LocalDateTime/ofInstant (.toInstant ^java.util.Date v)
-                                                java.time.ZoneOffset/UTC)
-             canonical-date-format)
-    (instance? java.time.Instant v)
-    (.format (java.time.LocalDateTime/ofInstant ^java.time.Instant v
-                                                java.time.ZoneOffset/UTC)
-             canonical-date-format)
-    :else (str v)))
+  ([v] (canonical-date v nil))
+  ([v zone]
+   (let [inst (cond (instance? java.util.Date v)    (.toInstant ^java.util.Date v)
+                    (instance? java.time.Instant v) v)]
+     (cond
+       (nil? v)    nil
+       (string? v) v
+       (and inst zone)
+       (.format (java.time.OffsetDateTime/ofInstant inst ^java.time.ZoneId zone) zoned-date-format)
+       inst
+       (.format (java.time.LocalDateTime/ofInstant inst java.time.ZoneOffset/UTC)
+                canonical-date-format)
+       :else (str v)))))
 
 (defn- normalize
   "Post-process a parsed front-matter map into the shapes the rest of the
-  pipeline is entitled to assume."
-  [m]
-  (if (contains? m :date) (update m :date canonical-date) m))
+  pipeline is entitled to assume. `zone` is the offset the date was written
+  with, when the parsed value alone cannot say (see `canonical-date`)."
+  [m zone]
+  (if (contains? m :date) (update m :date canonical-date zone) m))
 
 (defn parse-fm
   "Parse a front-matter block to a map with keyword keys. Returns {} for an empty
@@ -150,7 +179,7 @@
     (str/blank? fm-text)       {}
     (edn-block? fm-text)
     (try (let [m (edn/read-string fm-text)]
-           (if (map? m) (normalize m) (non-map-front-matter! path (shape-of m))))
+           (if (map? m) (normalize m java.time.ZoneOffset/UTC) (non-map-front-matter! path (shape-of m))))
          (catch Exception e
            (diag/error! path (str "malformed EDN front matter: " (ex-message e)))
            nil))
@@ -158,7 +187,7 @@
     (try (let [m (yaml/parse-string fm-text :keywords true)]
            (cond
              (nil? m)  {}
-             (map? m)  (normalize m)
+             (map? m)  (normalize m (yaml-date-zone fm-text))
              :else     (non-map-front-matter! path (shape-of m))))
          (catch Exception e
            (diag/error! path (str "malformed YAML front matter: " (ex-message e)))
