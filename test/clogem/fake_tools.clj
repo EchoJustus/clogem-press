@@ -12,7 +12,9 @@
   "Write an executable `pagefind_extended` stand-in into `dir` and return its
   path. It records its arguments in `args.txt` beside itself, writes the
   bundle files the theme links to plus a `pagefind-entry.json` under
-  `<--site>/<--output-subdir>/`, prints `output`, and exits `exit`."
+  `<--site>/<--output-subdir>/`, prints `output`, and exits `exit`. Without
+  `--site` it writes no bundle and exits 2: an empty site would otherwise
+  mean `/pagefind`, at the filesystem root."
   [dir & {:keys [exit output] :or {exit 0 output "fake pagefind ran"}}]
   (let [f (fs/path dir "pagefind_extended")]
     (fs/create-dirs dir)
@@ -30,6 +32,7 @@
                 "  case \"$1\" in --site) site=\"$2\"; shift;; --output-subdir) sub=\"$2\"; shift;; esac"
                 "  shift"
                 "done"
+                "if [ -z \"$site\" ]; then echo 'fake pagefind: --site is required' >&2; exit 2; fi"
                 "mkdir -p \"$site/$sub\""
                 ": > \"$site/$sub/pagefind-component-ui.js\""
                 ": > \"$site/$sub/pagefind-component-ui.css\""

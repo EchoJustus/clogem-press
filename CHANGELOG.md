@@ -153,6 +153,9 @@ Search follow-up (DESIGN.md §11.2 item 46), each with a regression test:
   reported cleanly; a relative `CLOGEM_PAGEFIND` resolves against the
   working directory and its errors print the absolute path and say whether
   it is a directory or missing.
+- **The search tests failed as a non-root user** (CI only): the test's
+  fake Pagefind, run with no `--site`, wrote its bundle to `/pagefind`. The
+  fake now refuses to run without `--site`, and the test passes one.
 
 - **`bb test` errored on babashka 1.13.219**, which `:min-bb-version
   "1.13.0"` admits: the timezone test set the JVM default zone through
