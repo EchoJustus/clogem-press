@@ -30,6 +30,38 @@ jobs:
       - name: Show versions
         run: bb --version
 
+      # D-P3-8: the Pagefind binary is fetched, sha256-verified and cached by
+      # the generator itself (`bb fetch-tool`), outside the site. The cache key
+      # is the pin — version, platform and that platform's hash, read from the
+      # generator so there is one place to bump it.
+      - name: Pagefind pin
+        id: pagefind
+        run: |
+          bb -e "(require 'clogem.config 'clogem.search)
+                 (let [v (get-in clogem.config/defaults [:tools :pagefind :version])
+                       p (clogem.search/platform)]
+                   (println (str \"key=pagefind-\" v \"-\" p \"-\" (get-in clogem.search/known-sha256 [v p]))))" \
+            >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+      - name: Cache the tools directory
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/clogem-press/tools
+          key: ${{ steps.pagefind.outputs.key }}
+
+      # Exported for every later step: `bb test` runs its real-binary
+      # integration test only when CLOGEM_PAGEFIND is set (and fails on CI
+      # when it is not), and the demo builds below use the same binary.
+      - name: Fetch Pagefind and export CLOGEM_PAGEFIND
+        working-directory: examples/demo-site
+        run: |
+          set -euo pipefail
+          bin=$(bb --config ../../bb.edn fetch-tool | tail -n 1)
+          test -x "$bin"
+          "$bin" --version
+          echo "CLOGEM_PAGEFIND=$bin" >> "$GITHUB_ENV"
+
       - name: Run tests
         run: bb test
 
@@ -117,6 +149,15 @@ jobs:
         working-directory: examples/demo-site
         run: python3 ../../.github/scripts/check_seo.py dist https://clogem-demo.example en zh-Hans zh-Hant ms ta
 
+      # Phase 3 exit criterion, "per-language Pagefind indexes" (D-P3-8 …
+      # D-P3-10): pagefind-entry.json lists exactly the five languages, each
+      # with as many pages as that language has article variants; only article
+      # and catalogue pages carry data-pagefind-body (never a home); every page
+      # opens <body> with <pagefind-config>, zh-Hant pages with lang="zh-TW".
+      - name: Assert the per-language search indexes
+        working-directory: examples/demo-site
+        run: bb ../../.github/scripts/check_search.clj dist / en zh-Hans zh-Hant ms ta
+
       # Only base "/" is exercised above, and that is exactly the base under
       # which stripping the base and not stripping it produce identical output
       # — so the whole class of "the base is baked into the layout" bug was
@@ -140,6 +181,9 @@ jobs:
           test ! -e dist-base/robots.txt          || fail "robots.txt emitted under a non-root base"
           test -f dist-base/sitemap.xml           || fail "no sitemap.xml at the deploy root"
           test -f dist-base/zh-Hans/feed.xml      || fail "no zh-Hans feed at the deploy root"
+          # Pagefind ran over this build too (D-P3-8), so the resolver below
+          # also proves <base>pagefind/… resolves
+          test -f dist-base/pagefind/pagefind-component-ui.js || fail "no Pagefind bundle under a non-root base"
 
           # The real invariant, and the one that was broken: every internal
           # link must resolve to a file once the base is stripped.
@@ -163,6 +207,10 @@ jobs:
           test "$missing" -eq 0 || fail "$missing internal link(s) do not resolve under a non-root base"
 
           echo "base layout OK: $(find dist-base -name index.html | wc -l) pages, $(echo "$hrefs" | wc -l) distinct links"
+
+      - name: Assert the search output under a non-root base
+        working-directory: examples/demo-site
+        run: bb ../../.github/scripts/check_search.clj dist-base /clogem-demo/ en zh-Hans zh-Hant ms ta
 
       - name: Assert the non-root-base build mutated nothing
         run: git diff --exit-code -- examples/demo-site

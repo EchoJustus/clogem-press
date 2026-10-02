@@ -182,7 +182,7 @@
     (fs/create-dirs staging)
     (try
       (let [{:keys [exit err]} (p/shell {:out :string :err :string :continue true}
-                                        "tar" "-xzf" (str tarball) "-C" (str staging))]
+                                        "tar" "--no-same-owner" "-xzf" (str tarball) "-C" (str staging))]
         (when-not (zero? exit)
           (fail! (str "could not unpack " tarball " with tar: " (str/trim (str err))))))
       (let [bin (fs/path staging bin-name)]
