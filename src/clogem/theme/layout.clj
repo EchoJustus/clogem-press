@@ -15,6 +15,7 @@
             [clogem.config :as config]
             [clogem.i18n :as i18n]
             [clogem.model :as model]
+            [clogem.seo :as seo]
             [clogem.util :as u]))
 
 ;; ---------------------------------------------------------------------------
@@ -48,7 +49,7 @@
           ;; an English page must show "Basics", not the first translation
           ;; that happens to exist
           (map? labels)    (some #(u/blank->nil (str (get labels %)))
-                                 (distinct [lang (config/default-lang cfg) :en])))
+                                 (config/fallback-chain cfg lang)))
         (str name))))
 
 (defn article-link
@@ -401,6 +402,40 @@
 ;; ---------------------------------------------------------------------------
 ;; Document
 
+(defn seo-head
+  "The `<head>` tags of D-P3-2 and D-P3-3, from the page's `:seo`
+  (`clogem.render/seo-info`), or nothing when the page has none or the site
+  has no `:site :url` (D-P3-1):
+
+    - `rel=canonical`, self-referencing;
+    - one `rel=alternate hreflang` per member of the page's equivalence set,
+      itself included, plus `x-default` → the bare URL — only on a page that
+      has a set (pagination past page 1 has none);
+    - `og:locale` from the language's `:og`, and one `og:locale:alternate`
+      per other language in the set;
+    - Atom autodiscovery for the page's own language, when that feed exists."
+  [{:keys [cfg lang seo model]}]
+  (when (and seo (config/site-url-root cfg))
+    (let [abs  #(config/absolute-url cfg %)
+          alts (when (get-in cfg [:seo :hreflang] true) (:alternates seo))
+          og   (config/og-locale cfg lang)]
+      (concat
+       [[:link {:rel "canonical" :href (abs (:canonical seo))}]]
+       (for [[l u] alts]
+         [:link {:rel "alternate" :hreflang (config/html-lang cfg l) :href (abs u)}])
+       (when (seq alts)
+         [[:link {:rel "alternate" :hreflang "x-default" :href (abs (:x-default seo))}]])
+       (when og
+         (cons [:meta {:property "og:locale" :content og}]
+               (for [o (distinct (keep (fn [[l _]] (config/og-locale cfg l)) (:alternates seo)))
+                     :when (not= o og)]
+                 [:meta {:property "og:locale:alternate" :content o}])))
+       (when (contains? (:feed-langs model) lang)
+         [[:link {:rel "alternate" :type "application/atom+xml"
+                  :hreflang (config/html-lang cfg lang)
+                  :title (str (i18n/resolve-str {:cfg cfg :lang lang} (get-in cfg [:site :title])))
+                  :href (u/url-encode-path (seo/feed-uri cfg lang))}]])))))
+
 (defn document
   "Wrap body hiccup in a complete HTML document.
 
@@ -419,6 +454,7 @@
                      (when (not= st title) (str " · " st))))]
       (when-let [d (u/blank->nil (i18n/resolve-str ctx (get-in cfg [:site :description])))]
         [:meta {:name "description" :content d}])
+      (seo-head ctx)
       [:link {:rel "stylesheet" :href (asset-href ctx "css/theme.css")}]
       ;; vendored vanilla scroll-spy (D-P2-9); no CDN, no deps — deferred,
       ;; and only on a page that renders a TOC for it to spy on

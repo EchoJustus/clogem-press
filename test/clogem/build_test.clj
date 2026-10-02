@@ -63,8 +63,12 @@
           uri (str/replace (:permalink g) #"^/|/$" "")
           html (slurp-out uri "index.html")]
       (is (= :ta (:primary g)))
-      (is (str/includes? html "lang=\"ta\"")
+      ;; on the <html> element itself: a bare `lang="ta"` also matches the
+      ;; switcher's `hreflang="ta" lang="ta"`, which every page carries
+      (is (re-find #"<html [^>]*\blang=\"ta\"" html)
           "the unprefixed URL is not 'the site default language'")
+      (is (not (re-find #"<html [^>]*\blang=\"ta\"" (slurp-out "pages" "643259" "index.html")))
+          "…and the assertion can fail: an English page is not <html lang=\"ta\">")
       (is (not (exists? "ta" uri "index.html"))
           "no content is served at two URLs — nothing to paper over with canonicals"))))
 
@@ -1092,3 +1096,367 @@
       (doseq [home ["/" "/zh-Hans/" "/zh-Hant/" "/ms/" "/ta/"]]
         (is (str/includes? (html home) "clogem-post-card") (str home " renders"))
         (is (not (str/includes? (html home) "clogem-home-cats")) home)))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 3 part A — SEO, feeds, sitemap (D-P3-1 … D-P3-4)
+
+(def ^:private demo-url "https://clogem-demo.example")
+
+(defn- tags-of
+  "Every `<tag …>` of `html` as an attribute map."
+  [tag html]
+  (for [[_ attrs] (re-seq (re-pattern (str "<" tag "\\s([^>]*?)/?>")) (str html))]
+    (into {} (map (fn [[_ k v]] [(keyword k) v])) (re-seq #"([a-zA-Z:-]+)=\"([^\"]*)\"" attrs))))
+
+(defn- head-of [html] (second (re-find #"(?s)<head>(.*?)</head>" (str html))))
+(defn- canonical [html] (:href (first (filter #(= "canonical" (:rel %)) (tags-of "link" (head-of html))))))
+(defn- hreflangs
+  "{hreflang → href} of a page's head alternates, x-default included."
+  [html]
+  (into {} (keep #(when (and (= "alternate" (:rel %)) (:hreflang %) (nil? (:type %)))
+                    [(:hreflang %) (:href %)]))
+        (tags-of "link" (head-of html))))
+(defn- metas [prop html]
+  (map :content (filter #(= prop (:property %)) (tags-of "meta" (head-of html)))))
+
+(defn- demo-html-files []
+  (->> (fs/glob *out-dir* "**index.html") (map str) sort))
+
+(defn- abs->file
+  "The output file an absolute demo URL is served from."
+  [url]
+  (let [rel (-> (subs url (count demo-url)) (str/replace #"^/" "") java.net.URLDecoder/decode)]
+    (str (fs/path *out-dir* rel "index.html"))))
+
+(deftest every-canonical-is-absolute-and-self-referencing
+  (testing "D-P3-1/2: one canonical per page, on :site :url, pointing at the page itself"
+    (doseq [f (demo-html-files)
+            :let [html (slurp f)
+                  c    (canonical html)]]
+      (is (some? c) f)
+      (is (str/starts-with? (str c) (str demo-url "/")) f)
+      (is (= (str (fs/normalize f)) (abs->file c)) (str f " canonicalizes to itself")))))
+
+(deftest article-heads-carry-the-whole-identity-group
+  (let [html (slurp-out "zh-Hans" "pages" "643259" "index.html")]
+    (is (= (str demo-url "/zh-Hans/pages/643259/") (canonical html)))
+    (is (= {"en"        (str demo-url "/pages/643259/")
+            "zh-Hans"   (str demo-url "/zh-Hans/pages/643259/")
+            "zh-Hant"   (str demo-url "/zh-Hant/pages/643259/")
+            "x-default" (str demo-url "/pages/643259/")}
+           (hreflangs html))
+        "itself included, and x-default at the bare identity URL")
+    (is (= ["zh_CN"] (metas "og:locale" html)) "zh-Hans is zh_CN, not zh_Hans (ogp.me)")
+    (is (= #{"en_US" "zh_TW"} (set (metas "og:locale:alternate" html))) "one per other language in the set"))
+  (testing "a Tamil-only article: a set of one, plus x-default"
+    (let [html (slurp-out "pages" "171a98" "index.html")]
+      (is (= {"ta" (str demo-url "/pages/171a98/") "x-default" (str demo-url "/pages/171a98/")} (hreflangs html)))
+      (is (= ["ta_IN"] (metas "og:locale" html)))
+      (is (empty? (metas "og:locale:alternate" html))))))
+
+(deftest homes-and-index-pages-list-their-five-language-copies
+  (doseq [[path bare] [[["index.html"] "/"]
+                       [["categories" "index.html"] "/categories/"]
+                       [["ms" "categories" "guide" "index.html"] "/categories/guide/"]
+                       [["ta" "tags" "index.html"] "/tags/"]
+                       [["zh-Hant" "archives" "index.html"] "/archives/"]]
+          :let [h (hreflangs (apply slurp-out path))]]
+    (is (= #{"en" "zh-Hans" "zh-Hant" "ms" "ta" "x-default"} (set (keys h))) (pr-str path))
+    (is (= (str demo-url bare) (get h "x-default")) (str (pr-str path) ": x-default is the bare copy"))
+    (is (= (str demo-url "/ta" bare) (get h "ta")))))
+
+(deftest pagination-pages-are-self-canonical-without-hreflang
+  (doseq [path [["page" "2" "index.html"] ["categories" "page" "2" "index.html"]]
+          :let [html (apply slurp-out path)]]
+    (is (= (str demo-url "/" (str/join "/" (butlast path)) "/") (canonical html)) (pr-str path))
+    (is (empty? (hreflangs html)) "page counts differ per language, so there is no set")
+    (is (= ["en_US"] (metas "og:locale" html)))))
+
+(deftest hreflang-sets-are-reciprocal
+  (testing "D-P3-2: every page named in a set lists the same set back (Google:
+            unreciprocated annotations are ignored) — the CI check, as a test"
+    (let [sets (into {} (for [f (demo-html-files)
+                              :let [h (hreflangs (slurp f))]
+                              :when (seq h)]
+                          [(str (fs/normalize f)) h]))]
+      (is (< 50 (count sets)))
+      (doseq [[f h] sets
+              [l u] h
+              :when (not= "x-default" l)
+              :let [other (abs->file u)]]
+        (is (= h (get sets other)) (str f " names " other " (" l "), which must list the same set"))))))
+
+(deftest every-page-advertises-its-own-languages-feed
+  (doseq [[path href lang] [[["index.html"] "/feed.xml" "en"]
+                            [["zh-Hant" "pages" "643259" "index.html"] "/zh-Hant/feed.xml" "zh-Hant"]
+                            [["ta" "categories" "index.html"] "/ta/feed.xml" "ta"]]
+          :let [feeds (filter #(= "application/atom+xml" (:type %)) (tags-of "link" (head-of (apply slurp-out path))))]]
+    (is (= 1 (count feeds)) (pr-str path))
+    (is (= {:href href :hreflang lang :rel "alternate"} (select-keys (first feeds) [:href :hreflang :rel])))))
+
+(defn- parse-xml [& parts] (clojure.data.xml/parse-str (apply slurp-out parts)))
+(defn- kids [el tag] (filter #(and (map? %) (= tag (name (:tag %)))) (:content el)))
+(defn- text [el tag] (apply str (:content (first (kids el tag)))))
+
+(deftest one-atom-feed-per-language
+  (doseq [[lang parts] [["en" ["feed.xml"]] ["zh-Hans" ["zh-Hans" "feed.xml"]] ["zh-Hant" ["zh-Hant" "feed.xml"]]
+                        ["ms" ["ms" "feed.xml"]] ["ta" ["ta" "feed.xml"]]]
+          :let [feed (apply parse-xml parts)
+                self (str demo-url "/" (str/join "/" parts))
+                entries (kids feed "entry")]]
+    (testing lang
+      (is (= "feed" (name (:tag feed))))
+      (is (= (clojure.data.xml/qname "http://www.w3.org/2005/Atom" "feed") (:tag feed))
+          "the default namespace is Atom's")
+      (is (str/includes? (str/join (take 120 (apply slurp-out parts))) "<feed xmlns=\"http://www.w3.org/2005/Atom\"")
+          "declared on the root, unprefixed — not xmlns:b")
+      (is (= lang (get-in feed [:attrs (clojure.data.xml/qname "http://www.w3.org/XML/1998/namespace" "lang")])) "xml:lang")
+      (is (= self (text feed "id")))
+      (is (some #(= {:rel "self" :href self} (select-keys (:attrs %) [:rel :href])) (kids feed "link")))
+      (is (some #(= (str demo-url (if (= "en" lang) "/" (str "/" lang "/"))) (get-in % [:attrs :href]))
+                (filter #(= "alternate" (get-in % [:attrs :rel])) (kids feed "link")))
+          "rel=alternate is the language's home")
+      (is (seq entries))
+      (is (<= (count entries) 20))
+      (is (= (text (first entries) "updated") (text feed "updated")) "feed updated = newest entry")
+      (is (re-matches #"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(Z|[+-]\d\d:\d\d)" (text feed "updated")) "RFC 3339 with an offset")
+      (is (seq (text (first (kids feed "author")) "name")))
+      (doseq [e entries
+              :let [id (text e "id")]]
+        (is (str/starts-with? id (str demo-url "/")))
+        (is (= (canonical (slurp (abs->file id))) id) "the entry id is the variant's own canonical URL")
+        (is (re-find (re-pattern (str "<html [^>]*\\blang=\"" lang "\"")) (slurp (abs->file id)))
+            "only this language's own variants")
+        (is (= (text e "published") (text e "updated")))
+        (is (seq (text e "title"))))))
+  (testing "dates newest first, in the model's order"
+    (let [ds (map #(text % "updated") (kids (parse-xml "feed.xml") "entry"))]
+      (is (= ds (reverse (sort ds))))))
+  (testing "summary only with a <!-- more --> excerpt, as plain text"
+    (let [entries (kids (parse-xml "feed.xml") "entry")
+          by-id   (into {} (map (fn [e] [(text e "id") e])) entries)
+          conv    (get by-id (str demo-url "/pages/643259/"))
+          cont    (get by-id (str demo-url "/pages/c0nta1/"))]
+      (is (seq (text conv "summary")))
+      (is (not (str/includes? (text conv "summary") "<")) "no markup")
+      (is (empty? (kids cont "summary")) "no marker → no summary")
+      (testing "…with one hreflang alternate per other variant (RFC 4287 §4.2.7.4)"
+        (is (= #{"zh-Hans" "zh-Hant"}
+               (set (keep #(get-in % [:attrs :hreflang]) (kids conv "link"))))))
+      (testing "…and a category per category and tag"
+        (is (= #{"Guide" "Basics" "markdown" "容器"}
+               (set (map #(get-in % [:attrs :term]) (kids cont "category")))))))))
+
+(deftest the-sitemap-lists-every-indexable-page
+  (let [sm    (parse-xml "sitemap.xml")
+        raw   (slurp-out "sitemap.xml")
+        urls  (kids sm "url")
+        locs  (set (map #(text % "loc") urls))
+        pages (set (map #(str (fs/normalize %)) (demo-html-files)))]
+    (is (str/includes? raw "xmlns:xhtml=\"http://www.w3.org/1999/xhtml\""))
+    (is (= (count pages) (count urls)) "one <url> per emitted page")
+    (is (= pages (set (map abs->file locs))))
+    (is (not (str/includes? raw "lastmod")))
+    (is (not (str/includes? raw "priority")))
+    (let [conv (first (filter #(= (str demo-url "/zh-Hant/pages/643259/") (text % "loc")) urls))
+          xl   (filter #(and (map? %) (= "link" (name (:tag %)))) (:content conv))]
+      (is (= #{"en" "zh-Hans" "zh-Hant" "x-default"} (set (map #(get-in % [:attrs :hreflang]) xl)))
+          "the whole set, itself and x-default included"))
+    (let [p2 (first (filter #(= (str demo-url "/page/2/") (text % "loc")) urls))]
+      (is (some? p2) "pagination pages are listed…")
+      (is (= 1 (count (filter map? (:content p2)))) "…with no alternates"))))
+
+(deftest robots-txt-on-the-root-base
+  (is (= (str "User-agent: *\nAllow: /\n\nSitemap: " demo-url "/sitemap.xml\n") (slurp-out "robots.txt"))))
+
+(def ^:private url-site {:site {:title "S" :url "https://s.example"}})
+
+(deftest robots-and-the-sitemap-under-a-non-root-base
+  (testing "D-P3-4: robots.txt only counts at the host root, so a project site emits none"
+    (with-cli-site {"_posts/2026-01-01-p.md" a-post}
+      (fn [dir out]
+        (cli/build {:site-dir (str dir) :out (str out) :no-write true :base "/proj/"})
+        (is (not (fs/exists? (fs/path out "robots.txt"))))
+        (is (fs/exists? (fs/path out "sitemap.xml")) "the sitemap is base-relative, at the deploy root")
+        (is (fs/exists? (fs/path out "feed.xml")))
+        (is (str/includes? (slurp (fs/file out "sitemap.xml")) "<loc>https://s.example/proj/pages/p00001/</loc>"))
+        (is (str/includes? (slurp (fs/file out "pages" "p00001" "index.html"))
+                           "href=\"/proj/feed.xml\" hreflang=\"en\""))
+        (is (str/includes? (slurp (fs/file out "feed.xml")) "<id>https://s.example/proj/pages/p00001/</id>")))
+      url-site)))
+
+(deftest a-site-robots-txt-wins
+  (with-cli-site {"_posts/2026-01-01-p.md" a-post}
+    (fn [dir out]
+      (fs/create-dirs (fs/path dir "assets"))
+      (spit (fs/file dir "assets" "robots.txt") "User-agent: *\nDisallow: /private/\n")
+      (cli/build {:site-dir (str dir) :out (str out) :no-write true})
+      (is (= "User-agent: *\nDisallow: /private/\n" (slurp (fs/file out "robots.txt")))))
+    url-site))
+
+(deftest a-site-without-a-url-builds-without-any-of-it
+  (testing "D-P3-1: no canonical, hreflang, og:locale, feed, sitemap or robots
+            — and ONE warning, in build and in doctor alike"
+    (with-cli-site {"_posts/2026-01-01-p.md" a-post}
+      (fn [dir out]
+        (let [err (java.io.StringWriter.)]
+          (binding [*err* err] (cli/build {:site-dir (str dir) :out (str out) :no-write true}))
+          (is (= 1 (count (re-seq #":site :url is blank" (str err))))
+              "build warns once, though it analyses twice"))
+        (let [html (slurp (fs/file out "pages" "p00001" "index.html"))]
+          (is (nil? (canonical html)))
+          (is (empty? (hreflangs html)))
+          (is (not (str/includes? html "og:locale")))
+          (is (not (str/includes? html "application/atom+xml"))))
+        (doseq [f ["feed.xml" "sitemap.xml" "robots.txt"]]
+          (is (not (fs/exists? (fs/path out f))) f))
+        (let [url-warn #(filter (fn [d] (re-find #":site :url is blank" (:message d))) %)]
+          (is (= 1 (count (url-warn (:warnings (cli/doctor {:site-dir (str dir)}))))) "doctor too")))
+      {:site {:title "S"}})))
+
+(deftest feeds-can-be-switched-off-and-are-capped-at-twenty
+  (let [posts (into {} (for [i (range 1 26)]
+                         [(format "_posts/2026-01-%02d-p%d.md" i i)
+                          (format "---\ntitle: P%d\ndate: \"2026-01-%02d 00:00:00\"\npermalink: /pages/p%05d/\n---\n\nbody\n" i i i)]))]
+    (with-cli-site posts
+      (fn [dir out]
+        (cli/build {:site-dir (str dir) :out (str out) :no-write true})
+        (let [feed (clojure.data.xml/parse-str (slurp (fs/file out "feed.xml")))
+              es   (kids feed "entry")]
+          (is (= 20 (count es)))
+          (is (= "P25" (text (first es) "title")) "newest first")
+          (is (not (fs/exists? (fs/path out "zh-Hans" "feed.xml"))) "a language with no articles has no feed")
+          (is (not (str/includes? (slurp (fs/file out "zh-Hans" "index.html")) "application/atom+xml"))
+              "…and no autodiscovery link to one")))
+      url-site)
+    (with-cli-site posts
+      (fn [dir out]
+        (cli/build {:site-dir (str dir) :out (str out) :no-write true})
+        (is (not (fs/exists? (fs/path out "feed.xml"))))
+        (is (not (str/includes? (slurp (fs/file out "index.html")) "application/atom+xml")))
+        (is (fs/exists? (fs/path out "sitemap.xml")) "the sitemap has its own switch"))
+      (assoc url-site :seo {:feeds false}))))
+
+(deftest prefix-default-true-x-default-is-the-redirect-stub
+  (testing "D-P3-2: x-default → the bare URL in both modes; under
+            :prefix-default? true that bare URL is the stub, which carries no
+            canonical, is in no set and is not in the sitemap"
+    (with-cli-site {"01.Guide/01.t.md" a-tree
+                    "01.Guide/01.t.zh-Hans.md" (str/replace a-tree "title: T" "title: 中")}
+      (fn [dir out]
+        (cli/build {:site-dir (str dir) :out (str out) :no-write true})
+        (let [en   (slurp (fs/file out "en" "pages" "t00001" "index.html"))
+              stub (slurp (fs/file out "pages" "t00001" "index.html"))
+              sm   (slurp (fs/file out "sitemap.xml"))]
+          (is (= "https://s.example/en/pages/t00001/" (canonical en)))
+          (is (= {"en" "https://s.example/en/pages/t00001/"
+                  "zh-Hans" "https://s.example/zh-Hans/pages/t00001/"
+                  "x-default" "https://s.example/pages/t00001/"} (hreflangs en)))
+          (is (str/includes? stub "http-equiv=\"refresh\""))
+          (is (nil? (canonical stub)) "noindex + canonical is a conflicting signal")
+          (is (empty? (hreflangs stub)))
+          (is (re-find #"<html lang=\"en\"" stub))
+          (is (not (str/includes? sm "<loc>https://s.example/pages/t00001/</loc>")) "no stub in the sitemap")
+          (is (str/includes? sm "<loc>https://s.example/en/pages/t00001/</loc>"))))
+      (assoc url-site :i18n {:prefix-default? true}))))
+
+(deftest the-stub-lang-is-the-default-languages
+  (is (re-find #"<html lang=\"zh-Hans\""
+               (str (hiccup2.core/html
+                     (clogem.theme.page/redirect-stub
+                      (assoc-in (:cfg *model*) [:langs :default] :zh-Hans) "/zh-Hans/pages/x/"))))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 3 part A — doctor i18n checks (D-P3-5, D-P3-6)
+
+(defn- doctor-warnings
+  [dir]
+  (try (:warnings (cli/doctor {:site-dir (str dir)}))
+       (catch clojure.lang.ExceptionInfo e
+         (diag/warnings (:clogem/errors (ex-data e))))))
+
+(defn- orphan-warnings [dir]
+  (filter #(re-find #"looks like a translation of" (:message %)) (doctor-warnings dir)))
+
+(def ^:private tr-body "---\ntitle: 译\npermalink: /pages/o00001/\n---\n\nx\n")
+(def ^:private src-body "---\ntitle: S\npermalink: /pages/s00001/\n---\n\nx\n")
+
+(deftest a-translation-left-behind-by-a-rename-is-a-warning
+  (testing "D-P3-5: the source was renumbered and renamed; base names within distance 2"
+    (with-cli-site {"01.Guide/01.getting-started.zh-Hans.md" tr-body
+                    "01.Guide/02.getting-startd.md" src-body}
+      (fn [dir _]
+        (let [ws (orphan-warnings dir)]
+          (is (= 1 (count ws)) (pr-str (map :message ws)))
+          (is (= (str "`01.Guide/01.getting-started.zh-Hans.md` looks like a translation of "
+                      "`01.Guide/02.getting-startd.md` whose source was renamed — rename it to "
+                      "`02.getting-startd.zh-Hans.md`, or add `lang: zh-Hans` to its front matter "
+                      "to keep it as a standalone article.")
+                 (:message (first ws))))
+          (testing "…and build reports it too"
+            (let [err (java.io.StringWriter.)]
+              (binding [*err* err] (cli/build {:site-dir (str dir) :no-write true :out (str (fs/path dir "dist"))}))
+              (is (str/includes? (str err) "looks like a translation of"))))))
+      url-site))
+  (testing "the same base name, case-insensitively, under a new number"
+    (with-cli-site {"01.Guide/01.Setup.ms.md" tr-body
+                    "01.Guide/05.setup.md" src-body}
+      (fn [dir _] (is (= 1 (count (orphan-warnings dir)))))
+      url-site))
+  (testing "an explicit `lang:` confirms the article stands alone"
+    (with-cli-site {"01.Guide/01.getting-started.zh-Hans.md" (str/replace tr-body "title: 译" "title: 译\nlang: zh-Hans")
+                    "01.Guide/02.getting-startd.md" src-body}
+      (fn [dir _] (is (empty? (orphan-warnings dir))))
+      url-site))
+  (testing "not when the source already has that language, nor in another directory, nor far apart"
+    (doseq [files [{"01.Guide/01.getting-started.zh-Hans.md" tr-body
+                    "01.Guide/02.getting-startd.md" src-body
+                    "01.Guide/02.getting-startd.zh-Hans.md" (str/replace tr-body "o00001" "s00001")}
+                   {"01.Guide/01.getting-started.zh-Hans.md" tr-body
+                    "02.Other/02.getting-started.md" src-body}
+                   {"01.Guide/01.hawker-guide.ms.md" tr-body
+                    "01.Guide/02.cards.md" src-body}]]
+      (with-cli-site files (fn [dir _] (is (empty? (orphan-warnings dir)) (pr-str (keys files)))) url-site))))
+
+(deftest a-same-number-orphan-extends-the-duplicate-number-error
+  (testing "D-P3-5: one diagnostic, the existing error, carrying the hint"
+    (with-cli-site {"01.Guide/01.getting-started.zh-Hans.md" tr-body
+                    "01.Guide/01.first-steps.md" src-body}
+      (fn [dir _]
+        (let [errs (doctor-errors dir)]
+          (is (= 1 (count errs)) (pr-str (map :message errs)))
+          (is (re-find #"duplicate sidebar number 1 for different articles" (:message (first errs))))
+          (is (str/includes? (:message (first errs))
+                             (str "`01.getting-started.zh-Hans.md` looks like a translation of `01.first-steps.md` "
+                                  "whose source was renamed: rename it to `01.first-steps.zh-Hans.md`"))))
+        (is (empty? (orphan-warnings dir)) "no second diagnostic"))
+      url-site)))
+
+(defn- with-strings
+  "A site with `i18n/<lang>.edn` files ({lang-name edn-map})."
+  [strings f]
+  (with-cli-site {"01.Guide/01.t.md" a-tree}
+    (fn [dir out]
+      (fs/create-dirs (fs/path dir "i18n"))
+      (doseq [[l m] strings] (spit (fs/file dir "i18n" (str l ".edn")) (pr-str m)))
+      (f dir out))
+    url-site))
+
+(deftest unknown-and-incomplete-site-string-keys-are-warnings
+  (testing "D-P3-6: a near-miss of a theme key is a typo"
+    (with-strings {"ms" {:page/tocc "Kandungan"}}
+      (fn [dir _]
+        (let [ws (map :message (doctor-warnings dir))]
+          (is (some #{"unknown UI string key `:page/tocc` in i18n/ms.edn — did you mean `:page/toc`?"} ws)
+              (pr-str ws))
+          (is (not-any? #(re-find #"site-added" %) ws) "a typo is not also a site-added key")))))
+  (testing "a site-added key missing for some configured languages"
+    (with-strings {"en" {:site/banner "Hi"} "ta" {:site/banner "வணக்கம்"}}
+      (fn [dir _]
+        (let [ws (filter #(re-find #"site-added" %) (map :message (doctor-warnings dir)))]
+          (is (= ["site-added UI string key `:site/banner` is defined in i18n/en.edn, i18n/ta.edn but missing for zh-Hans, zh-Hant, ms."]
+                 ws))))))
+  (testing "a complete site-added key and theme overrides are quiet"
+    (with-strings (into {} (for [l ["en" "zh-Hans" "zh-Hant" "ms" "ta"]] [l {:site/banner "x" :page/toc "y"}]))
+      (fn [dir _]
+        (is (empty? (doctor-warnings dir)))))))
