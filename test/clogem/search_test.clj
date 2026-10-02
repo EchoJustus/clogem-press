@@ -322,7 +322,10 @@
               "<pagefind-config> is the FIRST element in <body> (Pagefind #1332)")
           (is (str/includes? h "<link href=\"/pagefind/pagefind-component-ui.css\" rel=\"stylesheet\" />"))
           (is (str/includes? h "<script src=\"/pagefind/pagefind-component-ui.js\" type=\"module\"></script>"))
-          (is (re-find #"<header class=\"clogem-navbar\">.*<pagefind-modal-trigger placeholder=\"[^\"]+\"></pagefind-modal-trigger><pagefind-modal></pagefind-modal>" h))))
+          (is (re-find #"<header class=\"clogem-navbar\">.*<div class=\"clogem-search\"><pagefind-modal-trigger placeholder=\"[^\"]+\"></pagefind-modal-trigger>" h))
+          (is (= (if (= "ms" lang) 0 1) (count (re-seq #"<pagefind-modal>" h)))
+              "the Malay page's modal is created by js/search.js AFTER setTranslations: 1.5.2's
+               modal nests a second dialog when its strings change under it")))
       (testing "the trigger is labelled with the page's own :nav/search"
         (is (str/includes? (html out "ms") "<pagefind-modal-trigger placeholder=\"Cari\">"))
         (is (str/includes? (html out "zh-Hant") "<pagefind-modal-trigger placeholder=\"搜尋\">"))

@@ -313,12 +313,21 @@
 
 (defn search-box
   "The navbar's search button and the dialog it opens (D-P3-10), labelled
-  with the page language's `:nav/search`."
+  with the page language's `:nav/search`.
+
+  On a page whose strings come from clogem-press (`search-ui-strings`), the
+  `<pagefind-modal>` is NOT in the HTML: js/search.js creates it after
+  `setTranslations`. Pagefind 1.5.2's modal and modal header re-render on
+  every later `translations` event by wrapping their current children, so a
+  modal that already exists ends up as a second, closed `<dialog>` inside
+  the first — its input unreachable (measured on the Malay demo page). A
+  modal created after the strings are set never re-renders."
   [{:keys [cfg] :as ctx}]
   (when (search/enabled? cfg)
     [:div.clogem-search
      [:pagefind-modal-trigger {:placeholder (i18n/tr ctx :nav/search)}]
-     [:pagefind-modal]]))
+     (when-not (search-ui-strings ctx)
+       [:pagefind-modal])]))
 
 (defn navbar
   [{:keys [cfg lang] :as ctx}]

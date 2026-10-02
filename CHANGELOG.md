@@ -3,10 +3,60 @@
 ## Unreleased (Phase 3)
 
 Phase 3 part A: SEO, feeds, sitemap and the doctor i18n checks. DESIGN.md
-§11.2 items 30–39 record the decisions (D-P3-1 … D-P3-7). `version.edn` is
-unchanged until the phase is released.
+§11.2 items 30–39 record the decisions (D-P3-1 … D-P3-7). Phase 3 part B:
+Pagefind search and the optional self-hosted Tamil font; §11.2 items 40–45
+record those (D-P3-8 … D-P3-12). `version.edn` is unchanged until the phase
+is released.
 
 ### Added
+
+- **Search with Pagefind** (`:search {:provider :pagefind}`; the default
+  stays `:none`). `build` runs the `pagefind_extended` binary over `dist/`
+  as its last step — one index per `<html lang>`, so five indexes on a
+  five-language site with no configuration. `build --no-search` and `dev
+  --no-search` skip it; `dev` otherwise re-indexes on every rebuild (about
+  0.5 s on the demo); `doctor` never runs it. A failed fetch, a sha256
+  mismatch or a non-zero exit fails the build with exit 1 (after `dist/` is
+  written — CI then does not deploy it).
+- **The generator fetches Pagefind itself:** the release asset for the
+  platform, over babashka's HTTP client (honouring `HTTPS_PROXY`), checked
+  against a per-platform sha256 pin (`:tools {:pagefind {:version "1.5.2"
+  :sha256 {<platform> "<hex>"}}}`; 1.5.2's five hashes are built in), and
+  unpacked with `tar` into `$XDG_CACHE_HOME/clogem-press/tools/pagefind/
+  <version>/<platform>/` (else `~/.cache/…`), outside the site.
+  `CLOGEM_TOOLS_DIR` / `:tools :cache-dir` move the cache;
+  `CLOGEM_PAGEFIND` / `:tools :pagefind :path` use a preinstalled binary.
+  New task **`bb fetch-tool`** fetches and verifies it and prints its path.
+- **Only article content is indexed:** `data-pagefind-body` on the article
+  and catalogue `<article>` only, so homes, index and pagination pages are
+  left out; heading anchors, the variant bar and fallback markers are
+  `data-pagefind-ignore`.
+- **Pagefind's Component UI** on every page: `<pagefind-config>` first in
+  `<body>` (with `lang="zh-TW"` on zh-Hant pages, for Pagefind's Traditional
+  strings), a navbar search button labelled with the existing `:nav/search`,
+  and the search dialog. Malay, which Pagefind has no strings for, gets them
+  from 25 new theme keys `:search/…` (in all five theme files; en, zh-Hans,
+  zh-Hant and ta copy Pagefind's own) through a vendored `js/search.js`.
+  **The Malay `:search/…` strings are new and need native review** (DESIGN
+  §10, review capacity). Under `:search {:provider :none}` no search markup
+  or script is emitted at all.
+- **`:theme {:fonts {:tamil :self-hosted}}`** serves subset Noto Sans Tamil
+  v2.004 Regular and Bold (woff2, ~24 KB each, SIL OFL 1.1, `OFL.txt`
+  beside them) through `clogem/fonts/tamil.css` — `font-display: swap`,
+  `unicode-range` matching the subset, `local()` first. The default
+  `:system` links and copies no font file. `scripts/subset-tamil.md` has the
+  source and the `pyftsubset` commands.
+- **Demo:** `:search {:provider :pagefind}`, and a three-language article
+  with a long code line and a wide table (the §6.9 wrapping check's case).
+- **CI:** caches the tools directory keyed on the Pagefind version, platform
+  and hash; `bb fetch-tool` exports `CLOGEM_PAGEFIND` before `bb test`, so
+  the real-binary integration test always runs there.
+  `.github/scripts/check_search.clj` asserts, on the root-base and the
+  `/clogem-demo/` build, that `pagefind-entry.json` lists exactly the five
+  languages with one page per article variant, that only article and
+  catalogue pages carry `data-pagefind-body` (never a home), and that every
+  page opens `<body>` with `<pagefind-config>` (`lang="zh-TW"` on zh-Hant);
+  the link resolver now covers `<base>pagefind/…`.
 
 - **Canonical, hreflang and `og:locale` in every page's `<head>`.** A
   self-referencing canonical; the page's whole hreflang set, itself included,
@@ -59,6 +109,11 @@ unchanged until the phase is released.
 
 ### Fixed
 
+- **`bb test` errored on babashka 1.13.219**, which `:min-bb-version
+  "1.13.0"` admits: the timezone test set the JVM default zone through
+  `java.util.TimeZone/setDefault`, which that build rejects reflectively.
+  The scenario now runs `fm-fix` and `build` as `TZ=<zone> bb --config …`
+  subprocesses — the way a zone really reaches the generator.
 - **The Tamil-only checks were vacuous.** CI and `build_test` grepped
   `lang="ta"`, which the switcher's `hreflang="ta" lang="ta"` matches on
   every page; both now assert on the `<html>` element of `/pages/171a98/`.
@@ -95,6 +150,11 @@ unchanged until the phase is released.
 
 ### Documentation
 
+- DESIGN.md §6.7: zh-Hant search UI strings come from `lang="zh-TW"`, not
+  from strings of ours; cross-language search (`mergeIndex`) is deferred to
+  Phase 4; a strict CSP needs `worker-src 'self'` and `'wasm-unsafe-eval'`.
+  §6.9: a self-hosted Tamil face is still fetched by English pages, for the
+  switcher's "தமிழ்" label. §4: the tools cache lives outside the site.
 - DESIGN.md §6.6: `og:locale` corrected to `language_TERRITORY`; Google's
   canonical-with-hreflang guidance cited. §6.7, §10 and Appendix A item 7:
   Pagefind does **not** word-segment zh-Hant (jieba runs with a Simplified

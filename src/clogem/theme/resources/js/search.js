@@ -5,10 +5,18 @@
  * search dialog in English. The page's `<pagefind-config>` carries the
  * theme's `:search/…` strings for its language as JSON in
  * `data-clogem-translations`; this hands them to the default instance's
- * `setTranslations`, which re-renders every component. Loaded only on a
- * page that has such strings, and deferred after pagefind-component-ui.js,
- * so `window.PagefindComponents` exists when it runs. Pagefind's own
- * placeholders — [SEARCH_TERM], [COUNT], [DIFFERENT_TERM] — are left in.
+ * `setTranslations`, then creates the `<pagefind-modal>` the HTML leaves
+ * out on such a page.
+ *
+ * The order is the point. In 1.5.2 a `<pagefind-modal>` that has already
+ * rendered re-renders on every `translations` event by wrapping its current
+ * children in a new `<dialog>`, so setting strings under an existing modal
+ * nests a closed dialog — with the input in it — inside the open one. A
+ * modal created after `setTranslations` renders once, already translated.
+ *
+ * Loaded only on a page that has such strings, deferred after
+ * pagefind-component-ui.js, so `window.PagefindComponents` exists. Pagefind's
+ * own placeholders — [SEARCH_TERM], [COUNT], [DIFFERENT_TERM] — are left in.
  */
 (function () {
   "use strict";
@@ -20,5 +28,9 @@
     pf.getInstanceManager().getInstance("default").setTranslations(strings);
   } catch (e) {
     if (window.console) console.error("clogem-press: search strings not applied", e);
+  }
+  var box = document.querySelector(".clogem-search");
+  if (box && !box.querySelector("pagefind-modal")) {
+    box.appendChild(document.createElement("pagefind-modal"));
   }
 })();

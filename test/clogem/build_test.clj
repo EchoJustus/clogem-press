@@ -362,7 +362,7 @@
 
 (deftest homepage-paginates-in-detailed-mode-only
   (is (exists? "page" "2" "index.html"))
-  (is (exists? "page" "6" "index.html") "17 articles (the two catalogue pages are not articles) at 3 per page")
+  (is (exists? "page" "6" "index.html") "18 articles (the two catalogue pages are not articles) at 3 per page")
   (is (not (exists? "page" "7" "index.html")))
   (is (exists? "ms" "page" "2" "index.html") "ms inherits index.md's options")
   (is (not (exists? "zh-Hans" "page" "2" "index.html")) "simple mode has no pagination")
