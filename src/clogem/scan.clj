@@ -358,6 +358,36 @@
 ;; ---------------------------------------------------------------------------
 ;; M1: identity-scoped duplicate numbers
 
+(defn- orphan-hints
+  "D-P3-5's same-number case. When one of the colliding identities is a lone
+  non-default-language file and another is a default-language article that
+  lacks that language, the likeliest story is a renamed source left its
+  translation behind — so the duplicate-number ERROR says so, rather than a
+  second diagnostic repeating it. Front matter is not read yet, so a `lang:`
+  override cannot be seen here; it would not resolve the collision anyway."
+  [cfg identities]
+  (let [default (config/default-lang cfg)
+        lang-of #(or (:lang %) default)]
+    (apply str
+           (for [orphan identities
+                 :when (= 1 (count orphan))
+                 :let [o (first orphan) l (lang-of o)]
+                 :when (and (:suffix? o) (not= l default))
+                 :let [source (->> identities
+                             (remove #(= % orphan))
+                             (filter (fn [members]
+                                       (and (some #(= default (lang-of %)) members)
+                                            (not-any? #(= l (lang-of %)) members))))
+                             (sort-by #(str (:rel-path (first %))))
+                             first)
+                       src (first (filter #(= default (lang-of %)) source))]
+                 :when src]
+             (str " — `" (fs/file-name (:path o)) "` looks like a translation of `"
+                  (fs/file-name (:path src)) "` whose source was renamed: rename it to `"
+                  (u/variant-file-name (fs/file-name (:path src)) (name l)
+                                       (when (:suffix? src) (name default)))
+                  "`")))))
+
 (defn check-duplicate-numbers!
   "v2.1 M1. Within one directory, entries that share both `order` and `title`
   are language variants of ONE article and are legal — that is the whole point
@@ -366,7 +396,8 @@
 
   Applying vdoing's unscoped rule here would fail the build on every translated
   article, which is why this scoping is load-bearing rather than cosmetic."
-  [entries]
+  ([entries] (check-duplicate-numbers! nil entries))
+  ([cfg entries]
   ;; Files: same number AND same identity = language variants, legal.
   (doseq [[dir-key group] (group-by :dir-key (filter #(= :tree (:kind %)) entries))
           [order same-order] (group-by :order group)
@@ -378,7 +409,8 @@
     (diag/error!
      (str (u/blank->nil dir-key) "/")
      (str "duplicate sidebar number " order " for different articles: "
-          (str/join ", " (sort (map #(fs/file-name (:path %)) same-order))))
+          (str/join ", " (sort (map #(fs/file-name (:path %)) same-order)))
+          (when cfg (orphan-hints cfg (vals identities))))
      (str "Same number + same title = language variants of one article (legal). "
           "Same number + different titles = a collision. Renumber one of them "
           "(gaps of 10 are recommended).")))
@@ -398,7 +430,7 @@
      (str "Directories are never language-suffixed, so two siblings sharing a "
           "number are always a collision — there is no variant case to exempt "
           "(D-3, §6.1). Renumber one of them (gaps of 10 are recommended).")))
-  entries)
+  entries))
 
 (defn scan
   "Full scan: walk, apply the identity-scoped duplicate check, then drop the
@@ -406,5 +438,5 @@
   Markdown file, and `clogem.model/load-entries` slurps `:path`."
   [cfg]
   (->> (scan-tree cfg)
-       check-duplicate-numbers!
+       (check-duplicate-numbers! cfg)
        (filterv #(not= :dir (:kind %)))))

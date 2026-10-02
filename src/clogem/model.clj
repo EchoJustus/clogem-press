@@ -632,6 +632,44 @@
                  (str "Only one index page can exist at that URL. Rename one so the names "
                       "differ by more than case, spacing or punctuation."))))
 
+(defn check-orphan-translations!
+  "D-P3-5: a translation whose source was renamed. Warned — in analyse, so
+  `build` and `doctor` both say it — when an identity group has exactly one
+  variant, that variant is not in the default language and its file has no
+  explicit `lang:` front matter (writing one is how an author confirms the
+  article stands alone), AND the same directory holds a default-language
+  article lacking that language whose base name equals it case-insensitively
+  or is within Damerau-Levenshtein distance 2.
+
+  The same-number case is not repeated here: two identities sharing a number
+  in one directory are already the scanner's duplicate-number error, which
+  carries this hint in its message instead."
+  [cfg groups]
+  (let [default (config/default-lang cfg)
+        base    #(u/lower (str (:base-title %)))]
+    (doseq [g (sort-by :permalink (vals groups))
+            :when (= 1 (count (:variants g)))
+            :let [[l v] (first (:variants g))]
+            :when (and (not= l default) (nil? (get-in v [:front-matter :lang])))
+            :let [cands (for [g2 (vals groups)
+                              :let [d (get-in g2 [:variants default])]
+                              :when (and d (not= g2 g)
+                                         (= (:dir-key d) (:dir-key v))
+                                         (not (contains? (:variants g2) l))
+                                         (not (and (:order d) (= (:order d) (:order v)))))
+                              :let [dist (u/damerau-levenshtein (base v) (base d))]
+                              :when (<= dist 2)]
+                          [dist (str (:rel-path d)) d])
+                  [_ _ src] (first (sort-by (juxt first second) cands))]
+            :when src]
+      (diag/warn! (:rel-path v)
+                  (str "`" (:rel-path v) "` looks like a translation of `" (:rel-path src)
+                       "` whose source was renamed — rename it to `"
+                       (u/variant-file-name (fs/file-name (:path src)) (name l)
+                                            (when (:suffix? src) (name default)))
+                       "`, or add `lang: " (name l) "` to its front matter to keep it "
+                       "as a standalone article.")))))
+
 (defn build-model
   [cfg entries ledger]
   (let [[entries taken] (resolve-permalinks cfg entries ledger)
@@ -645,6 +683,7 @@
         categories      (index-by :categories articles)
         tags            (index-by :tags articles)]
     (check-slug-collisions! cfg categories tags)
+    (check-orphan-translations! cfg groups)
     {:cfg      cfg
      :entries  entries
      :articles groups

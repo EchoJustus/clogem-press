@@ -93,6 +93,17 @@
         (aset d i j (long best))))
     (aget d m n)))
 
+(defn variant-file-name
+  "`source` (a filename such as `01.intro.md` or `01.intro.en.md`) re-suffixed
+  for `lang`: `01.intro.zh-Hans.md`. `strip` is the source's own language
+  suffix as written, if it has one (D-P3-5's rename suggestion)."
+  [source lang strip]
+  (let [stem (str/replace (str source) #"(?i)\.md$" "")
+        stem (if (and strip (str/ends-with? (lower stem) (str "." (lower strip))))
+               (subs stem 0 (- (count stem) (inc (count strip))))
+               stem)]
+    (str stem "." lang ".md")))
+
 (defn closest
   "The candidate with the smallest edit distance to s, or nil if none is within
   `max-distance`.
