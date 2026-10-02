@@ -30,7 +30,7 @@ language preference, the "also available" banner and giscus comments (items
   with no banner strings gets them along the fallback chain, and the note's
   `lang`/`dir` are then those of the text shown). Dismissal is remembered
   per page (the 100 most recent) and moves focus to the main column. A long
-  `:label` wraps inside the note. The page's data is a JSON `<script
+  `:label` wraps inside the note and in the navbar switcher. The page's data is a JSON `<script
   id="clogem-lang-data">` that escapes `<`, `>` and `&`, so a `</script>` in
   a site string stays inert. `:redirect` instead replaces a bare URL with
   the L variant from an inline `<head>` script placed before the

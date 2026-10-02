@@ -359,4 +359,7 @@
     (let [css (slurp (fs/file "src/clogem/theme/resources/css/theme.css"))]
       (is (str/includes? css ".clogem-lang-banner__text { flex: 1; min-width: 0; }"))
       (is (str/includes? css ".clogem-lang-banner__text a { overflow-wrap: anywhere; }"))
-      (is (not (re-find #"clogem-lang-banner[^{]*\{[^}]*nowrap" css))))))
+      (is (not (re-find #"clogem-lang-banner[^{]*\{[^}]*nowrap" css)))
+      (testing "and the navbar switcher listing the same label wraps too"
+        (is (re-find #"\.clogem-langs ul \{[^}]*flex-wrap: wrap" css))
+        (is (re-find #"\.clogem-langs \{[^}]*min-width: 0" css))))))

@@ -90,9 +90,11 @@ a:hover { text-decoration: underline; }
   padding: 0.4rem 0.8rem; background: var(--bodyBg); border: 1px solid var(--borderColor); border-radius: 6px; z-index: 20; }
 .clogem-navbar__menu li { padding: 0.2rem 0; }
 
-.clogem-langs { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; }
+/* the list wraps, like the navbar around it: a long :label used to widen a
+ * 360 px page past the viewport */
+.clogem-langs { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
 .clogem-langs__label { color: var(--textColorSubtle); font-size: 0.85rem; }
-.clogem-langs ul { list-style: none; display: flex; gap: 0.6rem; margin: 0; padding: 0; }
+.clogem-langs ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; margin: 0; padding: 0; }
 .clogem-langs .is-current { color: var(--textColorSubtle); font-weight: 600; }
 
 .clogem-shell {

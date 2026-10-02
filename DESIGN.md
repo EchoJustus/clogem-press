@@ -2531,7 +2531,10 @@ item 11.
     `tabindex="-1"`, drawn without a ring) before the note is removed, so a keyboard reader is not
     dropped to `<body>`. The text takes `min-width: 0` and its link `overflow-wrap: anywhere`: the
     link used to be `nowrap`, and a `:label` such as "Bahasa Melayu (Malaysia, Singapura)" widened a
-    360 px document to 415 px and pushed the dismiss button off-screen. **Verified once in Chromium** (Playwright, not
+    360 px document to 415 px and pushed the dismiss button off-screen. The navbar switcher, which
+    lists the same label, now wraps its list (`flex-wrap: wrap`) for the same reason. Verified once in
+    Chromium (Playwright, not committed) at 360 px and 320 px with that label and "தமிழ் (இந்தியா,
+    இலங்கை, சிங்கப்பூர், மலேசியா)": no horizontal overflow, the button inside the viewport. **Verified once in Chromium** (Playwright, not
     committed) on the built demo: the banner in Simplified Chinese with `lang="zh-Hans"` linking to
     `/zh-Hans/pages/643259/` on the bare English article; keyboard order link then button, Enter
     dismisses; hidden after reload; the 100-entry cap; absent on `/zh-Hans/…`, with `clogem-lang=en`,
