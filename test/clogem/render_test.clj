@@ -13,7 +13,9 @@
             [clogem.cli :as cli]
             [clogem.config :as config]
             [clogem.diag :as diag]
+            [clogem.fake-tools :as fake]
             [clogem.render :as render]
+            [clogem.search :as search]
             [hiccup2.core]))
 
 (def demo "examples/demo-site")
@@ -51,6 +53,11 @@
                                                   :content {:write-front-matter false}})))
         [model _] (diag/collecting (cli/analyse cfg))]
     (diag/collecting (render/build! cfg model))
+    ;; every page links the Pagefind bundle (D-P3-10), so the link check
+    ;; needs it: the real binary when CLOGEM_PAGEFIND names one (CI), else
+    ;; a stand-in that writes the files the theme links to
+    (search/run! (assoc-in cfg [:tools :pagefind :path]
+                           (fake/fake-pagefind! (fs/path out ".fake-bin"))))
     out))
 
 (defn- internal-hrefs

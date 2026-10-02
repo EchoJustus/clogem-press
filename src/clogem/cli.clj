@@ -14,7 +14,8 @@
             [clogem.model :as model]
             [clogem.pages :as pages]
             [clogem.render :as render]
-            [clogem.scan :as scan]))
+            [clogem.scan :as scan]
+            [clogem.search :as search]))
 
 ;; ---------------------------------------------------------------------------
 ;; Shared option spec
@@ -112,7 +113,9 @@
         {:spec (merge common-spec
                       {:out      {:desc "Output directory." :default "dist" :alias :o :ref "<dir>"}
                        :base     {:desc "Site base path, e.g. /project/." :ref "<path>"}
-                       :no-write {:desc "Read-only build: never touch source files." :coerce :boolean}})}}
+                       :no-write {:desc "Read-only build: never touch source files." :coerce :boolean}
+                       :no-search {:desc "Skip the search index even when :search :provider is set."
+                                   :coerce :boolean}})}}
   build
   [opts]
   (let [cfg (load-cfg! opts)]
@@ -152,7 +155,26 @@
       (report! ds)
       (println (format "clogem-press: %d pages (%d articles, %d variants) → %s"
                        (:pages result) (:articles result) (:variants result) (:out result)))
-      result)))
+      ;; D-P3-8: search runs last, over the finished dist/. A failure here is
+      ;; a build error (exit 1) even though dist/ is already written — the
+      ;; known limitation of §11.2: CI stops before deploying it.
+      (if (and (search/enabled? cfg) (not (:no-search opts)))
+        (let [{:keys [languages pages]} (search/index! cfg)]
+          (println (format "clogem-press: search index → %s/%s (%d language%s, %d pages)"
+                           (:out result) search/output-subdir
+                           languages (if (= 1 languages) "" "s") pages))
+          (assoc result :search {:languages languages :pages pages}))
+        result))))
+
+(defn ^{:org.babashka/cli {:spec common-spec}}
+  fetch-tool
+  "§4's fetch-tool helper: fetch, verify and cache the Pagefind binary this
+  site pins, and print its path — what CI exports as CLOGEM_PAGEFIND."
+  [opts]
+  (let [cfg (load-cfg! opts)
+        bin (search/ensure-binary! cfg)]
+    (println bin)
+    bin))
 
 (defn ^{:org.babashka/cli {:spec (assoc common-spec
                                         :dry-run {:desc "Report what would be written, write nothing."
@@ -232,6 +254,8 @@
                        :port     {:desc "Port." :default 1888 :coerce :long :alias :p}
                        :poll     {:desc "Poll the filesystem instead of using inotify."
                                   :coerce :boolean}
+                       :no-search {:desc "Do not rebuild the search index on each rebuild."
+                                   :coerce :boolean}
                        :interval {:desc "Poll interval in ms." :default 500 :coerce :long}
                        :probe-ms {:desc "How long to wait for the watcher to prove it delivers events."
                                   :default 3000 :coerce :long}})}}

@@ -150,8 +150,12 @@
              (into [(keyword (str "h" (:heading-level node)))
                     (cond-> {} id (assoc :id id))
                     (when id
-                      [:a.header-anchor {:href (str "#" (u/url-encode-fragment id))
-                                         :aria-hidden "true"} "#"])]
+                      [:a.header-anchor (cond-> {:href (str "#" (u/url-encode-fragment id))
+                                                 :aria-hidden "true"}
+                                          ;; D-P3-9: the `#` is chrome, not text
+                                          (= :pagefind (get-in link-ctx [:cfg :search :provider]))
+                                          (assoc :data-pagefind-ignore ""))
+                       "#"])]
                    (children ctx node))))
 
          :link

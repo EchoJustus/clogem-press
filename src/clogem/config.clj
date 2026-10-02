@@ -83,13 +83,18 @@
    :theme   {:default-mode :auto :page-style :card
              :sidebar-open true          ; true → every sidebar group open; false → only the active trail
              :sidebar-depth 2            ; TOC depth: h2–h3 (front matter `sidebarDepth` overrides)
-             :per-page 10}               ; homepage / category / tag pagination
+             :per-page 10                ; homepage / category / tag pagination
+             :fonts {:tamil :system}}    ; :system | :self-hosted (§6.9, D-P3-12)
    :nav     []
-   :search   {:provider :none}
+   :search   {:provider :none}           ; :none | :pagefind (§6.7, D-P3-8)
    :comments {:provider :none}
    :analytics {:provider :none}
    :seo     {:sitemap true :hreflang true :x-default :primary :feeds true}
-   :build   {:out "dist"}})
+   :build   {:out "dist"}
+   ;; D-P3-8: the per-platform hashes for the default version live in
+   ;; `clogem.search/known-sha256`, so a site that pins another version
+   ;; does not inherit hashes that cannot match it
+   :tools   {:pagefind {:version "1.5.2"}}})
 
 ;; ---------------------------------------------------------------------------
 ;; Loading
@@ -266,6 +271,45 @@
                             "Using it so the rest of the report is readable, but the build will not run."))
           (assoc-in cfg [:seo :x-default] :primary)))))
 
+(defn- check-enum!
+  "A keyword option with a closed set of values: anything else is a config
+  error repaired to the default, so `doctor` can keep going."
+  [cfg path allowed why]
+  (let [v (get-in cfg path)
+        default (get-in defaults path)]
+    (cond
+      (nil? v) (assoc-in cfg path default)
+      (contains? allowed v) cfg
+      :else
+      (do (diag/error! nil (str (str/join " " path) " is " (pr-str v) ", but it must be one of "
+                                (str/join ", " (map pr-str (sort allowed))) ".")
+                       (str why " Using " (pr-str default) " so the rest of the report is readable, "
+                            "but the build will not run."))
+          (assoc-in cfg path default)))))
+
+(defn- check-search!
+  "D-P3-8 / D-P3-12: the search provider, the Pagefind pin, and the Tamil
+  font option."
+  [cfg]
+  (let [cfg (-> cfg
+                (check-enum! [:search :provider] #{:none :pagefind}
+                             "Pagefind is the only search provider (DESIGN.md §6.7).")
+                (check-enum! [:theme :fonts :tamil] #{:system :self-hosted}
+                             ":self-hosted serves a subset Noto Sans Tamil from the site (DESIGN.md §6.9)."))
+        {:keys [version sha256]} (get-in cfg [:tools :pagefind])]
+    (when-not (and (string? version) (re-matches u/version-re version))
+      (diag/error! nil (str ":tools :pagefind :version is " (pr-str version)
+                            ", which is not a version string like \"1.5.2\".")))
+    (when (some? sha256)
+      (when-not (and (map? sha256)
+                     (every? (fn [[k v]] (and (string? k) (string? v) (re-matches #"(?i)[0-9a-f]{64}" v)))
+                             sha256))
+        (diag/error! nil (str ":tools :pagefind :sha256 must map each platform to its hex sha256, e.g. "
+                              "{\"x86_64-unknown-linux-musl\" \"aeb1…\"}.")
+                     (str "One hash cannot cover several release assets (DESIGN.md §11.2, D-P3-8); "
+                          "copy each from the release's .sha256 file."))))
+    cfg))
+
 (defn- validate!
   [{:keys [langs comments generator] :as cfg}]
   (let [{:keys [locales priority default default-declared]} langs]
@@ -304,7 +348,7 @@
           (diag/error! nil (str ":comments " k " is required when :provider is :giscus.")))))
     (when (< (count priority) (count locales))
       (diag/warn! nil ":langs :priority does not cover every locale; missing ones were appended.")))
-  (-> cfg check-theme! check-floor! check-fallback! check-site-url! check-x-default!))
+  (-> cfg check-theme! check-floor! check-fallback! check-site-url! check-x-default! check-search!))
 
 (defn load-config
   "Read site config from `site-dir`, deep-merge over defaults and `overrides`,

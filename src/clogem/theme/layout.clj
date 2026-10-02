@@ -11,10 +11,12 @@
   `clogem.model`'s URL helpers), so `render/uri->file` can strip the base
   again — the site's `:base` belongs in every link and in no part of the file
   layout."
-  (:require [clojure.string :as str]
+  (:require [cheshire.core :as json]
+            [clojure.string :as str]
             [clogem.config :as config]
             [clogem.i18n :as i18n]
             [clogem.model :as model]
+            [clogem.search :as search]
             [clogem.seo :as seo]
             [clogem.util :as u]))
 
@@ -26,6 +28,19 @@
   a slash to a file path, so the base is joined directly."
   [ctx path]
   (str/replace (str (config/base-path (:cfg ctx)) "/clogem/" path) #"/{2,}" "/"))
+
+(defn search-href
+  "A file of the Pagefind bundle, which Pagefind writes to `dist/pagefind/`
+  (D-P3-8): base-inclusive, like every other emitted URL."
+  [ctx file]
+  (str/replace (str (config/base-path (:cfg ctx)) "/" search/output-subdir "/" file) #"/{2,}" "/"))
+
+(defn pagefind
+  "`{k \"\"}` when the site indexes with Pagefind, else nil — so a
+  `:search {:provider :none}` page carries no `data-pagefind-*` attribute at
+  all (D-P3-9). Used as the attribute map of an element that has none."
+  [{:keys [cfg]} k]
+  (when (search/enabled? cfg) {k ""}))
 
 (defn href
   "A site URI made safe for an href: every path segment percent-encoded, so a
@@ -71,8 +86,8 @@
   [{:keys [cfg] :as ctx} vl]
   (when (get-in cfg [:i18n :show-fallback-notice])
     [:span.clogem-fallback
-     {:title (i18n/tr ctx :page/fallback-notice
-                      {:lang (get-in cfg [:langs :locales vl :label])})}
+     (merge (pagefind ctx :data-pagefind-ignore) {:title (i18n/tr ctx :page/fallback-notice
+                      {:lang (get-in cfg [:langs :locales vl :label])})})
      (name vl)]))
 
 (defn index-href
@@ -274,6 +289,37 @@
         (into [:ul.clogem-navbar__menu] (map #(nav-item ctx %) items))]]
       [:li.clogem-navbar__item a])))
 
+(defn search-ui-strings
+  "The page's `search/ui-translations`, precomputed per language by
+  `render/page-map` (`:search-ui`) or computed here."
+  [ctx]
+  (if (contains? ctx :search-ui) (:search-ui ctx) (search/ui-translations ctx)))
+
+(defn search-config
+  "D-P3-10: `<pagefind-config>`, emitted FIRST in `<body>` on every page.
+  Pagefind 1.5.2 can render its first component before the language is
+  resolved when no config element precedes it (fixed upstream only on main,
+  #1332). `bundle-path` is base-inclusive; `lang` is `search/ui-lang` (UI
+  strings only — the index follows `<html lang>`); a language Pagefind has
+  no strings for carries them in `data-clogem-translations`, which
+  js/search.js hands to `setTranslations`."
+  [{:keys [cfg lang] :as ctx}]
+  (when (search/enabled? cfg)
+    (let [strings (search-ui-strings ctx)]
+      [:pagefind-config
+       (cond-> {:bundle-path (search-href ctx "")
+                :lang (search/ui-lang cfg lang)}
+         strings (assoc :data-clogem-translations (json/generate-string strings)))])))
+
+(defn search-box
+  "The navbar's search button and the dialog it opens (D-P3-10), labelled
+  with the page language's `:nav/search`."
+  [{:keys [cfg] :as ctx}]
+  (when (search/enabled? cfg)
+    [:div.clogem-search
+     [:pagefind-modal-trigger {:placeholder (i18n/tr ctx :nav/search)}]
+     [:pagefind-modal]]))
+
 (defn navbar
   [{:keys [cfg lang] :as ctx}]
   [:header.clogem-navbar
@@ -281,6 +327,7 @@
     (i18n/resolve-str ctx (get-in cfg [:site :title]))]
    [:nav.clogem-navbar__nav
     (into [:ul] (map #(nav-item ctx %) (:nav cfg)))]
+   (search-box ctx)
    (lang-switcher ctx)])
 
 (defn- sidebar-node
@@ -367,6 +414,7 @@
                     (filter #(and (not= % lang) (contains? (:variants group) %))))]
     (when (seq others)
       [:p.clogem-variants
+       (pagefind ctx :data-pagefind-ignore)
        [:span (i18n/tr ctx :page/also-available
                        {:lang (str/join ", " (map #(get-in cfg [:langs :locales % :label]) others))})]
        (into [:span.clogem-variants__links]
@@ -460,6 +508,20 @@
         [:meta {:name "description" :content d}])
       (seo-head ctx)
       [:link {:rel "stylesheet" :href (asset-href ctx "css/theme.css")}]
+      ;; D-P3-12: the @font-face rules live beside the font files, so a
+      ;; :system site links no font CSS and ships no font bytes
+      (when (= :self-hosted (get-in cfg [:theme :fonts :tamil]))
+        [:link {:rel "stylesheet" :href (asset-href ctx "fonts/tamil.css")}])
+      ;; D-P3-10: Pagefind's Component UI, from the bundle the build writes;
+      ;; nothing at all under :search {:provider :none}
+      (when (search/enabled? cfg)
+        (list
+         [:link {:rel "stylesheet" :href (search-href ctx "pagefind-component-ui.css")}]
+         [:script {:src (search-href ctx "pagefind-component-ui.js") :type "module"}]
+         ;; a module script is deferred, and deferred scripts run in document
+         ;; order, so this runs after the components are defined
+         (when (search-ui-strings ctx)
+           [:script {:src (asset-href ctx "js/search.js") :defer true}])))
       ;; vendored vanilla scroll-spy (D-P2-9); no CDN, no deps — deferred,
       ;; and only on a page that renders a TOC for it to spy on
       (when (seq (:toc ctx))
@@ -467,7 +529,8 @@
      (into [:body {:class (str "theme-mode-" (name (get-in cfg [:theme :default-mode] :auto))
                                " theme-style-" (name (get-in cfg [:theme :page-style] :card))
                                " lang-" (name lang)
-                               (when-let [k (:page-kind ctx)] (str " page-" (name k))))}]
+                               (when-let [k (:page-kind ctx)] (str " page-" (name k))))}
+            (search-config ctx)]
            body)]))
 
 (defn page

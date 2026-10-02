@@ -22,6 +22,7 @@
             [clogem.markdown :as markdown]
             [clogem.model :as model]
             [clogem.pages :as pages]
+            [clogem.search :as search]
             [clogem.seo :as seo]
             [clogem.theme.catalogue :as catalogue]
             [clogem.theme.home :as home]
@@ -372,10 +373,20 @@
                        ;; which languages have an Atom feed, for autodiscovery (D-P3-3)
                        :feed-langs (set (seo/feed-langs model)))
         prefix-all? (get-in cfg [:i18n :prefix-default?])
+        ;; D-P3-10: the search UI strings a language needs, worked out once
+        ;; per language rather than once per page (it reads the site's i18n
+        ;; file to see whether it overrides any)
+        search-ui (into {}
+                        (for [l (config/lang-keys cfg)]
+                          [l (delay (when (search/enabled? cfg)
+                                      (search/ui-translations
+                                       {:cfg cfg :lang l :strings strings
+                                        :dev? (:clogem/dev? cfg)})))]))
         ctx-for (fn [lang m]
                   (merge {:cfg cfg :lang lang :strings strings :model model
                           :dev? (:clogem/dev? cfg)
-                          :index-paths paths}
+                          :index-paths paths
+                          :search-ui (some-> (get search-ui lang) deref)}
                          m))]
     (into
      {}
@@ -510,8 +521,10 @@
   [cfg]
   (let [out (config/out-dir cfg)]
     (when-let [themed (theme-resource-dir)]
-      ;; the i18n EDN maps are build-time inputs, not site output
-      (doseq [sub ["css" "js" "icons" "fonts"]
+      ;; the i18n EDN maps are build-time inputs, not site output; the
+      ;; fonts ship only to a site that asked for them (D-P3-12)
+      (doseq [sub (cond-> ["css" "js" "icons"]
+                    (= :self-hosted (get-in cfg [:theme :fonts :tamil])) (conj "fonts"))
               :let [from (fs/path themed sub)]
               :when (fs/directory? from)]
         (copy-tree! from (fs/path out "clogem" sub))))

@@ -18,7 +18,8 @@
     clogem.ledger-test
     clogem.dev-test
     clogem.seo-test
-    clogem.build-test])
+    clogem.build-test
+    clogem.search-test])
 
 (defn run
   [{:keys [pattern]}]

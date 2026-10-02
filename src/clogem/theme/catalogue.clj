@@ -56,6 +56,7 @@
       [:main.clogem-main
        (layout/breadcrumbs ctx group)
        [:article.clogem-article.clogem-catalogue
+        (layout/pagefind ctx :data-pagefind-body)       ; D-P3-9
         [:header.clogem-catalogue__header
          (when-let [img (some-> imgUrl str not-empty)]
            [:img.clogem-catalogue__img {:src (rewrite-href img) :alt ""}])

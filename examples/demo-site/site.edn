@@ -57,5 +57,5 @@
 
  :theme {:default-mode :auto :page-style :card
          :per-page 3}                    ; small, so the demo has a /page/2/
- :search   {:provider :none}
+ :search   {:provider :pagefind}   ; D-P3-8: CI indexes the demo in all five languages
  :comments {:provider :none}}
