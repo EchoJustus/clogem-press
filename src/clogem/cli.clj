@@ -14,7 +14,8 @@
             [clogem.model :as model]
             [clogem.pages :as pages]
             [clogem.render :as render]
-            [clogem.scan :as scan]))
+            [clogem.scan :as scan]
+            [clogem.search :as search]))
 
 ;; ---------------------------------------------------------------------------
 ;; Shared option spec
@@ -25,13 +26,17 @@
 
 (defn- load-cfg*
   "Load config under a diagnostic sink. Returns [cfg diagnostics]."
-  [{:keys [site-dir config-file out no-write base]}]
+  [{:keys [site-dir config-file out no-write base no-search]}]
   (diag/collecting
    (config/load-config site-dir config-file
                        (cond-> {}
                          out      (assoc-in [:build :out] out)
                          base     (assoc-in [:site :base] base)
-                         no-write (assoc-in [:content :write-front-matter] false)))))
+                         no-write (assoc-in [:content :write-front-matter] false)
+                         ;; --no-search is a render setting, not only "skip
+                         ;; the indexer": pages that link a bundle the build
+                         ;; never writes 404 on every load
+                         no-search (assoc-in [:search :provider] :none)))))
 
 (defn load-cfg!
   "Load config; a config ERROR is fatal (D-P2-12).
@@ -112,7 +117,9 @@
         {:spec (merge common-spec
                       {:out      {:desc "Output directory." :default "dist" :alias :o :ref "<dir>"}
                        :base     {:desc "Site base path, e.g. /project/." :ref "<path>"}
-                       :no-write {:desc "Read-only build: never touch source files." :coerce :boolean}})}}
+                       :no-write {:desc "Read-only build: never touch source files." :coerce :boolean}
+                       :no-search {:desc "Build without search (no index, no search UI) even when :search :provider is set."
+                                   :coerce :boolean}})}}
   build
   [opts]
   (let [cfg (load-cfg! opts)]
@@ -152,7 +159,29 @@
       (report! ds)
       (println (format "clogem-press: %d pages (%d articles, %d variants) → %s"
                        (:pages result) (:articles result) (:variants result) (:out result)))
-      result)))
+      (when (pos? (:stale result 0))
+        (println (format "clogem-press: removed %d stale page%s from %s"
+                         (:stale result) (if (= 1 (:stale result)) "" "s") (:out result))))
+      ;; D-P3-8: search runs last, over the finished dist/. A failure here is
+      ;; a build error (exit 1) even though dist/ is already written — the
+      ;; known limitation of §11.2: CI stops before deploying it.
+      (if (search/enabled? cfg)
+        (let [{:keys [languages pages]} (search/index! cfg)]
+          (println (format "clogem-press: search index → %s/%s (%d language%s, %d pages)"
+                           (:out result) search/output-subdir
+                           languages (if (= 1 languages) "" "s") pages))
+          (assoc result :search {:languages languages :pages pages}))
+        result))))
+
+(defn ^{:org.babashka/cli {:spec common-spec}}
+  fetch-tool
+  "§4's fetch-tool helper: fetch, verify and cache the Pagefind binary this
+  site pins, and print its path — what CI exports as CLOGEM_PAGEFIND."
+  [opts]
+  (let [cfg (load-cfg! opts)
+        bin (search/ensure-binary! cfg)]
+    (println bin)
+    bin))
 
 (defn ^{:org.babashka/cli {:spec (assoc common-spec
                                         :dry-run {:desc "Report what would be written, write nothing."
@@ -232,6 +261,8 @@
                        :port     {:desc "Port." :default 1888 :coerce :long :alias :p}
                        :poll     {:desc "Poll the filesystem instead of using inotify."
                                   :coerce :boolean}
+                       :no-search {:desc "Do not rebuild the search index on each rebuild."
+                                   :coerce :boolean}
                        :interval {:desc "Poll interval in ms." :default 500 :coerce :long}
                        :probe-ms {:desc "How long to wait for the watcher to prove it delivers events."
                                   :default 3000 :coerce :long}})}}

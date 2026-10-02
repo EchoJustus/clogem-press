@@ -69,6 +69,13 @@
   {:key "/04.中文笔记|1|first",
    :langs ["zh-Hans"],
    :paths ["04.中文笔记/01.first.zh-Hans.md"]},
+  "/pages/e19a7c/"
+  {:key "/02.Notes/10.Local|6|wide-content",
+   :langs ["en" "ta" "zh-Hant"],
+   :paths
+   ["02.Notes/10.Local/06.wide-content.md"
+    "02.Notes/10.Local/06.wide-content.ta.md"
+    "02.Notes/10.Local/06.wide-content.zh-Hant.md"]},
   "/pages/ebaa6b/"
   {:key "/03.Deep/10.Level2/20.Level3|2|three-deep",
    :langs ["en"],

@@ -397,3 +397,79 @@
   (let [[cfg _] (with-site {})]
     (is (true? (get-in cfg [:seo :feeds])))
     (is (true? (get-in cfg [:seo :sitemap])))))
+
+(deftest a-wrong-shaped-section-is-a-config-error
+  (testing "a non-map where the defaults hold a map used to crash with a
+            ClassCastException from a later assoc-in"
+    (doseq [[edn path] [[{:search :pagefind} [:search]]
+                        [{:theme {:fonts :self-hosted}} [:theme :fonts]]
+                        [{:seo :none} [:seo]]
+                        [{:tools {:pagefind "1.5.2"}} [:tools :pagefind]]
+                        [{:theme "dark"} [:theme]]
+                        [{:langs :en} [:langs]]
+                        [{:build "dist"} [:build]]]]
+      (let [[cfg ds] (with-site edn)]
+        (is (some #(re-find (re-pattern (str "^" (str/join " " path) " is .*, but it must be a map"))
+                            (:message %))
+                  (diag/errors ds))
+            (pr-str edn (map :message (diag/errors ds))))
+        (is (map? (get-in cfg path)) "repaired, so doctor can keep going"))))
+  (testing "build and doctor exit 1 with the readable message"
+    (doseq [edn [{:search :pagefind} {:theme {:fonts :self-hosted}} {:seo :none}]]
+      (let [dir (content-site edn)]
+        (try
+          (binding [diag/*sink* (atom [])]
+            (let [e (try (cli/build {:site-dir (str dir) :out (str (fs/path dir "dist")) :no-write true}) nil
+                         (catch clojure.lang.ExceptionInfo e e))]
+              (is (= 1 (:babashka/exit (ex-data e))) (pr-str edn))
+              (is (re-find #"must be a map" (str (ex-message e))) (ex-message e)))
+            (is (not (fs/exists? (fs/path dir "dist")))))
+          (finally (fs/delete-tree dir))))))
+  (testing "nil still means the default, and valid maps pass"
+    (let [[_ ds] (with-site {:search nil :seo {:sitemap false} :theme {:fonts {:tamil :system}}})]
+      (is (empty? (diag/errors ds))))))
+
+(deftest the-output-directory-must-be-a-directory-of-its-own
+  (testing "§11.2 item 46: a build deletes .html files it did not write from
+            its output directory, so out may not be the site, an ancestor of
+            it, a directory holding the content dir, or another site's directory"
+    (let [dir   (content-site {})
+          other (fs/create-temp-dir {:prefix "clogem-other"})
+          link  (fs/path other "link-to-site")]
+      (spit (fs/file other "site.edn") "{}")
+      (spit (fs/file dir "keep.html") "<p>a hand-written page in the site dir</p>")
+      (fs/create-sym-link link dir)
+      (try
+        (binding [diag/*sink* (atom [])]
+          (doseq [[out re] [["." #"is the site directory itself"]
+                            [(str dir) #"is the site directory itself"]
+                            [".." #"which contains the site directory"]
+                            ["/" #"which contains the site directory"]
+                            [(str link) #"is the site directory itself"]
+                            [(str other) #"which holds a site.edn"]]]
+            (testing (pr-str out)
+              (let [e (try (cli/build {:site-dir (str dir) :out out :no-write true}) nil
+                           (catch clojure.lang.ExceptionInfo e e))]
+                (is (= 1 (:babashka/exit (ex-data e))))
+                (is (re-find re (str (ex-message e))) (ex-message e))
+                (is (re-find #"refusing to build there" (str (ex-message e)))))))
+          (testing "content outside the site dir, under out"
+            (let [d2 (content-site {:content {:dir "../shared/content"}})]
+              (try
+                (let [e (try (cli/build {:site-dir (str d2) :out "../shared" :no-write true}) nil
+                             (catch clojure.lang.ExceptionInfo e e))]
+                  (is (re-find #"contains the content directory" (str (ex-message e))) (ex-message e)))
+                (finally (fs/delete-tree d2) (fs/delete-tree (fs/path (fs/parent d2) "shared"))))))
+          (is (= "<p>a hand-written page in the site dir</p>" (slurp (fs/file dir "keep.html")))
+              "refused before anything was written or deleted")
+          (is (not (fs/exists? (fs/path dir "index.html"))))
+          (is (not (fs/exists? (fs/path other "index.html"))))
+          (testing "doctor reports it too"
+            (let [[_ ds] (diag/collecting (config/load-config (str dir) nil {:build {:out "."}}))]
+              (is (some #(re-find #":build :out" (:message %)) (diag/errors ds)))))
+          (testing "a sibling or nested output directory is fine"
+            (let [[_ ds] (diag/collecting (config/load-config (str dir) nil {:build {:out "../elsewhere"}}))]
+              (is (empty? (diag/errors ds))))
+            (let [[_ ds] (diag/collecting (config/load-config (str dir) nil {:build {:out "public/site"}}))]
+              (is (empty? (diag/errors ds))))))
+        (finally (fs/delete-tree dir) (fs/delete-tree other))))))

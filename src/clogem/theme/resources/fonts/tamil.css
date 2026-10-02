@@ -1,0 +1,28 @@
+/* clogem-press — self-hosted Noto Sans Tamil (DESIGN.md §6.9, D-P3-12).
+ *
+ * Linked only under `:theme {:fonts {:tamil :self-hosted}}`. Subsets of Noto
+ * Sans Tamil v2.004 (SIL OFL 1.1, see OFL.txt here; scripts/subset-tamil.md
+ * has the commands). The family name is the one theme.css's :lang(ta) stack
+ * already leads with; `local()` first, so a device that has the font (every
+ * Android) downloads nothing. `unicode-range` matches the subset, so a page
+ * fetches a file only when it renders Tamil — and `font-display: swap`
+ * shows text in the fallback face while it arrives.
+ */
+@font-face {
+  font-family: "Noto Sans Tamil";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local("Noto Sans Tamil Regular"), local("NotoSansTamil-Regular"),
+       url("noto-sans-tamil-400.woff2") format("woff2");
+  unicode-range: U+0B80-0BFF, U+200C-200D, U+25CC;
+}
+@font-face {
+  font-family: "Noto Sans Tamil";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local("Noto Sans Tamil Bold"), local("NotoSansTamil-Bold"),
+       url("noto-sans-tamil-700.woff2") format("woff2");
+  unicode-range: U+0B80-0BFF, U+200C-200D, U+25CC;
+}

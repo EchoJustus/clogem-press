@@ -6,6 +6,7 @@
   these are the tests that would catch a convention regression before a
   generator tag is cut and a content repo bumps to it."
   (:require [babashka.fs :as fs]
+            [babashka.process :as p]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hiccup2.core]
@@ -352,7 +353,7 @@
 
 (deftest homepage-cards-carry-excerpt-title-tag-and-info-line
   (let [html (slurp-out "index.html")]
-    (is (str/includes? html "<span class=\"clogem-title-tag\">原创</span>") "titleTag badge")
+    (is (str/includes? html "<span class=\"clogem-title-tag\" data-pagefind-ignore=\"\">原创</span>") "titleTag badge")
     (is (str/includes? html "This post is dated 2025") "the excerpt is the content before <!-- more -->")
     (is (not (str/includes? html "Everything below the")) "…and nothing after it")
     (is (str/includes? html "href=\"/categories/notes/\">Notes</a>") "categories link to their index pages")
@@ -361,7 +362,7 @@
 
 (deftest homepage-paginates-in-detailed-mode-only
   (is (exists? "page" "2" "index.html"))
-  (is (exists? "page" "6" "index.html") "17 articles (the two catalogue pages are not articles) at 3 per page")
+  (is (exists? "page" "6" "index.html") "18 articles (the two catalogue pages are not articles) at 3 per page")
   (is (not (exists? "page" "7" "index.html")))
   (is (exists? "ms" "page" "2" "index.html") "ms inherits index.md's options")
   (is (not (exists? "zh-Hans" "page" "2" "index.html")) "simple mode has no pagination")
@@ -410,7 +411,8 @@
     (is (str/includes? html "datetime=\"2026-08-16\""))
     (is (str/includes? html "href=\"/categories/notes/\">Notes</a>"))
     (is (str/includes? html "href=\"/tags/meta/\">meta</a>"))
-    (is (str/includes? (slurp-out "pages" "y2025a" "index.html") "<h1>A post from the year before<span class=\"clogem-title-tag\">原创</span></h1>"))))
+    (is (str/includes? (slurp-out "pages" "y2025a" "index.html") (str "<h1><span data-pagefind-meta=\"title\">A post from the year before</span>"
+                                                                       "<span class=\"clogem-title-tag\" data-pagefind-ignore=\"\">原创</span></h1>")))))
 
 (deftest prev-next-follow-tree-order-for-tree-articles
   (let [conv (slurp-out "pages" "643259" "index.html")
@@ -787,7 +789,8 @@
   (testing "the theme renders the title; the body's leading `# Title` is dropped (D-P2-9)"
     (let [html (slurp-out "pages" "643259" "index.html")]
       (is (= 1 (count (re-seq #"<h1[ >]" html))))
-      (is (str/includes? html "<h1>conventions</h1>"))
+      (is (str/includes? html "<h1><span data-pagefind-meta=\"title\">conventions</span></h1>")
+          "the demo indexes with Pagefind: the title text alone is the result title (D-P3-9)")
       (is (not (str/includes? html "<h1 id=\"conventions\"")))
       (is (str/includes? html "<h2 id=\"numbered-directories\"") "the rest of the body is intact"))))
 
@@ -1523,12 +1526,24 @@
             (is (re-find #"is not a valid date" (:message (first about))) d)))
         url-site))))
 
-(defn- with-default-tz
-  [id f]
-  (let [old (java.util.TimeZone/getDefault)]
-    (try (java.util.TimeZone/setDefault (java.util.TimeZone/getTimeZone id))
-         (f)
-         (finally (java.util.TimeZone/setDefault old)))))
+(defn- bb-exe
+  "The babashka running this test, so the subprocess is the same version."
+  []
+  (or (-> (java.lang.ProcessHandle/current) .info .command (.orElse nil)) "bb"))
+
+(defn- bb-in-tz!
+  "Run `TZ=<tz> bb --config <this repo's bb.edn> <args…>` in `dir` — the
+  real-world way a zone reaches the generator. Setting it in-process through
+  `java.util.TimeZone/setDefault` is rejected reflectively by babashka
+  1.13.219, which :min-bb-version admits. Returns stdout+stderr; a non-zero
+  exit fails the test."
+  [dir tz & args]
+  (let [{:keys [exit out err]}
+        (apply p/shell {:dir (str dir) :out :string :err :string :continue true
+                        :extra-env {"TZ" tz}}
+               (bb-exe) "--config" (str (fs/absolutize "bb.edn")) args)]
+    (is (zero? exit) (str tz " " (str/join " " args) "\n" out err))
+    (str out err)))
 
 (deftest an-unquoted-zoned-timestamp-keeps-its-instant
   (testing "B: SnakeYAML turns `date: 2026-08-01T10:00:00+08:00` into a bare
@@ -1538,24 +1553,22 @@
                                 ["2026-08-01T02:00:00Z"      "2026-08-01T02:00:00Z"]
                                 ["2026-08-01 10:00:00 +8"    "2026-08-01T10:00:00+08:00"]]
             tz ["UTC" "Asia/Singapore"]]
-      (with-default-tz tz
-        (fn []
-          (with-cli-site {"01.Guide/01.t.md" (str/replace a-tree "\"2026-02-01 00:00:00\"" written)
-                          "01.Guide/01.t.zh-Hans.md" "---\ntitle: 中\n---\n\nbody\n"}
-            (fn [dir out]
-              (let [src (fs/file dir "content" "01.Guide" "01.t.md")
-                    tr  (fs/file dir "content" "01.Guide" "01.t.zh-Hans.md")]
-                (with-out-str (cli/fm-fix {:site-dir (str dir)}))
-                (is (str/includes? (slurp src) (str "date: " written "\n"))
-                    "fm-fix never rewrites a date the author wrote")
-                (let [before [(slurp src) (slurp tr)]]
-                  (with-out-str (cli/fm-fix {:site-dir (str dir)}))
-                  (is (= before [(slurp src) (slurp tr)]) (str tz " " written ": a second fm-fix changes nothing"))))
-              (build-err dir out)
-              (doseq [f [["feed.xml"] ["zh-Hans" "feed.xml"]]
-                      :let [feed (clojure.data.xml/parse-str (slurp (apply fs/file out f)))]]
-                (is (= expected (text (first (kids feed "entry")) "updated")) (str tz " " written " " f))))
-            url-site))))))
+      (with-cli-site {"01.Guide/01.t.md" (str/replace a-tree "\"2026-02-01 00:00:00\"" written)
+                      "01.Guide/01.t.zh-Hans.md" "---\ntitle: 中\n---\n\nbody\n"}
+        (fn [dir out]
+          (let [src (fs/file dir "content" "01.Guide" "01.t.md")
+                tr  (fs/file dir "content" "01.Guide" "01.t.zh-Hans.md")]
+            (bb-in-tz! dir tz "fm-fix")
+            (is (str/includes? (slurp src) (str "date: " written "\n"))
+                "fm-fix never rewrites a date the author wrote")
+            (let [before [(slurp src) (slurp tr)]]
+              (bb-in-tz! dir tz "fm-fix")
+              (is (= before [(slurp src) (slurp tr)]) (str tz " " written ": a second fm-fix changes nothing"))))
+          (bb-in-tz! dir tz "build" "--no-write" "--out" (str out))
+          (doseq [f [["feed.xml"] ["zh-Hans" "feed.xml"]]
+                  :let [feed (clojure.data.xml/parse-str (slurp (apply fs/file out f)))]]
+            (is (= expected (text (first (kids feed "entry")) "updated")) (str tz " " written " " f))))
+        url-site))))
 
 (deftest a-quoted-offset-without-minutes-is-read
   (testing "B: `\"…+08\"` used to be silently zoneless"
@@ -1667,3 +1680,27 @@
           (is (str/includes? html "href=\"/pages/%E4%B8%AD%E6%96%87%20%E9%A1%B5/\"") (pr-str f))
           (is (not (str/includes? html "href=\"/pages/中文")) (pr-str f))))
       url-site)))
+
+(deftest article-chrome-is-not-indexed
+  (testing "D-P3-9: on every indexed page the meta line and the title tag are
+            data-pagefind-ignore, the result title is the title text alone,
+            and categories and tags are filters and space-separated terms —
+            indexed, they read `Localmarkdown`, `2026-08-16Guide / Basics.`
+            and `A post from the year before原创`"
+    (let [pages (->> (fs/glob *out-dir* "**/index.html")
+                     (map #(slurp (fs/file %)))
+                     (filter #(str/includes? % "data-pagefind-body")))]
+      (is (< 20 (count pages)))
+      (doseq [h pages]
+        (doseq [m (re-seq #"<p class=\"clogem-meta\"[^>]*>" h)]
+          (is (= "<p class=\"clogem-meta\" data-pagefind-ignore=\"\">" m)))
+        (doseq [m (re-seq #"<span class=\"clogem-title-tag\"[^>]*>" h)]
+          (is (= "<span class=\"clogem-title-tag\" data-pagefind-ignore=\"\">" m)))
+        (doseq [m (re-seq #"<time class=\"clogem-meta__date\"[^>]*>" h)
+                :when (not (str/includes? h (str "<p class=\"clogem-meta\" data-pagefind-ignore=\"\">" m)))]
+          (is (str/includes? m "data-pagefind-ignore") "a catalogue row's date is chrome too"))
+        (is (re-find #"<h1><span data-pagefind-meta=\"title\">[^<]+</span>" h))))
+    (let [h (slurp-out "pages" "y2025a" "index.html")]
+      (is (str/includes? h "<a class=\"clogem-tag\" data-pagefind-filter=\"tag\" href=\"/tags/meta/\">meta</a>"))
+      (is (str/includes? h "<a data-pagefind-filter=\"category\" href=\"/categories/notes/\">Notes</a>"))
+      (is (str/includes? h "<div class=\"clogem-content\" data-clogem-terms=\"Notes meta archive\" data-pagefind-index-attrs=\"data-clogem-terms\">")))))

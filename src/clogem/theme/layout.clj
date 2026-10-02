@@ -11,10 +11,12 @@
   `clogem.model`'s URL helpers), so `render/uri->file` can strip the base
   again — the site's `:base` belongs in every link and in no part of the file
   layout."
-  (:require [clojure.string :as str]
+  (:require [cheshire.core :as json]
+            [clojure.string :as str]
             [clogem.config :as config]
             [clogem.i18n :as i18n]
             [clogem.model :as model]
+            [clogem.search :as search]
             [clogem.seo :as seo]
             [clogem.util :as u]))
 
@@ -26,6 +28,19 @@
   a slash to a file path, so the base is joined directly."
   [ctx path]
   (str/replace (str (config/base-path (:cfg ctx)) "/clogem/" path) #"/{2,}" "/"))
+
+(defn search-href
+  "A file of the Pagefind bundle, which Pagefind writes to `dist/pagefind/`
+  (D-P3-8): base-inclusive, like every other emitted URL."
+  [ctx file]
+  (str/replace (str (config/base-path (:cfg ctx)) "/" search/output-subdir "/" file) #"/{2,}" "/"))
+
+(defn pagefind
+  "`{k \"\"}` when the site indexes with Pagefind, else nil — so a
+  `:search {:provider :none}` page carries no `data-pagefind-*` attribute at
+  all (D-P3-9). Used as the attribute map of an element that has none."
+  [{:keys [cfg]} k]
+  (when (search/enabled? cfg) {k ""}))
 
 (defn href
   "A site URI made safe for an href: every path segment percent-encoded, so a
@@ -71,8 +86,9 @@
   [{:keys [cfg] :as ctx} vl]
   (when (get-in cfg [:i18n :show-fallback-notice])
     [:span.clogem-fallback
-     {:title (i18n/tr ctx :page/fallback-notice
-                      {:lang (get-in cfg [:langs :locales vl :label])})}
+     (merge (pagefind ctx :data-pagefind-ignore)   ; D-P3-9: chrome, not content
+            {:title (i18n/tr ctx :page/fallback-notice
+                             {:lang (get-in cfg [:langs :locales vl :label])})})
      (name vl)]))
 
 (defn index-href
@@ -92,10 +108,39 @@
 
 (defn title-tag
   "vdoing's `titleTag:` badge beside a title (原创 / 转载 / …). The plain
-  badge lands in Phase 2; the animated title-badge is Phase 4."
-  [variant]
+  badge lands in Phase 2; the animated title-badge is Phase 4. Chrome, not
+  content: Pagefind would otherwise glue it onto the title (`…before原创`)."
+  [ctx variant]
   (when-let [t (u/blank->nil (str (get-in variant [:front-matter :titleTag])))]
-    [:span.clogem-title-tag t]))
+    [:span.clogem-title-tag (pagefind ctx :data-pagefind-ignore) t]))
+
+(defn result-title
+  "The article title inside its `<h1>`: under Pagefind, wrapped so it alone
+  is the result title (`data-pagefind-meta=\"title\"`), whatever else the
+  heading holds; otherwise the bare text, so a :none page is unchanged."
+  [{:keys [cfg]} title]
+  (if (search/enabled? cfg)
+    [:span {:data-pagefind-meta "title"} title]
+    title))
+
+(defn search-terms
+  "D-P3-9: the attributes that make an article's categories and tags
+  searchable words again once the meta line is ignored: Pagefind indexes the
+  `data-clogem-terms` attribute (`data-pagefind-index-attrs`), whose values
+  are separated by spaces, so `markdown` is a word of its own rather than
+  `Localmarkdown`. Nil under :none, or with nothing to index."
+  [{:keys [cfg] :as ctx} group]
+  (when (search/enabled? cfg)
+    (when-let [terms (seq (distinct (concat (map #(category-label ctx %) (:categories group))
+                                            (map str (:tags group)))))]
+      {:data-pagefind-index-attrs "data-clogem-terms"
+       :data-clogem-terms (str/join " " terms)})))
+
+(defn- filter-attr
+  "D-P3-9: a category or tag is a Pagefind filter value — each in its own
+  element, so values never run together — or nil under :none."
+  [{:keys [cfg]} filter-name]
+  (when (search/enabled? cfg) {:data-pagefind-filter filter-name}))
 
 (defn article-info
   "vdoing's ArticleInfo line (D-P2-7): author, ISO date, categories and tags
@@ -105,7 +150,13 @@
   (let [{:keys [name link]} (author-of ctx variant)
         cats (seq (:categories group))
         tags (seq (:tags group))]
+    ;; D-P3-9: the meta line is chrome — indexed, its date matched every
+    ;; page for `2026` and opened every excerpt, and its tags ran into the
+    ;; words around them (`Localmarkdown`). Its categories and tags are
+    ;; still captured, as filters: `data-pagefind-ignore` drops text, not
+    ;; filters
     [:p.clogem-meta
+     (pagefind ctx :data-pagefind-ignore)
      (when name
        [:span.clogem-meta__author {:title (i18n/tr ctx :page/author)}
         (if link [:a {:href link} name] name)])
@@ -115,15 +166,17 @@
        (into [:span.clogem-meta__cats {:title (i18n/tr ctx :page/categories)}]
              (interpose " / "
                         (for [c cats]
-                          (if-let [h (index-href ctx :categories c)]
-                            [:a {:href (href ctx h)} (category-label ctx c)]
-                            (category-label ctx c))))))
+                          (let [f (filter-attr ctx "category")]
+                            (if-let [h (index-href ctx :categories c)]
+                              [:a (merge {:href (href ctx h)} f) (category-label ctx c)]
+                              (if f [:span f (category-label ctx c)] (category-label ctx c))))))))
      (when tags
        (into [:span.clogem-meta__tags {:title (i18n/tr ctx :page/tags)}]
-             (for [t tags]
+             (for [t tags
+                   :let [f (filter-attr ctx "tag")]]
                (if-let [h (index-href ctx :tags t)]
-                 [:a.clogem-tag {:href (href ctx h)} (str t)]
-                 [:span.clogem-tag (str t)]))))]))
+                 [:a.clogem-tag (merge {:href (href ctx h)} f) (str t)]
+                 [:span.clogem-tag f (str t)]))))]))
 
 (defn breadcrumbs
   "vdoing's breadcrumb line (D-P2-7): the primary's category path, each crumb
@@ -172,7 +225,8 @@
      [:a {:href href :lang (config/html-lang cfg lang)} title]
      (when fallback? (fallback-badge ctx lang))
      (when-let [d (u/iso-date (:date group))]
-       [:time.clogem-meta__date {:datetime d} d])]))
+       ;; chrome on the indexed catalogue page too (D-P3-9)
+       [:time.clogem-meta__date (merge {:datetime d} (pagefind ctx :data-pagefind-ignore)) d])]))
 
 ;; ---------------------------------------------------------------------------
 ;; Chrome
@@ -274,6 +328,46 @@
         (into [:ul.clogem-navbar__menu] (map #(nav-item ctx %) items))]]
       [:li.clogem-navbar__item a])))
 
+(defn search-ui-strings
+  "The page's `search/ui-translations`, precomputed per language by
+  `render/page-map` (`:search-ui`) or computed here."
+  [ctx]
+  (if (contains? ctx :search-ui) (:search-ui ctx) (search/ui-translations ctx)))
+
+(defn search-config
+  "D-P3-10: `<pagefind-config>`, emitted FIRST in `<body>` on every page.
+  Pagefind 1.5.2 can render its first component before the language is
+  resolved when no config element precedes it (fixed upstream only on main,
+  #1332). `bundle-path` is base-inclusive; `lang` is `search/ui-lang` (UI
+  strings only — the index follows `<html lang>`); a language Pagefind has
+  no strings for carries them in `data-clogem-translations`, which
+  js/search.js hands to `setTranslations`."
+  [{:keys [cfg lang] :as ctx}]
+  (when (search/enabled? cfg)
+    (let [strings (search-ui-strings ctx)]
+      [:pagefind-config
+       (cond-> {:bundle-path (search-href ctx "")
+                :lang (search/ui-lang cfg lang)}
+         strings (assoc :data-clogem-translations (json/generate-string strings)))])))
+
+(defn search-box
+  "The navbar's search button and the dialog it opens (D-P3-10), labelled
+  with the page language's `:nav/search`.
+
+  On a page whose strings come from clogem-press (`search-ui-strings`), the
+  `<pagefind-modal>` is NOT in the HTML: js/search.js creates it after
+  `setTranslations`. Pagefind 1.5.2's modal and modal header re-render on
+  every later `translations` event by wrapping their current children, so a
+  modal that already exists ends up as a second, closed `<dialog>` inside
+  the first — its input unreachable (measured on the Malay demo page). A
+  modal created after the strings are set never re-renders."
+  [{:keys [cfg] :as ctx}]
+  (when (search/enabled? cfg)
+    [:div.clogem-search
+     [:pagefind-modal-trigger {:placeholder (i18n/tr ctx :nav/search)}]
+     (when-not (search-ui-strings ctx)
+       [:pagefind-modal])]))
+
 (defn navbar
   [{:keys [cfg lang] :as ctx}]
   [:header.clogem-navbar
@@ -281,6 +375,7 @@
     (i18n/resolve-str ctx (get-in cfg [:site :title]))]
    [:nav.clogem-navbar__nav
     (into [:ul] (map #(nav-item ctx %) (:nav cfg)))]
+   (search-box ctx)
    (lang-switcher ctx)])
 
 (defn- sidebar-node
@@ -367,6 +462,7 @@
                     (filter #(and (not= % lang) (contains? (:variants group) %))))]
     (when (seq others)
       [:p.clogem-variants
+       (pagefind ctx :data-pagefind-ignore)
        [:span (i18n/tr ctx :page/also-available
                        {:lang (str/join ", " (map #(get-in cfg [:langs :locales % :label]) others))})]
        (into [:span.clogem-variants__links]
@@ -460,6 +556,20 @@
         [:meta {:name "description" :content d}])
       (seo-head ctx)
       [:link {:rel "stylesheet" :href (asset-href ctx "css/theme.css")}]
+      ;; D-P3-12: the @font-face rules live beside the font files, so a
+      ;; :system site links no font CSS and ships no font bytes
+      (when (= :self-hosted (get-in cfg [:theme :fonts :tamil]))
+        [:link {:rel "stylesheet" :href (asset-href ctx "fonts/tamil.css")}])
+      ;; D-P3-10: Pagefind's Component UI, from the bundle the build writes;
+      ;; nothing at all under :search {:provider :none}
+      (when (search/enabled? cfg)
+        (list
+         [:link {:rel "stylesheet" :href (search-href ctx "pagefind-component-ui.css")}]
+         [:script {:src (search-href ctx "pagefind-component-ui.js") :type "module"}]
+         ;; a module script is deferred, and deferred scripts run in document
+         ;; order, so this runs after the components are defined
+         (when (search-ui-strings ctx)
+           [:script {:src (asset-href ctx "js/search.js") :defer true}])))
       ;; vendored vanilla scroll-spy (D-P2-9); no CDN, no deps — deferred,
       ;; and only on a page that renders a TOC for it to spy on
       (when (seq (:toc ctx))
@@ -467,7 +577,8 @@
      (into [:body {:class (str "theme-mode-" (name (get-in cfg [:theme :default-mode] :auto))
                                " theme-style-" (name (get-in cfg [:theme :page-style] :card))
                                " lang-" (name lang)
-                               (when-let [k (:page-kind ctx)] (str " page-" (name k))))}]
+                               (when-let [k (:page-kind ctx)] (str " page-" (name k))))}
+            (search-config ctx)]
            body)]))
 
 (defn page

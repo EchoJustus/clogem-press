@@ -102,17 +102,50 @@
                                       ; `sidebarDepth:` overrides per page
          :per-page 10                 ; a positive integer: articles per page on the
                                       ; homepage and on category / tag pages (/page/2/, …)
-         :fonts {:tamil :system}      ; :system | :self-hosted  (§6.9)
+         :fonts {:tamil :system}      ; :system | :self-hosted  (§6.9, D-P3-12)
+                                      ; :self-hosted ships subset Noto Sans Tamil
+                                      ; 400/700 woff2 (~24 KB each, SIL OFL) and
+                                      ; links clogem/fonts/tamil.css; :system
+                                      ; ships no font bytes at all
          :html-modules {}}            ; raw HTML injected into named regions
 
  :nav [{:text {:en "Home" :zh-Hans "首页"} :link "/"}]
 
  ;; -------------------------------------------------------------- search ----
- :search {:provider :none}   ; :pagefind {:binary :extended} — Phase 3
-                             ; :cross-language true adds a "search all
-                             ; languages" affordance via pagefind.mergeIndex
-                             ; (§6.7; pass the ABSOLUTE bundle URL — the
-                             ;  same-site basePath guard fails silently)
+ :search {:provider :none}   ; :none | :pagefind (§6.7, D-P3-8 … D-P3-10).
+                             ; :pagefind runs the EXTENDED binary over dist/
+                             ; at the end of `build` (`--no-search` builds
+                             ; with no index and no search UI at all),
+                             ; one index per <html lang>, only article and
+                             ; catalogue bodies indexed. A failed fetch or a
+                             ; non-zero exit fails the build (exit 1).
+                             ; Cross-language search (pagefind.mergeIndex) is
+                             ; deferred to Phase 4 (D-P3-11).
+
+ ;; --------------------------------------------------------------- tools ----
+ ;; D-P3-8: fetched over HTTPS (honouring HTTPS_PROXY / HTTP_PROXY, NO_PROXY,
+ ;; and user:pass@ in the proxy URL), sha256-checked against a per-platform
+ ;; pin, unpacked with tar and cached OUTSIDE the site, in
+ ;; $XDG_CACHE_HOME/clogem-press/tools/pagefind/<version>/<platform>/ (else
+ ;; ~/.cache/…), stamped with the hashes it was verified against and
+ ;; re-checked on every use. `bb fetch-tool` does just that and prints the
+ ;; binary's path.
+ :tools {:pagefind {:version "1.5.2"}  ; its six platform hashes are built in
+         ;; pinning another version? give every platform you build on its hash
+         ;; from the release's .sha256 files:
+         ;; :pagefind {:version "1.5.2"
+         ;;            :sha256 {"x86_64-unknown-linux-musl"  "aeb1…"
+         ;;                     "aarch64-unknown-linux-musl" "3f66…"
+         ;;                     "x86_64-apple-darwin"        "3523…"
+         ;;                     "aarch64-apple-darwin"       "99c4…"
+         ;;                     "x86_64-pc-windows-msvc"     "7ba2…"
+         ;;                     "aarch64-pc-windows-msvc"    "4fd4…"}
+         ;;            :path "/usr/local/bin/pagefind_extended"  ; relative to the site; or env
+         ;;                                                      ; CLOGEM_PAGEFIND (relative to the cwd):
+         ;;                                                      ; skips download + verification
+         ;;            :url  "https://mirror.example/v{{version}}/pagefind_extended-v{{version}}-{{platform}}.tar.gz"}
+         ;; :cache-dir ".tools"         ; relative to the site; env CLOGEM_TOOLS_DIR wins
+         }
 
  ;; ------------------------------------------------------------ comments ----
  :comments {:provider :none}
@@ -135,4 +168,5 @@
        :indexnow {:enabled false :key nil}}
 
  ;; --------------------------------------------------------------- build ----
- :build {:out "dist"}}
+ :build {:out "dist"}}  ; a directory of its own: a build removes .html files
+                         ; in it that it did not write (§11.2 item 46)

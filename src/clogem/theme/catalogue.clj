@@ -56,10 +56,11 @@
       [:main.clogem-main
        (layout/breadcrumbs ctx group)
        [:article.clogem-article.clogem-catalogue
+        (layout/pagefind ctx :data-pagefind-body)       ; D-P3-9
         [:header.clogem-catalogue__header
          (when-let [img (some-> imgUrl str not-empty)]
            [:img.clogem-catalogue__img {:src (rewrite-href img) :alt ""}])
-         [:h1 (:title variant) (layout/title-tag variant)]
+         [:h1 (layout/result-title ctx (:title variant)) (layout/title-tag ctx variant)]
          (when-let [d (some-> description str not-empty)]
            [:p.clogem-catalogue__desc (i18n/resolve-str ctx d)])]
         (into [:div.clogem-catalogue__grid]

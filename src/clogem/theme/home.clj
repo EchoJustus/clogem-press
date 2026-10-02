@@ -57,7 +57,7 @@
      [:h2.clogem-post-card__title
       (when (some #{pl} (:sticky model)) [:span.clogem-sticky (i18n/tr ctx :index/sticky)])
       [:a {:href href :lang (config/html-lang cfg lang)} title]
-      (layout/title-tag v)
+      (layout/title-tag ctx v)
       (when fallback? (layout/fallback-badge ctx lang))]
      ;; marker-only (D-P2-5 as amended): no `<!-- more -->`, no excerpt —
      ;; and then nothing to read "more" of, so no link either

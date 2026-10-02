@@ -35,7 +35,8 @@
 (defn- ledger-file [site] (fs/file (fs/path site "permalinks.edn")))
 
 (defn- build! [site]
-  (diag/collecting (cli/build {:site-dir (str site) :out (str (fs/path site "dist"))})))
+  ;; the demo indexes with Pagefind; these tests are about the ledger
+  (diag/collecting (cli/build {:site-dir (str site) :out (str (fs/path site "dist")) :no-search true})))
 
 (deftest tombstones-survive-a-build
   (testing "D-15: :tombstones is read from the ledger, carried through the model,

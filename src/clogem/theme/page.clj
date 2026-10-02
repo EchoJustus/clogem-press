@@ -18,11 +18,15 @@
       ctx
       [:main.clogem-main
        (layout/breadcrumbs ctx group)
+       ;; D-P3-9: only an article's own body is indexed; once any page
+       ;; carries data-pagefind-body, Pagefind skips every page that does
+       ;; not, so homes, index and pagination pages drop out by themselves
        [:article.clogem-article
-        [:h1 (:title variant) (layout/title-tag variant)]
+        (layout/pagefind ctx :data-pagefind-body)
+        [:h1 (layout/result-title ctx (:title variant)) (layout/title-tag ctx variant)]
         (layout/article-info ctx group variant)
         (layout/variant-bar ctx)
-        [:div.clogem-content content-hiccup]]
+        [:div.clogem-content (layout/search-terms ctx group) content-hiccup]]
        (layout/prev-next ctx)])
      (layout/footer ctx)))
 
