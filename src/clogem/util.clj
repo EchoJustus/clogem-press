@@ -74,24 +74,41 @@
   configured language code (`zh-hanz`, `zh-han`, `ta-`) is a misspelled tag,
   not a title. (`zh-hsna` is distance 2 from `zh-hans` — two substitutions,
   since the swapped letters are not adjacent — so it is rule (c)'s
-  script-typo branch that catches it, not this distance.)"
+  script-typo branch that catches it, not this distance.)
+
+  Three rolling rows rather than the (m+1)×(n+1) matrix: the recurrence only
+  ever looks two rows back. Under babashka a 2-D `make-array` cost about 6 ms
+  a call, which made analysing a 300-article site take 6 s; this is ~60×
+  faster with identical results (Phase 4 Task A, D-P4-11 — compared against
+  the matrix version on random ASCII, CJK and Tamil strings in util-test).
+  Compares UTF-16 code units, as the matrix version did."
   [^String a ^String b]
-  (let [m (count a) n (count b)
-        d (make-array Long/TYPE (inc m) (inc n))]
-    (dotimes [i (inc m)] (aset d i 0 (long i)))
-    (dotimes [j (inc n)] (aset d 0 j (long j)))
-    (doseq [i (range 1 (inc m)) j (range 1 (inc n))]
-      (let [cost (if (= (.charAt a (dec i)) (.charAt b (dec j))) 0 1)
-            best (min (inc (aget d (dec i) j))
-                      (inc (aget d i (dec j)))
-                      (+ (aget d (dec i) (dec j)) cost))
-            best (if (and (> i 1) (> j 1)
-                          (= (.charAt a (dec i)) (.charAt b (- j 2)))
-                          (= (.charAt a (- i 2)) (.charAt b (dec j))))
-                   (min best (inc (aget d (- i 2) (- j 2))))
-                   best)]
-        (aset d i j (long best))))
-    (aget d m n)))
+  (let [m (count a) n (count b)]
+    (cond
+      (zero? m) n
+      (zero? n) m
+      :else
+      (loop [i 1
+             pp nil                              ; row i-2
+             p  (vec (range (inc n)))]           ; row i-1
+        (if (> i m)
+          (nth p n)
+          (let [ai  (.charAt a (dec i))
+                ai1 (when (> i 1) (.charAt a (- i 2)))
+                row (loop [j 1 cur (transient [i])]
+                      (if (> j n)
+                        (persistent! cur)
+                        (let [bj   (.charAt b (dec j))
+                              best (min (inc (nth p j))
+                                        (inc (nth cur (dec j)))
+                                        (+ (nth p (dec j)) (if (= ai bj) 0 1)))
+                              best (if (and pp (> j 1)
+                                            (= ai (.charAt b (- j 2)))
+                                            (= ai1 bj))
+                                     (min best (inc (nth pp (- j 2))))
+                                     best)]
+                          (recur (inc j) (conj! cur best)))))]
+            (recur (inc i) p row)))))))
 
 (defn variant-file-name
   "`source` (a filename such as `01.intro.md` or `01.intro.en.md`) re-suffixed
