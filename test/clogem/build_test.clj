@@ -1325,9 +1325,11 @@
               es   (kids feed "entry")]
           (is (= 20 (count es)))
           (is (= "P25" (text (first es) "title")) "newest first")
-          (is (not (fs/exists? (fs/path out "zh-Hans" "feed.xml"))) "a language with no articles has no feed")
-          (is (not (str/includes? (slurp (fs/file out "zh-Hans" "index.html")) "application/atom+xml"))
-              "…and no autodiscovery link to one")))
+          (let [zh (clojure.data.xml/parse-str (slurp (fs/file out "zh-Hans" "feed.xml")))]
+            (is (empty? (kids zh "entry")) "a language with no articles yet gets an empty feed…")
+            (is (= (text feed "updated") (text zh "updated")) "…updated at the site's newest date"))
+          (is (str/includes? (slurp (fs/file out "zh-Hans" "index.html")) "href=\"/zh-Hans/feed.xml\"")
+              "…which its pages advertise")))
       url-site)
     (with-cli-site posts
       (fn [dir out]

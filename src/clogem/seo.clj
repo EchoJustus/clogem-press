@@ -81,13 +81,23 @@
        model/newest-first
        (take feed-size)))
 
+(defn- newest-date
+  "The newest dated article's RFC 3339 date over the whole site, or nil."
+  [model]
+  (some->> (vals (:articles model))
+           (filter #(and (:article? %) (rfc3339 (:date %))))
+           seq model/newest-first first :date rfc3339))
+
 (defn feed-langs
-  "The languages that get a feed: every configured one with at least one
-  dated article, when feeds are on and the site has a URL."
+  "The languages that get a feed: every configured one, when feeds are on,
+  the site has a URL and at least one article is dated. A language with no
+  articles yet gets an EMPTY feed rather than none — a reader can subscribe
+  before the first translation lands, and the autodiscovery link on that
+  language's pages names a real file."
   [model]
   (let [cfg (:cfg model)]
-    (when (feeds? cfg)
-      (filterv #(seq (feed-groups model %)) (config/lang-keys cfg)))))
+    (when (and (feeds? cfg) (newest-date model))
+      (vec (config/lang-keys cfg)))))
 
 (defn- author-name
   [ctx]
@@ -112,7 +122,9 @@
      (x/element ::atom/title {} (str (i18n/resolve-str ctx (get-in cfg [:site :title]))))
      (x/element ::atom/link {:rel "self" :type "application/atom+xml" :href self})
      (x/element ::atom/link {:rel "alternate" :type "text/html" :href (abs (model/home-url cfg lang))})
-     (x/element ::atom/updated {} (rfc3339 (:date (first groups))))
+     ;; the newest entry; an empty feed has none, so the site's newest date —
+     ;; deterministic, unlike the build time
+     (x/element ::atom/updated {} (or (rfc3339 (:date (first groups))) (newest-date model)))
      (x/element ::atom/author {} (x/element ::atom/name {} (str (author-name ctx))))
      (x/element ::atom/generator {:version (str (:clogem/version cfg))} "clogem-press")
      (for [g groups
