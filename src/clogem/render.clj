@@ -502,14 +502,14 @@
   a path relative to `from`, leaves that file out."
   ([from to] (copy-tree! from to (constantly false)))
   ([from to skip?]
-  (when (fs/directory? from)
-    (fs/create-dirs to)
-    (doseq [p (fs/glob from "**")
-            :when (and (fs/regular-file? p) (not (skip? (str (fs/relativize from p)))))]
-      (let [target (fs/path to (fs/relativize from p))]
-        (fs/create-dirs (fs/parent target))
-        (fs/copy p target {:replace-existing true})))
-    true)))
+   (when (fs/directory? from)
+     (fs/create-dirs to)
+     (doseq [p (fs/glob from "**")
+             :when (and (fs/regular-file? p) (not (skip? (str (fs/relativize from p)))))]
+       (let [target (fs/path to (fs/relativize from p))]
+         (fs/create-dirs (fs/parent target))
+         (fs/copy p target {:replace-existing true})))
+     true)))
 
 (defn theme-resource-dir
   "Locate the theme's static resources on the classpath, so they are found

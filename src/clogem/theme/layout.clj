@@ -86,8 +86,9 @@
   [{:keys [cfg] :as ctx} vl]
   (when (get-in cfg [:i18n :show-fallback-notice])
     [:span.clogem-fallback
-     (merge (pagefind ctx :data-pagefind-ignore) {:title (i18n/tr ctx :page/fallback-notice
-                      {:lang (get-in cfg [:langs :locales vl :label])})})
+     (merge (pagefind ctx :data-pagefind-ignore)   ; D-P3-9: chrome, not content
+            {:title (i18n/tr ctx :page/fallback-notice
+                             {:lang (get-in cfg [:langs :locales vl :label])})})
      (name vl)]))
 
 (defn index-href
