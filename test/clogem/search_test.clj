@@ -243,7 +243,10 @@
             (let [cfg-a (cfg-for dir url-a sha-a)
                   ;; B: no :sha256 of its own — the built-in table is its pin
                   cfg-b (cfg-of dir {:tools {:cache-dir "cache" :pagefind {:url url-b}}})
-                  ran   #(str/trim (:out (babashka.process/shell {:out :string} %)))]
+                  ;; the stand-in writes its bundle under --site: give it one
+                  ;; (without it, it tries `mkdir /pagefind` — root-only)
+                  ran   #(-> (babashka.process/shell {:out :string} % "--site" (str (fs/path dir "site-out")))
+                             :out str/split-lines first str/trim)]
               (with-redefs [search/known-sha256 {"1.5.2" {plat sha-b}}]
                 (is (= "binary A" (ran (search/ensure-binary! cfg-a))))
                 (is (= "binary B" (ran (search/ensure-binary! cfg-b)))
