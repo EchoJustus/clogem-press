@@ -7,7 +7,7 @@
 ;; Any string-valued key may be either a plain string (same in all languages) or
 ;; a map keyed by language code. The §6.5 fallback chain applies uniformly:
 ;;
-;;     requested lang → :langs :default → :en → the key itself
+;;     requested lang → :i18n :fallback (default [:site-default :en]) → the key itself
 ;;
 ;; so there is exactly one rule to learn.
 
@@ -15,7 +15,9 @@
  :site {:title       {:en "My knowledge base" :zh-Hans "我的知识库"}
         :description {:en "Notes, guides, and a blog."}
         :url         "https://example.github.io"   ; no trailing slash; used for
-                                                   ; canonical/hreflang/feeds
+                                                   ; canonical/hreflang/feeds/sitemap/
+                                                   ; robots.txt — blank skips them all
+                                                   ; (a warning, not an error)
         :base        "/"                           ; "/project/" for a project site
         :author      {:name "Your Name" :link "https://github.com/you"}}
 
@@ -45,15 +47,16 @@
          ;; The five defaults are always merged in; to run a site with FEWER
          ;; languages set the unwanted ones to nil: {:ms nil :ta nil}.
          :locales
-         {:en      {:label "English"       :html-lang "en"      :giscus "en"    :dir :ltr}
-          :zh-Hans {:label "简体中文"       :html-lang "zh-Hans" :giscus "zh-CN" :dir :ltr}
-          :zh-Hant {:label "繁體中文"       :html-lang "zh-Hant" :giscus "zh-TW" :dir :ltr}
+         {:en      {:label "English"       :html-lang "en"      :giscus "en"    :dir :ltr :og "en_US"}
+          :zh-Hans {:label "简体中文"       :html-lang "zh-Hans" :giscus "zh-CN" :dir :ltr :og "zh_CN"}
+          :zh-Hant {:label "繁體中文"       :html-lang "zh-Hant" :giscus "zh-TW" :dir :ltr :og "zh_TW"}
           ;; :giscus for ms/ta MUST be "en". giscus has no locale for either,
           ;; and data-lang is routed into the widget's iframe URL — an
           ;; unroutable value 404s the iframe and NO comment widget renders.
           ;; Validated at build time (§6.8, v2.1 V12).
-          :ms      {:label "Bahasa Melayu" :html-lang "ms"      :giscus "en"    :dir :ltr}
-          :ta      {:label "தமிழ்"          :html-lang "ta"      :giscus "en"    :dir :ltr}}}
+          :ms      {:label "Bahasa Melayu" :html-lang "ms"      :giscus "en"    :dir :ltr :og "ms_MY"}
+          :ta      {:label "தமிழ்"          :html-lang "ta"      :giscus "en"    :dir :ltr :og "ta_IN"}}}
+         ;; :og is og:locale — ogp.me's language_TERRITORY, validated (§6.6)
 
  ;; ---------------------------------------------------------------- i18n ----
  :i18n {:strings-dir   "i18n"     ; <lang>.edn, deep-merged over theme defaults
@@ -62,6 +65,9 @@
         ;; prefixed and the bare URL becomes a redirect stub, so existing links
         ;; are REDIRECTED, not broken (D-10).
         :prefix-default? false
+        ;; tried after the requested language; configured language keywords
+        ;; or :site-default (= :langs :default). A bad value is a config error.
+        :fallback      [:site-default :en]
         :missing-key   :warn      ; :warn in dev, :silent in prod
         ;; Display-only (D-12): category KEYS stay the raw directory-derived
         ;; names and are the URL slugs; labels localize what is shown.
@@ -124,6 +130,7 @@
  :analytics {:provider :none}   ; :ga4 | :plausible | :umami   (D-13)
 
  :seo {:sitemap true :hreflang true :x-default :primary
+       :feeds   true            ; /feed.xml + /<lang>/feed.xml, Atom (§6.6)
        :indexnow {:enabled false :key nil}}
 
  ;; --------------------------------------------------------------- build ----

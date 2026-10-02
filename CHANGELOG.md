@@ -1,5 +1,61 @@
 # Changelog
 
+## Unreleased (Phase 3)
+
+Phase 3 part A: SEO, feeds, sitemap and the doctor i18n checks. DESIGN.md
+§11.2 items 30–39 record the decisions (D-P3-1 … D-P3-7). `version.edn` is
+unchanged until the phase is released.
+
+### Added
+
+- **Canonical, hreflang and `og:locale` in every page's `<head>`.** A
+  self-referencing canonical; the page's whole hreflang set, itself included,
+  with `x-default` at the bare URL (identity group for articles and
+  catalogues, all five copies for homes and index pages; none on `…/page/N/`);
+  `og:locale` from a new per-locale `:og` (`en_US`, `zh_CN`, `zh_TW`, `ms_MY`,
+  `ta_IN`) plus `og:locale:alternate` per other language in the set.
+- **Atom feeds**, one per language: `/feed.xml` and `/<lang>/feed.xml`, the
+  20 newest of that language's own variants, RFC 3339 dates, per-entry
+  hreflang alternates, a plain-text summary from `<!-- more -->`, categories
+  and tags. Every page links its language's feed. A language with no articles
+  yet gets an empty feed. New default `:seo {:feeds true}`.
+- **`/sitemap.xml`** with `xhtml:link` alternates for every page that has a
+  set (no `lastmod`/`priority`/`changefreq`), and **`/robots.txt`** under base
+  `/` only; a site's own `assets/robots.txt` is copied there instead.
+- **`:i18n :fallback`** (default `[:site-default :en]`) is honoured by UI
+  strings, config strings and category labels; a bad value is a config error.
+- **doctor/build warnings:** a translation orphaned by a renamed source
+  (with a rename suggestion; the same-number case extends the existing
+  duplicate-number error instead), a site string key that is a near-miss of a
+  theme key ("did you mean …?"), and a site-added key missing for some
+  language.
+- **CI:** `.github/scripts/check_seo.py` asserts absolute self-canonicals,
+  hreflang reciprocity, five parseable feeds, the sitemap and robots.txt on
+  the root-base build; the `/clogem-demo/` build must have no robots.txt.
+
+### Changed
+
+- With a blank `:site :url` none of the above is emitted and analyse warns
+  once; the site still builds.
+- Redirect stubs no longer carry `rel=canonical` (they are `noindex`), and
+  their `<html lang>` is the default language's, not a hard-coded `en`.
+- The demo site's `:url` is `https://clogem-demo.example` (reserved TLD), so
+  it no longer emits canonicals on the real domain.
+
+### Fixed
+
+- **The Tamil-only checks were vacuous.** CI and `build_test` grepped
+  `lang="ta"`, which the switcher's `hreflang="ta" lang="ta"` matches on
+  every page; both now assert on the `<html>` element of `/pages/171a98/`.
+
+### Documentation
+
+- DESIGN.md §6.6: `og:locale` corrected to `language_TERRITORY`; Google's
+  canonical-with-hreflang guidance cited. §6.7, §10 and Appendix A item 7:
+  Pagefind does **not** word-segment zh-Hant (jieba runs with a Simplified
+  dictionary). §6.9: Latha is a Windows feature-on-demand font; Nirmala UI
+  is the default Tamil face.
+
 ## 0.1.1 — Phase 2 fix round
 
 Defects found in 0.1.0 by review and by building the real site, each fixed
