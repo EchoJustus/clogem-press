@@ -353,7 +353,7 @@
 
 (deftest homepage-cards-carry-excerpt-title-tag-and-info-line
   (let [html (slurp-out "index.html")]
-    (is (str/includes? html "<span class=\"clogem-title-tag\">原创</span>") "titleTag badge")
+    (is (str/includes? html "<span class=\"clogem-title-tag\" data-pagefind-ignore=\"\">原创</span>") "titleTag badge")
     (is (str/includes? html "This post is dated 2025") "the excerpt is the content before <!-- more -->")
     (is (not (str/includes? html "Everything below the")) "…and nothing after it")
     (is (str/includes? html "href=\"/categories/notes/\">Notes</a>") "categories link to their index pages")
@@ -411,7 +411,8 @@
     (is (str/includes? html "datetime=\"2026-08-16\""))
     (is (str/includes? html "href=\"/categories/notes/\">Notes</a>"))
     (is (str/includes? html "href=\"/tags/meta/\">meta</a>"))
-    (is (str/includes? (slurp-out "pages" "y2025a" "index.html") "<h1>A post from the year before<span class=\"clogem-title-tag\">原创</span></h1>"))))
+    (is (str/includes? (slurp-out "pages" "y2025a" "index.html") (str "<h1><span data-pagefind-meta=\"title\">A post from the year before</span>"
+                                                                       "<span class=\"clogem-title-tag\" data-pagefind-ignore=\"\">原创</span></h1>")))))
 
 (deftest prev-next-follow-tree-order-for-tree-articles
   (let [conv (slurp-out "pages" "643259" "index.html")
@@ -788,7 +789,8 @@
   (testing "the theme renders the title; the body's leading `# Title` is dropped (D-P2-9)"
     (let [html (slurp-out "pages" "643259" "index.html")]
       (is (= 1 (count (re-seq #"<h1[ >]" html))))
-      (is (str/includes? html "<h1>conventions</h1>"))
+      (is (str/includes? html "<h1><span data-pagefind-meta=\"title\">conventions</span></h1>")
+          "the demo indexes with Pagefind: the title text alone is the result title (D-P3-9)")
       (is (not (str/includes? html "<h1 id=\"conventions\"")))
       (is (str/includes? html "<h2 id=\"numbered-directories\"") "the rest of the body is intact"))))
 
@@ -1678,3 +1680,27 @@
           (is (str/includes? html "href=\"/pages/%E4%B8%AD%E6%96%87%20%E9%A1%B5/\"") (pr-str f))
           (is (not (str/includes? html "href=\"/pages/中文")) (pr-str f))))
       url-site)))
+
+(deftest article-chrome-is-not-indexed
+  (testing "D-P3-9: on every indexed page the meta line and the title tag are
+            data-pagefind-ignore, the result title is the title text alone,
+            and categories and tags are filters and space-separated terms —
+            indexed, they read `Localmarkdown`, `2026-08-16Guide / Basics.`
+            and `A post from the year before原创`"
+    (let [pages (->> (fs/glob *out-dir* "**/index.html")
+                     (map #(slurp (fs/file %)))
+                     (filter #(str/includes? % "data-pagefind-body")))]
+      (is (< 20 (count pages)))
+      (doseq [h pages]
+        (doseq [m (re-seq #"<p class=\"clogem-meta\"[^>]*>" h)]
+          (is (= "<p class=\"clogem-meta\" data-pagefind-ignore=\"\">" m)))
+        (doseq [m (re-seq #"<span class=\"clogem-title-tag\"[^>]*>" h)]
+          (is (= "<span class=\"clogem-title-tag\" data-pagefind-ignore=\"\">" m)))
+        (doseq [m (re-seq #"<time class=\"clogem-meta__date\"[^>]*>" h)
+                :when (not (str/includes? h (str "<p class=\"clogem-meta\" data-pagefind-ignore=\"\">" m)))]
+          (is (str/includes? m "data-pagefind-ignore") "a catalogue row's date is chrome too"))
+        (is (re-find #"<h1><span data-pagefind-meta=\"title\">[^<]+</span>" h))))
+    (let [h (slurp-out "pages" "y2025a" "index.html")]
+      (is (str/includes? h "<a class=\"clogem-tag\" data-pagefind-filter=\"tag\" href=\"/tags/meta/\">meta</a>"))
+      (is (str/includes? h "<a data-pagefind-filter=\"category\" href=\"/categories/notes/\">Notes</a>"))
+      (is (str/includes? h "<div class=\"clogem-content\" data-clogem-terms=\"Notes meta archive\" data-pagefind-index-attrs=\"data-clogem-terms\">")))))

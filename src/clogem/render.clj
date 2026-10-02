@@ -488,28 +488,31 @@
       (fs/path out rel "index.html"))))
 
 (defn export-pages!
+  "Write every page. Returns the files written."
   [cfg pages]
   (let [out  (config/out-dir cfg)
         base (config/base-path cfg)]
-    (doseq [[uri render-fn] (sort-by key pages)]
-      (let [f (uri->file base out uri)]
-        (fs/create-dirs (fs/parent f))
-        (spit (fs/file f) (str doctype (h/html (render-fn))))))
-    (count pages)))
+    (vec
+     (for [[uri render-fn] (sort-by key pages)]
+       (let [f (uri->file base out uri)]
+         (fs/create-dirs (fs/parent f))
+         (spit (fs/file f) (str doctype (h/html (render-fn))))
+         f)))))
 
 (defn copy-tree!
   "Copy a directory tree, never symlink (see the ns docstring). `skip?`, given
-  a path relative to `from`, leaves that file out."
+  a path relative to `from`, leaves that file out. Returns the files written."
   ([from to] (copy-tree! from to (constantly false)))
   ([from to skip?]
    (when (fs/directory? from)
      (fs/create-dirs to)
-     (doseq [p (fs/glob from "**")
-             :when (and (fs/regular-file? p) (not (skip? (str (fs/relativize from p)))))]
-       (let [target (fs/path to (fs/relativize from p))]
-         (fs/create-dirs (fs/parent target))
-         (fs/copy p target {:replace-existing true})))
-     true)))
+     (vec
+      (for [p (fs/glob from "**")
+            :when (and (fs/regular-file? p) (not (skip? (str (fs/relativize from p)))))]
+        (let [target (fs/path to (fs/relativize from p))]
+          (fs/create-dirs (fs/parent target))
+          (fs/copy p target {:replace-existing true})
+          target))))))
 
 (defn theme-resource-dir
   "Locate the theme's static resources on the classpath, so they are found
@@ -520,22 +523,61 @@
           .toURI fs/path fs/parent fs/parent))
 
 (defn export-assets!
+  "Copy the theme's and the site's assets. Returns the files written."
   [cfg]
   (let [out (config/out-dir cfg)]
-    (when-let [themed (theme-resource-dir)]
-      ;; the i18n EDN maps are build-time inputs, not site output; the
-      ;; fonts ship only to a site that asked for them (D-P3-12)
-      (doseq [sub (cond-> ["css" "js" "icons"]
-                    (= :self-hosted (get-in cfg [:theme :fonts :tamil])) (conj "fonts"))
-              :let [from (fs/path themed sub)]
-              :when (fs/directory? from)]
-        ;; js/search.js only serves the Pagefind UI (D-P3-10): a :none site
-        ;; ships nothing it never loads
-        (copy-tree! from (fs/path out "clogem" sub)
-                    (fn [rel] (and (= "js" sub) (= "search.js" rel) (not (search/enabled? cfg)))))))
-    (let [user (config/assets-dir cfg)]
-      (when (fs/directory? user)
-        (copy-tree! user (fs/path out "assets"))))))
+    (vec
+     (concat
+      (when-let [themed (theme-resource-dir)]
+        ;; the i18n EDN maps are build-time inputs, not site output; the
+        ;; fonts ship only to a site that asked for them (D-P3-12)
+        (mapcat (fn [sub]
+                  (let [from (fs/path themed sub)]
+                    (when (fs/directory? from)
+                      ;; js/search.js only serves the Pagefind UI (D-P3-10): a
+                      ;; :none site ships nothing it never loads
+                      (copy-tree! from (fs/path out "clogem" sub)
+                                  (fn [rel] (and (= "js" sub) (= "search.js" rel) (not (search/enabled? cfg))))))))
+                (cond-> ["css" "js" "icons"]
+                  (= :self-hosted (get-in cfg [:theme :fonts :tamil])) (conj "fonts"))))
+      (let [user (config/assets-dir cfg)]
+        (when (fs/directory? user)
+          (copy-tree! user (fs/path out "assets"))))))))
+
+(defn- html-file? [p]
+  (boolean (re-find #"(?i)\.html$" (str (fs/file-name p)))))
+
+(defn sweep-stale-html!
+  "Delete the `.html` files under `out` that this build did not write — the
+  pages of articles since deleted or moved — so neither `bb serve` nor
+  Pagefind sees them in a reused `dist/` (DESIGN.md §11.2 item 46). Only
+  `.html` files, only inside `out`, never through a link: a symlinked
+  directory is not descended and a symlink is never deleted. `<out>/pagefind/`
+  is left to `search/run!`, which replaces it whole. Directories emptied by
+  the sweep are removed. Returns the files deleted."
+  [out written]
+  (let [out     (fs/normalize (fs/absolutize out))
+        keep?   (into #{} (map #(str (fs/normalize (fs/absolutize %)))) written)
+        bundle  (fs/path out search/output-subdir)
+        stale   (when (fs/directory? out {:nofollow-links true})
+                  (->> (fs/glob out "**" {:follow-links false :hidden true})
+                       (map #(fs/normalize (fs/absolutize %)))
+                       (filter #(and (html-file? %)
+                                     (fs/regular-file? % {:nofollow-links true})
+                                     (str/starts-with? (str %) (str out java.io.File/separator))
+                                     (not (str/starts-with? (str %) (str bundle java.io.File/separator)))
+                                     (not (keep? (str %)))))
+                       vec))]
+    (doseq [f stale]
+      (fs/delete f)
+      (loop [d (fs/parent f)]
+        (when (and d (not= (str d) (str out))
+                   (str/starts-with? (str d) (str out java.io.File/separator))
+                   (fs/directory? d {:nofollow-links true})
+                   (empty? (fs/list-dir d)))
+          (fs/delete d)
+          (recur (fs/parent d)))))
+    stale))
 
 (defn- strip-tags
   "Plain text of an HTML string: aria-hidden elements dropped whole, block tags → a space, inline tags dropped, the five entities hiccup
@@ -606,10 +648,12 @@
   (let [out (config/out-dir cfg)
         pages (page-map model)]
     (fs/create-dirs out)
-    (let [n (export-pages! cfg pages)]
-      (export-assets! cfg)
-      (export-seo! cfg model pages)
-      {:pages n
+    (let [files  (export-pages! cfg pages)
+          assets (export-assets! cfg)
+          _      (export-seo! cfg model pages)
+          stale  (sweep-stale-html! out (concat files assets))]
+      {:pages (count files)
+       :stale (count stale)
        :articles (count (:articles model))
        :variants (reduce + (map #(count (:variants %)) (vals (:articles model))))
        :out (str out)})))

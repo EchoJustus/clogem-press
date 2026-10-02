@@ -108,10 +108,39 @@
 
 (defn title-tag
   "vdoing's `titleTag:` badge beside a title (原创 / 转载 / …). The plain
-  badge lands in Phase 2; the animated title-badge is Phase 4."
-  [variant]
+  badge lands in Phase 2; the animated title-badge is Phase 4. Chrome, not
+  content: Pagefind would otherwise glue it onto the title (`…before原创`)."
+  [ctx variant]
   (when-let [t (u/blank->nil (str (get-in variant [:front-matter :titleTag])))]
-    [:span.clogem-title-tag t]))
+    [:span.clogem-title-tag (pagefind ctx :data-pagefind-ignore) t]))
+
+(defn result-title
+  "The article title inside its `<h1>`: under Pagefind, wrapped so it alone
+  is the result title (`data-pagefind-meta=\"title\"`), whatever else the
+  heading holds; otherwise the bare text, so a :none page is unchanged."
+  [{:keys [cfg]} title]
+  (if (search/enabled? cfg)
+    [:span {:data-pagefind-meta "title"} title]
+    title))
+
+(defn search-terms
+  "D-P3-9: the attributes that make an article's categories and tags
+  searchable words again once the meta line is ignored: Pagefind indexes the
+  `data-clogem-terms` attribute (`data-pagefind-index-attrs`), whose values
+  are separated by spaces, so `markdown` is a word of its own rather than
+  `Localmarkdown`. Nil under :none, or with nothing to index."
+  [{:keys [cfg] :as ctx} group]
+  (when (search/enabled? cfg)
+    (when-let [terms (seq (distinct (concat (map #(category-label ctx %) (:categories group))
+                                            (map str (:tags group)))))]
+      {:data-pagefind-index-attrs "data-clogem-terms"
+       :data-clogem-terms (str/join " " terms)})))
+
+(defn- filter-attr
+  "D-P3-9: a category or tag is a Pagefind filter value — each in its own
+  element, so values never run together — or nil under :none."
+  [{:keys [cfg]} filter-name]
+  (when (search/enabled? cfg) {:data-pagefind-filter filter-name}))
 
 (defn article-info
   "vdoing's ArticleInfo line (D-P2-7): author, ISO date, categories and tags
@@ -121,7 +150,13 @@
   (let [{:keys [name link]} (author-of ctx variant)
         cats (seq (:categories group))
         tags (seq (:tags group))]
+    ;; D-P3-9: the meta line is chrome — indexed, its date matched every
+    ;; page for `2026` and opened every excerpt, and its tags ran into the
+    ;; words around them (`Localmarkdown`). Its categories and tags are
+    ;; still captured, as filters: `data-pagefind-ignore` drops text, not
+    ;; filters
     [:p.clogem-meta
+     (pagefind ctx :data-pagefind-ignore)
      (when name
        [:span.clogem-meta__author {:title (i18n/tr ctx :page/author)}
         (if link [:a {:href link} name] name)])
@@ -131,15 +166,17 @@
        (into [:span.clogem-meta__cats {:title (i18n/tr ctx :page/categories)}]
              (interpose " / "
                         (for [c cats]
-                          (if-let [h (index-href ctx :categories c)]
-                            [:a {:href (href ctx h)} (category-label ctx c)]
-                            (category-label ctx c))))))
+                          (let [f (filter-attr ctx "category")]
+                            (if-let [h (index-href ctx :categories c)]
+                              [:a (merge {:href (href ctx h)} f) (category-label ctx c)]
+                              (if f [:span f (category-label ctx c)] (category-label ctx c))))))))
      (when tags
        (into [:span.clogem-meta__tags {:title (i18n/tr ctx :page/tags)}]
-             (for [t tags]
+             (for [t tags
+                   :let [f (filter-attr ctx "tag")]]
                (if-let [h (index-href ctx :tags t)]
-                 [:a.clogem-tag {:href (href ctx h)} (str t)]
-                 [:span.clogem-tag (str t)]))))]))
+                 [:a.clogem-tag (merge {:href (href ctx h)} f) (str t)]
+                 [:span.clogem-tag f (str t)]))))]))
 
 (defn breadcrumbs
   "vdoing's breadcrumb line (D-P2-7): the primary's category path, each crumb
@@ -188,7 +225,8 @@
      [:a {:href href :lang (config/html-lang cfg lang)} title]
      (when fallback? (fallback-badge ctx lang))
      (when-let [d (u/iso-date (:date group))]
-       [:time.clogem-meta__date {:datetime d} d])]))
+       ;; chrome on the indexed catalogue page too (D-P3-9)
+       [:time.clogem-meta__date (merge {:datetime d} (pagefind ctx :data-pagefind-ignore)) d])]))
 
 ;; ---------------------------------------------------------------------------
 ;; Chrome

@@ -310,6 +310,48 @@
                           "copy each from the release's .sha256 file."))))
     cfg))
 
+(defn- real-path
+  "`p` absolute, normalized, and with every existing link resolved — so a
+  symlink cannot hide that two paths are one directory."
+  [p]
+  (fs/path (.getCanonicalPath (fs/file (fs/normalize (fs/absolutize p))))))
+
+(defn- within?
+  "Is `p` equal to `dir` or inside it?"
+  [dir p]
+  (let [d (str dir) s (str p)]
+    (or (= d s) (str/starts-with? s (str (str/replace d #"[/\\\\]+$" "") java.io.File/separator)))))
+
+(defn- check-out-dir!
+  "§11.2 item 46: a build deletes `.html` files in its output directory that
+  it did not write, so the output directory must hold nothing but output. It
+  is a config error, before anything is written, when `:build :out` resolves
+  to the site directory or an ancestor of it, or to a directory holding the
+  content directory or a `site.edn`. Repaired to the default so `doctor` can
+  keep going."
+  [cfg]
+  (let [site    (real-path (:clogem/site-dir cfg))
+        out-raw (get-in cfg [:build :out])
+        out     (when (u/blank->nil (str out-raw)) (real-path (fs/path site (str out-raw))))
+        content (real-path (fs/path site (str (get-in cfg [:content :dir]))))
+        cfg-name (str (fs/file-name (or (:clogem/config-file cfg) "site.edn")))
+        why (cond
+              (nil? out)                 "is blank"
+              (within? out site)         (if (= (str out) (str site))
+                                           "is the site directory itself"
+                                           (str "is " out ", which contains the site directory"))
+              (within? out content)      (str "contains the content directory " content)
+              (or (fs/exists? (fs/path out "site.edn"))
+                  (fs/exists? (fs/path out cfg-name)))
+              (str "is " out ", which holds a " cfg-name " — another site's directory"))]
+    (if why
+      (do (diag/error! nil (str ":build :out (" (pr-str out-raw) ") " why "; refusing to build there.")
+                       (str "A build removes .html files it did not write from its output directory "
+                            "(DESIGN.md §11.2 item 46), so it must be a directory of its own, "
+                            "such as the default \"dist\"."))
+          (assoc-in cfg [:build :out] (get-in defaults [:build :out])))
+      cfg)))
+
 (defn- validate!
   [{:keys [langs comments generator] :as cfg}]
   (let [{:keys [locales priority default default-declared]} langs]
@@ -348,7 +390,34 @@
           (diag/error! nil (str ":comments " k " is required when :provider is :giscus.")))))
     (when (< (count priority) (count locales))
       (diag/warn! nil ":langs :priority does not cover every locale; missing ones were appended.")))
-  (-> cfg check-theme! check-floor! check-fallback! check-site-url! check-x-default! check-search!))
+  (-> cfg check-theme! check-floor! check-fallback! check-site-url! check-x-default! check-search!
+      check-out-dir!))
+
+(defn- map-paths
+  "Every path in `m` whose value is a map, outermost first."
+  ([m] (map-paths m []))
+  ([m prefix]
+   (mapcat (fn [[k v]]
+             (when (map? v)
+               (cons (conj prefix k) (map-paths v (conj prefix k)))))
+           m)))
+
+(defn- check-shapes!
+  "A section the defaults hold as a map must be a map: `:search :pagefind`
+  or `:theme {:fonts :self-hosted}` used to reach a later `assoc-in` and
+  crash with a ClassCastException. A config error, repaired to the default
+  so `doctor` can keep going. nil is allowed — deep-merge lets it un-set a
+  section, and every reader falls back to the default."
+  [cfg]
+  (reduce (fn [cfg path]
+            (let [v (get-in cfg path ::absent)]
+              (if (or (= ::absent v) (nil? v) (map? v) (not (map? (get-in cfg (pop path)))))
+                cfg
+                (do (diag/error! nil (str (str/join " " path) " is " (pr-str v) ", but it must be a map, e.g. "
+                                          (pr-str (get-in defaults path)) ".")
+                                 "Using the default so the rest of the report is readable, but the build will not run.")
+                    (assoc-in cfg path (get-in defaults path))))))
+          cfg (map-paths defaults)))
 
 (defn load-config
   "Read site config from `site-dir`, deep-merge over defaults and `overrides`,
@@ -363,6 +432,7 @@
      ;; `or {}` because deep-merge lets an explicit nil win — an absent source
      ;; must contribute nothing, not blank the defaults.
      (-> (u/deep-merge defaults (or from-file {}) (or overrides {}))
+         check-shapes!
          (update :langs normalize-langs)
          (assoc :clogem/site-dir    (str site-dir)
                 :clogem/config-file (str cfg-file)

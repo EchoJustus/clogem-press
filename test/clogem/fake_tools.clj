@@ -4,6 +4,8 @@
   never touches the network (D-P3-8). Not a test namespace itself."
   (:require [babashka.fs :as fs]
             [babashka.process :as p]
+            [cheshire.core :as json]
+            [clojure.java.io :as io]
             [clojure.string :as str]))
 
 (defn fake-pagefind!
@@ -46,10 +48,33 @@
 
 (defn fake-tarball!
   "A `.tar.gz` holding a fake `pagefind_extended` at its root, as the release
-  assets do. Returns its path."
-  [dir]
+  assets do. Returns its path. `opts` go to `fake-pagefind!` — a distinct
+  `:output` makes a distinct binary."
+  [dir & opts]
   (let [stage (fs/path dir "stage")]
-    (fake-pagefind! stage)
+    (apply fake-pagefind! stage opts)
     (fs/delete-if-exists (fs/path stage "args.txt"))
     (p/shell {:dir (str stage)} "tar" "-czf" (str (fs/path dir "fake.tar.gz")) "pagefind_extended")
     (str (fs/path dir "fake.tar.gz"))))
+
+(defn symlink-tarball!
+  "A `.tar.gz` whose `pagefind_extended` is a symbolic link to `target`."
+  [dir target]
+  (let [stage (fs/path dir "stage-link")]
+    (fs/create-dirs stage)
+    (fs/create-sym-link (fs/path stage "pagefind_extended") target)
+    (p/shell {:dir (str stage)} "tar" "-czf" (str (fs/path dir "link.tar.gz")) "pagefind_extended")
+    (str (fs/path dir "link.tar.gz"))))
+
+(defn read-fragments
+  "Every Pagefind fragment under `<out>/pagefind/fragment/`, parsed: gzip,
+  then a `pagefind_dcd` signature, then the JSON of one indexed page —
+  {:url :content :filters :meta …}, with `:lang` from the file name. The
+  content is exactly the text Pagefind indexed, so a word glued to its
+  neighbour shows up here as it does in search."
+  [out]
+  (for [f (sort (map str (fs/glob (fs/path out "pagefind" "fragment") "*.pf_fragment")))]
+    (with-open [in (java.util.zip.GZIPInputStream. (io/input-stream (fs/file f)))]
+      (let [s (slurp in :encoding "UTF-8")]
+        (assoc (json/parse-string (subs s (str/index-of s "{")) true)
+               :lang (first (str/split (str (fs/file-name f)) #"_")))))))

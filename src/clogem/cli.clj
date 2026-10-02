@@ -26,13 +26,17 @@
 
 (defn- load-cfg*
   "Load config under a diagnostic sink. Returns [cfg diagnostics]."
-  [{:keys [site-dir config-file out no-write base]}]
+  [{:keys [site-dir config-file out no-write base no-search]}]
   (diag/collecting
    (config/load-config site-dir config-file
                        (cond-> {}
                          out      (assoc-in [:build :out] out)
                          base     (assoc-in [:site :base] base)
-                         no-write (assoc-in [:content :write-front-matter] false)))))
+                         no-write (assoc-in [:content :write-front-matter] false)
+                         ;; --no-search is a render setting, not only "skip
+                         ;; the indexer": pages that link a bundle the build
+                         ;; never writes 404 on every load
+                         no-search (assoc-in [:search :provider] :none)))))
 
 (defn load-cfg!
   "Load config; a config ERROR is fatal (D-P2-12).
@@ -114,7 +118,7 @@
                       {:out      {:desc "Output directory." :default "dist" :alias :o :ref "<dir>"}
                        :base     {:desc "Site base path, e.g. /project/." :ref "<path>"}
                        :no-write {:desc "Read-only build: never touch source files." :coerce :boolean}
-                       :no-search {:desc "Skip the search index even when :search :provider is set."
+                       :no-search {:desc "Build without search (no index, no search UI) even when :search :provider is set."
                                    :coerce :boolean}})}}
   build
   [opts]
@@ -155,10 +159,13 @@
       (report! ds)
       (println (format "clogem-press: %d pages (%d articles, %d variants) → %s"
                        (:pages result) (:articles result) (:variants result) (:out result)))
+      (when (pos? (:stale result 0))
+        (println (format "clogem-press: removed %d stale page%s from %s"
+                         (:stale result) (if (= 1 (:stale result)) "" "s") (:out result))))
       ;; D-P3-8: search runs last, over the finished dist/. A failure here is
       ;; a build error (exit 1) even though dist/ is already written — the
       ;; known limitation of §11.2: CI stops before deploying it.
-      (if (and (search/enabled? cfg) (not (:no-search opts)))
+      (if (search/enabled? cfg)
         (let [{:keys [languages pages]} (search/index! cfg)]
           (println (format "clogem-press: search index → %s/%s (%d language%s, %d pages)"
                            (:out result) search/output-subdir

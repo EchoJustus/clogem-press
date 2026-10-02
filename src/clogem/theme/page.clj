@@ -23,10 +23,10 @@
        ;; not, so homes, index and pagination pages drop out by themselves
        [:article.clogem-article
         (layout/pagefind ctx :data-pagefind-body)
-        [:h1 (:title variant) (layout/title-tag variant)]
+        [:h1 (layout/result-title ctx (:title variant)) (layout/title-tag ctx variant)]
         (layout/article-info ctx group variant)
         (layout/variant-bar ctx)
-        [:div.clogem-content content-hiccup]]
+        [:div.clogem-content (layout/search-terms ctx group) content-hiccup]]
        (layout/prev-next ctx)])
      (layout/footer ctx)))
 
