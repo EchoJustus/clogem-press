@@ -73,11 +73,13 @@
         ;; names and are the URL slugs; labels localize what is shown.
         :category-labels {}       ; e.g. {"Basics" {:zh-Hans "基础"}}
         :show-fallback-notice true
-        ;; What a reader's stored language choice (set by the navbar
-        ;; switcher, and only by it) does on a page served at its BARE URL
-        ;; (§6.4, D-11): :banner offers "also available in <L>" in L;
-        ;; :redirect replaces the page with its L variant before it paints;
-        ;; :ignore does neither. Anything else is a config error.
+        ;; What a reader's stored language choice (set by a click on the navbar
+        ;; switcher or the per-article variant bar, and only by those) does on
+        ;; a page served at its BARE URL (§6.4, D-11): :banner offers "also
+        ;; available in <L>" in L; :redirect replaces the page with its L
+        ;; variant before it paints (dropping any #hash or ?query — anchors
+        ;; differ per language); :ignore does neither. Anything else is a
+        ;; config error.
         :preference :banner}
 
  ;; ------------------------------------------------------------- content ----
@@ -99,7 +101,8 @@
            :permalinks-file "permalinks.edn"}
 
  ;; --------------------------------------------------------------- theme ----
- :theme {:default-mode :auto          ; :auto | :light | :dark | :read
+ :theme {:default-mode :auto          ; :auto | :light | :dark | :read; anything else
+                                      ; is a config error (giscus starts :read as light)
          :page-style   :card          ; :card | :line
          :sidebar-open true           ; true → every sidebar group starts open;
                                       ; false → only the current article's trail
@@ -156,7 +159,7 @@
  ;; ------------------------------------------------------------ comments ----
  :comments {:provider :none}   ; :none | :giscus
  ;; :comments {:provider    :giscus
- ;;            :repo        "you/your.github.io"
+ ;;            :repo        "you/your.github.io"  ; owner/name, not a URL
  ;;            :repo-id     "R_…"             ; all four are required; copy them
  ;;            :category    "Announcements"   ; from https://giscus.app
  ;;            :category-id "DIC_…"}
@@ -164,7 +167,10 @@
  ;; bare permalink (/pages/xxxxxx/), so all languages share ONE thread;
  ;; data-lang is the locale's :giscus; data-theme follows :theme
  ;; :default-mode. `comment: false` on the primary variant turns it off for
- ;; that article. A strict CSP needs script-src and frame-src https://giscus.app.
+ ;; that article. There is no :mapping option (threads are always keyed on the
+ ;; permalink); `:mapping :permalink` is accepted, any other key warns.
+ ;; A strict CSP needs script-src, frame-src AND style-src https://giscus.app:
+ ;; client.js links https://giscus.app/default.css into the host page.
  ;;
  ;; Migrating discussions that predate giscus? Strict mode matches a
  ;; `<!-- sha1: <hash-of-term> -->` marker in the discussion BODY, not the

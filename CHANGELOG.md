@@ -14,9 +14,10 @@ language preference, the "also available" banner and giscus comments (items
 ### Added
 
 - **A remembered language choice** (D-P3-13). Clicking a language in the
-  navbar switcher stores its code in `localStorage['clogem-lang']`; nothing
-  else sets it (no `navigator.languages` seeding), and blocked storage
-  behaves as if none were set. The switcher's links are never rewritten.
+  navbar switcher or in the per-article variant bar stores its code in
+  `localStorage['clogem-lang']`; nothing else sets it (no
+  `navigator.languages` seeding), and blocked storage behaves as if none
+  were set. Neither kind of link is ever rewritten.
   New vanilla `js/lang.js`, shipped to every page of a site with more than
   one language and to no single-language site.
 - **The "also available" banner** (D-P3-14, D-11). New
@@ -24,13 +25,18 @@ language preference, the "also available" banner and giscus comments (items
   alternatives, anything else is a config error). On a page served at its
   bare URL — an article or catalogue identity URL, a home or index
   overview — whose hreflang set holds the reader's stored language L, a
-  dismissible `<div role="note" lang="<L>">` at the top of the main column
-  offers the L page, **written in L**. Dismissal is remembered per page (the
-  100 most recent). The page's data is a JSON `<script
+  dismissible `<div role="note" lang="<L>" dir="<L's :dir>">` at the top of
+  the main column offers the L page, **written in L** (a site-added language
+  with no banner strings gets them along the fallback chain, and the note's
+  `lang`/`dir` are then those of the text shown). Dismissal is remembered
+  per page (the 100 most recent) and moves focus to the main column. A long
+  `:label` wraps inside the note. The page's data is a JSON `<script
   id="clogem-lang-data">` that escapes `<`, `>` and `&`, so a `</script>` in
   a site string stays inert. `:redirect` instead replaces a bare URL with
-  the L variant from an inline `<head>` script, before anything paints;
-  prefixed URLs never redirect. `:ignore` shows nothing. New theme keys
+  the L variant from an inline `<head>` script placed before the
+  stylesheets, so it does not wait for them and nothing paints; prefixed
+  URLs never redirect, and a `#hash` or `?query` is dropped (anchors differ
+  per language). `:ignore` shows nothing. New theme keys
   `:banner/available`, `:banner/read` and `:banner/dismiss` in all five
   files. **The Malay and Tamil banner strings are new and need native
   review** (DESIGN §10).
@@ -49,7 +55,9 @@ language preference, the "also available" banner and giscus comments (items
   `/clogem-demo/` builds, one giscus script per article variant, one
   `data-term` per identity group (the bare permalink), distinct terms across
   groups, the right `data-lang` per language, and no script on any other
-  page — the last clause of the Phase 3 exit criterion.
+  page — the last clause of the Phase 3 exit criterion. A group with no
+  script on any variant (`comment: false` on the primary) passes; a mixed
+  group fails. The demo's hello post has comments off to exercise it.
 - **Search with Pagefind** (`:search {:provider :pagefind}`; the default
   stays `:none`). `build` runs the `pagefind_extended` binary over `dist/`
   as its last step — one index per `<html lang>`, so five indexes on a
@@ -128,6 +136,16 @@ language preference, the "also available" banner and giscus comments (items
 - **`:comments :category` is required** under `:provider :giscus` (the
   category name giscus shows as `data-category`), and `:comments :provider`
   must be `:none` or `:giscus`; both are config errors at load.
+- **`:comments :repo` must be `owner/name`** (`[A-Za-z0-9-]+/[A-Za-z0-9._-]+`);
+  a bare name, a URL or a value with a space used to build and break the
+  widget at runtime, and is now a config error naming the value. An unknown
+  `:comments` key warns; `:mapping :permalink`, which §5.6's sketch used to
+  show and real site.edn files carry, is accepted quietly (any other
+  `:mapping` warns: threads are always keyed on the permalink).
+- **`:theme :default-mode` is validated**: `:auto`, `:light`, `:dark` or
+  `:read` (theme.css styles all four); a typo such as `:drak` used to give
+  `body.theme-mode-drak` and an auto giscus theme silently, and is now a
+  config error. giscus starts `:read` as `light`.
 - **giscus language codes** follow giscus's current routable set
   (re-verified 2026-10-01): `bg`, `cs`, `da`, `eu`, `gr`, `hbs`, `hu`, `kh`,
   `uz`, `zh-Hans` and `zh-Hant` are now accepted. `ms` and `ta` still 404
@@ -249,8 +267,11 @@ Search follow-up (DESIGN.md §11.2 item 46), each with a regression test:
   criterion. §6.4 rule 3 is deliberately narrowed (the preference never
   rewrites the switcher's links); the banner's text in the reader's chosen
   language is the one exception to rule 2; §6.8 gains `:comments :category`
-  and the CSP note (`script-src` and `frame-src https://giscus.app`; the
-  `:redirect` inline script needs `'unsafe-inline'` or its hash); Appendix A
+  and the CSP note (`script-src`, `frame-src` and `style-src
+  https://giscus.app` — client.js links giscus's `default.css` into the host
+  page; the `:redirect` inline script needs `'unsafe-inline'` or its hash);
+  §5.6's sketch shows `:comments :category` and `:i18n :preference`, and no
+  longer `:mapping`; Appendix A
   item 11 lists giscus's current languages; §8 records the exit criterion
   as met.
 - DESIGN.md §6.7: zh-Hant search UI strings come from `lang="zh-TW"`, not

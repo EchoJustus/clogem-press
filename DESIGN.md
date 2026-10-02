@@ -298,7 +298,7 @@ knowledge base, and none come from VuePress 1.x specifically (which is dead).
 | Task runner / CLI | **Babashka** — bb.edn tasks + babashka.cli using quickblog's ns-metadata spec pattern | Required; the spec pattern gives CLI parsing + grouped help + programmatic defaults from one definition. |
 | Search | **Pagefind ≥1.5.2 extended** binary, post-build; fallback FlexSearch+CJK | Only option that is Node-free, CJK-capable, sub-linear in client bandwidth, with a themable dark-mode UI, **and multilingual with zero config** (§6.7). |
 | **i18n** | **Filename-suffix variants + identity-by-permalink + EDN string maps**; per-language render pass | Suffix convention is the convergent answer across Hugo / mkdocs-static-i18n; identity-by-permalink reuses a field clogem-press already collision-checks and already uses for comment identity ([research/12](research/12-i18n-multilingual.md) §1, §7). |
-| Comments | **giscus**, behind `:comments {:provider …}` config (`:none` default), `mapping :permalink` | Only maintained GitHub-backed system; available from Singapore; runtime theme switching hooks into our mode toggle; one thread per article across languages. |
+| Comments | **giscus**, behind `:comments {:provider …}` config (`:none` default), one thread per permalink (`data-mapping="specific"`) | Only maintained GitHub-backed system; available from Singapore; runtime theme switching hooks into our mode toggle; one thread per article across languages. |
 | Syntax highlighting | **Chroma v2** binary during render, content-hash cached; fallback highlight.js client-side | Node-free, active, Pygments-quality Clojure lexer, line numbers built in. Verified locally. |
 | Dev server | **http-kit** (built in) for serving + SSE `/__reload`; static files via a small vendored handler (or org.babashka/http-server); **fswatcher pod** with `--poll` fallback | SSE reload verified end-to-end in this session — as was the container where inotify is broken (hence the fallback). |
 | Deployment | **GitHub Pages artifact flow** (`upload-pages-artifact` + `deploy-pages`) in a workflow living in `EchoJustus.github.io`, checking out the generator at a pinned tag | No credential to manage, no committed HTML, no build-loop, and the 10-builds/hour Pages limit stops applying. Verified in [research/13](research/13-pages-actions-deploy.md). |
@@ -610,14 +610,16 @@ any more). Note what arrived: `:generator`, `:langs`, `:i18n`, `:analytics`, `:s
          :fallback      [:site-default :en] ; after the requested lang; configured langs or :site-default (§11.2 item 36)
          :missing-key   :warn           ; :warn in dev, :silent in prod
          :category-labels {}            ; e.g. {"Basics" {:zh-Hans "基础"}}  (D-12)
-         :show-fallback-notice true}    ; "This page is shown in English" banner on index rows
+         :show-fallback-notice true     ; "This page is shown in English" banner on index rows
+         :preference    :banner}        ; stored language on a bare URL: :banner | :redirect | :ignore (§11.2 item 48)
 
  :content {:dir "content" :category true :tag true :archive true
            :category-text "Notes" :extend-frontmatter {}
            :permalink-prefix "/pages/" :write-front-matter true
            :permalinks-file "permalinks.edn"}
 
- :theme {:default-mode :auto :page-style :card :sidebar-open true
+ :theme {:default-mode :auto          ; :auto | :light | :dark | :read (§11.2 item 49)
+         :page-style :card :sidebar-open true
          :banner-bg "auto" :body-bg-img nil :title-badge true
          :blogger {:avatar "…" :name "…" :slogan "…"}
          :social  {:icons [{:icon :github :title "GitHub" :link "…"}]}
@@ -629,8 +631,9 @@ any more). Note what arrived: `:generator`, `:langs`, `:i18n`, `:analytics`, `:s
          {:text {:en "Guide"} :link "/pages/xyz/" :items […]}]
 
  :search   {:provider :pagefind}       ; the extended binary, always (§11.2 item 40)
- :comments {:provider :giscus :mapping :permalink   ; one thread per article identity (§6.8)
-            :repo "EchoJustus/EchoJustus.github.io" :repo-id "…" :category-id "…"}
+ :comments {:provider :giscus           ; one thread per article identity (§6.8)
+            :repo "EchoJustus/EchoJustus.github.io"   ; owner/name (§11.2 item 49)
+            :repo-id "…" :category "Announcements" :category-id "…"}
  :analytics {:provider :none}          ; :ga4 {:id} | :plausible {:domain :src} | :umami {…}
  :seo   {:sitemap true :hreflang true :x-default :primary
          :feeds true                    ; one Atom feed per language (§6.6, §11.2 item 32)
@@ -1238,7 +1241,10 @@ pairs with `data-term`. So every variant emits:
 *(As implemented, §11.2 item 49: the HTML comments above are explanation, not output; `data-category`
 needs a new required `:comments :category`; `data-theme` follows `:theme :default-mode`; and
 `window.clogem.setCommentsTheme(theme)` is the `postMessage` hook for the Phase 4 toggle. A strict CSP
-needs `script-src https://giscus.app` and `frame-src https://giscus.app`.)*
+needs `script-src`, `frame-src` and `style-src https://giscus.app` — client.js inserts
+`<link id="giscus-css" rel="stylesheet" href="https://giscus.app/default.css">` into the host page.
+The mapping is not configurable, so there is no `:comments :mapping`; `:mapping :permalink`, which
+§5.6's sketch used to show, is accepted quietly and any other value warns.)*
 
 v1's `data-mapping="pathname"` would have created a separate discussion for
 `/zh-Hans/pages/a1b2c3/`, fragmenting one article's conversation across languages. Keying on the
@@ -2463,11 +2469,15 @@ Phase 3 part C (items 47–50: the language preference, the banner, giscus, and 
 completes Phase 3, released as 0.2.0. It amends §6.4 rules 3 and 4, D-11, §6.8, §8 and Appendix A
 item 11.
 
-47. **The stored language preference: the switcher is its only writer, and it does not rewrite the
-    switcher (§6.4 rule 3, D-P3-13).** `js/lang.js` stores the code of the language a reader picks
+47. **The stored language preference: a language choice is its only writer, and it does not rewrite
+    the switcher (§6.4 rule 3, D-P3-13).** `js/lang.js` stores the code of the language a reader picks
     in the navbar switcher in `localStorage['clogem-lang']` (each switcher link carries it as
-    `data-clogem-lang`; the current language is a `<span>`, not a link, and stores nothing).
-    Nothing else writes it — in particular nothing seeds it from `navigator.languages` — so a
+    `data-clogem-lang`; the current language is a `<span>`, not a link, and stores nothing). **The
+    per-article variant bar below the title is a language choice too** (P3-C.1): its links carry
+    `data-clogem-lang` and the click handler matches `.clogem-langs a[data-clogem-lang],
+    .clogem-variants a[data-clogem-lang]`. Without that, under `:redirect` with `clogem-lang=zh-Hans`,
+    the zh-Hans page's variant-bar link "English" went to the bare `/pages/643259/`, whose redirect
+    sent the reader straight back to Chinese. Nothing else writes it — in particular nothing seeds it from `navigator.languages` — so a
     preference exists only when the reader made a choice. Every storage access is in a
     `try`/`catch`, and blocked storage (private mode, a site-data policy) behaves exactly like no
     preference. **A deliberate narrowing of rule 3:** rule 3 also said the preference decides
@@ -2509,7 +2519,19 @@ item 11.
     does nothing; choosing the default language in the switcher stores it and ends the redirects.
     **`:ignore`:** no data, no banner, no redirect; the switcher still stores the choice. **CSP:** the
     `:redirect` inline script needs `script-src 'unsafe-inline'` or its hash; `:banner` and `:ignore`
-    need none (the JSON block is not executed). **Verified once in Chromium** (Playwright, not
+    need none (the JSON block is not executed). **Follow-ups (P3-C.1):** the data block and the
+    `:redirect` script come *before* the stylesheet links in `<head>` — a parser-blocking script
+    waits for every stylesheet above it, so with theme.css delayed the redirect used to wait too;
+    `:redirect` goes to the variant's URL as it stands, so a `#hash` or `?query` on the bare URL is
+    dropped (anchors are per-language headings, and differ). The banner carries `dir` from the locale's
+    `:dir`, so an RTL language renders RTL; each banner entry carries the `lang` and `dir` of the
+    language its text is *actually* in — L's, unless L has no `:banner/available` string at all (only
+    a site-added language without site strings), when the §6.5 chain supplied it and the note is
+    labelled with that language instead of L. Dismissing moves focus to `main.clogem-main` (given
+    `tabindex="-1"`, drawn without a ring) before the note is removed, so a keyboard reader is not
+    dropped to `<body>`. The text takes `min-width: 0` and its link `overflow-wrap: anywhere`: the
+    link used to be `nowrap`, and a `:label` such as "Bahasa Melayu (Malaysia, Singapura)" widened a
+    360 px document to 415 px and pushed the dismiss button off-screen. **Verified once in Chromium** (Playwright, not
     committed) on the built demo: the banner in Simplified Chinese with `lang="zh-Hans"` linking to
     `/zh-Hans/pages/643259/` on the bare English article; keyboard order link then button, Enter
     dismisses; hidden after reload; the 100-entry cap; absent on `/zh-Hans/…`, with `clogem-lang=en`,
@@ -2530,8 +2552,14 @@ item 11.
     :category` (the category *name*, which giscus displays) is now required beside `:repo`,
     `:repo-id` and `:category-id` — §6.8's snippet used `data-category` but validation never asked for
     it; `:comments :provider` must be `:none` or `:giscus`. **Theme:** `data-theme` comes from `:theme
-    :default-mode` — `:auto` → `preferred_color_scheme`, `:light` → `light`, `:dark` → `dark`
-    (anything else, e.g. a future `:read`, → `preferred_color_scheme`). `js/comments.js`, shipped only
+    :default-mode` — `:auto` → `preferred_color_scheme`, `:light` → `light`, `:dark` → `dark`,
+    `:read` → `light` (a light sepia palette). `:theme :default-mode` is validated at load against
+    the four modes theme.css styles (`:auto`, `:light` — the `:root` palette — `:dark`, `:read`);
+    anything else, e.g. `:drak`, is a config error repaired to `:auto` (P3-C.1; it used to give
+    `body.theme-mode-drak` silently). **`:repo`** must match `[A-Za-z0-9-]+/[A-Za-z0-9._-]+`;
+    `"noslash"`, `"https://github.com/…"` or `"a/b/c d"` is a config error naming the value. An
+    unknown `:comments` key is a warning; `:mapping :permalink` (§5.6's old sketch, and real
+    site.edn files) is accepted quietly, another `:mapping` warns. `js/comments.js`, shipped only
     under giscus and loaded only beside the widget, defines `window.clogem.setCommentsTheme(theme)` for
     the Phase 4 toggle: it posts `{giscus: {setConfig: {theme}}}` to
     `iframe.giscus-frame`'s `contentWindow` with target origin `https://giscus.app`, returns whether
@@ -2543,14 +2571,18 @@ item 11.
     `ar be bg ca cs da de en eo es eu fa fr gr hbs he hu id it ja kh ko nl pl pt ro ru th tr uk uz vi
     zh-CN zh-TW zh-HK gsw zh-Hans zh-Hant`. `ms` and `ta` still 404 and still map to `en`; the default
     zh mappings stay `zh-CN` / `zh-TW`, which serve identical strings (Appendix A item 11 corrected).
-    **CSP:** a strict policy needs `script-src https://giscus.app` and `frame-src https://giscus.app`.
+    **CSP:** a strict policy needs `script-src`, `frame-src` and `style-src https://giscus.app` —
+    client.js inserts `<link id="giscus-css" rel="stylesheet" href="https://giscus.app/default.css">`
+    into the host page.
     **Demo:** giscus is on with well-formed placeholder ids (`example/clogem-demo`, `R_kgDOdemo0001`,
     `Announcements`, `DIC_kwDOdemo0001`), so the markup is real and CI can assert it, while the widget
     itself never loads.
 50. **The Phase 3 exit criterion is asserted in CI, and Phase 3 is released as 0.2.0 (§8).**
     `.github/scripts/check_giscus.py` (standard library only, like `check_seo.py`) groups every
     article page of the built demo by its hreflang `x-default` and asserts that each variant carries
-    exactly one giscus script, that all variants of a group carry the same `data-term` and that it is
+    exactly one giscus script (or that *every* variant carries none — `comment: false` on the
+    primary, which the demo's hello post exercises; a group with some variants on and some off
+    fails), that all variants of a group carry the same `data-term` and that it is
     the bare permalink, that terms are distinct across groups, that `data-lang` is each page
     language's `:giscus` (given on the command line) with `data-mapping="specific"` and
     `data-strict="1"`, and that no other page carries the script — on the root-base and the
