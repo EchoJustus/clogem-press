@@ -85,6 +85,8 @@ is released.
 
 ### Changed
 
+- **Windows on ARM** (`aarch64-pc-windows-msvc`) is a supported Pagefind
+  platform; its 1.5.2 hash is built in (six hashes now).
 - With a blank `:site :url` none of the URL-bearing output above is
   emitted and analyse warns once; the site still builds.
 - Redirect stubs no longer carry `rel=canonical` (they are `noindex`), and
@@ -108,6 +110,49 @@ is released.
   `:clogem/errors`, so a caller can see the warnings of a run that failed.
 
 ### Fixed
+
+Search follow-up (DESIGN.md §11.2 item 46), each with a regression test:
+
+- **Search no longer indexes article chrome.** The meta line (author, date,
+  categories, tags), the `titleTag` badge and a catalogue row's date are
+  `data-pagefind-ignore`; Pagefind joined them with the text around them, so
+  `markdown` found nothing (`Localmarkdown`), `2026` matched 15 of 16 English
+  pages through the date, excerpts opened with `2026-08-16Guide / Basics.`
+  and one result title read `A post from the year before原创`. The result
+  title is now set with `data-pagefind-meta="title"` on the title text alone;
+  categories and tags are `data-pagefind-filter` values (`category`, `tag`)
+  and are indexed as separate words through `data-pagefind-index-attrs`.
+- **A rebuild into the same `dist/` drops deleted pages.** `build` removes
+  `.html` files under the output directory that it did not write (never
+  other files, never outside it, never through a link), and Pagefind's
+  `pagefind/` is replaced, not added to — a deleted page stayed searchable
+  and every `bb dev` rebuild grew the bundle. **`:build :out` may no longer
+  be the site directory, an ancestor of it, or a directory holding the
+  content directory or a `site.edn`:** that is now a config error, raised
+  before anything is written.
+- **`--no-search` builds without search.** Pages no longer link the Pagefind
+  CSS and JS or show a search box that the build never backs with a bundle.
+- **The Pagefind cache is verified on every use.** A stamp beside the binary
+  records the archive hash it was verified against and the binary's own
+  hash; a cache entry from another pin (a site with its own `:url`/`:sha256`
+  sharing the cache), a modified binary or a missing stamp is deleted and
+  fetched again instead of run.
+- **Concurrent first-time fetches no longer race.** The fetch holds a lock
+  file and installs with an atomic rename; four parallel cold-cache builds
+  failed 2 rounds in 6 before.
+- **Downloads:** a connection dropped mid-download is a build error with the
+  offline hint, not a stack trace; 30 s connect, 5 min response and 5 min
+  idle-body timeouts (a silent server hung the build); `NO_PROXY` /
+  `no_proxy` are honoured, `HTTP_PROXY` is used for an http mirror, and
+  `user:pass@` in the proxy URL authenticates.
+- **Smaller:** a non-map where a map is expected (`:search :pagefind`,
+  `:theme {:fonts :self-hosted}`, `:seo :none`) is a config error instead of
+  a `ClassCastException`; leftover `*.download-*` / `*.partial-*` files of a
+  killed fetch are swept; an archive whose binary is a symlink is refused;
+  tar reads the archive on stdin (no `C:` host parsing) and a missing tar is
+  reported cleanly; a relative `CLOGEM_PAGEFIND` resolves against the
+  working directory and its errors print the absolute path and say whether
+  it is a directory or missing.
 
 - **`bb test` errored on babashka 1.13.219**, which `:min-bb-version
   "1.13.0"` admits: the timezone test set the JVM default zone through

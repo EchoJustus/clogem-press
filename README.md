@@ -53,8 +53,8 @@ and run it against local content with no packaging step.
 
 | Task | What it does |
 |---|---|
-| `bb build` | Render the site to `dist/`. Writes missing front matter unless `--no-write`. Runs Pagefind last under `:search {:provider :pagefind}`; `--no-search` skips it. |
-| `bb dev` | Build, serve on :1888, rebuild on change, push an SSE reload. `--poll` if inotify is unreliable; `--no-search` skips the search index. |
+| `bb build` | Render the site to `dist/`. Writes missing front matter unless `--no-write`. Runs Pagefind last under `:search {:provider :pagefind}`; `--no-search` builds without search (no index, no search UI). Removes `.html` files in the output directory that the build did not write, so the output directory must be a directory of its own. |
+| `bb dev` | Build, serve on :1888, rebuild on change, push an SSE reload. `--poll` if inotify is unreliable; `--no-search` builds without search. |
 | `bb serve` | Serve an already-built directory, no watching. |
 | `bb doctor` | Report content problems without building. Exits non-zero on errors. |
 | `bb fm-fix` | Front-matter normalization only — what CI runs before the build. `--dry-run` to preview. |

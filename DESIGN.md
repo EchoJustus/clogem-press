@@ -2248,25 +2248,31 @@ and canonical pages, ogp.me, Facebook's locale list, RFC 4287 and sitemaps.org.
     repo's CI (§4 binary-tool policy, §5.2 step 6, §5.6, D-P3-8).** `:search {:provider :pagefind}`
     (default still `:none`; anything else is a config error repaired to `:none`). `:tools :pagefind`
     is `{:version "1.5.2" :sha256 {<platform> "<hex>"}}` — a **per-platform map**, because §5.6's
-    single `:sha256` cannot pin five release assets; a single string is a config error. The five
+    single `:sha256` cannot pin six release assets; a single string is a config error. The six
     `pagefind_extended` 1.5.2 hashes (x86_64/aarch64 linux-musl, x86_64/aarch64 apple-darwin,
-    x86_64 windows-msvc) are built in (`clogem.search/known-sha256`), verified against the
+    x86_64/aarch64 windows-msvc — the last added by item 46) are built in (`clogem.search/known-sha256`), verified against the
     release's own `.sha256` files, and keyed by version, so a site pinning another version
     inherits no hash that cannot match it and is told which one to add. The asset is
     `…/releases/download/v<version>/pagefind_extended-v<version>-<platform>.tar.gz` — the
     **extended** binary, since the standard one does not segment Chinese (a zh-Hans search for
     `简单` returns nothing); `:url` overrides the template (a mirror). Download is babashka's
-    built-in HTTP client, which ignores `HTTPS_PROXY`, so the generator reads it itself; unpack
-    is `tar --no-same-owner` into a staging directory that is moved into place, so an
-    interrupted fetch never leaves a half-written binary a later build would trust. **The cache
+    built-in HTTP client, which ignores the proxy variables, so the generator reads them itself
+    (`NO_PROXY`, proxy credentials and timeouts: item 46); unpack is `tar --no-same-owner`,
+    reading the archive on stdin, into a staging directory that is moved into place, so an
+    interrupted fetch never leaves a half-written binary a later build would trust. *Amended by
+    item 46:* a cached binary is no longer trusted for existing at `<version>/<platform>` — it
+    carries a stamp of the hashes it was verified against, re-checked on every use, and the fetch
+    holds a lock. **The cache
     moved out of `.cache/tools/`** (§4's sketch) to `$XDG_CACHE_HOME/clogem-press/tools/pagefind/
     <version>/<platform>/`, else `~/.cache/…` — outside the site, so a content repo needs no
     `.gitignore` entry and the 58 MB binary can never reach `dist/`. `CLOGEM_TOOLS_DIR` (or
     `:tools :cache-dir`, relative to the site) moves it; `CLOGEM_PAGEFIND` (or `:tools :pagefind
     :path`) names a preinstalled binary and skips download and verification — env wins over
-    config in both. A sha256 mismatch is an error naming the expected and actual hashes, and the
+    config in both; a relative `CLOGEM_PAGEFIND` is relative to the working directory, a relative
+    `:path` to the site (item 46). A sha256 mismatch is an error naming the expected and actual hashes, and the
     download is deleted. **When:** at the end of `build`, after `render/build!`, as `<binary> --site
-    <out> --output-subdir pagefind`; `build --no-search` skips it; `bb dev` runs it on every
+    <out> --output-subdir pagefind`, into a `pagefind/` deleted first (item 46); `build
+    --no-search` skips it and, since item 46, also emits no search markup; `bb dev` runs it on every
     rebuild (≈0.5 s on the demo) unless `--no-search`; `doctor` never does. A new task, `bb
     fetch-tool` (§4's "fetch-tool helper"), fetches and verifies the pinned binary and prints its
     path — what CI exports as `CLOGEM_PAGEFIND`. **Failure policy:** a failed download, a hash
@@ -2283,7 +2289,9 @@ and canonical pages, ogp.me, Facebook's locale list, RFC 4287 and sitemaps.org.
     `<article>` of article and catalogue pages and nowhere else; once any page carries it,
     Pagefind skips every page that does not, so homes, index pages and pagination pages drop out
     with no exclusion list. Inside the body, heading anchors (`#`), the variant bar and the
-    fallback marker on catalogue rows are `data-pagefind-ignore`. Pagefind takes the language
+    fallback marker on catalogue rows are `data-pagefind-ignore` — and, *corrected by item 46*,
+    the article's meta line (author, date, categories, tags), the title tag and a catalogue row's
+    date, which this item first left indexed. Pagefind takes the language
     from `<html lang>` and builds one index per language with no configuration: stemming for
     `en` and `ta`, none for `ms` (works, matches exact forms), real word segmentation for
     `zh-Hans`. `zh-Hant` stays as item 37 found it — indexed mostly as single characters, so
@@ -2291,8 +2299,9 @@ and canonical pages, ogp.me, Facebook's locale list, RFC 4287 and sitemaps.org.
     Measured on the demo (Pagefind 1.5.2): `pagefind-entry.json` lists exactly `en`, `zh-hans`,
     `zh-hant`, `ms`, `ta`, each with as many pages as that language has article variants
     (15/5/1/1/2 before the wrapping fixture of item 45, 16/5/2/1/3 after). Under
-    `:search {:provider :none}` no page carries any `data-pagefind-*` attribute, script or
-    element — the output is byte-identical to a build without this feature.
+    `:search {:provider :none}` — and, since item 46, under `--no-search` — no page carries any
+    `data-pagefind-*` attribute, script or element — the output is byte-identical to a build
+    without this feature.
 42. **The Component UI, not the Default UI (§6.7, §5.3, D-P3-10).** Pagefind 1.5 calls it "the
     new recommended way". Every page loads the bundle's `pagefind-component-ui.css` and
     `pagefind-component-ui.js` (`type="module"`) from the base-inclusive `<base>pagefind/`, opens
@@ -2358,6 +2367,80 @@ and canonical pages, ogp.me, Facebook's locale list, RFC 4287 and sitemaps.org.
     their own boxes (`overflow-x: auto`); a long inline code span wraps. No CSS change was
     needed. The demo gained `02.Notes/10.Local/06.wide-content{,.zh-Hant,.ta}.md` so the case
     stays in the corpus.
+
+46. **Search follow-up: what the index holds, a reused `dist/`, and a cache that is checked on
+    every use (§6.7, D-P3-8, D-P3-9; corrects items 40 and 41).** A review and a fault-injection
+    pass of items 40–45 found these, each now fixed with a test that fails on the old code.
+    **(A) Chrome was indexed and ran together.** Pagefind joins adjacent inline elements with no
+    space, and the meta line and the `titleTag` badge sat inside `data-pagefind-body`. Measured
+    on the demo: `markdown` returned 0 hits although two pages carry that tag (they were indexed
+    as `Localmarkdown` and `Basicsmarkdown容器`); `2026` matched 15 of the 16 English pages
+    through the date; almost every excerpt opened `2026-08-16Guide / Basics.`; a result title
+    read `A post from the year before原创`. Now `.clogem-meta`, `.clogem-title-tag` and a
+    catalogue row's `<time>` are `data-pagefind-ignore`; the result title is set explicitly with
+    `data-pagefind-meta="title"` on a `<span>` holding only the title text; each category and
+    tag is a `data-pagefind-filter` (`category`, `tag`) in its own element — `data-pagefind-ignore`
+    drops text, not filters — so they are filterable later; and because Pagefind does not search
+    filter values, the same categories and tags are indexed as words through
+    `data-pagefind-index-attrs="data-clogem-terms"` on `.clogem-content`, space-separated. After:
+    `markdown` finds the two tagged English pages, `2026` matches the 2 pages that mention it in
+    their text, no excerpt starts with a date. All of it is emitted only when search is on.
+    **(B) A reused output directory.** Pagefind indexes every HTML file under `--site`, and the
+    build never removed anything: deleting `06.wide-content.zh-Hant.md` and rebuilding into the
+    same `dist/` indexed 27 pages instead of 26, the deleted page still searchable; and every
+    edit-and-rebuild cycle left one more stale file in `pagefind/fragment/`, `pagefind/index/`
+    and `*.pf_meta`. This is `bb dev`'s normal life. Now `search/run!` deletes `<out>/pagefind/`
+    before Pagefind runs, and `render/build!` ends by deleting every `.html` file under `<out>`
+    that this build did not write (pages, and `.html` files copied from the site's `assets/`),
+    removing directories that leaves empty. **The rule:** only `.html` files; only inside
+    `<out>`; never through a link (a symlinked directory is not descended, a symlinked file not
+    deleted); everything else — `CNAME`, a `.nojekyll`, files a CI step added — is left alone.
+    A hand-made `.html` file dropped into `dist/` *is* removed: put it in `assets/`. Because
+    the build now deletes, **`:build :out` must be a directory of its own**: a config error,
+    before anything is read or written, when it resolves (links followed) to the site directory
+    or an ancestor of it, to a directory containing the content directory, or to one holding a
+    `site.edn` (or the configured config file). **(C) `--no-search` emitted the search UI.** It
+    skipped the indexer but every page still linked `pagefind-component-ui.{css,js}` and had a
+    search box — two 404s per page view, in output the offline hint recommends deploying. The
+    flag now sets `:search :provider :none` in the loaded config, so render sees it: no search
+    markup, no `js/search.js`, and the link resolver passes (CI now runs it on a `--no-search`
+    build too). **(D) The cache trusted any binary at `<version>/<platform>`.** Site A with its
+    own `:url`/`:sha256` and site B on the built-in pins share a cache, so B ran A's binary; and
+    a byte appended to the cached binary went unnoticed. A verified extraction now writes
+    `.clogem-verified.edn` beside the binary, `{:archive-sha256 … :binary-sha256 …}`; every use
+    requires the archive hash to equal the pin in effect and re-hashes the binary (≈0.2 s for
+    59 MB); anything else — another pin, a changed binary, no stamp, a symlink — deletes the entry
+    and fetches again. **(E) Concurrent cold-cache fetches raced** (4 parallel builds failed 2 of
+    6 rounds: `FileAlreadyExistsException`, `DirectoryNotEmptyException`, or a sibling's
+    `delete-tree` removing a fresh install). The fetch now holds an exclusive lock,
+    `<version>/<platform>.lock` (a `FileChannel` lock across processes plus a per-path monitor
+    across threads, since a JVM holds file locks per process), re-checks the cache once it has
+    the lock, extracts into a unique `<platform>.partial-<n>/` and moves it into place with an
+    atomic rename. A directory holding a binary verified for the pin in effect is never deleted.
+    The lock file stays (empty). **(F) Network.** A connection dropped mid-body was a raw
+    `IOException: closed` stack trace; it is now a build error with the offline hint, like
+    every other download failure. There were no timeouts, so a server that never answered hung
+    the build: now 30 s to connect, 5 minutes for the response headers, and 5 minutes without a
+    byte of body (a watchdog closes the stream, which unblocks the read). Proxies: `HTTPS_PROXY`
+    for https URLs; for an http URL (a mirror) `HTTP_PROXY`, else `HTTPS_PROXY` as before;
+    lower-case spellings too; `NO_PROXY`/`no_proxy` exempts a host (the curl convention: `*`,
+    exact host or domain suffix with or without a leading dot, optional `:port`; no CIDR);
+    credentials in the proxy URL's user-info (percent-decoded) go to an authenticator and as a
+    pre-emptive `Proxy-Authorization: Basic`, which an https CONNECT needs because the JDK will
+    not answer a Basic challenge for a tunnel. Tested against a local proxy stub for http; the
+    CONNECT path is not exercised by a test. **(G) Smaller.** A non-map where the defaults hold a
+    map (`:search :pagefind`, `:theme {:fonts :self-hosted}`, `:seo :none`) crashed with a
+    `ClassCastException`; it is a config error, repaired to the default. Orphaned
+    `<platform>.download-*` / `.partial-*` siblings of a killed run (up to 52 MB) are swept at
+    the start of the next fetch, under the lock. An archive whose binary is a symbolic link is
+    refused, checked without following links, and nothing is ever chmod-ed through a link. tar
+    reads the archive on stdin (`tar -xzf - -C <staging>`), so a Windows drive-letter path is
+    never parsed as `host:path`; a missing `tar` is a clean error. Windows' bsdtar is expected to
+    accept the same arguments but **is unverified** — no Windows run has been made. Windows on
+    ARM (`aarch64-pc-windows-msvc`, sha256 `4fd44a27…6df43`, re-verified against the release's
+    `.sha256`) is a platform. A relative `CLOGEM_PAGEFIND` resolves against the working
+    directory, not the site; the error names the absolute path it checked and says whether it is
+    a directory or missing.
 
 ---
 

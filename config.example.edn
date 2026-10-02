@@ -114,7 +114,8 @@
  ;; -------------------------------------------------------------- search ----
  :search {:provider :none}   ; :none | :pagefind (§6.7, D-P3-8 … D-P3-10).
                              ; :pagefind runs the EXTENDED binary over dist/
-                             ; at the end of `build` (`--no-search` skips it),
+                             ; at the end of `build` (`--no-search` builds
+                             ; with no index and no search UI at all),
                              ; one index per <html lang>, only article and
                              ; catalogue bodies indexed. A failed fetch or a
                              ; non-zero exit fails the build (exit 1).
@@ -122,11 +123,14 @@
                              ; deferred to Phase 4 (D-P3-11).
 
  ;; --------------------------------------------------------------- tools ----
- ;; D-P3-8: fetched over HTTPS (honouring HTTPS_PROXY), sha256-checked against
- ;; a per-platform pin, unpacked with tar and cached OUTSIDE the site, in
+ ;; D-P3-8: fetched over HTTPS (honouring HTTPS_PROXY / HTTP_PROXY, NO_PROXY,
+ ;; and user:pass@ in the proxy URL), sha256-checked against a per-platform
+ ;; pin, unpacked with tar and cached OUTSIDE the site, in
  ;; $XDG_CACHE_HOME/clogem-press/tools/pagefind/<version>/<platform>/ (else
- ;; ~/.cache/…). `bb fetch-tool` does just that and prints the binary's path.
- :tools {:pagefind {:version "1.5.2"}  ; its five platform hashes are built in
+ ;; ~/.cache/…), stamped with the hashes it was verified against and
+ ;; re-checked on every use. `bb fetch-tool` does just that and prints the
+ ;; binary's path.
+ :tools {:pagefind {:version "1.5.2"}  ; its six platform hashes are built in
          ;; pinning another version? give every platform you build on its hash
          ;; from the release's .sha256 files:
          ;; :pagefind {:version "1.5.2"
@@ -134,8 +138,10 @@
          ;;                     "aarch64-unknown-linux-musl" "3f66…"
          ;;                     "x86_64-apple-darwin"        "3523…"
          ;;                     "aarch64-apple-darwin"       "99c4…"
-         ;;                     "x86_64-pc-windows-msvc"     "7ba2…"}
-         ;;            :path "/usr/local/bin/pagefind_extended"  ; or env CLOGEM_PAGEFIND:
+         ;;                     "x86_64-pc-windows-msvc"     "7ba2…"
+         ;;                     "aarch64-pc-windows-msvc"    "4fd4…"}
+         ;;            :path "/usr/local/bin/pagefind_extended"  ; relative to the site; or env
+         ;;                                                      ; CLOGEM_PAGEFIND (relative to the cwd):
          ;;                                                      ; skips download + verification
          ;;            :url  "https://mirror.example/v{{version}}/pagefind_extended-v{{version}}-{{platform}}.tar.gz"}
          ;; :cache-dir ".tools"         ; relative to the site; env CLOGEM_TOOLS_DIR wins
@@ -162,4 +168,5 @@
        :indexnow {:enabled false :key nil}}
 
  ;; --------------------------------------------------------------- build ----
- :build {:out "dist"}}
+ :build {:out "dist"}}  ; a directory of its own: a build removes .html files
+                         ; in it that it did not write (§11.2 item 46)

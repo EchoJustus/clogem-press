@@ -33,14 +33,17 @@ jobs:
       # D-P3-8: the Pagefind binary is fetched, sha256-verified and cached by
       # the generator itself (`bb fetch-tool`), outside the site. The cache key
       # is the pin — version, platform and that platform's hash, read from the
-      # generator so there is one place to bump it.
+      # generator so there is one place to bump it — plus the cache layout:
+      # `v2` entries carry the verification stamp of §11.2 item 46, and an
+      # unstamped entry restored under the old key would be re-fetched on
+      # every run without ever being saved again.
       - name: Pagefind pin
         id: pagefind
         run: |
           bb -e "(require 'clogem.config 'clogem.search)
                  (let [v (get-in clogem.config/defaults [:tools :pagefind :version])
                        p (clogem.search/platform)]
-                   (println (str \"key=pagefind-\" v \"-\" p \"-\" (get-in clogem.search/known-sha256 [v p]))))" \
+                   (println (str \"key=pagefind-v2-\" v \"-\" p \"-\" (get-in clogem.search/known-sha256 [v p]))))" \
             >> "$GITHUB_OUTPUT"
           cat "$GITHUB_OUTPUT"
 
@@ -211,6 +214,39 @@ jobs:
       - name: Assert the search output under a non-root base
         working-directory: examples/demo-site
         run: bb ../../.github/scripts/check_search.clj dist-base /clogem-demo/ en zh-Hans zh-Hant ms ta
+
+      # §11.2 item 46: --no-search builds pages with no search UI at all. It
+      # used to skip the indexer but keep linking pagefind/…, so every page of
+      # this deployable output 404'd twice. The same resolver, at base "/".
+      - name: Build demo site without search
+        working-directory: examples/demo-site
+        run: bb --config ../../bb.edn build --no-write --no-search --out dist-nosearch
+
+      - name: Assert the --no-search build references no Pagefind and its links resolve
+        working-directory: examples/demo-site
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          test ! -e dist-nosearch/pagefind       || fail "--no-search wrote a pagefind/ bundle"
+          # markup, not prose: the demo's articles mention Pagefind by name
+          if grep -rlE 'data-pagefind-|<pagefind-|(href|src)="[^"]*(/pagefind/|/js/search\.js)' dist-nosearch --include='*.html' \
+               | head -n 3 | grep .; then
+            fail "--no-search pages still carry search markup"
+          fi
+          missing=0
+          hrefs=$(grep -ohE '(href|src)="/[^"]*"' -r dist-nosearch --include='*.html' \
+                  | sed -E 's/^(href|src)="//; s/"$//' | sort -u)
+          for href in $hrefs; do
+            rel="${href#/}"
+            rel="$(printf '%b' "${rel//%/\\x}")"
+            [ -f "dist-nosearch/$rel" ] && continue
+            [ -f "dist-nosearch/${rel%/}/index.html" ] && continue
+            [ -z "$rel" ] && [ -f dist-nosearch/index.html ] && continue
+            echo "::error::dangling link $href -> dist-nosearch/$rel"
+            missing=$((missing+1))
+          done
+          test "$missing" -eq 0 || fail "$missing internal link(s) do not resolve in the --no-search build"
+          echo "--no-search OK: $(find dist-nosearch -name index.html | wc -l) pages, $(echo "$hrefs" | wc -l) distinct links"
 
       - name: Assert the non-root-base build mutated nothing
         run: git diff --exit-code -- examples/demo-site
