@@ -1462,3 +1462,21 @@
     (with-strings (into {} (for [l ["en" "zh-Hans" "zh-Hant" "ms" "ta"]] [l {:site/banner "x" :page/toc "y"}]))
       (fn [dir _]
         (is (empty? (doctor-warnings dir)))))))
+
+(deftest the-sitemap-and-hreflang-switches
+  (testing ":seo :sitemap false → no sitemap; :seo :hreflang false → no
+            alternates in heads or sitemap, canonical kept"
+    (with-cli-site {"_posts/2026-01-01-p.md" a-post}
+      (fn [dir out]
+        (cli/build {:site-dir (str dir) :out (str out) :no-write true})
+        (is (not (fs/exists? (fs/path out "sitemap.xml"))))
+        (is (fs/exists? (fs/path out "feed.xml"))))
+      (assoc url-site :seo {:sitemap false}))
+    (with-cli-site {"_posts/2026-01-01-p.md" a-post}
+      (fn [dir out]
+        (cli/build {:site-dir (str dir) :out (str out) :no-write true})
+        (let [html (slurp (fs/file out "pages" "p00001" "index.html"))]
+          (is (= "https://s.example/pages/p00001/" (canonical html)))
+          (is (empty? (hreflangs html))))
+        (is (not (str/includes? (slurp (fs/file out "sitemap.xml")) "xhtml:link rel"))))
+      (assoc url-site :seo {:hreflang false}))))
