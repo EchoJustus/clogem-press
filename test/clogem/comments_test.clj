@@ -3,6 +3,7 @@
   "giscus comments (DESIGN.md §6.8, D-P3-15): one thread per article
   identity, asserted on the emitted HTML and on config validation."
   (:require [babashka.fs :as fs]
+            [babashka.process :as p]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [clogem.cli :as cli]
@@ -151,7 +152,7 @@
       (is (empty? (giscus-tags (html out "/pages/t00001/"))) "the redirect stub has none"))))
 
 (deftest data-theme-follows-the-default-mode
-  (doseq [[mode theme] [[:auto "preferred_color_scheme"] [:light "light"] [:dark "dark"]]]
+  (doseq [[mode theme] [[:auto "preferred_color_scheme"] [:light "light"] [:dark "dark"] [:read "light"]]]
     (with-built (select-keys corpus ["01.Guide/01.t.md"]) (assoc site :theme {:default-mode mode})
       (fn [out]
         (is (= theme (attr (first (giscus-tags (html out "/pages/t00001/"))) "data-theme")) (str mode))))))
@@ -213,3 +214,80 @@
   (testing "the defaults stay zh-CN / zh-TW, which serve the same strings"
     (is (= "zh-CN" (get-in config/default-locales [:zh-Hans :giscus])))
     (is (= "zh-TW" (get-in config/default-locales [:zh-Hant :giscus])))))
+
+;; ---------------------------------------------------------------------------
+;; P3-C.1 follow-ups
+
+(deftest the-repo-must-be-owner-slash-name
+  (doseq [bad ["noslash" "https://github.com/example/clogem-demo" "a/b/c d" "a/b/c" "owner/" " o/r"]]
+    (let [[_ ds] (load-cfg {:comments (assoc giscus :repo bad)})]
+      (is (some #(str/includes? (:message %) (str ":comments :repo is " (pr-str bad)
+                                                  ", which is not a GitHub repository like \"owner/name\""))
+                (diag/errors ds))
+          bad)))
+  (testing "a non-string is named too"
+    (let [[_ ds] (load-cfg {:comments (assoc giscus :repo 'o/r)})]
+      (is (some #(str/includes? (:message %) ":comments :repo is o/r") (diag/errors ds)))))
+  (doseq [good ["EchoJustus/EchoJustus.github.io" "o/r" "my-org/repo_name.v2"]]
+    (let [[_ ds] (load-cfg {:comments (assoc giscus :repo good)})]
+      (is (empty? (diag/errors ds)) good)))
+  (testing "not checked when comments are off"
+    (let [[_ ds] (load-cfg {:comments {:provider :none :repo "noslash"}})]
+      (is (empty? (diag/errors ds))))))
+
+(deftest unknown-comments-keys-warn-but-mapping-permalink-is-accepted
+  (testing "real site.edn files carry §5.6's old `:mapping :permalink`: no
+            error and no warning"
+    (let [[cfg ds] (load-cfg {:comments (assoc giscus :mapping :permalink)})]
+      (is (empty? (diag/errors ds)))
+      (is (empty? (diag/warnings ds)))
+      (is (= :giscus (get-in cfg [:comments :provider])))))
+  (testing "another :mapping asks for something the generator does not do"
+    (let [[_ ds] (load-cfg {:comments (assoc giscus :mapping :pathname)})]
+      (is (empty? (diag/errors ds)))
+      (is (some #(str/includes? (:message %) ":comments :mapping is :pathname") (diag/warnings ds)))))
+  (testing "an unknown key is named"
+    (let [[_ ds] (load-cfg {:comments (assoc giscus :repoid "R_1" :theme "dark")})]
+      (is (empty? (diag/errors ds)))
+      (is (= [":comments :repoid is not a comments option and is ignored."
+              ":comments :theme is not a comments option and is ignored."]
+             (map :message (diag/warnings ds)))))))
+
+(deftest the-default-mode-is-validated
+  (testing "a typo used to give data-theme=\"preferred_color_scheme\" and
+            body.theme-mode-drak silently"
+    (let [[cfg ds] (load-cfg {:theme {:default-mode :drak}})]
+      (is (some #(re-find #":theme :default-mode is :drak, but it must be one of :auto, :dark, :light, :read" (:message %))
+                (diag/errors ds)))
+      (is (= :auto (get-in cfg [:theme :default-mode])) "repaired to the default")))
+  (doseq [m [:auto :light :dark :read]]
+    (let [[cfg ds] (load-cfg {:theme {:default-mode m}})]
+      (is (empty? (diag/errors ds)) (str m))
+      (is (= m (get-in cfg [:theme :default-mode])))))
+  (testing ":read is a real mode: theme.css styles body.theme-mode-read"
+    (is (str/includes? (slurp (fs/file "src/clogem/theme/resources/css/theme.css")) "body.theme-mode-read {"))))
+
+(defn- check-giscus
+  "Run .github/scripts/check_giscus.py over `out`: [exit-code output]."
+  [out]
+  (let [r (p/shell {:out :string :err :string :continue true}
+                   "python3" ".github/scripts/check_giscus.py" (str out) "/"
+                   "en=en" "zh-Hans=zh-CN" "zh-Hant=zh-TW" "ms=en" "ta=en")]
+    [(:exit r) (str (:out r) (:err r))]))
+
+(deftest check-giscus-accepts-an-identity-with-comments-off
+  (testing "CI's one-thread-per-identity check: a group with no script on any
+            variant is `comment: false` on the primary and passes; a group
+            where only some variants carry one still fails"
+    (if-not (fs/which "python3")
+      (is (nil? (System/getenv "CI")) "python3 is required on CI")
+      (with-built corpus site
+        (fn [out]
+          (let [[code msg] (check-giscus out)]
+            (is (zero? code) msg)
+            (is (str/includes? msg "1 with comments off") msg))
+          (let [f (fs/file out "zh-Hans" "pages" "t00001" "index.html")]
+            (spit f (str/replace (slurp f) #"<script [^>]*src=\"https://giscus\.app/client\.js\"[^>]*></script>" ""))
+            (let [[code msg] (check-giscus out)]
+              (is (not (zero? code)))
+              (is (str/includes? msg "zh-Hans/pages/t00001/index.html: 0 giscus scripts, expected exactly one") msg))))))))

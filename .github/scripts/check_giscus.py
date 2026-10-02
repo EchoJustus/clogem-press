@@ -10,7 +10,10 @@ An identity group is every page whose hreflang `x-default` names the same
 bare identity URL. For every group of ARTICLE pages (`<body class="…
 page-article">`):
 
-  - every variant carries exactly one giscus client script;
+  - every variant carries exactly one giscus client script — or every
+    variant carries none, which is an article whose primary says
+    `comment: false` (§6.2: the primary decides for all of them); a group
+    where some variants have the script and others do not is an error;
   - all of them carry the same `data-term`, which is the identity's
     permalink with no base and no language prefix (`/pages/xxxxxx/`);
   - `data-lang` is the `:giscus` value of the page's own language
@@ -86,7 +89,7 @@ def main(dist, base, pairs):
                 continue
             groups.setdefault(pg.x_default, []).append((rel, pg))
 
-    by_term = {}
+    by_term, quiet = {}, 0
     for xdef, members in sorted(groups.items()):
         # the identity: x-default's path with the base removed
         path = urllib.parse.unquote(urllib.parse.urlsplit(xdef).path)
@@ -95,6 +98,10 @@ def main(dist, base, pairs):
             fail(f"x-default {xdef} is not under the base {base}")
             continue
         terms = set()
+        if all(not pg.scripts for _, pg in members):
+            # `comment: false` on the primary: no variant opens a thread
+            quiet += 1
+            continue
         for rel, pg in members:
             if len(pg.scripts) != 1:
                 fail(f"{rel}: {len(pg.scripts)} giscus scripts, expected exactly one")
@@ -121,7 +128,8 @@ def main(dist, base, pairs):
     if errors:
         sys.exit(f"{len(errors)} giscus problem(s)")
     print(f"giscus OK: {articles} article pages in {len(groups)} identity groups, "
-          f"{len(by_term)} distinct terms; {others} other pages carry none")
+          f"{len(by_term)} distinct terms, {quiet} with comments off; "
+          f"{others} other pages carry none")
 
 
 if __name__ == "__main__":

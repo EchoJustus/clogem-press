@@ -58,6 +58,13 @@
                 (str "⟦" k "⟧"))
        :else (str (name k))))))
 
+(defn resolved-lang
+  "The language `tr` takes key `k` from for `lang` — the first along the
+  fallback chain that defines it — or nil when none does."
+  [{:keys [strings lang cfg]} k]
+  (some (fn [l] (when (some? (get-in strings [l k])) l))
+        (config/fallback-chain cfg lang)))
+
 (defn resolve-str
   "Config values may be a plain string (same in all languages) or a map keyed by
   language code. One rule to learn (§5.6)."

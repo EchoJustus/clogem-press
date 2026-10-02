@@ -981,7 +981,7 @@
       (is (= 4 (count (re-seq #"class=\"is-untranslated\"" html))) "every language the article lacks, not the current one")))
   (testing "a translated target is not marked"
     (let [html (slurp-out "pages" "643259" "index.html")]
-      (is (re-find #"<a href=\"/zh-Hans/pages/643259/\" hreflang=\"zh-Hans\"" html))
+      (is (re-find #"<a data-clogem-lang=\"zh-Hans\" href=\"/zh-Hans/pages/643259/\" hreflang=\"zh-Hans\"" html))
       (is (re-find #"class=\"is-untranslated\" data-clogem-lang=\"ms\" href=\"/ms/\"" html))))
   (testing "index pages have no untranslated entries"
     (is (not (str/includes? (slurp-out "categories" "index.html") "is-untranslated"))))
@@ -1717,16 +1717,25 @@
               [l _] (:variants g)
               :let [uri  (str/replace (model/variant-url (:cfg *model*) g l) #"^/|/$" "")
                     tags (giscus-of uri "index.html")]]
-        (if (:page-component g)
+        (cond
+          (:page-component g)
           (is (empty? tags) (str uri " is a catalogue"))
+          ;; §6.2: the primary's `comment: false` turns every variant off
+          (false? (get-in g [:variants (:primary g) :front-matter :comment]))
+          (is (empty? tags) (str uri " has comments off"))
+          :else
           (is (= [pl] (map second tags)) uri)))
+      (testing "the demo exercises a whole identity with comments off (check_giscus.py
+                must accept it)"
+        (is (empty? (giscus-of "pages" "284c67" "index.html")))
+        (is (empty? (giscus-of "zh-Hans" "pages" "284c67" "index.html"))))
       (is (empty? (giscus-of "index.html")))
       (is (empty? (giscus-of "zh-Hans" "categories" "index.html"))))))
 
 (deftest the-demo-offers-the-banner-on-a-bare-translated-article
   (let [h (slurp-out "pages" "643259" "index.html")]
     (is (str/includes? h "<script id=\"clogem-lang-data\" type=\"application/json\">{\"id\":\"/pages/643259/\",\"lang\":\"en\",\"mode\":\"banner\""))
-    (is (str/includes? h "\"zh-Hans\":{\"url\":\"/zh-Hans/pages/643259/\",\"lang\":\"zh-Hans\",\"available\":\"本页也有简体中文版本。\""))
+    (is (str/includes? h "\"zh-Hans\":{\"url\":\"/zh-Hans/pages/643259/\",\"lang\":\"zh-Hans\",\"dir\":\"ltr\",\"available\":\"本页也有简体中文版本。\""))
     (is (not (str/includes? (slurp-out "zh-Hans" "pages" "643259" "index.html") "clogem-lang-data")))
     (is (exists? "clogem" "js" "lang.js"))
     (is (exists? "clogem" "js" "comments.js"))))

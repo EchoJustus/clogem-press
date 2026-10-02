@@ -1,21 +1,23 @@
 /* clogem-press — the stored language preference and the "also available"
  * banner (DESIGN.md §6.4 rules 3 and 4, D-P3-13, D-P3-14).
  *
- * 1. The navbar language switcher is the ONLY writer of
- *    localStorage['clogem-lang']: a click on one of its links stores that
- *    link's language code. Nothing seeds it from navigator.languages, so a
- *    preference exists only when the reader made a choice. The switcher's
- *    links are never rewritten: a link labelled in the page's language goes
- *    where it says.
+ * 1. A language choice is the ONLY writer of localStorage['clogem-lang']: a
+ *    click on a navbar switcher link or on a variant-bar link below the
+ *    title stores that link's language code. Nothing seeds it from
+ *    navigator.languages, so a preference exists only when the reader made
+ *    a choice. These links are never rewritten: a link labelled in the
+ *    page's language goes where it says.
  *
  * 2. Under :i18n {:preference :banner}, a page served at its bare URL carries
  *    <script type="application/json" id="clogem-lang-data">: its language, its
  *    identity key, and the other languages of its hreflang set with their
  *    URLs and the banner strings in each. When the stored preference L is one
  *    of them, a dismissible note is inserted at the top of the main column —
- *    in L, with lang="<L>", linking to the L page. Dismissing it stores the
- *    page's identity key in localStorage['clogem-banner-dismissed'] (a JSON
- *    array, the 100 most recent), and the banner stays away for that page.
+ *    in L, with lang="<L>" and dir="<L's dir>", linking to the L page.
+ *    Dismissing it stores the page's identity key in
+ *    localStorage['clogem-banner-dismissed'] (a JSON array, the 100 most
+ *    recent), and the banner stays away for that page; focus moves to the
+ *    main column, which the note was the start of.
  *
  * Every storage access is guarded: with storage blocked this behaves as if
  * no preference were set. Shipped only to a site with more than one
@@ -39,7 +41,7 @@
 
   document.addEventListener("click", function (e) {
     var t = e.target;
-    var a = t && t.closest ? t.closest(".clogem-langs a[data-clogem-lang]") : null;
+    var a = t && t.closest ? t.closest(".clogem-langs a[data-clogem-lang], .clogem-variants a[data-clogem-lang]") : null;
     if (a) write(PREF, a.getAttribute("data-clogem-lang"));
   });
 
@@ -72,6 +74,7 @@
   note.className = "clogem-lang-banner";
   note.setAttribute("role", "note");
   note.setAttribute("lang", t.lang);
+  if (t.dir) note.setAttribute("dir", t.dir);
 
   var text = document.createElement("span");
   text.className = "clogem-lang-banner__text";
@@ -89,6 +92,10 @@
   close.textContent = "×";
   close.addEventListener("click", function () {
     dismiss(d.id);
+    // the button is about to vanish: without this, focus falls to <body>
+    // and a keyboard reader starts over from the top of the page
+    if (!main.hasAttribute("tabindex")) main.setAttribute("tabindex", "-1");
+    main.focus();
     if (note.parentNode) note.parentNode.removeChild(note);
   });
 

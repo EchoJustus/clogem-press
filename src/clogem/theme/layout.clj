@@ -473,7 +473,11 @@
              (for [l others]
                [:a {:href (href ctx (model/variant-url cfg group l))
                     :lang (config/html-lang cfg l)
-                    :hreflang (config/html-lang cfg l)}
+                    :hreflang (config/html-lang cfg l)
+                    ;; D-P3-13, §11.2 item 47: a language choice like the
+                    ;; switcher's — without it, under :redirect, the link to
+                    ;; the bare primary bounced straight back
+                    :data-clogem-lang (name l)}
                 (get-in cfg [:langs :locales l :label])]))])))
 
 (defn pagination
@@ -538,7 +542,12 @@
   minus the page's language. Each carries its href and — under `:banner` —
   the three banner strings in THAT language, `{{lang}}` being its own label:
   the banner addresses a reader who chose it (the one exception to §6.4
-  rule 2). `id` is the page's identity key, which a dismissal stores."
+  rule 2). `id` is the page's identity key, which a dismissal stores.
+
+  The banner's `lang` and `dir` are those of the language its text is
+  actually in: the target's, unless the target has no `:banner/available`
+  string of its own (only a site-added language without site strings), when
+  the §6.5 chain supplied it from another language."
   [{:keys [cfg lang seo group] :as ctx}]
   (let [mode (preference cfg)
         alts (:alternates seo)]
@@ -557,17 +566,24 @@
                    :let [label (get-in cfg [:langs :locales l :label])
                          lctx  (assoc ctx :lang l)]]
                [(name l)
-                (cond-> {:url (u/url-encode-path u)
-                         :lang (config/html-lang cfg l)}
-                  (= :banner mode)
-                  (assoc :available (i18n/tr lctx :banner/available {:lang label})
-                         :read      (i18n/tr lctx :banner/read {:lang label})
-                         :dismiss   (i18n/tr lctx :banner/dismiss)))]))})))
+                (if (= :banner mode)
+                  (let [shown (or (i18n/resolved-lang lctx :banner/available) l)]
+                    {:url       (u/url-encode-path u)
+                     :lang      (config/html-lang cfg shown)
+                     :dir       (name (or (:dir (config/locale cfg shown)) :ltr))
+                     :available (i18n/tr lctx :banner/available {:lang label})
+                     :read      (i18n/tr lctx :banner/read {:lang label})
+                     :dismiss   (i18n/tr lctx :banner/dismiss)})
+                  {:url  (u/url-encode-path u)
+                   :lang (config/html-lang cfg l)})]))})))
 
 (def redirect-script
-  "D-P3-14 `:redirect`: inline in `<head>`, after the data it reads, so it
-  runs before `<body>` is parsed and nothing of the bare page is painted.
-  `lang-data` is emitted only on a bare URL, and every target is prefixed, so
+  "D-P3-14 `:redirect`: inline in `<head>`, after the data it reads and
+  before any stylesheet — a parser-blocking script waits for every
+  stylesheet above it — so it runs before `<body>` is parsed and nothing of
+  the bare page is painted. The target is the variant's URL as it stands: a
+  `#hash` or `?query` on the bare URL is dropped, since anchors differ per
+  language. `lang-data` is emitted only on a bare URL, and every target is prefixed, so
   it can never redirect twice. Storage errors (blocked, private mode) and a
   missing or foreign preference leave the page as it is."
   (str "(function(){try{var p=localStorage.getItem(\"clogem-lang\"),"
@@ -620,6 +636,8 @@
   [cfg]
   (case (get-in cfg [:theme :default-mode])
     :light "light"
+    ;; :read is a light sepia palette: a dark widget under it would clash
+    :read  "light"
     :dark  "dark"
     "preferred_color_scheme"))
 
@@ -714,6 +732,9 @@
       (when-let [d (u/blank->nil (i18n/resolve-str ctx (get-in cfg [:site :description])))]
         [:meta {:name "description" :content d}])
       (seo-head ctx)
+      ;; D-P3-13/14: the preference, the banner data and :redirect — before
+      ;; the stylesheets, which the inline redirect would otherwise wait for
+      (lang-head ctx)
       [:link {:rel "stylesheet" :href (asset-href ctx "css/theme.css")}]
       ;; D-P3-12: the @font-face rules live beside the font files, so a
       ;; :system site links no font CSS and ships no font bytes
@@ -729,8 +750,6 @@
          ;; order, so this runs after the components are defined
          (when (search-ui-strings ctx)
            [:script {:src (asset-href ctx "js/search.js") :defer true}])))
-      ;; D-P3-13/14: the preference, the banner data and :redirect
-      (lang-head ctx)
       ;; D-P3-15: window.clogem.setCommentsTheme, beside the widget it drives
       (when (comments? ctx)
         [:script {:src (asset-href ctx "js/comments.js") :defer true}])

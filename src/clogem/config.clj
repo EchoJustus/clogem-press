@@ -63,6 +63,10 @@
     "he" "hu" "id" "it" "ja" "kh" "ko" "nl" "pl" "pt" "ro" "ru" "th" "tr" "uk"
     "uz" "vi" "zh-CN" "zh-TW" "zh-HK" "gsw" "zh-Hans" "zh-Hant"})
 
+(def giscus-repo-re
+  "`:comments :repo`: a GitHub `owner/name`, as giscus's data-repo takes it."
+  #"[A-Za-z0-9-]+/[A-Za-z0-9._-]+")
+
 (def defaults
   {:site    {:title "clogem-press site" :url "" :base "/"}
    :generator {}
@@ -317,15 +321,50 @@
                           "copy each from the release's .sha256 file."))))
     cfg))
 
+(def comments-keys
+  "The `:comments` keys the generator reads (D-P3-15). `:mapping` is
+  accepted too: §5.6 used to sketch `:mapping :permalink`, and real site.edn
+  files carry it, but the mapping is not configurable — every thread is
+  keyed on the article's permalink."
+  #{:provider :repo :repo-id :category :category-id :mapping})
+
+(defn- check-comments-keys!
+  "An unknown `:comments` key is a warning naming it — it is never read —
+  and so is a `:mapping` other than :permalink, which asks for a thread
+  mapping the generator does not do. `:mapping :permalink` is accepted
+  quietly: it describes exactly what happens."
+  [cfg]
+  (let [c (:comments cfg)]
+    (when (map? c)
+      (doseq [k (sort-by str (remove comments-keys (keys c)))]
+        (diag/warn! nil (str ":comments " (pr-str k) " is not a comments option and is ignored.")
+                    (str "The options are " (str/join ", " (map pr-str (sort-by str comments-keys)))
+                         " (DESIGN.md §6.8).")))
+      (when (and (contains? c :mapping) (not= :permalink (:mapping c)))
+        (diag/warn! nil (str ":comments :mapping is " (pr-str (:mapping c))
+                             ", but threads are always mapped by the article's permalink; it is ignored.")
+                    (str "Every variant of an article opens one thread, keyed on /pages/xxxxxx/ "
+                         "(DESIGN.md D-P3-15). Remove :mapping, or write :permalink."))))
+    cfg))
+
+(def theme-modes
+  "`:theme :default-mode` values: the four colour modes of §1.2, each a
+  `body.theme-mode-*` block in theme.css (:light is the :root palette)."
+  #{:auto :light :dark :read})
+
 (defn- check-i18n-comments!
-  "D-P3-14 / D-P3-15: the stored-preference behaviour and the comments
-  provider, each a closed set of keywords."
+  "D-P3-14 / D-P3-15: the stored-preference behaviour, the comments
+  provider and its keys, and the colour mode the page (and giscus) starts
+  in — each a closed set."
   [cfg]
   (-> cfg
       (check-enum! [:i18n :preference] #{:banner :redirect :ignore}
                    "It says what a stored language preference does on a bare URL (DESIGN.md §6.4 rule 4, D-11).")
       (check-enum! [:comments :provider] #{:none :giscus}
-                   "giscus is the only comments provider (DESIGN.md §6.8).")))
+                   "giscus is the only comments provider (DESIGN.md §6.8).")
+      check-comments-keys!
+      (check-enum! [:theme :default-mode] theme-modes
+                   "It names the colour mode a page starts in (DESIGN.md §1.2, §6.8).")))
 
 (defn- real-path
   "`p` absolute, normalized, and with every existing link resolved — so a
@@ -406,7 +445,16 @@
       ;; shows; §6.8's snippet carried it but config never asked for it
       (doseq [k [:repo :repo-id :category :category-id]]
         (when (str/blank? (str (get comments k)))
-          (diag/error! nil (str ":comments " k " is required when :provider is :giscus.")))))
+          (diag/error! nil (str ":comments " k " is required when :provider is :giscus."))))
+      ;; giscus wants `owner/name`; a URL or a bare name builds and then
+      ;; breaks the widget on every page at runtime
+      (let [repo (:repo comments)]
+        (when (and (not (str/blank? (str repo)))
+                   (not (and (string? repo) (re-matches giscus-repo-re repo))))
+          (diag/error! nil (str ":comments :repo is " (pr-str repo)
+                                ", which is not a GitHub repository like \"owner/name\".")
+                       (str "giscus takes the repository as owner/name — no URL, no spaces "
+                            "(e.g. \"EchoJustus/EchoJustus.github.io\").")))))
     (when (< (count priority) (count locales))
       (diag/warn! nil ":langs :priority does not cover every locale; missing ones were appended.")))
   (-> cfg check-theme! check-floor! check-fallback! check-site-url! check-x-default! check-search!

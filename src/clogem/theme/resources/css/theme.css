@@ -121,6 +121,9 @@ a:hover { text-decoration: underline; }
 }
 
 .clogem-main { min-width: 0; }
+/* focus lands here when the banner is dismissed (js/lang.js); the column
+ * itself is not a control, so it draws no ring */
+.clogem-main[tabindex="-1"]:focus { outline: none; }
 .clogem-article h1 { margin-top: 0; }
 .clogem-meta { color: var(--textColorSubtle); font-size: 0.85rem; display: flex; gap: 1rem; flex-wrap: wrap; }
 .clogem-langs a.is-untranslated { opacity: 0.6; }
@@ -139,8 +142,11 @@ a:hover { text-decoration: underline; }
   padding: 0.5rem 0.75rem; border: 1px solid var(--borderColor);
   border-left: 3px solid var(--accent); border-radius: 4px; font-size: 0.9rem;
 }
-.clogem-lang-banner__text { flex: 1; }
-.clogem-lang-banner__text a { white-space: nowrap; }
+/* min-width:0 lets the text shrink below its longest word, and the link may
+ * break anywhere: a long :label used to push the dismiss button off-screen
+ * at 360 px */
+.clogem-lang-banner__text { flex: 1; min-width: 0; }
+.clogem-lang-banner__text a { overflow-wrap: anywhere; }
 .clogem-lang-banner__dismiss {
   flex: none; font: inherit; font-size: 1.1rem; line-height: 1; color: inherit;
   background: none; border: 1px solid transparent; border-radius: 4px;

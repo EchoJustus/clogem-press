@@ -160,10 +160,10 @@
     (with-built corpus url-site
       (fn [out]
         (let [a (get (lang-data (html out "/pages/t00001/")) "alternates")]
-          (is (= {"url" "/zh-Hans/pages/t00001/" "lang" "zh-Hans"
+          (is (= {"url" "/zh-Hans/pages/t00001/" "lang" "zh-Hans" "dir" "ltr"
                   "available" "本页也有简体中文版本。" "read" "阅读简体中文版 →" "dismiss" "关闭"}
                  (get a "zh-Hans")))
-          (is (= {"url" "/zh-Hant/pages/t00001/" "lang" "zh-Hant"
+          (is (= {"url" "/zh-Hant/pages/t00001/" "lang" "zh-Hant" "dir" "ltr"
                   "available" "本頁也有繁體中文版本。" "read" "閱讀繁體中文版 →" "dismiss" "關閉"}
                  (get a "zh-Hant")))
           (is (= "இந்தப் பக்கம் தமிழ் மொழியிலும் உள்ளது." (get-in a ["ta" "available"])))
@@ -272,3 +272,91 @@
       (is (= :banner (get-in (first (diag/collecting (config/load-config (str dir) nil nil))) [:i18n :preference]))
           "D-11: :banner is the default")
       (finally (fs/delete-tree dir)))))
+
+;; ---------------------------------------------------------------------------
+;; P3-C.1 follow-ups
+
+(defn- variant-bar [h]
+  (re-find #"(?s)<p class=\"clogem-variants\".*?</p>" h))
+
+(deftest variant-bar-links-are-a-language-choice
+  (testing "§11.2 item 47: every variant-bar link carries data-clogem-lang, so a
+            click stores the choice — under :redirect the link to the bare
+            primary used to bounce straight back to the stored language"
+    (with-built corpus (assoc url-site :i18n {:preference :redirect})
+      (fn [out]
+        (let [zh (variant-bar (html out "/zh-Hans/pages/t00001/"))]
+          (is (re-find #"<a data-clogem-lang=\"en\" href=\"/pages/t00001/\" hreflang=\"en\" lang=\"en\">English</a>" zh)
+              "the link back to the bare primary")
+          (is (str/includes? zh "data-clogem-lang=\"ta\" href=\"/ta/pages/t00001/\"")))
+        (let [en (variant-bar (html out "/pages/t00001/"))]
+          (doseq [l ["zh-Hans" "zh-Hant" "ta"]]
+            (is (str/includes? en (str "data-clogem-lang=\"" l "\"")) l))))))
+  (testing "lang.js stores a click on either kind of link"
+    (let [js (slurp (fs/file "src/clogem/theme/resources/js/lang.js"))]
+      (is (str/includes? js "t.closest(\".clogem-langs a[data-clogem-lang], .clogem-variants a[data-clogem-lang]\")")))))
+
+(deftest the-redirect-runs-before-any-stylesheet
+  (testing "a parser-blocking inline script waits for the stylesheets above it,
+            so the data and the redirect come first in <head>"
+    (with-built corpus (assoc url-site :i18n {:preference :redirect})
+      (fn [out]
+        (let [h    (html out "/pages/t00001/")
+              data (str/index-of h "id=\"clogem-lang-data\"")
+              redir (str/index-of h "location.replace")
+              css  (str/index-of h "rel=\"stylesheet\"")]
+          (is (and data redir css))
+          (is (< data redir css)))))))
+
+(deftest the-banner-carries-its-dir
+  (with-built corpus (assoc-in url-site [:langs :locales :ta] {:dir :rtl})
+    (fn [out]
+      (let [a (get (lang-data (html out "/pages/t00001/")) "alternates")]
+        (is (= "rtl" (get-in a ["ta" "dir"])) "the target locale's :dir")
+        (is (= "ltr" (get-in a ["zh-Hans" "dir"]))))))
+  (testing "lang.js sets it on the note"
+    (is (str/includes? (slurp (fs/file "src/clogem/theme/resources/js/lang.js"))
+                       "if (t.dir) note.setAttribute(\"dir\", t.dir);"))))
+
+(def ^:private sixth-lang
+  (-> url-site
+      (assoc-in [:langs :locales :xx] {:label "Xxish" :html-lang "x-xx" :dir :rtl})))
+
+(deftest a-language-without-theme-strings-is-labelled-by-the-text-shown
+  (testing "a site-added language with no banner strings gets them along the
+            fallback chain — in English here — and the note says so with
+            lang/dir of English, not of the target"
+    (with-built (assoc corpus "01.Guide/01.t.xx.md" (variant "Xx title")) sixth-lang
+      (fn [out]
+        (let [e (get-in (lang-data (html out "/pages/t00001/")) ["alternates" "xx"])]
+          (is (= "/xx/pages/t00001/" (get e "url")))
+          (is (= "en" (get e "lang")))
+          (is (= "ltr" (get e "dir")))
+          (is (= "This page is also available in Xxish." (get e "available")))))))
+  (testing "with site strings of its own, the note is in that language"
+    (with-built (assoc corpus "01.Guide/01.t.xx.md" (variant "Xx title")) sixth-lang
+      (fn [out]
+        (let [e (get-in (lang-data (html out "/pages/t00001/")) ["alternates" "xx"])]
+          (is (= "x-xx" (get e "lang")))
+          (is (= "rtl" (get e "dir")))
+          (is (= "Xx {{lang}}!" (str/replace (get e "available") "Xxish" "{{lang}}")))))
+      :strings {:xx {:banner/available "Xx {{lang}}!" :banner/read "R" :banner/dismiss "D"}})))
+
+(deftest dismissing-the-banner-keeps-focus-in-the-page
+  (testing "focus moves to the main column before the note is removed, so a
+            keyboard reader is not dropped back to <body>"
+    (let [js  (slurp (fs/file "src/clogem/theme/resources/js/lang.js"))
+          css (slurp (fs/file "src/clogem/theme/resources/css/theme.css"))
+          focus  (str/index-of js "main.focus();")
+          remove (str/index-of js "note.parentNode.removeChild(note)")]
+      (is (str/includes? js "main.setAttribute(\"tabindex\", \"-1\")"))
+      (is (and focus remove (< focus remove)))
+      (is (str/includes? css ".clogem-main[tabindex=\"-1\"]:focus { outline: none; }")))))
+
+(deftest a-long-label-wraps-inside-the-banner
+  (testing "the text may shrink and its link may break: \"Bahasa Melayu
+            (Malaysia, Singapura)\" overflowed a 360 px viewport by 55 px"
+    (let [css (slurp (fs/file "src/clogem/theme/resources/css/theme.css"))]
+      (is (str/includes? css ".clogem-lang-banner__text { flex: 1; min-width: 0; }"))
+      (is (str/includes? css ".clogem-lang-banner__text a { overflow-wrap: anywhere; }"))
+      (is (not (re-find #"clogem-lang-banner[^{]*\{[^}]*nowrap" css))))))
