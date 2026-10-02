@@ -52,12 +52,16 @@
   [:site-default :en])
 
 (def giscus-available-languages
-  "giscus `availableLanguages`, verified from lib/i18n.tsx (DESIGN.md Appendix A
-  item 11). A `:giscus` value outside this set is a build error, because the
-  failure it causes — a 404'd iframe and no comment widget at all — is invisible
-  until someone loads the page."
-  #{"ar" "be" "ca" "de" "en" "eo" "es" "fa" "fr" "gsw" "he" "id" "it" "ja" "ko"
-    "nl" "pl" "pt" "ro" "ru" "th" "tr" "uk" "vi" "zh-CN" "zh-TW" "zh-HK"})
+  "The `data-lang` values giscus routes, verified on 2026-10-01 from
+  lib/i18n.tsx and its live routes (DESIGN.md Appendix A item 11):
+  `availableLanguages` plus `gsw`, `zh-Hans` and `zh-Hant`, which the widget
+  also serves. `ms` and `ta` are not among them — both 404. A `:giscus` value
+  outside this set is a build error, because the failure it causes — a 404'd
+  iframe and no comment widget at all — is invisible until someone loads the
+  page."
+  #{"ar" "be" "bg" "ca" "cs" "da" "de" "en" "eo" "es" "eu" "fa" "fr" "gr" "hbs"
+    "he" "hu" "id" "it" "ja" "kh" "ko" "nl" "pl" "pt" "ro" "ru" "th" "tr" "uk"
+    "uz" "vi" "zh-CN" "zh-TW" "zh-HK" "gsw" "zh-Hans" "zh-Hant"})
 
 (def defaults
   {:site    {:title "clogem-press site" :url "" :base "/"}
@@ -70,7 +74,10 @@
              :fallback default-fallback
              :missing-key :warn
              :category-labels {}
-             :show-fallback-notice true}
+             :show-fallback-notice true
+             ;; §6.4 rule 4, D-11, D-P3-14: what a stored language
+             ;; preference does on a bare URL — :banner | :redirect | :ignore
+             :preference :banner}
    :content {:dir "content"
              :category true :tag true :archive true
              :category-text "Notes"
@@ -310,6 +317,16 @@
                           "copy each from the release's .sha256 file."))))
     cfg))
 
+(defn- check-i18n-comments!
+  "D-P3-14 / D-P3-15: the stored-preference behaviour and the comments
+  provider, each a closed set of keywords."
+  [cfg]
+  (-> cfg
+      (check-enum! [:i18n :preference] #{:banner :redirect :ignore}
+                   "It says what a stored language preference does on a bare URL (DESIGN.md §6.4 rule 4, D-11).")
+      (check-enum! [:comments :provider] #{:none :giscus}
+                   "giscus is the only comments provider (DESIGN.md §6.8).")))
+
 (defn- real-path
   "`p` absolute, normalized, and with every existing link resolved — so a
   symlink cannot hide that two paths are one directory."
@@ -385,13 +402,15 @@
           (diag/error! nil (str "locale " k " has no :giscus mapping but :comments :provider is :giscus.")
                        (str "giscus has no " (name k) " locale; map it to \"en\" — this is mandatory, "
                             "not cosmetic (DESIGN.md §6.8)."))))
-      (doseq [k [:repo :repo-id :category-id]]
+      ;; D-P3-15: `data-category` is the category's NAME, which giscus
+      ;; shows; §6.8's snippet carried it but config never asked for it
+      (doseq [k [:repo :repo-id :category :category-id]]
         (when (str/blank? (str (get comments k)))
           (diag/error! nil (str ":comments " k " is required when :provider is :giscus.")))))
     (when (< (count priority) (count locales))
       (diag/warn! nil ":langs :priority does not cover every locale; missing ones were appended.")))
   (-> cfg check-theme! check-floor! check-fallback! check-site-url! check-x-default! check-search!
-      check-out-dir!))
+      check-i18n-comments! check-out-dir!))
 
 (defn- map-paths
   "Every path in `m` whose value is a map, outermost first."

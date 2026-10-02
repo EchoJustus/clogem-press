@@ -65,4 +65,9 @@
  :search/filter-selected-one  "[COUNT] selected"
  :search/filter-selected-many "[COUNT] selected"
  :search/input-hint           "Results will appear as you type"
- :search/loading              "Loading"}
+ :search/loading              "Loading"
+ ;; The "also available" banner (D-P3-14): written in the READER'S chosen
+ ;; language, {{lang}} being that language's own :label.
+ :banner/available            "This page is also available in {{lang}}."
+ :banner/read                 "Read in {{lang}} →"
+ :banner/dismiss              "Dismiss"}

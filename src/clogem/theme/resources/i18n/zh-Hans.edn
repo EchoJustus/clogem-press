@@ -64,4 +64,9 @@
  :search/filter-selected-one  "已选择 [COUNT] 个"
  :search/filter-selected-many "已选择 [COUNT] 个"
  :search/input-hint           "输入时将显示结果"
- :search/loading              "加载中"}
+ :search/loading              "加载中"
+ ;; The "also available" banner (D-P3-14): written in the READER'S chosen
+ ;; language, {{lang}} being that language's own :label.
+ :banner/available            "本页也有{{lang}}版本。"
+ :banner/read                 "阅读{{lang}}版 →"
+ :banner/dismiss              "关闭"}

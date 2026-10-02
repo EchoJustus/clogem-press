@@ -27,6 +27,7 @@
             [clogem.theme.catalogue :as catalogue]
             [clogem.theme.home :as home]
             [clogem.theme.indexes :as indexes]
+            [clogem.theme.layout :as layout]
             [clogem.theme.page :as page]
             [clogem.util :as u]))
 
@@ -534,10 +535,18 @@
         (mapcat (fn [sub]
                   (let [from (fs/path themed sub)]
                     (when (fs/directory? from)
-                      ;; js/search.js only serves the Pagefind UI (D-P3-10): a
-                      ;; :none site ships nothing it never loads
+                      ;; a script ships only to a site that loads it: search.js
+                      ;; serves the Pagefind UI (D-P3-10), lang.js the
+                      ;; language switcher's preference (D-P3-13), comments.js
+                      ;; the giscus widget (D-P3-15)
                       (copy-tree! from (fs/path out "clogem" sub)
-                                  (fn [rel] (and (= "js" sub) (= "search.js" rel) (not (search/enabled? cfg))))))))
+                                  (fn [rel]
+                                    (and (= "js" sub)
+                                         (case rel
+                                           "search.js"   (not (search/enabled? cfg))
+                                           "lang.js"     (not (layout/multilingual? cfg))
+                                           "comments.js" (not= :giscus (get-in cfg [:comments :provider]))
+                                           false)))))))
                 (cond-> ["css" "js" "icons"]
                   (= :self-hosted (get-in cfg [:theme :fonts :tamil])) (conj "fonts"))))
       (let [user (config/assets-dir cfg)]

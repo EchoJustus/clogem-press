@@ -27,7 +27,8 @@
         (layout/article-info ctx group variant)
         (layout/variant-bar ctx)
         [:div.clogem-content (layout/search-terms ctx group) content-hiccup]]
-       (layout/prev-next ctx)])
+       (layout/prev-next ctx)
+       (layout/comments ctx)])
      (layout/footer ctx)))
 
 (defn redirect-stub

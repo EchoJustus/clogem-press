@@ -131,6 +131,27 @@ a:hover { text-decoration: underline; }
 .clogem-variants { font-size: 0.9rem; display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: baseline; }
 .clogem-variants__links { display: flex; gap: 0.6rem; }
 
+/* D-P3-14: the "also available" note js/lang.js inserts at the top of the
+ * main column — in the flow, so it moves the page down by its own height and
+ * covers nothing */
+.clogem-lang-banner {
+  display: flex; align-items: center; gap: 0.75rem; margin: 0 0 1rem;
+  padding: 0.5rem 0.75rem; border: 1px solid var(--borderColor);
+  border-left: 3px solid var(--accent); border-radius: 4px; font-size: 0.9rem;
+}
+.clogem-lang-banner__text { flex: 1; }
+.clogem-lang-banner__text a { white-space: nowrap; }
+.clogem-lang-banner__dismiss {
+  flex: none; font: inherit; font-size: 1.1rem; line-height: 1; color: inherit;
+  background: none; border: 1px solid transparent; border-radius: 4px;
+  padding: 0.15rem 0.45rem; cursor: pointer;
+}
+.clogem-lang-banner__dismiss:hover { border-color: var(--borderColor); }
+.clogem-lang-banner__dismiss:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* D-P3-15: the giscus widget below the article */
+.clogem-comments { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--borderColor); }
+
 .clogem-content :is(h2, h3, h4, h5, h6) { scroll-margin-top: 4rem; }
 .header-anchor { opacity: 0; margin-left: 0.35rem; text-decoration: none; }
 :is(h1, h2, h3, h4, h5, h6):hover .header-anchor { opacity: 0.5; }

@@ -13,6 +13,7 @@
   layout."
   (:require [cheshire.core :as json]
             [clojure.string :as str]
+            [hiccup2.core :as h]
             [clogem.config :as config]
             [clogem.i18n :as i18n]
             [clogem.model :as model]
@@ -283,7 +284,10 @@
                                                  {:lang (get-in locales [lang :label])}))]
                         [:a (cond-> {:href (href ctx (switch-target ctx l))
                                      :lang (config/html-lang cfg l)
-                                     :hreflang (config/html-lang cfg l)}
+                                     :hreflang (config/html-lang cfg l)
+                                     ;; D-P3-13: js/lang.js stores this code as
+                                     ;; the reader's preference on click
+                                     :data-clogem-lang (name l)}
                               fallback? (assoc :class "is-untranslated"))
                          (get-in locales [l :label])
                          ;; the notice is in the PAGE's language (§6.4 rule 2),
@@ -494,6 +498,161 @@
    [:p (str "clogem-press " (:clogem/version cfg))]])
 
 ;; ---------------------------------------------------------------------------
+;; The stored language preference (§6.4 rules 3 and 4, D-P3-13, D-P3-14)
+
+(defn multilingual?
+  "More than one configured language: the switcher exists, and so does the
+  preference it stores. A single-language site ships no js/lang.js."
+  [cfg]
+  (> (count (config/lang-keys cfg)) 1))
+
+(defn preference
+  "`:i18n :preference` — :banner (the D-11 default), :redirect or :ignore."
+  [cfg]
+  (get-in cfg [:i18n :preference] :banner))
+
+(defn script-json
+  "`data` as JSON that is inert inside a `<script>` element: `<`, `>` and `&`
+  are \\u-escaped, so a `</script>` or `<!--` in a site's string override
+  cannot end the element, and U+2028/2029 are escaped for older parsers. (The
+  search strings of D-P3-10 sit in an attribute, which hiccup escapes; a
+  `<script>` body is not escaped, so this does it.)"
+  [data]
+  (-> (json/generate-string data)
+      (str/replace "<" "\\u003c")
+      (str/replace ">" "\\u003e")
+      (str/replace "&" "\\u0026")
+      (str/replace " " "\\u2028")
+      (str/replace " " "\\u2029")))
+
+(defn lang-data
+  "What js/lang.js (the banner) and the `:redirect` head script need, or nil
+  when the page can show neither (D-P3-14). Only on a page served at its BARE
+  URL — an article or catalogue at its identity URL, a home or an index
+  overview at its unprefixed path — which is the page whose `seo-info` names
+  itself as `x-default`. Never on a prefixed URL, so a redirect cannot loop;
+  never on a filtered category or tag list (`:current`) or a `…/page/N/`
+  (which has no set).
+
+  The languages offered are the page's own hreflang set (`:alternates`),
+  minus the page's language. Each carries its href and — under `:banner` —
+  the three banner strings in THAT language, `{{lang}}` being its own label:
+  the banner addresses a reader who chose it (the one exception to §6.4
+  rule 2). `id` is the page's identity key, which a dismissal stores."
+  [{:keys [cfg lang seo group] :as ctx}]
+  (let [mode (preference cfg)
+        alts (:alternates seo)]
+    (when (and (multilingual? cfg)
+               (#{:banner :redirect} mode)
+               (not (contains? ctx :current))
+               (> (count alts) 1)
+               (= (:canonical seo) (:x-default seo)))
+      {:id    (if group (str (:permalink group)) (str (:canonical seo)))
+       :lang  (name lang)
+       :mode  (name mode)
+       :alternates
+       (into (sorted-map)
+             (for [[l u] alts
+                   :when (not= l lang)
+                   :let [label (get-in cfg [:langs :locales l :label])
+                         lctx  (assoc ctx :lang l)]]
+               [(name l)
+                (cond-> {:url (u/url-encode-path u)
+                         :lang (config/html-lang cfg l)}
+                  (= :banner mode)
+                  (assoc :available (i18n/tr lctx :banner/available {:lang label})
+                         :read      (i18n/tr lctx :banner/read {:lang label})
+                         :dismiss   (i18n/tr lctx :banner/dismiss)))]))})))
+
+(def redirect-script
+  "D-P3-14 `:redirect`: inline in `<head>`, after the data it reads, so it
+  runs before `<body>` is parsed and nothing of the bare page is painted.
+  `lang-data` is emitted only on a bare URL, and every target is prefixed, so
+  it can never redirect twice. Storage errors (blocked, private mode) and a
+  missing or foreign preference leave the page as it is."
+  (str "(function(){try{var p=localStorage.getItem(\"clogem-lang\"),"
+       "d=JSON.parse(document.getElementById(\"clogem-lang-data\").textContent),"
+       "a=d.alternates;"
+       "if(p&&p!==d.lang&&Object.prototype.hasOwnProperty.call(a,p))location.replace(a[p].url)}"
+       "catch(e){}})();"))
+
+(defn lang-head
+  "The `<head>` part of D-P3-13/14: the page's `lang-data` as
+  `<script type=\"application/json\" id=\"clogem-lang-data\">`, the inline
+  redirect under `:redirect`, and js/lang.js (deferred) on every page of a
+  multilingual site — it is what stores the switcher's choice, which
+  `:ignore` keeps too."
+  [ctx]
+  (let [cfg (:cfg ctx)]
+    (when (multilingual? cfg)
+      (let [data (lang-data ctx)]
+        (list
+         (when data
+           [:script {:type "application/json" :id "clogem-lang-data"} (h/raw (script-json data))])
+         (when (and data (= :redirect (preference cfg)))
+           [:script (h/raw redirect-script)])
+         [:script {:src (asset-href ctx "js/lang.js") :defer true}])))))
+
+;; ---------------------------------------------------------------------------
+;; Comments (§6.8, D-P3-15)
+
+(def giscus-client "https://giscus.app/client.js")
+
+(defn comments?
+  "Does this page carry the giscus widget? An article page — a tree article
+  or a post, never a catalogue (nor a page that asked for one), a home or an
+  index — on a site with `:comments {:provider :giscus}`, unless the PRIMARY
+  variant says `comment: false` (§6.2: the primary decides; doctor warns when
+  the variants disagree)."
+  [{:keys [cfg group page-kind]}]
+  (boolean
+   (and (= :giscus (get-in cfg [:comments :provider]))
+        group
+        (= :article page-kind)
+        (nil? (:page-component group))
+        (not (false? (get-in group [:variants (:primary group) :front-matter :comment]))))))
+
+(defn giscus-theme
+  "`data-theme` from `:theme :default-mode` — the theme the widget starts in.
+  The Phase 4 toggle changes it with `window.clogem.setCommentsTheme`, whose
+  message is lost if the iframe has not loaded yet, so this initial value
+  is what most readers see."
+  [cfg]
+  (case (get-in cfg [:theme :default-mode])
+    :light "light"
+    :dark  "dark"
+    "preferred_color_scheme"))
+
+(defn comments
+  "D-P3-15: one giscus thread per article IDENTITY. `data-term` is the
+  permalink exactly as `/pages/xxxxxx/` — no base, no language prefix — so
+  every variant of an article opens the same discussion; `data-strict`
+  stops fuzzy matching from merging unrelated threads; `data-lang` is the
+  page locale's `:giscus` (`ms` and `ta` → `en`: giscus 404s on both)."
+  [{:keys [cfg lang group] :as ctx}]
+  (when (comments? ctx)
+    (let [c (:comments cfg)]
+      [:section.clogem-comments
+       [:h2 (i18n/tr ctx :comments/title)]
+       [:div.giscus]
+       [:script {:src giscus-client
+                 :data-repo (str (:repo c))
+                 :data-repo-id (str (:repo-id c))
+                 :data-category (str (:category c))
+                 :data-category-id (str (:category-id c))
+                 :data-mapping "specific"
+                 :data-term (str (:permalink group))
+                 :data-strict "1"
+                 :data-reactions-enabled "1"
+                 :data-emit-metadata "0"
+                 :data-input-position "bottom"
+                 :data-theme (giscus-theme cfg)
+                 :data-lang (str (get-in cfg [:langs :locales lang :giscus]))
+                 :data-loading "lazy"
+                 :crossorigin "anonymous"
+                 :async true}]])))
+
+;; ---------------------------------------------------------------------------
 ;; Document
 
 (defn seo-head
@@ -570,6 +729,11 @@
          ;; order, so this runs after the components are defined
          (when (search-ui-strings ctx)
            [:script {:src (asset-href ctx "js/search.js") :defer true}])))
+      ;; D-P3-13/14: the preference, the banner data and :redirect
+      (lang-head ctx)
+      ;; D-P3-15: window.clogem.setCommentsTheme, beside the widget it drives
+      (when (comments? ctx)
+        [:script {:src (asset-href ctx "js/comments.js") :defer true}])
       ;; vendored vanilla scroll-spy (D-P2-9); no CDN, no deps — deferred,
       ;; and only on a page that renders a TOC for it to spy on
       (when (seq (:toc ctx))
