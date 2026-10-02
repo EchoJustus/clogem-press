@@ -300,3 +300,58 @@
       (is (= [:en :zh-Hans] (config/lang-keys cfg)))
       (is (nil? (config/lang-for-suffix cfg "ms")) "…so `01.Timing.ms.md` is a title again")
       (is (empty? (diag/errors ds))))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 3 part A — og:locale, the fallback chain, absolute URLs
+
+(deftest og-locales-default-to-language-territory
+  (let [[cfg ds] (with-site {})]
+    (is (= {:en "en_US" :zh-Hans "zh_CN" :zh-Hant "zh_TW" :ms "ms_MY" :ta "ta_IN"}
+           (into {} (map (fn [l] [l (config/og-locale cfg l)])) (config/lang-keys cfg))))
+    (is (empty? (diag/errors ds))))
+  (testing "D-P3-2: `zh_Hans` and a bare `en` are not Open Graph locales"
+    (doseq [bad ["zh_Hans" "en" "en-US" :en_US]]
+      (let [[_ ds] (with-site {:langs {:locales {:zh-Hans {:og bad}}}})]
+        (is (some #(re-find #"locale :zh-Hans has :og" (:message %)) (diag/errors ds)) (pr-str bad))))))
+
+(deftest the-fallback-chain-is-configurable
+  (let [[cfg ds] (with-site {})]
+    (is (= [:site-default :en] (get-in cfg [:i18n :fallback])) "§5.6's default")
+    (is (= [:ms :en] (config/fallback-chain cfg :ms)))
+    (is (= [:en] (config/fallback-chain cfg :en)) "distinct")
+    (is (empty? (diag/errors ds))))
+  (let [[cfg ds] (with-site {:langs {:default :zh-Hans} :i18n {:fallback [:site-default :ta]}})]
+    (is (= [:ms :zh-Hans :ta] (config/fallback-chain cfg :ms)))
+    (is (empty? (diag/errors ds))))
+  (testing "the built-in default survives a site that removed :en"
+    (let [[cfg ds] (with-site {:langs {:default :ms :locales {:en nil}}})]
+      (is (= [:ta :ms] (config/fallback-chain cfg :ta)))
+      (is (empty? (diag/errors ds)))))
+  (testing "D-P3-7: anything but configured languages and :site-default is a config error"
+    (doseq [bad [[:fr] [:site-default "en"] :en '(:en) [:zh-hans]]]
+      (let [[cfg ds] (with-site {:i18n {:fallback bad}})]
+        (is (some #(re-find #":i18n :fallback" (:message %)) (diag/errors ds)) (pr-str bad))
+        (is (= [:site-default :en] (get-in cfg [:i18n :fallback])) "repaired to the default")))))
+
+(deftest tr-and-resolve-str-follow-the-configured-chain
+  (let [[cfg _] (with-site {:i18n {:fallback [:ta]}})
+        strings {:ta {:x/y "தமிழ்"} :en {:x/y "English" :x/only-en "E"}}
+        ctx     {:cfg cfg :lang :ms :strings strings}]
+    (is (= "தமிழ்" (clogem.i18n/tr ctx :x/y)) "ms → ta, never the default :en first")
+    (is (= "only-en" (clogem.i18n/tr ctx :x/only-en)) "past the last fallback: the key's name in production")
+    (is (= "⟦:x/only-en⟧" (first (diag/collecting (clogem.i18n/tr (assoc ctx :dev? true) :x/only-en))))
+        "…and ⟦k⟧ in dev")
+    (is (= "T" (clogem.i18n/resolve-str ctx {:ta "T" :en "E"})))))
+
+(deftest absolute-urls-join-the-site-url-and-the-base-inclusive-path
+  (let [[cfg _] (with-site {:site {:url "https://x.example/"}})]
+    (is (= "https://x.example" (config/site-url-root cfg)) "trailing slash dropped")
+    (is (= "https://x.example/categories/%E5%9F%BA%E7%A1%80/" (config/absolute-url cfg "/categories/基础/"))))
+  (let [[cfg _] (with-site {:site {:url "  "}})]
+    (is (nil? (config/site-url-root cfg)))
+    (is (nil? (config/absolute-url cfg "/")) "blank → emit nothing (D-P3-1)")))
+
+(deftest seo-defaults
+  (let [[cfg _] (with-site {})]
+    (is (true? (get-in cfg [:seo :feeds])))
+    (is (true? (get-in cfg [:seo :sitemap])))))
