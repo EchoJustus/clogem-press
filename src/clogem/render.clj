@@ -498,16 +498,18 @@
     (count pages)))
 
 (defn copy-tree!
-  "Copy a directory tree, never symlink (see the ns docstring)."
-  [from to]
+  "Copy a directory tree, never symlink (see the ns docstring). `skip?`, given
+  a path relative to `from`, leaves that file out."
+  ([from to] (copy-tree! from to (constantly false)))
+  ([from to skip?]
   (when (fs/directory? from)
     (fs/create-dirs to)
     (doseq [p (fs/glob from "**")
-            :when (fs/regular-file? p)]
+            :when (and (fs/regular-file? p) (not (skip? (str (fs/relativize from p)))))]
       (let [target (fs/path to (fs/relativize from p))]
         (fs/create-dirs (fs/parent target))
         (fs/copy p target {:replace-existing true})))
-    true))
+    true)))
 
 (defn theme-resource-dir
   "Locate the theme's static resources on the classpath, so they are found
@@ -527,7 +529,10 @@
                     (= :self-hosted (get-in cfg [:theme :fonts :tamil])) (conj "fonts"))
               :let [from (fs/path themed sub)]
               :when (fs/directory? from)]
-        (copy-tree! from (fs/path out "clogem" sub))))
+        ;; js/search.js only serves the Pagefind UI (D-P3-10): a :none site
+        ;; ships nothing it never loads
+        (copy-tree! from (fs/path out "clogem" sub)
+                    (fn [rel] (and (= "js" sub) (= "search.js" rel) (not (search/enabled? cfg)))))))
     (let [user (config/assets-dir cfg)]
       (when (fs/directory? user)
         (copy-tree! user (fs/path out "assets"))))))

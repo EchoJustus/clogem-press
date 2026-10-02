@@ -384,7 +384,10 @@
     (fn [dir out]
       (build! dir out)
       (doseq [f (fs/glob out "**.html")]
-        (is (not (re-find #"(?i)pagefind" (slurp (fs/file f)))) (str f))))))
+        (is (not (re-find #"(?i)pagefind" (slurp (fs/file f)))) (str f)))
+      (is (fs/exists? (fs/path out "clogem" "js" "toc.js")))
+      (is (not (fs/exists? (fs/path out "clogem" "js" "search.js")))
+          "nor the script that only the search UI loads"))))
 
 ;; ---------------------------------------------------------------------------
 ;; The self-hosted Tamil font (D-P3-12)
