@@ -3,6 +3,7 @@
   (:require [babashka.fs :as fs]
             [babashka.process]
             [clojure.test :refer [deftest is testing]]
+            [clojure.edn]
             [clojure.set]
             [clojure.string :as str]
             [clogem.cli :as cli]
@@ -473,3 +474,92 @@
             (let [[_ ds] (diag/collecting (config/load-config (str dir) nil {:build {:out "public/site"}}))]
               (is (empty? (diag/errors ds))))))
         (finally (fs/delete-tree dir) (fs/delete-tree other))))))
+
+;; ---------------------------------------------------------------------------
+;; Unknown and not-yet-implemented keys (Phase 4 Task A, part of D-P4-16)
+
+(defn- warning-messages [edn]
+  (let [[_ ds] (with-site edn)]
+    (is (empty? (diag/errors ds)) "never an error")
+    (mapv :message (diag/warnings ds))))
+
+(deftest the-pre-flight-keys-all-warn
+  (testing "0.2.0 ignored all of these silently; each now names itself"
+    (let [ms (warning-messages {:analytics {:provider :ga4 :id "G-XXXX"}
+                                :theme {:html-modules {:sidebar-b "<p>hi</p>"}
+                                        :blogger {:name "me"}
+                                        :footer {:create-year 2020}
+                                        :bodyBgImg "bg.png"}
+                                :seo {:indexnow {:enabled true :key "k"}}})]
+      (is (some #(= ":analytics :provider is :ga4, which has no effect in 0.2.0; no analytics script is emitted." %) ms))
+      (is (some #(= ":theme :html-modules has no effect in 0.2.0; nothing is injected." %) ms))
+      (is (some #(= ":theme :blogger is planned, not implemented in 0.2.0; it has no effect." %) ms))
+      (is (some #(= ":theme :footer is planned, not implemented in 0.2.0; it has no effect." %) ms))
+      (is (some #(= (str ":theme :bodyBgImg is vdoing's spelling; clogem-press reads :theme :body-bg-img"
+                         " — planned, not implemented in 0.2.0. It is ignored.") %) ms))
+      (is (some #(= ":seo :indexnow :enabled true has no effect in 0.2.0; nothing is pushed to IndexNow." %) ms))
+      (is (= 6 (count ms)) (pr-str ms)))))
+
+(deftest unknown-keys-name-the-path-and-the-nearest-known-key
+  (let [[_ ds] (with-site {:footr 1
+                           :theme {:sidebar-opn false :fonts {:tamill :system}}
+                           :langs {:locales {:en {:lable "E"}}}
+                           :tools {:pagefind {:versoin "1.5.2"}}})
+        ws (diag/warnings ds)
+        by (into {} (map (juxt :message :hint)) ws)]
+    (is (empty? (diag/errors ds)))
+    (is (= [":footr is not a top-level option and is ignored."
+            ":langs :locales :en :lable is not a locale option and is ignored."
+            ":theme :fonts :tamill is not a theme fonts option and is ignored."
+            ":theme :sidebar-opn is not a theme option and is ignored."
+            ":tools :pagefind :versoin is not a tools pagefind option and is ignored."]
+           (sort (keys by))))
+    (is (str/starts-with? (by ":theme :sidebar-opn is not a theme option and is ignored.") "Did you mean :sidebar-open?"))
+    (is (str/starts-with? (by ":langs :locales :en :lable is not a locale option and is ignored.") "Did you mean :label?"))
+    (is (str/starts-with? (by ":tools :pagefind :versoin is not a tools pagefind option and is ignored.") "Did you mean :version?"))
+    (is (str/starts-with? (by ":theme :fonts :tamill is not a theme fonts option and is ignored.") "Did you mean :tamil?"))
+    (is (not (str/includes? (str (by ":footr is not a top-level option and is ignored.")) "Did you mean"))
+        "nothing within distance 2 of :footr at the top level")))
+
+(deftest vdoing-spellings-name-the-clogem-key
+  (let [ms (warning-messages {:theme {:pageStyle :line :defaultMode :dark :sidebarOpen false
+                                      :htmlModules {} :updateBar {} :categoryText "x"
+                                      :extendFrontmatter {} :searchMaxSuggestions 5}})]
+    (doseq [[k target planned?] [[":pageStyle" ":theme :page-style" false]
+                                 [":defaultMode" ":theme :default-mode" false]
+                                 [":sidebarOpen" ":theme :sidebar-open" false]
+                                 [":htmlModules" ":theme :html-modules" true]
+                                 [":updateBar" ":theme :update-bar" true]
+                                 [":categoryText" ":content :category-text" false]
+                                 [":extendFrontmatter" ":content :extend-frontmatter" false]]]
+      (is (some #(= (str ":theme " k " is vdoing's spelling; clogem-press reads " target
+                         (when planned? " — planned, not implemented in 0.2.0") ". It is ignored.") %)
+                ms)
+          k))
+    (is (some #(str/starts-with? % ":theme :searchMaxSuggestions is a vdoing option clogem-press does not have") ms))
+    (is (= 8 (count ms)) (pr-str ms))))
+
+(deftest known-and-default-configs-are-quiet
+  (testing "nothing that passed in 0.2.0 starts warning: the reference config,
+            the demo site and a site with every :tools descriptor"
+    (doseq [f ["config.example.edn" "examples/demo-site/site.edn"]]
+      (let [edn (clojure.edn/read-string (slurp f))]
+        (is (= [] (warning-messages (cond-> edn
+                                      ;; the example's :url is real-looking; its
+                                      ;; :nav and :content are what is checked
+                                      true (assoc-in [:build :out] "dist"))))
+            f)))
+    (is (= [] (warning-messages {:comments {:provider :none :mapping :permalink}
+                                 :theme {:html-modules {}}
+                                 :analytics {:provider :none}
+                                 :seo {:indexnow {:enabled false :key nil}}
+                                 :tools {:chroma {:version "2.27.0"} :fswatcher {:version "0.0.7"}
+                                         :cache-dir ".tools"}})))))
+
+(deftest a-new-key-is-registered-in-one-place
+  (testing "known-keys is data: a later task adds a key there and the
+            warning goes away"
+    (is (= :ok (get-in config/known-keys [[:theme] :page-style])))
+    (is (= :planned (get-in config/known-keys [[:theme] :blogger])))
+    (with-redefs [config/known-keys (assoc-in config/known-keys [[:theme] :blogger] :ok)]
+      (is (= [] (warning-messages {:theme {:blogger {:name "me"}}}))))))

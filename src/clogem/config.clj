@@ -328,24 +328,226 @@
   keyed on the article's permalink."
   #{:provider :repo :repo-id :category :category-id :mapping})
 
+;; ---------------------------------------------------------------------------
+;; Known keys (Phase 4 Task A, part of D-P4-16)
+
+(def known-keys
+  "Every config key the generator knows, as {path → {key status}}: `path` is
+  the vector of keys leading to a map in site.edn (`[]` is the top level),
+  and `status` is
+
+    :ok      — read by this generator;
+    :planned — documented (DESIGN.md §5.6, §8 Phase 4) but not implemented
+               yet: accepted, with a warning that it has no effect.
+
+  A path segment `:*` matches any key — `[:langs :locales :*]` is every
+  locale's map. A map whose path has NO entry here holds user data rather
+  than options (`:langs :locales` itself, `:i18n :category-labels`,
+  `:content :extend-frontmatter`, `:theme :html-modules`, a `:sha256` map)
+  and its keys are not checked.
+
+  An unknown key is a WARNING, never an error (`check-keys!`): it names the
+  path and suggests the nearest known key. **A change that makes the
+  generator read a new key adds it here** — as `:ok`, or flips a `:planned`
+  entry to `:ok` — or every site that sets it gets a warning saying it is
+  ignored. The vdoing spellings live in `vdoing-keys`."
+  {[]                     {:site :ok :generator :ok :langs :ok :i18n :ok :content :ok
+                           :theme :ok :nav :ok :search :ok :comments :ok :analytics :ok
+                           :seo :ok :build :ok :tools :ok
+                           ;; Phase 4 Task C
+                           :highlight :planned}
+   [:site]                {:title :ok :description :ok :url :ok :base :ok :author :ok}
+   [:site :author]        {:name :ok :link :ok}
+   [:generator]           {:repo :ok :min-version :ok}
+   [:langs]               {:default :ok :priority :ok :locales :ok}
+   [:langs :locales :*]   {:label :ok :html-lang :ok :giscus :ok :dir :ok :og :ok}
+   [:i18n]                {:strings-dir :ok :prefix-default? :ok :fallback :ok :missing-key :ok
+                           :category-labels :ok :show-fallback-notice :ok :preference :ok}
+   [:content]             {:dir :ok :assets-dir :ok :category :ok :tag :ok :archive :ok
+                           :category-text :ok :extend-frontmatter :ok :permalink-prefix :ok
+                           :permalink-length :ok :write-front-matter :ok :permalinks-file :ok
+                           ;; Phase 4 Tasks E2 and F
+                           :edit-link :planned :static-dir :planned}
+   [:theme]               {:default-mode :ok :page-style :ok :sidebar-open :ok :sidebar-depth :ok
+                           :per-page :ok :fonts :ok
+                           ;; read, but a non-empty value has no effect yet (check-no-effect!)
+                           :html-modules :ok
+                           ;; Phase 4 Tasks B1, E1, E2 (DESIGN.md §5.6 sketches several)
+                           :social :planned :banner-bg :planned :body-bg-img :planned
+                           :body-bg-img-opacity :planned :title-badge :planned
+                           :title-badge-icons :planned :blogger :planned :footer :planned
+                           :update-bar :planned :right-menu-bar :planned :page-button :planned
+                           :content-bg-style :planned :last-updated :planned
+                           :sidebar-collapsed :planned :back-to-top :planned :logo :planned
+                           :repo :planned}
+   [:theme :fonts]        {:tamil :ok}
+   [:search]              {:provider :ok
+                           ;; Phase 4 Task G
+                           :cross-language :planned}
+   [:comments]            (zipmap comments-keys (repeat :ok))
+   ;; the provider's own keys, as §5.6 sketches them (D-13); a provider
+   ;; other than :none has no effect yet (check-no-effect!)
+   [:analytics]           {:provider :ok :id :ok :domain :ok :src :ok :website-id :ok}
+   [:seo]                 {:sitemap :ok :hreflang :ok :x-default :ok :feeds :ok :indexnow :ok
+                           ;; Phase 4 Task F
+                           :verification :planned}
+   [:seo :indexnow]       {:enabled :ok :key :ok}
+   [:build]               {:out :ok}
+   [:tools]               {:cache-dir :ok :pagefind :ok :chroma :ok :fswatcher :ok}
+   [:tools :pagefind]     {:version :ok :sha256 :ok :path :ok :url :ok}
+   [:tools :chroma]       {:version :ok :sha256 :ok :path :ok :url :ok}
+   [:tools :fswatcher]    {:version :ok :sha256 :ok :path :ok :url :ok}})
+
+(def vdoing-keys
+  "vdoing's `themeConfig` spellings (camelCase, and a few that live in
+  another section here) → [the clogem-press path, its status]. Status is
+  `known-keys`' :ok or :planned, or :dropped for an option Phase 4 removed
+  (DESIGN.md §8). Consulted only for a key that is not known where it was
+  written, so a site migrated from vdoing gets the spelling to use."
+  {"pageStyle"               [[:theme :page-style] :ok]
+   "defaultMode"             [[:theme :default-mode] :ok]
+   "sidebarOpen"             [[:theme :sidebar-open] :ok]
+   "sidebarDepth"            [[:theme :sidebar-depth] :ok]
+   "categoryText"            [[:content :category-text] :ok]
+   "extendFrontmatter"       [[:content :extend-frontmatter] :ok]
+   "category"                [[:content :category] :ok]
+   "tag"                     [[:content :tag] :ok]
+   "archive"                 [[:content :archive] :ok]
+   "author"                  [[:site :author] :ok]
+   "nav"                     [[:nav] :ok]
+   "search"                  [[:search :provider] :ok]
+   "htmlModules"             [[:theme :html-modules] :planned]
+   "bodyBgImg"               [[:theme :body-bg-img] :planned]
+   "bodyBgImgOpacity"        [[:theme :body-bg-img-opacity] :planned]
+   "bannerBg"                [[:theme :banner-bg] :planned]
+   "titleBadge"              [[:theme :title-badge] :planned]
+   "titleBadgeIcons"         [[:theme :title-badge-icons] :planned]
+   "blogger"                 [[:theme :blogger] :planned]
+   "social"                  [[:theme :social] :planned]
+   "footer"                  [[:theme :footer] :planned]
+   "updateBar"               [[:theme :update-bar] :planned]
+   "rightMenuBar"            [[:theme :right-menu-bar] :planned]
+   "pageButton"              [[:theme :page-button] :planned]
+   "contentBgStyle"          [[:theme :content-bg-style] :planned]
+   "lastUpdated"             [[:theme :last-updated] :planned]
+   "logo"                    [[:theme :logo] :planned]
+   "repo"                    [[:theme :repo] :planned]
+   "editLinks"               [[:content :edit-link] :planned]
+   "editLinkText"            [[:content :edit-link] :planned]
+   "docsRepo"                [[:content :edit-link] :planned]
+   "docsDir"                 [[:content :edit-link] :planned]
+   "docsBranch"              [[:content :edit-link] :planned]
+   "searchMaxSuggestions"    [nil :dropped]
+   "displayAllHeaders"       [nil :dropped]
+   "sidebarHoverTriggerOpen" [nil :dropped]
+   "sidebar"                 [nil :dropped]})
+
+(defn- path-str
+  [path]
+  (str/join " " (map #(if (keyword? %) (str %) (pr-str %)) path)))
+
+(defn- entry-for
+  "The `known-keys` entry for `path`, honouring `:*` segments, or nil."
+  [path]
+  (or (get known-keys path)
+      (some (fn [[p m]]
+              (when (and (= (count p) (count path))
+                         (every? true? (map #(or (= :* %1) (= %1 %2)) p path)))
+                m))
+            known-keys)))
+
+(defn- section-label
+  [path]
+  (cond
+    (empty? path)                 "top-level"
+    (= [:langs :locales] (vec (take 2 path))) "locale"
+    :else (str/join " " (map #(if (keyword? %) (name %) (str %)) path))))
+
+(defn- key-name [k] (if (keyword? k) (name k) (str k)))
+
+(defn- warn-unknown!
+  [path k known]
+  (let [kn  (key-name k)
+        [target status] (get vdoing-keys kn)
+        nearest (when-not status
+                  (some->> (keys known)
+                           (map (fn [c] [(u/damerau-levenshtein (u/lower kn) (u/lower (name c))) (str c) c]))
+                           (filter #(<= (first %) 2))
+                           sort first last))]
+    (case status
+      (:ok :planned)
+      (diag/warn! nil (str (path-str (conj path k)) " is vdoing's spelling; clogem-press reads "
+                           (path-str target)
+                           (when (= :planned status)
+                             (str " — planned, not implemented in " (generator-version)))
+                           ". It is ignored.")
+                  (str "Write " (path-str target) " instead (DESIGN.md §5.6)."))
+      :dropped
+      (diag/warn! nil (str (path-str (conj path k)) " is a vdoing option clogem-press does not have "
+                           "(dropped in Phase 4, DESIGN.md §8); it is ignored."))
+      (diag/warn! nil (str (path-str (conj path k)) " is not a " (section-label path)
+                           " option and is ignored.")
+                  (str (when nearest (str "Did you mean " nearest "? "))
+                       "The options are "
+                       (str/join ", " (map str (sort-by str (keep (fn [[k st]] (when (= :ok st) k)) known))))
+                       " (config.example.edn).")))))
+
+(defn check-keys!
+  "Warn about every key of `m` (a site.edn as read, before defaults are
+  merged in) that `known-keys` does not know, or knows as :planned. Never an
+  error: a key 0.2.0 ignored silently must not start failing a build.
+  Returns nil."
+  ([m] (check-keys! m []))
+  ([m path]
+   (when (map? m)
+     (if-let [known (entry-for path)]
+       (doseq [k (sort-by str (keys m))
+               :let [v (get m k)]]
+         (case (get known k)
+           :ok      (check-keys! v (conj path k))
+           :planned (diag/warn! nil (str (path-str (conj path k)) " is planned, not implemented in "
+                                         (generator-version) "; it has no effect.")
+                                "DESIGN.md §8 Phase 4 lists what is coming.")
+           (warn-unknown! path k known)))
+       ;; a map of user-named entries whose VALUES are options (locales)
+       (when (entry-for (conj path :*))
+         (doseq [k (sort-by str (keys m))]
+           (check-keys! (get m k) (conj path k))))))
+   nil))
+
+(defn- check-no-effect!
+  "Settings config.example.edn documents whose implementation is still to
+  come: set to anything but their default, they warn that they have no
+  effect in this version rather than being silently ignored."
+  [cfg]
+  (let [v (generator-version)]
+    (when (seq (get-in cfg [:theme :html-modules]))
+      (diag/warn! nil (str ":theme :html-modules has no effect in " v "; nothing is injected.")
+                  "htmlModules support is planned for Phase 4 (DESIGN.md §8)."))
+    (let [p (get-in cfg [:analytics :provider])]
+      (when (and (some? p) (not= :none p))
+        (diag/warn! nil (str ":analytics :provider is " (pr-str p) ", which has no effect in " v
+                             "; no analytics script is emitted.")
+                    "Analytics support is planned for Phase 4 (DESIGN.md §8).")))
+    (when (true? (get-in cfg [:seo :indexnow :enabled]))
+      (diag/warn! nil (str ":seo :indexnow :enabled true has no effect in " v
+                           "; nothing is pushed to IndexNow.")
+                  "The IndexNow push is planned for Phase 5 (DESIGN.md §8).")))
+  cfg)
+
 (defn- check-comments-keys!
-  "An unknown `:comments` key is a warning naming it — it is never read —
-  and so is a `:mapping` other than :permalink, which asks for a thread
+  "A `:mapping` other than :permalink is a warning: it asks for a thread
   mapping the generator does not do. `:mapping :permalink` is accepted
-  quietly: it describes exactly what happens."
+  quietly: it describes exactly what happens. (An unknown `:comments` key
+  is `check-keys!`'s.)"
   [cfg]
   (let [c (:comments cfg)]
-    (when (map? c)
-      (doseq [k (sort-by str (remove comments-keys (keys c)))]
-        (diag/warn! nil (str ":comments " (pr-str k) " is not a comments option and is ignored.")
-                    (str "The options are " (str/join ", " (map pr-str (sort-by str comments-keys)))
-                         " (DESIGN.md §6.8).")))
-      (when (and (contains? c :mapping) (not= :permalink (:mapping c)))
-        (diag/warn! nil (str ":comments :mapping is " (pr-str (:mapping c))
-                             ", but threads are always mapped by the article's permalink; it is ignored.")
-                    (str "Every variant of an article opens one thread, keyed on /pages/xxxxxx/ "
-                         "(DESIGN.md D-P3-15). Remove :mapping, or write :permalink."))))
-    cfg))
+    (when (and (map? c) (contains? c :mapping) (not= :permalink (:mapping c)))
+      (diag/warn! nil (str ":comments :mapping is " (pr-str (:mapping c))
+                           ", but threads are always mapped by the article's permalink; it is ignored.")
+                  (str "Every variant of an article opens one thread, keyed on /pages/xxxxxx/ "
+                       "(DESIGN.md D-P3-15). Remove :mapping, or write :permalink."))))
+  cfg)
 
 (def theme-modes
   "`:theme :default-mode` values: the four colour modes of §1.2, each a
@@ -458,7 +660,7 @@
     (when (< (count priority) (count locales))
       (diag/warn! nil ":langs :priority does not cover every locale; missing ones were appended.")))
   (-> cfg check-theme! check-floor! check-fallback! check-site-url! check-x-default! check-search!
-      check-i18n-comments! check-out-dir!))
+      check-i18n-comments! check-out-dir! check-no-effect!))
 
 (defn- map-paths
   "Every path in `m` whose value is a map, outermost first."
@@ -496,6 +698,8 @@
          from-file (read-edn-file cfg-file)]
      (when-not from-file
        (diag/warn! (str cfg-file) "no site config found; using built-in defaults."))
+     ;; D-P4-16: what the site wrote, before defaults or CLI overrides
+     (check-keys! from-file)
      ;; `or {}` because deep-merge lets an explicit nil win — an absent source
      ;; must contribute nothing, not blank the defaults.
      (-> (u/deep-merge defaults (or from-file {}) (or overrides {}))
