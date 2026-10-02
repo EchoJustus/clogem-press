@@ -142,7 +142,8 @@
     (fn [out]
       (doseq [uri ["/pages/t00001/" "/zh-Hans/pages/t00001/"]]
         (is (= "/pages/t00001/" (attr (first (giscus-tags (html out uri))) "data-term")) uri))
-      (is (str/includes? (html out "/pages/t00001/") "<script defer=\"defer\" src=\"/b/clogem/js/comments.js\"></script>")))))
+      (is (re-find #"<script defer=\"defer\" src=\"/b/clogem/js/comments\.js\?v=[0-9a-f]{8}\"></script>"
+                   (html out "/pages/t00001/"))))))
 
 (deftest the-term-is-the-permalink-under-prefix-default
   (with-built corpus (assoc site :i18n {:prefix-default? true})
@@ -161,7 +162,8 @@
   (with-built corpus site
     (fn [out]
       (is (fs/exists? (fs/path out "clogem" "js" "comments.js")))
-      (is (str/includes? (html out "/pages/t00001/") "<script defer=\"defer\" src=\"/clogem/js/comments.js\"></script>"))))
+      (is (re-find #"<script defer=\"defer\" src=\"/clogem/js/comments\.js\?v=[0-9a-f]{8}\"></script>"
+                   (html out "/pages/t00001/")))))
   (with-built corpus (dissoc site :comments)
     (fn [out]
       (is (not (fs/exists? (fs/path out "clogem" "js" "comments.js"))))

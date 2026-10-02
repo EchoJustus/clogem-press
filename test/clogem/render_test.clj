@@ -72,7 +72,9 @@
   [out href]
   (let [;; hrefs percent-encode path segments (D-P2-3); the directory on
         ;; disk is the unencoded slug
-        rel (str/replace (java.net.URLDecoder/decode (str href) "UTF-8") #"^/+" "")]
+        ;; a theme asset carries ?v=<fingerprint> (D-P4-7): a query, not a file
+        rel (str/replace (java.net.URLDecoder/decode (first (str/split (str href) #"[?#]" 2)) "UTF-8")
+                         #"^/+" "")]
     (or (and (str/blank? rel) (fs/regular-file? (fs/path out "index.html")))
         (fs/regular-file? (fs/path out rel))
         (fs/regular-file? (fs/path out (str/replace rel #"/+$" "") "index.html")))))
@@ -111,8 +113,8 @@
     (let [out (build-with-base "/project/")]
       (try
         (is (fs/regular-file? (fs/path out "clogem" "js" "toc.js")))
-        (is (str/includes? (slurp (fs/file (fs/path out "pages" "643259" "index.html")))
-                           "src=\"/project/clogem/js/toc.js\""))
+        (is (re-find #"src=\"/project/clogem/js/toc\.js\?v=[0-9a-f]{8}\""
+                     (slurp (fs/file (fs/path out "pages" "643259" "index.html")))))
         (finally (fs/delete-tree out))))))
 
 ;; ---------------------------------------------------------------------------

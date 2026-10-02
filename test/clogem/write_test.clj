@@ -1,7 +1,7 @@
 ;; Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).
 (ns clogem.write-test
-  "Build robustness and speed (Phase 4 Task A, D-P4-11), end to end over a
-  copy of `examples/demo-site`.
+  "Build robustness and speed (Phase 4 Task A, D-P4-11) and cache-busting
+  (D-P4-7), end to end over a copy of `examples/demo-site`.
 
   The robustness case is the pre-flight's reproduction: a good build, then an
   edited article, a deleted zh-Hant variant, a new article and a renamed site
@@ -11,11 +11,14 @@
   non-zero. Now dist/ (and the ledger) must be byte-for-byte what the good
   build left."
   (:require [babashka.fs :as fs]
+            [babashka.process :as p]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [clogem.assets :as assets]
             [clogem.cli :as cli]
             [clogem.config :as config]
             [clogem.diag :as diag]
+            [clogem.fake-tools :as fake]
             [clogem.render :as render]
             [clogem.search :as search]
             [clogem.theme.page :as page]))
@@ -174,3 +177,106 @@
           [rs ds] (render/render-pages pages 4)]
       (is (= (sort (keys pages)) (map first rs)))
       (is (= (map #(format "f%02d.md" %) (range 20)) (map :path ds))))))
+
+;; ---------------------------------------------------------------------------
+;; Cache-busting (D-P4-7)
+
+(defn- version-refs
+  "Every `<path>?v=<v>` in the HTML and CSS under `out`, as [file path v]."
+  [out]
+  (for [f (concat (fs/glob out "**.html") (fs/glob out "**.css"))
+        :let [s (slurp (fs/file f))]
+        [_ path v] (re-seq #"(?:href|src)=\"([^\"?]+)\?v=([^\"&#]+)\"|url\(\"?([^\"?)]+)\?v=([^\")]+)\"?\)" s)
+        :when path]
+    [f path v]))
+
+(deftest every-fingerprint-names-the-bytes-of-its-file
+  (with-demo-copy
+    (fn [dir out]
+      (binding [search/*env* {"CLOGEM_PAGEFIND" (fake/fake-pagefind! (fs/path dir "bin"))}]
+        (with-out-str (cli/build {:site-dir (str dir) :no-write true})))
+      ;; the Pagefind UI files are written by Pagefind, not by this build,
+      ;; and carry its pinned version instead
+      (let [refs (version-refs out)
+            css-refs (for [f (fs/glob out "**.css")
+                           [_ path v] (re-seq #"url\(\"?([^\"?)]+)\?v=([0-9a-f]+)\"?\)" (slurp (fs/file f)))]
+                       [f path v])]
+        (is (seq refs))
+        (doseq [[f path v] refs
+                :let [rel (str/replace path #"^/" "")]]
+          (if (str/starts-with? rel "pagefind/")
+            (is (= "1.5.2" v) path)
+            (is (= (subs (search/sha256-hex (fs/path out rel)) 0 8) v) (str f ": " path))))
+        (is (every? #(re-find #"^/(clogem|pagefind)/" (second %)) refs)
+            "only theme and Pagefind URLs are versioned")
+        (testing "and the theme files the head links all carry one"
+          (let [h (slurp (fs/file out "pages" "643259" "index.html"))]
+            (is (empty? (re-seq #"(?:href|src)=\"/clogem/[^\"?]+\"" h)))
+            (is (str/includes? h "bundle-path=\"/pagefind/\"") "the bundle directory itself is not versioned")))
+        (is (empty? css-refs) "the demo ships no stylesheet with url()s: :fonts :system")))))
+
+(deftest our-css-versions-its-own-url-references
+  (let [cfg (first (diag/collecting (config/load-config demo nil {:theme {:fonts {:tamil :self-hosted}}})))
+        fs* (assets/files cfg)
+        css (String. ^bytes (get fs* "fonts/tamil.css") "UTF-8")]
+    (doseq [w ["noto-sans-tamil-400.woff2" "noto-sans-tamil-700.woff2"]]
+      (is (str/includes? css (str "url(\"" w "?v=" (assets/fingerprint (get fs* (str "fonts/" w))) "\")")) w))
+    (is (= (assets/version (assoc cfg :clogem/asset-versions (assets/versions fs*)) "fonts/tamil.css")
+           (assets/fingerprint (.getBytes css "UTF-8")))
+        "the stylesheet's own fingerprint is of its rewritten bytes")
+    (is (= "a{b:url(data:x)} c{d:url(\"/abs.png\")} e{f:url(x.png?v=1)}"
+           (#'assets/rewrite-css "a{b:url(data:x)} c{d:url(\"/abs.png\")} e{f:url(x.png?v=1)}" "fonts" (constantly "zz")))
+        "data:, absolute and already-versioned URLs are left alone")))
+
+(deftest the-version-is-stripped-back-to-the-0-2-0-bytes
+  (testing "assets/strip-versions undoes exactly what this build adds"
+    (is (= "<link href=\"/clogem/css/theme.css\" /><script src=\"/pagefind/pagefind-component-ui.js\">"
+           (assets/strip-versions
+            "<link href=\"/clogem/css/theme.css?v=0123abcd\" /><script src=\"/pagefind/pagefind-component-ui.js?v=1.5.2\">")))))
+
+;; ---------------------------------------------------------------------------
+;; Byte-identity with 0.2.0, modulo `?v=` (opt-in)
+
+(def ^:private reference-rev-env
+  "Set to a git revision (e.g. 03249b7, release 0.2.0) to compare the demo's
+  `dist/` against that revision's, with every `?v=` stripped. Opt-in: the
+  comparison holds only until a later change alters the output on purpose,
+  and CI's shallow checkout has no history to compare against."
+  "CLOGEM_COMPARE_REV")
+
+(defn- build-demo-at!
+  "Build the demo with the generator at `gen-dir` into `out` (search off,
+  read-only), as a subprocess so the two generators never share a JVM."
+  [gen-dir out]
+  (p/shell {:dir (str (fs/path gen-dir "examples" "demo-site")) :out :string :err :string}
+           (str (or (some-> (java.lang.ProcessHandle/current) .info .command (.orElse nil)) "bb"))
+           "--config" (str (fs/path gen-dir "bb.edn"))
+           "build" "--no-write" "--no-search" "--out" (str out)))
+
+(deftest stripping-versions-gives-the-reference-build
+  (if-let [rev (System/getenv reference-rev-env)]
+    (let [tmp (fs/create-temp-dir {:prefix "clogem-ref"})
+          wt  (fs/path tmp "ref")]
+      (try
+        (p/shell {:out :string :err :string} "git" "worktree" "add" "--detach" (str wt) rev)
+        (build-demo-at! wt (fs/path tmp "ref-dist"))
+        (build-demo-at! (fs/absolutize ".") (fs/path tmp "new-dist"))
+        (let [a (fs/path tmp "ref-dist") b (fs/path tmp "new-dist")
+              ra (set (map #(str (fs/relativize a %)) (filter fs/regular-file? (fs/glob a "**"))))
+              rb (set (map #(str (fs/relativize b %)) (filter fs/regular-file? (fs/glob b "**"))))
+              diffs (for [r (sort ra)
+                          :let [x (fs/read-all-bytes (fs/path a r))
+                                y (fs/read-all-bytes (fs/path b r))]
+                          :when (not (if (re-find #"\.(html|css)$" r)
+                                       (= (String. ^bytes x "UTF-8")
+                                          (assets/strip-versions (String. ^bytes y "UTF-8")))
+                                       (java.util.Arrays/equals ^bytes x ^bytes y)))]
+                      r)]
+          (println (format "stripping-versions-gives-the-reference-build: %d files compared against %s"
+                           (count ra) rev))
+          (is (= ra rb) "the same files")
+          (is (empty? diffs) (pr-str (take 5 diffs))))
+        (finally
+          (p/shell {:out :string :err :string :continue true} "git" "worktree" "remove" "--force" (str wt))
+          (fs/delete-tree tmp))))
+    (println (str "stripping-versions-gives-the-reference-build: skipped — " reference-rev-env " is not set"))))

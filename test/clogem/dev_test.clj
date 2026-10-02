@@ -10,7 +10,9 @@
             [clojure.test :refer [deftest is testing]]
             [clogem.config :as config]
             [clogem.diag :as diag]
-            [clogem.dev :as dev]))
+            [clogem.dev :as dev]
+            [babashka.process]
+            [cheshire.core]))
 
 ;; ---------------------------------------------------------------------------
 ;; resolve-file containment
@@ -268,3 +270,30 @@
           (is (< elapsed (+ budget 400))
               (str "took " elapsed " ms against a " budget " ms budget")))
         (finally (fs/delete-tree dir))))))
+
+;; ---------------------------------------------------------------------------
+;; CSS hot-swap with fingerprinted hrefs (D-P4-7)
+
+(deftest css-hot-swap-keeps-the-fingerprint
+  (testing "the reload script swaps a stylesheet href that already carries
+            ?v=<fingerprint>: URLSearchParams.set adds `t` beside `v`, and
+            a second swap replaces `t` rather than appending another"
+    (let [js (second (re-find #"(?s)<script>(.*)</script>" dev/reload-script))]
+      (is (str/includes? js "searchParams.set('t'"))
+      (if-let [node (fs/which "node")]
+        (let [harness (str "var links=[{href:'http://localhost:1888/clogem/css/theme.css?v=8882e30e'},"
+                           "{href:'http://localhost:1888/pagefind/pagefind-component-ui.css?v=1.5.2'}];"
+                           "var document={querySelectorAll:function(){return links;}};"
+                           "var handler;function EventSource(){var s=this;setTimeout(function(){"
+                           "s.onmessage({data:'css'});s.onmessage({data:'css'});"
+                           "console.log(JSON.stringify(links.map(function(l){return l.href;})));},0);}"
+                           "var location={reload:function(){}};"
+                           js)
+              {:keys [out exit err]} (babashka.process/shell {:out :string :err :string :continue true}
+                                                             (str node) "-e" harness)
+              hrefs (when (zero? exit) (cheshire.core/parse-string (str/trim out)))]
+          (is (zero? exit) err)
+          (is (= 2 (count hrefs)) out)
+          (doseq [h hrefs]
+            (is (re-find #"\?v=[0-9a-f.]+&t=\d+$" h) h)))
+        (println "css-hot-swap-keeps-the-fingerprint: node not found; checked the script text only")))))

@@ -753,8 +753,9 @@
           (is (re-find (re-pattern (str "<body[^>]*><pagefind-config bundle-path=\"/pagefind/\"[^>]* lang=\"" lang "\""))
                        h)
               "<pagefind-config> is the FIRST element in <body> (Pagefind #1332)")
-          (is (str/includes? h "<link href=\"/pagefind/pagefind-component-ui.css\" rel=\"stylesheet\" />"))
-          (is (str/includes? h "<script src=\"/pagefind/pagefind-component-ui.js\" type=\"module\"></script>"))
+          (is (str/includes? h "<link href=\"/pagefind/pagefind-component-ui.css?v=1.5.2\" rel=\"stylesheet\" />")
+              "the Pagefind UI carries the pinned version as its ?v= (D-P4-7)")
+          (is (str/includes? h "<script src=\"/pagefind/pagefind-component-ui.js?v=1.5.2\" type=\"module\"></script>"))
           (is (re-find #"<header class=\"clogem-navbar\">.*<div class=\"clogem-search\"><pagefind-modal-trigger placeholder=\"[^\"]+\"></pagefind-modal-trigger>" h))
           (is (= (if (= "ms" lang) 0 1) (count (re-seq #"<pagefind-modal>" h)))
               "the Malay page's modal is created by js/search.js AFTER setTranslations: 1.5.2's
@@ -774,7 +775,7 @@
         (is (= "Tiada hasil untuk [SEARCH_TERM]" (get tr "zero_results"))
             "Pagefind's placeholders pass through untouched")
         (is (= "[COUNT] hasil untuk [SEARCH_TERM]" (get tr "many_results")))
-        (is (str/includes? ms "<script defer=\"defer\" src=\"/clogem/js/search.js\"></script>"))
+        (is (re-find #"<script defer=\"defer\" src=\"/clogem/js/search\.js\?v=[0-9a-f]{8}\"></script>" ms))
         (is (fs/exists? (fs/path out "clogem" "js" "search.js"))))
       (doseq [parts [[] ["zh-Hans"] ["zh-Hant"] ["ta"]]
               :let [h (apply html out parts)]]
@@ -838,13 +839,16 @@
     (fn [dir out]
       (build! dir out)
       (let [h (html out "ta" "pages" "t00001")]
-        (is (str/includes? h "<link href=\"/clogem/fonts/tamil.css\" rel=\"stylesheet\" />")))
+        (is (re-find #"<link href=\"/clogem/fonts/tamil\.css\?v=[0-9a-f]{8}\" rel=\"stylesheet\" />" h)))
       (let [css (slurp (fs/file out "clogem" "fonts" "tamil.css"))
-            urls (map second (re-seq #"url\(\"([^\"]+)\"\)" css))]
+            vurls (map second (re-seq #"url\(\"([^\"]+)\"\)" css))
+            ;; D-P4-7: our own CSS versions the files it names, too
+            urls (map #(str/replace % #"\?v=[0-9a-f]{8}$" "") vurls)]
         (is (= 2 (count (re-seq #"@font-face" css))))
         (is (= 2 (count (re-seq #"font-display: swap;" css))))
         (is (= 2 (count (re-seq #"unicode-range: U\+0B80-0BFF, U\+200C-200D, U\+25CC;" css))))
         (is (= ["noto-sans-tamil-400.woff2" "noto-sans-tamil-700.woff2"] urls))
+        (is (every? #(re-find #"\?v=[0-9a-f]{8}$" %) vurls) (pr-str vurls))
         (doseq [u urls
                 :let [f (fs/path out "clogem" "fonts" u)]]
           (is (fs/regular-file? f) u)

@@ -206,6 +206,8 @@ jobs:
           hrefs=$(grep -ohE '(href|src)="/[^"]*"' -r dist-base --include='*.html' \
                   | sed -E 's/^(href|src)="//; s/"$//' | sort -u)
           for href in $hrefs; do
+            # theme assets carry ?v=<fingerprint> (D-P4-7): a query, not a file
+            href="${href%%[?#]*}"
             case "$href" in
               "$base"*) ;;
               *) echo "::error::link does not carry the base: $href"; missing=$((missing+1)); continue ;;
@@ -254,6 +256,7 @@ jobs:
           hrefs=$(grep -ohE '(href|src)="/[^"]*"' -r dist-nosearch --include='*.html' \
                   | sed -E 's/^(href|src)="//; s/"$//' | sort -u)
           for href in $hrefs; do
+            href="${href%%[?#]*}"
             rel="${href#/}"
             rel="$(printf '%b' "${rel//%/\\x}")"
             [ -f "dist-nosearch/$rel" ] && continue

@@ -540,7 +540,8 @@
   (is (exists? "clogem" "js" "toc.js"))
   (is (str/includes? (slurp-out "clogem" "js" "toc.js") "decodeURIComponent")
       "ids are unencoded, hrefs are percent-encoded — mandatory for CJK/Tamil pages")
-  (is (str/includes? (slurp-out "pages" "643259" "index.html") "<script defer=\"defer\" src=\"/clogem/js/toc.js\"></script>"))
+  (is (re-find #"<script defer=\"defer\" src=\"/clogem/js/toc\.js\?v=[0-9a-f]{8}\"></script>"
+               (slurp-out "pages" "643259" "index.html")))
   (testing "fix 18: only pages that render a TOC load it"
     (is (not (str/includes? (slurp-out "index.html") "toc.js")))
     (is (not (str/includes? (slurp-out "categories" "index.html") "toc.js")))))
