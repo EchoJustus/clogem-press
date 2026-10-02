@@ -32,12 +32,24 @@
   "The five languages of DESIGN.md §6. `:giscus` is mandatory rather than
   decorative: giscus routes `data-lang` into the widget's iframe URL, so an
   unroutable value 404s the widget rather than falling back (§6.8, V12). Neither
-  `ms` nor `ta` is in giscus's availableLanguages, so both MUST map to `en`."
-  {:en      {:label "English"       :html-lang "en"      :giscus "en"    :dir :ltr}
-   :zh-Hans {:label "简体中文"       :html-lang "zh-Hans" :giscus "zh-CN" :dir :ltr}
-   :zh-Hant {:label "繁體中文"       :html-lang "zh-Hant" :giscus "zh-TW" :dir :ltr}
-   :ms      {:label "Bahasa Melayu" :html-lang "ms"      :giscus "en"    :dir :ltr}
-   :ta      {:label "தமிழ்"          :html-lang "ta"      :giscus "en"    :dir :ltr}})
+  `ms` nor `ta` is in giscus's availableLanguages, so both MUST map to `en`.
+
+  `:og` is the Open Graph locale (D-P3-2). ogp.me specifies `language_TERRITORY`
+  and Facebook's locale list has no script-subtag forms, so zh-Hans and zh-Hant
+  map to the territories whose script they use, not to `zh_Hans`/`zh_Hant`."
+  {:en      {:label "English"       :html-lang "en"      :giscus "en"    :dir :ltr :og "en_US"}
+   :zh-Hans {:label "简体中文"       :html-lang "zh-Hans" :giscus "zh-CN" :dir :ltr :og "zh_CN"}
+   :zh-Hant {:label "繁體中文"       :html-lang "zh-Hant" :giscus "zh-TW" :dir :ltr :og "zh_TW"}
+   :ms      {:label "Bahasa Melayu" :html-lang "ms"      :giscus "en"    :dir :ltr :og "ms_MY"}
+   :ta      {:label "தமிழ்"          :html-lang "ta"      :giscus "en"    :dir :ltr :og "ta_IN"}})
+
+(def og-locale-re
+  "ogp.me's `og:locale` shape, `language_TERRITORY` (D-P3-2)."
+  #"[a-z]{2}_[A-Z]{2}")
+
+(def default-fallback
+  "The §5.6 / §6.5 fallback chain after the requested language (D-P3-7)."
+  [:site-default :en])
 
 (def giscus-available-languages
   "giscus `availableLanguages`, verified from lib/i18n.tsx (DESIGN.md Appendix A
@@ -55,6 +67,7 @@
              :locales  default-locales}
    :i18n    {:strings-dir "i18n"
              :prefix-default? false
+             :fallback default-fallback
              :missing-key :warn
              :category-labels {}
              :show-fallback-notice true}
@@ -75,7 +88,7 @@
    :search   {:provider :none}
    :comments {:provider :none}
    :analytics {:provider :none}
-   :seo     {:sitemap true :hreflang true :x-default :primary}
+   :seo     {:sitemap true :hreflang true :x-default :primary :feeds true}
    :build   {:out "dist"}})
 
 ;; ---------------------------------------------------------------------------
@@ -175,6 +188,84 @@
                             "(DESIGN.md D-14); site.edn carries the floor, not the pin.")))
         cfg))))
 
+(defn- base-path*
+  "`base-path`, usable before it is defined."
+  [cfg]
+  (u/clean-url (or (get-in cfg [:site :base]) "/")))
+
+(defn- check-fallback!
+  "D-P3-7: `:i18n :fallback` is a vector of configured language keywords or
+  `:site-default`. A bad value is a config error repaired to the default.
+
+  Only a chain the SITE wrote is validated. The built-in default names `:en`,
+  which a site may have removed from :locales; that is not the site's
+  mistake, and the default is kept as it is rather than filtered — 0.1.1's
+  chain, under which a config map's `:en` value (`:title {:ta … :en …}`)
+  still beats its first value for a language that has none of its own."
+  [cfg]
+  (let [v     (get-in cfg [:i18n :fallback])
+        known (set (keys (get-in cfg [:langs :locales])))
+        ok?   #(or (= :site-default %) (contains? known %))]
+    (cond
+      (nil? v)
+      (assoc-in cfg [:i18n :fallback] default-fallback)
+
+      (= v default-fallback)
+      cfg
+
+      (and (vector? v) (every? ok? v))
+      cfg
+
+      :else
+      (do (diag/error! nil (str ":i18n :fallback is " (pr-str v)
+                                ", but it must be a vector of configured language keywords "
+                                "or :site-default, e.g. [:site-default :en].")
+                       (str "Configured languages: " (pr-str (vec (keys (get-in cfg [:langs :locales]))))
+                            ". Using the default so the rest of the report is readable, "
+                            "but the build will not run."))
+          (assoc-in cfg [:i18n :fallback] default-fallback)))))
+
+(defn- check-site-url!
+  "D-P3-1: `:site :url` is the ORIGIN every absolute URL is built on. Blank
+  is legal (analyse warns once). Without a scheme every canonical comes out
+  relative, so that is an error. A path that repeats `:base` —
+  `https://u.github.io/repo` with `:base \"/repo/\"` — doubles the base in
+  every URL, so it is a warning naming the fix. A trailing slash is fine."
+  [cfg]
+  (let [url (some-> (get-in cfg [:site :url]) str str/trim u/blank->nil)]
+    (when url
+      (let [[_ scheme host path] (re-matches #"(?i)([a-z][a-z0-9+.-]*)://([^/?#\s]+)([^?#]*)?.*" url)
+            path (str/replace (str path) #"/+$" "")
+            base (str/replace (base-path* cfg) #"/+$" "")]
+        (cond
+          (not host)
+          (diag/error! nil (str ":site :url is " (pr-str url) ", which has no scheme and host.")
+                       (str "Write the site's origin with its scheme, e.g. \"https://example.github.io\" "
+                            "— without one every canonical, hreflang and feed URL comes out relative."))
+
+          (and (seq base) (seq path) (= (u/lower path) (u/lower base)))
+          (diag/warn! nil (str ":site :url " (pr-str url) " repeats the base path " base
+                               ", so every absolute URL would carry it twice.")
+                      (str "Drop the path: write " (pr-str (str scheme "://" host))
+                           " — :site :base already supplies " (base-path* cfg) "."))
+
+          :else nil)))
+    cfg))
+
+(defn- check-x-default!
+  "`:seo :x-default` says where the hreflang `x-default` points. `:primary`
+  — the bare identity URL, the article's own primary language (D-P3-2) — is
+  the only value so far; anything else is a config error repaired to it, so
+  a future option has a home rather than a silently ignored key."
+  [cfg]
+  (let [v (get-in cfg [:seo :x-default])]
+    (if (or (nil? v) (= :primary v))
+      (assoc-in cfg [:seo :x-default] :primary)
+      (do (diag/error! nil (str ":seo :x-default is " (pr-str v) ", but the only supported value is :primary.")
+                       (str ":primary points x-default at the bare identity URL (DESIGN.md D-P3-2). "
+                            "Using it so the rest of the report is readable, but the build will not run."))
+          (assoc-in cfg [:seo :x-default] :primary)))))
+
 (defn- validate!
   [{:keys [langs comments generator] :as cfg}]
   (let [{:keys [locales priority default default-declared]} langs]
@@ -190,6 +281,12 @@
         (diag/error! nil (str "locale " k " has no :html-lang — Pagefind and hreflang both need it.")))
       ;; V12: validate whenever present; require only when giscus is actually in use,
       ;; since a :none-comments site has nothing to route.
+      (when-let [og (:og v)]
+        (when-not (and (string? og) (re-matches og-locale-re og))
+          (diag/error! nil (str "locale " k " has :og " (pr-str og)
+                                ", which is not an Open Graph locale like \"en_US\".")
+                       (str "ogp.me specifies language_TERRITORY (two lower-case letters, `_`, "
+                            "two upper-case letters); zh-Hans is \"zh_CN\", zh-Hant \"zh_TW\"."))))
       (when-let [g (:giscus v)]
         (when-not (giscus-available-languages g)
           (diag/error! nil (str "locale " k " has :giscus " (pr-str g)
@@ -207,7 +304,7 @@
           (diag/error! nil (str ":comments " k " is required when :provider is :giscus.")))))
     (when (< (count priority) (count locales))
       (diag/warn! nil ":langs :priority does not cover every locale; missing ones were appended.")))
-  (-> cfg check-theme! check-floor!))
+  (-> cfg check-theme! check-floor! check-fallback! check-site-url! check-x-default!))
 
 (defn load-config
   "Read site config from `site-dir`, deep-merge over defaults and `overrides`,
@@ -243,6 +340,18 @@
 (defn locale        [cfg lang] (get-in cfg [:langs :locales lang]))
 (defn html-lang     [cfg lang] (or (:html-lang (locale cfg lang)) (name lang)))
 
+(defn og-locale     [cfg lang] (:og (locale cfg lang)))
+
+(defn fallback-chain
+  "The languages a lookup for `lang` tries, in order (§6.5, D-P3-7): `lang`
+  itself, then `:i18n :fallback` with `:site-default` resolved to `:langs
+  :default`. Distinct, so a chain never asks the same language twice."
+  [cfg lang]
+  (vec (distinct
+        (cons lang
+              (map #(if (= :site-default %) (default-lang cfg) %)
+                   (or (get-in cfg [:i18n :fallback]) default-fallback))))))
+
 (defn lang-for-suffix
   "Canonical language keyword for a filename suffix, matched case-insensitively
   over the configured set (§6.1). nil when the suffix is not a configured code."
@@ -252,6 +361,20 @@
 (defn write-front-matter?
   [cfg]
   (boolean (get-in cfg [:content :write-front-matter])))
+
+(defn site-url-root
+  "`:site :url` without a trailing slash, or nil when it is blank. Every
+  absolute URL (canonical, hreflang, sitemap, feeds, robots.txt — D-P3-1) is
+  this plus a base-inclusive path; nil means emit none of them."
+  [cfg]
+  (some-> (get-in cfg [:site :url]) str str/trim u/blank->nil (str/replace #"/+$" "")))
+
+(defn absolute-url
+  "The absolute URL of a base-inclusive site path, percent-encoded per
+  segment (D-P2-3), or nil when `:site :url` is blank (D-P3-1)."
+  [cfg path]
+  (when-let [root (site-url-root cfg)]
+    (str root (u/url-encode-path path))))
 
 (defn base-path
   "Site base path, e.g. \"/\" for a user site or \"/clogem-press/\" for a project

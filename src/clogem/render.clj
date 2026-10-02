@@ -22,6 +22,7 @@
             [clogem.markdown :as markdown]
             [clogem.model :as model]
             [clogem.pages :as pages]
+            [clogem.seo :as seo]
             [clogem.theme.catalogue :as catalogue]
             [clogem.theme.home :as home]
             [clogem.theme.indexes :as indexes]
@@ -44,7 +45,7 @@
    :dev? (:clogem/dev? cfg)
    :by-rel-path (:by-rel-path model)
    :url-for (fn [group l]
-              (model/variant-url cfg group (model/best-variant group l)))})
+              (u/url-encode-path (model/variant-url cfg group (model/best-variant group l))))})
 
 (defn- rel-path-index
   "Index every variant's path — both its full repo-relative path and its bare
@@ -91,6 +92,35 @@
 ;; ---------------------------------------------------------------------------
 ;; Page map
 
+(defn seo-info
+  "What a page's `<head>` and the sitemap say about it (D-P3-2): its own URI,
+  its language and — on a page that has one — its equivalence set
+  ({lang → uri} over every language copy, itself included) with the
+  `x-default` URI, which `:seo :x-default :primary` makes `primary`.
+  `alt-for` nil means no set: a pagination page past the first is
+  self-canonical only, because page N of a list holds different articles in
+  each language."
+  [cfg lang self alt-for primary]
+  (cond-> {:lang lang :canonical self}
+    alt-for (assoc :alternates (into (array-map)
+                                     (keep (fn [l] (when-let [u (alt-for l)] [l u])))
+                                     (config/lang-keys cfg))
+                   ;; `:seo :x-default`; :primary, the only value config
+                   ;; accepts, is the bare identity URL `primary`
+                   :x-default (case (get-in cfg [:seo :x-default] :primary)
+                                :primary primary))))
+
+(defn- with-seo
+  "Attach the page's `seo-info` to its render thunk, where the sitemap reads
+  it back (`page-seo`); a stub carries `:clogem/stub` instead."
+  [f m]
+  (with-meta f m))
+
+(defn page-seo
+  "The `seo-info` a page-map thunk carries, or nil (a redirect stub)."
+  [f]
+  (:clogem/seo (meta f)))
+
 (defn- paginate
   "[[page-number ids] …] over `ids`, `per-page` at a time; at least one page."
   [ids per-page]
@@ -132,43 +162,61 @@
                        index (get model kind)]]
              (concat
               (if (= kind :archives)
-                [[(model/site-url cfg lang root)
-                  (fn []
-                    (indexes/archives
-                     (ctx-for lang (assoc base
-                                          :alt-url (fn [l] (model/site-url cfg l root))
-                                          :page-body (body)
-                                          :archives index))))]]
+                (let [seo (seo-info cfg lang (model/site-url cfg lang root)
+                                    (fn [l] (model/site-url cfg l root))
+                                    (model/site-url cfg (config/default-lang cfg) root))]
+                  [[(model/site-url cfg lang root)
+                    (with-seo
+                      (fn []
+                        (indexes/archives
+                         (ctx-for lang (assoc base
+                                              :seo seo
+                                              :alt-url (fn [l] (model/site-url cfg l root))
+                                              :page-body (body)
+                                              :archives index))))
+                      {:clogem/seo seo})]])
                 ;; the overview: the bar, then EVERY article paginated below
                 ;; it (DESIGN.md §1, as vdoing's /categories/ and /tags/ do) —
                 ;; a site whose articles carry no tags still lists them
                 (let [pages (paginate (:posts model) per-page)
                       total (count pages)]
-                  (for [[n page-ids] pages]
+                  (for [[n page-ids] pages
+                        :let [seo (seo-info cfg lang (model/paged-url cfg lang root n)
+                                            (when (= 1 n) #(model/paged-url cfg % root 1))
+                                            (model/paged-url cfg (config/default-lang cfg) root 1))]]
                     [(model/paged-url cfg lang root n)
+                     (with-seo
                      (fn []
                        (indexes/overview
                         (ctx-for lang (assoc base
+                                             :seo seo
                                              :index index :ids page-ids
                                              :page n :total total
                                              :page-url (fn [n] (model/paged-url cfg lang root n))
                                              :alt-url (fn [l] (model/paged-url cfg l root n))
-                                             :page-body (when (= 1 n) (body))))))])))
+                                             :page-body (when (= 1 n) (body))))))
+                     {:clogem/seo seo})])))
               ;; one filtered list per category/tag, paginated
               (when (not= kind :archives)
                 (for [[k ids] index
                       :let [sub   (str root (u/slug k) "/")
                             pages (paginate ids per-page)
                             total (count pages)]
-                      [n page-ids] pages]
+                      [n page-ids] pages
+                      :let [seo (seo-info cfg lang (model/paged-url cfg lang sub n)
+                                          (when (= 1 n) #(model/paged-url cfg % sub 1))
+                                          (model/paged-url cfg (config/default-lang cfg) sub 1))]]
                   [(model/paged-url cfg lang sub n)
+                   (with-seo
                    (fn []
                      (indexes/filtered
                       (ctx-for lang (assoc base
+                                           :seo seo
                                            :index index :current k :ids page-ids
                                            :page n :total total
                                            :page-url (fn [n] (model/paged-url cfg lang sub n))
-                                           :alt-url (fn [l] (model/paged-url cfg l sub n))))))])))))))
+                                           :alt-url (fn [l] (model/paged-url cfg l sub n))))))
+                   {:clogem/seo seo})])))))))
 
 (defn- home-front-matter
   "The homepage options for `lang`: its own `index.<lang>.md` when it has
@@ -204,11 +252,16 @@
     (for [lang (config/lang-keys cfg)
           :let [{:keys [fm body path pages]} (get plan lang)
                 total (count pages)]
-          [n page-ids] pages]
+          [n page-ids] pages
+          :let [seo (seo-info cfg lang (model/paged-url cfg lang "/" n)
+                              (when (= 1 n) #(model/home-url cfg %))
+                              (model/home-url cfg (config/default-lang cfg)))]]
       [(model/paged-url cfg lang "/" n)
+       (with-seo
        (fn []
          (let [lc  (link-context model model lang path)
                ctx (ctx-for lang {:page-kind :home
+                                  :seo seo
                                   :home-fm fm
                                   :body (when body (markdown/render body lc))
                                   :ids page-ids :page n :total total
@@ -220,7 +273,8 @@
                                                (markdown/excerpt
                                                 (:body v)
                                                 (link-context model model lang (:rel-path v)))))})]
-           (home/home ctx)))])))
+           (home/home ctx)))
+       {:clogem/seo seo})])))
 
 (defn- resolve-target
   "A front matter `prev:`/`next:` value: a permalink or a relative `.md`
@@ -314,7 +368,9 @@
         model   (cond-> model
                   (not (contains? model :site-files)) (assoc :site-files (pages/site-files cfg)))
         paths   (index-paths model)
-        model   (assoc model :by-rel-path (rel-path-index model) :strings strings :index-paths paths)
+        model   (assoc model :by-rel-path (rel-path-index model) :strings strings :index-paths paths
+                       ;; which languages have an Atom feed, for autodiscovery (D-P3-3)
+                       :feed-langs (set (seo/feed-langs model)))
         prefix-all? (get-in cfg [:i18n :prefix-default?])
         ctx-for (fn [lang m]
                   (merge {:cfg cfg :lang lang :strings strings :model model
@@ -327,12 +383,18 @@
       ;; articles — and catalogue pages, which are articles whose primary
       ;; variant carries `pageComponent: {name: Catalogue}` (D-P2-8)
       (for [[_pl group] articles
-            [lang variant] (:variants group)]
+            [lang variant] (:variants group)
+            :let [seo (seo-info cfg lang (model/variant-url cfg group lang)
+                                #(when (contains? (:variants group) %)
+                                   (model/variant-url cfg group %))
+                                (model/identity-url cfg group))]]
         [(model/variant-url cfg group lang)
+         (with-seo
          (fn []
            (let [[prev-pl next-pl] (model/neighbours model group)
                  lc  (link-context model model lang (:rel-path variant))
                  ctx (ctx-for lang {:group group :variant variant
+                                    :seo seo
                                     :page-kind :article
                                     :rewrite-href (fn [h] (markdown/rewrite-href lc h))
                                     :prev (neighbour model lang variant group :prev prev-pl)
@@ -348,13 +410,16 @@
                  (page/article (assoc ctx :toc (markdown/toc ast depth))
                                ;; the theme renders the title; the body's own
                                ;; `# Title` would be a second <h1>
-                               (markdown/->hiccup (markdown/drop-leading-h1 ast) lc))))))])
+                               (markdown/->hiccup (markdown/drop-leading-h1 ast) lc))))))
+         {:clogem/seo seo})])
 
       ;; redirect stubs at the bare identity URL when every variant is prefixed
       (when prefix-all?
         (for [[_pl group] articles]
           [(model/identity-url cfg group)
-           (fn [] (page/redirect-stub cfg (model/variant-url cfg group (:primary group))))]))
+           (with-seo
+             (fn [] (page/redirect-stub cfg (model/variant-url cfg group (:primary group))))
+             {:clogem/stub true})]))
 
       ;; homes, paginated: /, /page/2/, … per language
       (home-pages model ctx-for)
@@ -454,6 +519,69 @@
       (when (fs/directory? user)
         (copy-tree! user (fs/path out "assets"))))))
 
+(defn- strip-tags
+  "Plain text of an HTML string: aria-hidden elements dropped whole, block tags → a space, inline tags dropped, the five entities hiccup
+  escapes decoded, whitespace collapsed (a feed `summary` is type=\"text\")."
+  [html]
+  (-> (str html)
+      ;; an aria-hidden element is decoration — the heading anchor's `#` —
+      ;; and says nothing a reader of the text would miss
+      (str/replace #"(?is)<([a-z][a-z0-9]*)\b[^>]*\baria-hidden=\"true\"[^>]*>.*?</\1\s*>" "")
+      ;; a block boundary is a word boundary; an inline tag is not — `<strong>`
+      ;; inside a CJK sentence must not split it with a space
+      (str/replace #"(?i)</?(?:p|div|li|ul|ol|h[1-6]|br|blockquote|pre|tr|td|th|table|dt|dd|hr)\b[^>]*>" " ")
+      (str/replace #"<[^>]*>" "")
+      (str/replace "&lt;" "<") (str/replace "&gt;" ">") (str/replace "&quot;" "\"")
+      (str/replace "&#39;" "'") (str/replace "&apos;" "'") (str/replace "&amp;" "&")
+      (str/replace #"\s+" " ")
+      str/trim))
+
+(defn feed-summary
+  "The plain text of a variant's `<!-- more -->` excerpt, or nil (D-P3-3)."
+  [model group lang]
+  (let [v (get-in group [:variants lang])]
+    (some-> (markdown/excerpt (:body v) (link-context model model lang (:rel-path v)))
+            h/html str strip-tags u/blank->nil)))
+
+(defn- file-for
+  "The output file for a base-inclusive FILE uri (`/zh-Hans/feed.xml`)."
+  [cfg uri]
+  (let [b (config/base-path cfg)
+        s (str uri)
+        rel (if (str/starts-with? s b) (subs s (count b)) (str/replace s #"^/+" ""))]
+    (fs/path (config/out-dir cfg) rel)))
+
+(defn export-seo!
+  "Atom feeds, sitemap.xml and robots.txt (D-P3-3, D-P3-4). Feeds and the
+  sitemap need an absolute URL, so neither is written when `:site :url` is
+  blank (D-P3-1). robots.txt counts only at the host root, so it is written
+  only when the base is `/`: a site's own `<assets>/robots.txt` is copied
+  there — URL or not, since it needs none — and otherwise one is generated
+  when there is a URL. Returns the site-relative paths written."
+  [cfg model pages]
+  (let [url?  (config/site-url-root cfg)
+        model (cond-> model
+                (not (contains? model :site-files)) (assoc :site-files (pages/site-files cfg)))
+        model (assoc model :by-rel-path (rel-path-index model) :strings (i18n/load-strings cfg))
+        write! (fn [uri content]
+                 (let [f (file-for cfg uri)]
+                   (fs/create-dirs (fs/parent f))
+                   (spit (fs/file f) content)
+                   uri))
+        user-robots (fs/path (config/assets-dir cfg) "robots.txt")]
+    (vec
+     (concat
+      (for [l (seo/feed-langs model)]
+        (write! (seo/feed-uri cfg l)
+                (seo/emit-xml (seo/feed-xml model l #(feed-summary model %1 %2)))))
+      (when (and url? (get-in cfg [:seo :sitemap] true))
+        [(write! (seo/sitemap-uri cfg)
+                 (seo/emit-xml (seo/sitemap-xml cfg (keep (comp page-seo val) pages))))])
+      (when (= "/" (config/base-path cfg))
+        (cond
+          (fs/regular-file? user-robots) [(write! "/robots.txt" (slurp (fs/file user-robots)))]
+          url?                           [(write! "/robots.txt" (seo/robots-txt cfg))]))))))
+
 (defn build!
   "Render and export. Returns a summary map."
   [cfg model]
@@ -462,6 +590,7 @@
     (fs/create-dirs out)
     (let [n (export-pages! cfg pages)]
       (export-assets! cfg)
+      (export-seo! cfg model pages)
       {:pages n
        :articles (count (:articles model))
        :variants (reduce + (map #(count (:variants %)) (vals (:articles model))))

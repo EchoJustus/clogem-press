@@ -11,7 +11,7 @@
                 :ta      "clogem-press விளக்கம்"}
         :description {:en "A five-language fixture exercising every content convention."
                       :zh-Hans "覆盖全部内容约定的五语言示例。"}
-        :url  "https://echojustus.github.io"
+        :url  "https://clogem-demo.example"   ; .example is reserved (RFC 2606): no canonicals on a real domain
         :base "/"}
 
  ;; D-14 / v2.1 M3: no :ref here. publish.yml's `ref:` is the authoritative pin;

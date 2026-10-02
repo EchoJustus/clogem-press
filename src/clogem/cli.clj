@@ -10,6 +10,7 @@
             [clogem.config :as config]
             [clogem.diag :as diag]
             [clogem.frontmatter :as fm]
+            [clogem.i18n :as i18n]
             [clogem.model :as model]
             [clogem.pages :as pages]
             [clogem.render :as render]
@@ -66,6 +67,14 @@
   (let [entries (scan/scan cfg)
         loaded  (model/load-entries cfg entries)
         ledger  (model/read-ledger cfg)]
+    ;; D-P3-6: site string files are checked here, so build and doctor agree
+    (i18n/check-site-strings! cfg)
+    ;; D-P3-1: a site without a URL still builds; it just cannot say where it lives
+    (when-not (config/site-url-root cfg)
+      (diag/warn! (:clogem/config-file cfg)
+                  (str ":site :url is blank, so no canonical or hreflang links, sitemap.xml, "
+                       "Atom feeds or generated robots.txt are emitted.")
+                  "Set it to the site's origin, e.g. \"https://example.github.io\" (DESIGN.md §6.6)."))
     (assoc (model/build-model cfg loaded ledger)
            :site-files (pages/site-files cfg))))
 
@@ -198,7 +207,7 @@
       ;; message; raising (rather than System/exit) keeps `doctor` testable
       ;; in-process, and is the same mechanism `build` already uses.
       (throw (ex-info (format "clogem-press doctor: %d error(s)" (count errs))
-                      {:clogem/errors errs :babashka/exit 1})))
+                      {:clogem/errors errs :clogem/warnings warns :babashka/exit 1})))
     {:warnings warns :errors errs}))
 
 (defn ^{:org.babashka/cli {:spec (assoc common-spec

@@ -76,9 +76,14 @@ jobs:
 
           # The Tamil-only article must be served at its BARE identity URL, in
           # Tamil — §6.3's per-article primary, and the case the requirement
-          # explicitly allows.
-          ta_page=$(grep -rl 'lang="ta"' dist/pages/*/index.html | head -1)
-          test -n "$ta_page"                       || fail "no Tamil article at a bare /pages/ URL"
+          # explicitly allows. Asserted on the <html> element of that one page:
+          # a bare `lang="ta"` grep also matched the switcher's
+          # `hreflang="ta" lang="ta"`, which every page carries.
+          grep -qE '<html [^>]*lang="ta"' dist/pages/171a98/index.html \
+                                                   || fail "the Tamil-only article is not <html lang=\"ta\"> at its bare URL"
+          if grep -qE '<html [^>]*lang="ta"' dist/pages/643259/index.html; then
+            fail "an English article claims <html lang=\"ta\"> — the Tamil check above is vacuous"
+          fi
 
           # A translated article must have prefixed non-primary variants.
           test -d dist/zh-Hant/pages               || fail "no zh-Hant variants emitted"
@@ -104,6 +109,14 @@ jobs:
 
           echo "URL scheme OK: $(find dist -name index.html | wc -l) pages"
 
+      # Phase 3 (D-P3-1…4), on the root-base build: every canonical absolute
+      # and self-referencing, every hreflang set reciprocal (Google ignores
+      # unreciprocated annotations), a parseable Atom feed per language, a
+      # parseable sitemap listing exactly the indexable pages, and robots.txt.
+      - name: Assert canonical, hreflang, feeds, sitemap and robots.txt
+        working-directory: examples/demo-site
+        run: python3 ../../.github/scripts/check_seo.py dist https://clogem-demo.example en zh-Hans zh-Hant ms ta
+
       # Only base "/" is exercised above, and that is exactly the base under
       # which stripping the base and not stripping it produce identical output
       # — so the whole class of "the base is baked into the layout" bug was
@@ -123,6 +136,10 @@ jobs:
           test -f dist-base/index.html            || fail "site root is a 404: no dist-base/index.html"
           test ! -e dist-base/clogem-demo         || fail "the base is baked into the layout: dist-base/clogem-demo/ exists"
           test -f dist-base/clogem/css/theme.css  || fail "theme assets missing"
+          # robots.txt only counts at the host root (D-P3-4); a project site has none
+          test ! -e dist-base/robots.txt          || fail "robots.txt emitted under a non-root base"
+          test -f dist-base/sitemap.xml           || fail "no sitemap.xml at the deploy root"
+          test -f dist-base/zh-Hans/feed.xml      || fail "no zh-Hans feed at the deploy root"
 
           # The real invariant, and the one that was broken: every internal
           # link must resolve to a file once the base is stripped.

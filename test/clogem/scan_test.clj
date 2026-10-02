@@ -234,7 +234,10 @@
     (try
       (let [cfg (first (diag/collecting
                         (config/load-config (str dir) nil
-                                            {:content {:write-front-matter false}})))]
+                                            ;; a URL, so D-P3-1's blank-URL warning
+                                            ;; stays out of these counts
+                                            {:site {:url "https://x.example"}
+                                             :content {:write-front-matter false}})))]
         (diag/collecting (cli/analyse cfg)))
       (finally (fs/delete-tree dir)))))
 

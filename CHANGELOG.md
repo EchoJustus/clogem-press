@@ -1,5 +1,106 @@
 # Changelog
 
+## Unreleased (Phase 3)
+
+Phase 3 part A: SEO, feeds, sitemap and the doctor i18n checks. DESIGN.md
+§11.2 items 30–39 record the decisions (D-P3-1 … D-P3-7). `version.edn` is
+unchanged until the phase is released.
+
+### Added
+
+- **Canonical, hreflang and `og:locale` in every page's `<head>`.** A
+  self-referencing canonical; the page's whole hreflang set, itself included,
+  with `x-default` at the bare URL (identity group for articles and
+  catalogues, all five copies for homes and index pages; none on `…/page/N/`);
+  `og:locale` from a new per-locale `:og` (`en_US`, `zh_CN`, `zh_TW`, `ms_MY`,
+  `ta_IN`) plus `og:locale:alternate` per other language in the set.
+- **Atom feeds**, one per language: `/feed.xml` and `/<lang>/feed.xml`, the
+  20 newest of that language's own variants, RFC 3339 dates, per-entry
+  hreflang alternates, a plain-text summary from `<!-- more -->`, categories
+  and tags. Every page links its language's feed. A language with no articles
+  yet gets an empty feed. New default `:seo {:feeds true}`.
+- **`/sitemap.xml`** with `xhtml:link` alternates for every page that has a
+  set (no `lastmod`/`priority`/`changefreq`), and **`/robots.txt`** under base
+  `/` only; a site's own `assets/robots.txt` is copied there instead.
+- **`:i18n :fallback`** (default `[:site-default :en]`) is honoured by UI
+  strings, config strings and category labels; a bad value is a config error.
+- **doctor/build warnings:** a translation orphaned by a renamed source
+  (with a rename suggestion; the same-number case extends the existing
+  duplicate-number error instead), a site string key that is a near-miss of a
+  theme key ("did you mean …?"), and a site-added key missing for some
+  language.
+- **CI:** `.github/scripts/check_seo.py` asserts absolute self-canonicals,
+  hreflang reciprocity, five parseable feeds, the sitemap and robots.txt on
+  the root-base build; the `/clogem-demo/` build must have no robots.txt.
+
+### Changed
+
+- With a blank `:site :url` none of the URL-bearing output above is
+  emitted and analyse warns once; the site still builds.
+- Redirect stubs no longer carry `rel=canonical` (they are `noindex`), and
+  their `<html lang>` is the default language's, not a hard-coded `en`.
+- The demo site's `:url` is `https://clogem-demo.example` (reserved TLD), so
+  it no longer emits canonicals on the real domain.
+- `og:locale` and `og:locale:alternate` are emitted even with a blank
+  `:site :url` (they name languages, not URLs), and a site's own
+  `assets/robots.txt` is copied to the root without one too.
+- `:site :url` is validated: no scheme and host is a config error (every
+  canonical came out relative); a path that repeats `:base`
+  (`https://u.github.io/repo` with `:base "/repo/"`) is a config warning
+  saying to drop the path (the base was doubled). A trailing slash is fine.
+- `:seo :x-default` is read and validated; `:primary` is the only legal
+  value, anything else a config error.
+- The orphaned-translation heuristic is quieter: the distance allowed scales
+  with the shorter base name (0 up to 3 characters, 1 up to 6, 2 above), and
+  a post compares its date-stripped slug with posts of the same date only,
+  so a weekly series or `01.css.md` beside `02.js.ta.md` no longer warns.
+- `doctor`'s raised ex-info now carries `:clogem/warnings` beside
+  `:clogem/errors`, so a caller can see the warnings of a run that failed.
+
+### Fixed
+
+- **The Tamil-only checks were vacuous.** CI and `build_test` grepped
+  `lang="ta"`, which the switcher's `hreflang="ta" lang="ta"` matches on
+  every page; both now assert on the `<html>` element of `/pages/171a98/`.
+- **A date that does not exist crashed `build` and `doctor`.** A
+  date-shaped but invalid `date:` (`"2026-02-30 10:00:00"`, `"2026-13-01"`,
+  `24:00:00`, `10:61:00`, an offset of `+25:00`) threw
+  `DateTimeException` from the feed code with no file named and no dist/;
+  0.1.1 built the same tree. It is now an analyse warning naming the file,
+  "`date:` value `…` is not a valid date", reported once by `doctor`, and the
+  article is treated as undated (sorts last, left out of feeds and
+  `/archives/`).
+- **An unquoted zoned YAML timestamp lost its zone.** `date:
+  2026-08-01T10:00:00+08:00` became `2026-08-01T02:00:00+08:00` in feeds
+  under `TZ=Asia/Singapore`. The instant is now kept at the written offset
+  (an EDN `#inst` gets `…Z`); a quoted `"…+08"` is read instead of silently
+  treated as zoneless.
+- **robots.txt named a sitemap that did not exist** under `:seo {:sitemap
+  false}`; the `Sitemap:` line is written only when the sitemap is.
+- **Feed summaries carried the heading anchor's `#`** ("…#Sub heading…");
+  `aria-hidden` elements are dropped before tags are stripped.
+- **One orphaned translation could draw two contradictory diagnostics** —
+  the duplicate-number error suggesting one rename and a warning suggesting
+  another. A file covered by the duplicate-number error is now skipped by
+  the orphan check.
+- **Removing `:en` changed the fallback chain from 0.1.1's.** The default
+  `[:site-default :en]` was filtered to the configured languages, so a
+  config map's `:en` value lost to its first value; only a chain the site
+  wrote is now validated, and the default is kept as is.
+- **A per-language `:site :author`** (`{:en "Jane" :zh-Hans "简"}`) was
+  ignored by feeds and the byline; it is resolved per language.
+- **Article hrefs were not percent-encoded** (since 0.1.1): lists, the
+  sidebar, prev/next, the variant bar and markdown links emitted a CJK or
+  spaced permalink raw, unlike every other href.
+
+### Documentation
+
+- DESIGN.md §6.6: `og:locale` corrected to `language_TERRITORY`; Google's
+  canonical-with-hreflang guidance cited. §6.7, §10 and Appendix A item 7:
+  Pagefind does **not** word-segment zh-Hant (jieba runs with a Simplified
+  dictionary). §6.9: Latha is a Windows feature-on-demand font; Nirmala UI
+  is the default Tamil face.
+
 ## 0.1.1 — Phase 2 fix round
 
 Defects found in 0.1.0 by review and by building the real site, each fixed

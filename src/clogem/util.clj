@@ -93,6 +93,17 @@
         (aset d i j (long best))))
     (aget d m n)))
 
+(defn variant-file-name
+  "`source` (a filename such as `01.intro.md` or `01.intro.en.md`) re-suffixed
+  for `lang`: `01.intro.zh-Hans.md`. `strip` is the source's own language
+  suffix as written, if it has one (D-P3-5's rename suggestion)."
+  [source lang strip]
+  (let [stem (str/replace (str source) #"(?i)\.md$" "")
+        stem (if (and strip (str/ends-with? (lower stem) (str "." (lower strip))))
+               (subs stem 0 (- (count stem) (inc (count strip))))
+               stem)]
+    (str stem "." lang ".md")))
+
 (defn closest
   "The candidate with the smallest edit distance to s, or nil if none is within
   `max-distance`.
@@ -211,6 +222,49 @@
       (format "%s-%02d-%02d %02d:%02d:%02d" y (parse-long mo) (parse-long dd)
               (or (some-> h parse-long) 0) (or (some-> mi parse-long) 0) (or (some-> sec parse-long) 0))
       s)))
+
+(def ^:private date-re
+  "A leading `YYYY-M-D[( |T)H:m[:s][.frac]][ ][Z|±hh[[:]mm]]`."
+  #"^\s*(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?(?:\.\d+)?\s*(Z|[+-]\d{1,2}(?::?\d{2})?)?)?")
+
+(defn date-shaped?
+  "True when `d` starts with a `YYYY-M-D` date, valid or not."
+  [d]
+  (boolean (and (some? d) (re-find date-re (str d)))))
+
+(defn zone-offset
+  "A `Z`, `±h`, `±hh`, `±hhmm` or `±hh:mm` offset as a ZoneOffset; throws
+  DateTimeException when it is out of range (`+25:00`)."
+  [^String z]
+  (if (= "Z" z)
+    java.time.ZoneOffset/UTC
+    (let [[_ sign h m] (re-matches #"([+-])(\d{1,2}):?(\d{2})?" z)]
+      (java.time.ZoneOffset/of (format "%s%02d:%s" sign (parse-long h) (or m "00"))))))
+
+(defn parse-date
+  "A front-matter `date` as a java.time.OffsetDateTime, or nil when it does
+  not start with a date OR names one that does not exist (`2026-02-30`,
+  `24:00:00`, `+25:00`). Never throws: bad content is a warning, not a crash
+  (DESIGN.md §11.2 item 2). A date with a zone keeps it; a zoneless one is
+  read in the JVM default zone, which is `TZ`."
+  [d]
+  (when-let [[_ y mo dd h mi sec zone] (and (some? d) (re-find date-re (str d)))]
+    (try
+      (let [ldt (java.time.LocalDateTime/of (int (parse-long y)) (int (parse-long mo)) (int (parse-long dd))
+                                            (int (or (some-> h parse-long) 0))
+                                            (int (or (some-> mi parse-long) 0))
+                                            (int (or (some-> sec parse-long) 0)))
+            off (if zone
+                  (zone-offset zone)
+                  (.getOffset (.getRules (java.time.ZoneId/systemDefault)) ldt))]
+        (java.time.OffsetDateTime/of ldt off))
+      (catch java.time.DateTimeException _ nil))))
+
+(defn invalid-date?
+  "True when `d` is date-shaped but names no real date-time — the case that
+  is warned about by name, rather than silently treated as undated."
+  [d]
+  (and (date-shaped? d) (nil? (parse-date d))))
 
 (def ^:private windows-reserved-stem
   "Windows device names. `conin$`/`conout$` come before `con`, so the stem

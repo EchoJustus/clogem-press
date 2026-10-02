@@ -597,15 +597,16 @@ any more). Note what arrived: `:generator`, `:langs`, `:i18n`, `:analytics`, `:s
  :langs {:default  :en
          :priority [:en :zh-Hans :zh-Hant :ms :ta]   ; per-article default-version order
          :locales
-         {:en      {:label "English"        :html-lang "en"      :giscus "en"    :dir :ltr}
-          :zh-Hans {:label "简体中文"        :html-lang "zh-Hans" :giscus "zh-CN" :dir :ltr}
-          :zh-Hant {:label "繁體中文"        :html-lang "zh-Hant" :giscus "zh-TW" :dir :ltr}
-          :ms      {:label "Bahasa Melayu"  :html-lang "ms"      :giscus "en"    :dir :ltr}
-          :ta      {:label "தமிழ்"           :html-lang "ta"      :giscus "en"    :dir :ltr}}}
+         {:en      {:label "English"        :html-lang "en"      :giscus "en"    :dir :ltr :og "en_US"}
+          :zh-Hans {:label "简体中文"        :html-lang "zh-Hans" :giscus "zh-CN" :dir :ltr :og "zh_CN"}
+          :zh-Hant {:label "繁體中文"        :html-lang "zh-Hant" :giscus "zh-TW" :dir :ltr :og "zh_TW"}
+          :ms      {:label "Bahasa Melayu"  :html-lang "ms"      :giscus "en"    :dir :ltr :og "ms_MY"}
+          :ta      {:label "தமிழ்"           :html-lang "ta"      :giscus "en"    :dir :ltr :og "ta_IN"}}}
+                                        ; :og = og:locale, language_TERRITORY (§6.6, §11.2 item 31)
 
  :i18n  {:strings-dir   "i18n"          ; <lang>.edn, deep-merged over the theme's defaults
          :prefix-default? false         ; false → primary variant at /pages/xxxxxx/ (D-10)
-         :fallback      [:site-default :en]
+         :fallback      [:site-default :en] ; after the requested lang; configured langs or :site-default (§11.2 item 36)
          :missing-key   :warn           ; :warn in dev, :silent in prod
          :category-labels {}            ; e.g. {"Basics" {:zh-Hans "基础"}}  (D-12)
          :show-fallback-notice true}    ; "This page is shown in English" banner on index rows
@@ -631,6 +632,7 @@ any more). Note what arrived: `:generator`, `:langs`, `:i18n`, `:analytics`, `:s
             :repo "EchoJustus/EchoJustus.github.io" :repo-id "…" :category-id "…"}
  :analytics {:provider :none}          ; :ga4 {:id} | :plausible {:domain :src} | :umami {…}
  :seo   {:sitemap true :hreflang true :x-default :primary
+         :feeds true                    ; one Atom feed per language (§6.6, §11.2 item 32)
          :indexnow {:enabled false :key nil}}
  :tools {:pagefind {:version "1.5.2" :sha256 "…"}
          :chroma   {:version "2.27.0" :sha256 "…" :style "github" :dark-style "github-dark"}}}
@@ -1018,10 +1020,13 @@ Eden's `strings.edn` / `:eden/t` model, which is the best Clojure-side precedent
  :comments/title       "Comments"}
 ```
 
-**Fallback chain**, applied per key: `requested lang → :langs :default → :en → the key itself`.
-The final step renders as `⟦:page/toc⟧` in dev (loud, impossible to miss) and as the `:en` value in
-production (quiet, never ships a broken-looking page). `bb doctor` lists every key missing from every
-language, so the gap is a report rather than a surprise.
+**Fallback chain**, applied per key: `requested lang → :i18n :fallback → the key itself`, where
+`:i18n :fallback` defaults to `[:site-default :en]` and `:site-default` means `:langs :default`
+(§11.2 item 36). The final step renders as `⟦:page/toc⟧` in dev (loud, impossible to miss) and as the
+key's name (`toc`) in production (quiet). Every theme key exists in all five theme files — a test
+asserts it — so the chain only ever reaches the end for a site-added key. `doctor` and `build` warn
+on a site key that is a near-miss of a theme key, and on a site-added key missing for some configured
+language (§11.2 item 35), so the gap is a report rather than a surprise.
 
 **No pluralization machinery.** Keys use a single form with `{{n}}` interpolated. English "1 articles"
 is the cost; the alternative is a CLDR plural-rule engine for five languages with three different
@@ -1043,9 +1048,19 @@ Per rendered page:
 <link rel="alternate"  hreflang="zh-Hans"   href="https://echojustus.github.io/zh-Hans/pages/a1b2c3/">
 <link rel="alternate"  hreflang="zh-Hant"   href="https://echojustus.github.io/zh-Hant/pages/a1b2c3/">
 <link rel="alternate"  hreflang="x-default" href="https://echojustus.github.io/pages/a1b2c3/">
-<meta property="og:locale" content="zh_Hans">
-<meta property="og:locale:alternate" content="en">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:locale:alternate" content="en_US">
+<meta property="og:locale:alternate" content="zh_TW">
+<link rel="alternate"  type="application/atom+xml" hreflang="zh-Hans" href="/zh-Hans/feed.xml">
 ```
+
+*Corrected in Phase 3 (§11.2 item 31):* the example used to read `og:locale` `zh_Hans` with an
+alternate `en`. Neither is valid: [ogp.me](https://ogp.me/#optional) specifies `og:locale` as
+"`language_TERRITORY`" (default `en_US`), and Facebook's supported-locale list
+(<https://developers.facebook.com/docs/javascript/internationalization#locales>) has no script-subtag
+forms. Each locale carries an `:og` value instead — `en_US`, `zh_CN`, `zh_TW`, `ms_MY`, `ta_IN` by
+default, validated against `[a-z]{2}_[A-Z]{2}` — and hreflang keeps the script subtags, which Google
+does accept.
 
 Rules and their sources (all from Google's *Localized versions of your pages*, verified — see
 [research/12](research/12-i18n-multilingual.md) §4):
@@ -1053,24 +1068,52 @@ Rules and their sources (all from Google's *Localized versions of your pages*, v
 - **Self-canonical per variant.** Each variant canonicalizes to itself. Google: "Localized versions of
   a page are only considered duplicates if the main content of the page remains untranslated" — so
   translations are not duplicates, and canonicalizing them all to one URL would ask Google to drop the
-  translations from the index.
+  translations from the index. *Updated in Phase 3:* [research/12](research/12-i18n-multilingual.md)
+  §4 says Google does not discuss canonical together with hreflang. It now does, and agrees:
+  *Consolidate duplicate URLs*
+  (<https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls>) says that
+  with hreflang elements you should "specify a canonical page in the same language, or the best
+  possible substitute language if a canonical page doesn't exist for the same language". A
+  self-canonical variant does exactly that.
 - **Every variant lists the whole set including itself.** Google: "Each language version must list
   itself **as well as** all other language versions", and "If two pages don't both point to each
   other, the tags will be ignored." Generating the set from a single identity group makes the
   bidirectional requirement structurally satisfied rather than something to remember.
 - **`x-default` → the bare identity URL** (the primary variant), because that is precisely Google's
-  definition: "used when no other language/region matches the user's browser setting."
+  definition: "used when no other language/region matches the user's browser setting." This holds in
+  both `:prefix-default?` modes: under `true` the bare URL is the redirect stub, which is the
+  language-selector/redirector page Google describes x-default as being for. A stub itself carries no
+  canonical (it is `noindex`), is a member of no set, and is not in the sitemap (§11.2 item 31).
 - **`zh-Hans`/`zh-Hant` are valid hreflang values.** Google documents ISO-15924 script subtags with
   exactly these two as its examples, so no `zh-CN`/`zh-TW` aliasing is needed. W3C's guidance points
   the same way ("You should only use region subtags if they are necessary"), which is right for a
   Singapore-facing site where neither mainland nor Taiwan region semantics are wanted.
-- **Sitemap.** One `<url>` per emitted variant, each carrying `<xhtml:link rel="alternate" hreflang>`
-  children for the whole group, with `xmlns:xhtml="http://www.w3.org/1999/xhtml"` on the root. Google
-  treats head links and sitemap annotations as equivalent; emitting both is allowed and costs nothing.
-  (HTTP `Link:` headers are the third documented method and are unavailable — GitHub Pages does not
-  allow custom headers.)
-- **Feeds.** One Atom feed per language (`/feed.xml`, `/zh-Hans/feed.xml`, …), each entry carrying
-  `xml:lang`, each listing only that language's variants.
+- **Equivalence sets (Phase 3, §11.2 item 31).** An article or catalogue page: its identity group. A
+  language home, an index overview (`/categories/`) or a filtered index (`/categories/notes/`): its
+  five language copies, x-default at the bare (site-default-language) copy. A pagination page
+  (`…/page/N/`) is self-canonical with **no** hreflang, because page N holds different articles in
+  each language. Every canonical, hreflang, sitemap, feed and robots.txt URL is `:site :url` plus the
+  base-inclusive path; with a blank `:site :url` none of them is emitted and analyse warns once
+  (§11.2 item 30). `og:locale` needs no URL and is emitted either way.
+- **Sitemap.** One `<url>` per indexable page — articles, catalogue pages, homes, index overviews,
+  filtered indexes and pagination pages; not redirect stubs — and every page with a set carries
+  `<xhtml:link rel="alternate" hreflang>` children for the whole set, itself and x-default included,
+  with `xmlns:xhtml="http://www.w3.org/1999/xhtml"` on the root. No `lastmod` (there is no accurate
+  modification time), no `priority`, no `changefreq`. Google treats head links and sitemap annotations
+  as equivalent; emitting both is allowed and costs nothing. (HTTP `Link:` headers are the third
+  documented method and are unavailable — GitHub Pages does not allow custom headers.) sitemaps.org's
+  XSD rejects `xhtml:link`, so CI does not schema-check the sitemap. **robots.txt** (`User-agent: *`,
+  `Allow: /`, and `Sitemap: …` when the sitemap is on) is emitted only under base `/`, since it counts
+  only at the host root; a site's own `assets/robots.txt` is copied there instead, URL or not (§11.2
+  item 33).
+- **Feeds.** One Atom feed per language (`/feed.xml` for the default language, `/zh-Hans/feed.xml`, …),
+  `xml:lang` on the root, each listing only that language's own variants — the 20 newest by `date`,
+  in `newest-first` order — with an `hreflang` alternate link per other translation (RFC 4287
+  §4.2.7.4), a plain-text `summary` only from a `<!-- more -->` excerpt, and a `category` per
+  category and tag. Dates are RFC 3339 with an offset; a zoneless date is read in the JVM default
+  zone, which is `TZ` (the site's CI sets `Asia/Singapore`, so `+08:00`) — the same zone fm-fix fills
+  dates in — and a zoned one, quoted or not, keeps its instant. A date that does not exist is a
+  warning and the article is treated as undated. Every page links its own language's feed for autodiscovery. Details: §11.2 item 32.
 
 ### 6.7 Search: Pagefind across five languages
 
@@ -1080,14 +1123,20 @@ Verified against Pagefind's docs **and source** ([research/12](research/12-i18n-
   then loads the index matching the page it is on. Our five `<html lang>` values produce five indexes
   (`en`, `zh-hans`, `zh-hant`, `ms`, `ta`) with **zero configuration**. Search from an English page
   searches English pages.
-- **`zh-Hant` is segmented.** From `pagefind/src/fossick/mod.rs`:
+- **`zh-Hant` is routed to the segmenter, but is NOT segmented into words (corrected in Phase 3,
+  §11.2 item 37).** From `pagefind/src/fossick/mod.rs`:
   `matches!(data.language.split('-').next().unwrap(), "zh" | "ja" | "th")` — the match is on the
-  *primary subtag*, so `zh-Hans` and `zh-Hant` behave identically. The docs' own worked example
-  (`每個月都` → `每個`/`月`/`都`) is itself Traditional Chinese. This is the finding that makes a
-  zh-Hant UI viable, and it was not answerable from the documentation alone.
+  *primary subtag*, so `zh-Hans` and `zh-Hant` both reach charabia. What v2.1 missed is what charabia
+  then does: its Chinese segmenter runs **jieba with the Simplified dictionary**, so most Traditional
+  words are unknown to it and fall apart into single characters. Measured with Pagefind 1.5.2
+  extended: `每个月都` indexes as `每个`/`月`/`都`, but `每個月都` indexes as `每`/`個`/`月`/`都`. (The
+  docs' worked example `每個月都` → `每個`/`月`/`都` does not reproduce.) So zh-Hant search **finds**
+  pages — every character is indexed — but matches loosely, and quoted phrase search fails. A zh-Hant
+  UI is still viable; zh-Hant search quality is Phase 3 part B's problem, and this entry is the
+  correction only.
 - **`pagefind_extended` is required**, and now doubly justified: `Cargo.toml` shows
   `extended = ["dep:charabia"]` with charabia's `chinese`/`japanese`/`thai` features — that dependency
-  *is* the segmentation.
+  *is* the segmentation (for Simplified Chinese; see the zh-Hant correction above).
 - **Tamil is fully supported**: `pagefind_stem` ships the `tamil` feature and `get_stemmer` maps `ta`
   → Snowball Tamil; the docs' language table gives `ta` both UI translations and stemming.
 - **Malay degrades gracefully**: `ms` is absent from Pagefind's table, so no stemmer and the UI chrome
@@ -1229,8 +1278,13 @@ validated against that provider's own list, never passed through from `:langs`.
                            Roboto, sans-serif;
               line-height: 1.85; }   /* taller than the Latin default */
   ```
-  macOS/iOS supply *Tamil Sangam MN*; Windows supplies *Nirmala UI* and *Latha*; Android resolves to
-  *Noto Sans Tamil*. Linux desktops are the weak link, which is why self-hosting is offered.
+  macOS/iOS supply *Tamil Sangam MN*; Windows supplies *Nirmala UI*, its default Tamil face; Android
+  resolves to *Noto Sans Tamil*. *Corrected in Phase 3 (§11.2 item 38):* **Latha is not installed by
+  default on Windows.** Microsoft's Windows 11 font list
+  (<https://learn.microsoft.com/en-us/typography/fonts/windows_11_font_list>) places Latha (with
+  Vijaya) in the **Tamil Supplemental Fonts** feature-on-demand, so it is present only where that
+  optional feature was added. It stays in the stack as a harmless later fallback; Nirmala UI is what a
+  stock Windows install renders. Linux desktops are the weak link, which is why self-hosting is offered.
 - **Optional self-hosted Noto Sans Tamil** behind `:theme {:fonts {:tamil :self-hosted}}`. Licensed
   **SIL OFL 1.1** (verified from `notofonts/tamil` `OFL.txt`), served as a **subsetted woff2 from the
   site's own assets** — never from a third-party font CDN (D-6: no external CDNs, and it keeps the site
@@ -1748,7 +1802,7 @@ the document). D-9 through D-15 are new, surfaced by v2's design work.
 | Chroma quirks (e.g. `--html-styles` ignores `--html-prefix`, observed) | Low | One string transform in bb; CSS output is checked in, so breakage is visible in diff. |
 | Pagefind/Chroma binary supply chain | Low | Pinned versions + sha256 in config; both have 4-platform coverage; each replaceable behind a one-function seam. |
 | GitHub Pages CDN cache (10 min, not configurable) | Low | Fingerprinted assets so HTML/CSS can't pair mismatched. |
-| **CJK + Tamil edge cases** (heading slugs, search, line wrapping) | **Low-medium (downgraded — slugs now measured)** | **Heading slugs: settled in Phase 1, and the news is good.** nextjournal/markdown preserves CJK and Tamil **verbatim** in heading ids — `你好世界` → `你好世界`, `வணக்கம் உலகம்` → `வணக்கம்-உலகம்`, with Tamil grapheme clusters intact. What the measurement *did* overturn is the description: the slugger is **not** GitHub-style — it lower-cases and hyphenates whitespace but does **not** strip punctuation (`Hello, World!` → `hello,-world!`, `100% Done` → `100%-done`), and a tab inside a heading survives into the id, which is invalid HTML. Handled by one uniform repair (whitespace → `-`) applied to both heading ids and the TOC, plus percent-encoding on the href side; recorded as characterization tests so a babashka bump that changes the bundled parser breaks a test instead of silently rewriting every anchor. Pagefind's zh handling is verified from source (§6.7); a five-language index build remains a Phase 3 acceptance test. Line wrapping is still a Phase 3 typography pass. |
+| **CJK + Tamil edge cases** (heading slugs, search, line wrapping) | **Low-medium (downgraded — slugs now measured)** | **Heading slugs: settled in Phase 1, and the news is good.** nextjournal/markdown preserves CJK and Tamil **verbatim** in heading ids — `你好世界` → `你好世界`, `வணக்கம் உலகம்` → `வணக்கம்-உலகம்`, with Tamil grapheme clusters intact. What the measurement *did* overturn is the description: the slugger is **not** GitHub-style — it lower-cases and hyphenates whitespace but does **not** strip punctuation (`Hello, World!` → `hello,-world!`, `100% Done` → `100%-done`), and a tab inside a heading survives into the id, which is invalid HTML. Handled by one uniform repair (whitespace → `-`) applied to both heading ids and the TOC, plus percent-encoding on the href side; recorded as characterization tests so a babashka bump that changes the bundled parser breaks a test instead of silently rewriting every anchor. Pagefind's zh routing is verified from source (§6.7), but **zh-Hant is not word-segmented** (corrected in Phase 3, §11.2 item 37): charabia's jieba uses a Simplified dictionary, so Traditional text indexes mostly as single characters — pages are found, matching is loose, and quoted phrases fail. Owned by Phase 3 part B; a five-language index build remains a Phase 3 acceptance test. Line wrapping is still a Phase 3 typography pass. |
 | Scale: full rebuild too slow for very large KBs (>1–2k pages) | Low now | Measured baseline in CI; content-hash caching is the designed-but-deferred answer; Chroma cache already amortizes the expensive part. |
 | Solo-maintainer sustainability | Medium | The stack *is* the mitigation: zero-to-two Clojure deps, two pinned binaries, everything else is the best-maintained artifact in the ecosystem (babashka itself). The repo split adds one seam to maintain, but removes a credential and a whole class of deploy bug. |
 
@@ -2049,6 +2103,142 @@ The 0.1.1 fix round (items 16–29; items 25–29 are its follow-up review) amen
     is the target's); `COM0`, `LPT0`, `CONIN$` and `CONOUT$` are reserved slug stems; a
     `:min-version` floor written `v0.1.1` is told to drop the leading `v`.
 
+Phase 3 part A (items 30–39: SEO, feeds, sitemap, doctor i18n checks) amends the sections named. The
+decisions were settled from a gap analysis of 0.1.1 against current upstream specs — Google's hreflang
+and canonical pages, ogp.me, Facebook's locale list, RFC 4287 and sitemaps.org.
+
+30. **Absolute URLs come from `:site :url`, and a site without one still builds (§6.6, §5.6,
+    D-P3-1).** Canonical, hreflang, sitemap, feed and robots.txt URLs are `:site :url` (trailing slash
+    dropped) plus the base-inclusive, percent-encoded path — the pattern the redirect stub already
+    used. A blank `:site :url` skips every one of them, and analyse warns once, so `build` and
+    `doctor` both say it; it is not an error, because a new site must build before it has a domain.
+    Only what needs a URL is skipped: `og:locale` and `og:locale:alternate` name languages and are
+    emitted anyway, and a site's own `assets/robots.txt` is still copied to the root (P3-A.1). A
+    non-blank `:site :url` must be an origin: one with no scheme and host (`u.github.io`) is a config
+    error, since every canonical would come out relative; one whose path repeats `:base`
+    (`https://u.github.io/repo` with `:base "/repo/"`) is a config warning telling the site to drop
+    the path, since every absolute URL would carry the base twice. A trailing slash is accepted.
+    The demo's `:url` is `https://clogem-demo.example`: `.example` is reserved (RFC 2606), and the
+    demo used to emit canonicals on the real `echojustus.github.io`.
+31. **`<head>` carries canonical, hreflang and `og:locale` (§6.6, D-P3-2).** `layout/document` emits
+    them from the page's `:seo` (`render/seo-info`, computed once per page, which is also what the
+    sitemap reads): a self-referencing canonical on every indexable page; one `hreflang` link per
+    member of the equivalence set, itself included, using each locale's `:html-lang`, plus
+    `x-default` → the bare URL; `og:locale` from a new per-locale `:og` and one
+    `og:locale:alternate` per other language in the set. The sets are listed in §6.6; pagination past
+    page 1 has none. §6.6's example `og:locale` `zh_Hans` / `en` was invalid (ogp.me's
+    `language_TERRITORY`; Facebook's list) and is corrected; `:og` defaults to `en_US`, `zh_CN`,
+    `zh_TW`, `ms_MY`, `ta_IN` and is a config error unless it matches `[a-z]{2}_[A-Z]{2}`.
+    `:seo :x-default` is read and validated: `:primary` (the bare identity URL, as above) is its only
+    legal value and any other is a config error repaired to it, so a future option has a home rather
+    than a key nothing reads (P3-A.1). Redirect
+    stubs: **no canonical** — the stub's old `rel=canonical` to its target is dropped, since the stub
+    is `noindex` and noindex beside a canonical is a conflicting signal; never in a set; not in the
+    sitemap; `<html lang>` is the default language's `:html-lang`, not a hard-coded `en`. There is no
+    404 page yet; the tags are emitted only for pages that carry `:seo`, so one added later gets none
+    unless it is given one.
+32. **Atom feeds, one per language (§6.6, D-P3-3).** `/feed.xml` for the site-default language and
+    `/<lang>/feed.xml` otherwise (model.clj's prefix rule; the name stays `feed.xml`). Each lists that
+    language's own variants: the 20 newest by `date`, in `newest-first` order. Feed: `xml:lang`, `id`
+    = `rel=self` = the feed's absolute URL, `rel=alternate` → the language's home, the localized site
+    title, `updated` = the newest entry's date, `author` = `:site :author` resolved for the feed's
+    language — a string, `{:name … :link …}` whose `:name` may be per-language, or a per-language map
+    `{:en "Jane" :zh-Hans "简"}` (`i18n/resolve-author`, which the article byline uses too; 0.1.1
+    ignored the last shape) — else the site title. Entry: `id` = `rel=alternate` = the variant's absolute URL, one
+    `rel=alternate hreflang` link per other variant (RFC 4287 §4.2.7.4), `title`, `published` =
+    `updated` = `date`, a plain-text `summary` only when there is a `<!-- more -->` excerpt (block
+    tags become spaces, inline tags vanish, so a CJK sentence is not split), and a `category` per
+    category and tag. Dates are RFC 3339 with an offset; a date that carries a zone keeps it, and a
+    zoneless one is read in the JVM default zone (`TZ`; the site's CI sets `Asia/Singapore`, so
+    `+08:00`, the zone fm-fix already fills dates in). A quoted zone may be `Z`, `±hh:mm`, `±hhmm`
+    or `±hh` (`"…+08"` used to be dropped silently). An **unquoted** YAML timestamp is a special
+    case: SnakeYAML resolves `date: 2026-08-01T10:00:00+08:00` and `date: 2026-08-01 10:00:00` alike
+    to a bare `java.util.Date`, and 0.1.1's `canonical-date` rendered both zoneless in UTC, which
+    `TZ` then re-read — 8 hours early under `Asia/Singapore` for the zoned one. `canonical-date` now
+    reads the zone off the raw `date:` line and, when there is one, keeps the instant at the
+    written offset (`2026-08-01T10:00:00+08:00`; an EDN `#inst` is always an instant, so it gets
+    `…Z`); a zoneless unquoted timestamp keeps 0.1.1's reading. fm-fix never rewrites a `date:`
+    that exists, so a second fm-fix changes nothing (P3-A.1). A date that is date-shaped but does
+    not exist — `2026-02-30`, `2026-13-01`, `24:00:00`, `10:61:00`, an offset of `+25:00` — used to
+    reach `java.time` at render and crash `build` and `doctor` with no file named (§11.2 item 2's
+    invariant); it is now an analyse warning naming the file ("`date:` value `2026-02-30 10:00:00`
+    is not a valid date"), and the article is treated as undated everywhere: it sorts last and
+    feeds and `/archives/` leave it out (`util/parse-date`, P3-A.1). Two choices the decision left
+    open: an **undated** article is left out (Atom requires `updated`; `doctor` already reports it), and a
+    language with no articles yet gets an **empty** feed whose `updated` is the site's newest date —
+    deterministic, unlike the build time — so the autodiscovery link every page carries
+    (`<link rel=alternate type=application/atom+xml hreflang=…>`) never names a missing file, and a
+    reader can subscribe before the first translation lands. Found building EchoJustus.github.io,
+    which has English articles only. Gated by `:seo {:feeds true}`, a new default. clojure.data.xml
+    under bb 1.13 turns an unqualified `:xmlns` attribute into `xmlns:b="…Atom"`, so the tags are
+    `alias-uri`-qualified keywords with the namespace declared on the root. All five demo feeds
+    validate against RFC 4287 Appendix B's RELAX NG schema (Jing), as do EchoJustus.github.io's
+    five. A feed `summary` drops `aria-hidden` elements before stripping tags, so a heading's `#`
+    anchor no longer reads "…#Sub heading…" (P3-A.1).
+33. **`/sitemap.xml` and `/robots.txt` (§6.6, D-P3-4).** The sitemap (base-inclusive, at the deploy
+    root) has one `<url>` per indexable page and the whole set, x-default included, as `xhtml:link` on
+    every page that has one; no `lastmod`, `priority` or `changefreq`. `:seo :sitemap false` and
+    `:seo :hreflang false` switch the sitemap, and hreflang in heads and sitemap, off. robots.txt
+    (`User-agent: *`, `Allow: /`, and `Sitemap: <absolute sitemap URL>` only when the sitemap is on —
+    under `:seo :sitemap false` the line used to name a 404) is written only when the base is `/`,
+    because robots.txt counts only at the host root. A site's own `assets/robots.txt` wins: it is
+    copied to the root (user assets otherwise land under `/assets/`, where robots.txt means
+    nothing) and none is generated — with or without a `:site :url`, since it needs none. No XSD check in CI — sitemaps.org's XSD rejects `xhtml:link`.
+34. **`doctor` and `build` warn on a translation orphaned by a renamed source (§6.1, §6.2, §8 Phase 3,
+    D-P3-5).** It fires, in analyse, when an identity group has exactly one variant, that variant is
+    not in the default language, its file has no explicit `lang:` front matter (writing one is how
+    an author confirms the article stands alone), and the same directory holds a default-language
+    group lacking that language whose base name equals it case-insensitively or is within a
+    Damerau-Levenshtein distance scaled by the shorter name's length — 0 for 3 characters or fewer,
+    1 for 4–6, 2 above (a flat 2 paired `01.css.md` with `02.js.ta.md`). A post compares its
+    date-stripped slug, and only with a post of the same date: `2026-08-01-weekly.md` and
+    `2026-08-08-weekly.ms.md` are two posts of a series, not a rename (P3-A.1). The message: "`<file>` looks like a translation of `<other file>` whose source
+    was renamed — rename it to `<suggested name>`, or add `lang: <code>` to its front matter to keep
+    it as a standalone article." When the two share a sidebar number the scanner's
+    duplicate-sidebar-number error already fires; that error keeps its level and gains the hint
+    (without the `lang:` alternative, which would not resolve a collision), and the model check
+    skips any file that shares its number with another article in its directory, so there is never
+    a second diagnostic. (It used to skip only the same-number *candidate*: `06.timing.md`,
+    `07.timings.md` and `06.Timing.ms.md` drew the error suggesting `06.timing.ms.md` AND a warning
+    suggesting `07.timings.ms.md` — P3-A.1.) The demo's four legitimate
+    single-language articles (`tamil-only.ta`, `hawker-guide.ms`, `04.中文笔记/01.first.zh-Hans`, the
+    Tamil post) do not fire it, and its one-warning invariant holds.
+35. **`doctor` and `build` check the site's string files (§6.5, D-P3-6).** In analyse, over every
+    configured language's `i18n/<lang>.edn`: a key no theme file defines that is within
+    Damerau-Levenshtein 2 of one that does is a typo — "unknown UI string key `:page/tocc` in
+    i18n/ms.edn — did you mean `:page/toc`?" — and any other key no theme file defines is
+    **site-added**, warned when some configured language lacks it. The split is this item's
+    refinement of D-P3-6: reporting every unknown key would also flag every legitimate site-added key
+    on every build, and a typo is not also reported as a site-added key.
+36. **`:i18n :fallback` is honoured (§6.5, §5.6, D-P3-7).** The chain hard-coded in `i18n.clj` is
+    now `requested lang → :i18n :fallback`, default `[:site-default :en]` (§5.6), with
+    `:site-default` read as `:langs :default`, for `tr`, `resolve-str` and category labels alike
+    (`config/fallback-chain`). A value that is not a vector of configured language keywords or
+    `:site-default` is a config error, repaired to the default. Only a chain the site wrote is
+    validated: the built-in default names `:en`, which a site may have removed from `:locales`, and
+    it is kept **unfiltered**, so a config map's `:en` value still beats its first value (0.1.1's
+    behaviour; filtering it made `:title {:ta "TA" :en "EN"}` show TA on a site with default
+    `:zh-Hans` — P3-A.1). Past the last fallback, production still renders the key's name and
+    dev `⟦k⟧`.
+37. **Pagefind does not word-segment zh-Hant (§6.7, §10, Appendix A item 7).** v2.1 read "zh-Hant is
+    segmented" off the primary-subtag match in `should_segment`; it is routed to charabia, but
+    charabia's Chinese segmenter is jieba with the Simplified dictionary. With Pagefind 1.5.2
+    extended, `每個月都` indexes as `每`/`個`/`月`/`都` while `每个月都` gives `每个`/`月`/`都`, so
+    zh-Hant search finds pages but matches loosely, and quoted phrases fail. Doc correction only;
+    Phase 3 part B owns the search work.
+38. **Latha is a Windows feature-on-demand font (§6.9).** It is in the Tamil Supplemental Fonts
+    feature-on-demand, not a default install (Microsoft's Windows 11 font list); Nirmala UI is the
+    default Tamil face. The font stack is unchanged.
+39. **CI asserts the SEO output (§10's tripwire).** `.github/scripts/check_seo.py` runs on the
+    root-base demo build: every canonical absolute and pointing at its own page, every hreflang set
+    reciprocal (every page named in a set lists the same set back), a parseable Atom feed per
+    language, a sitemap that parses and lists exactly the indexable pages, and robots.txt. The
+    `--base /clogem-demo/` build must have no robots.txt, and the existing internal-link resolver
+    covers the new feed links. The Tamil check grepped `lang="ta"`, which the switcher's
+    `hreflang="ta" lang="ta"` satisfies on every page; CI and `build_test` now assert on the
+    `<html>` element of the bare `/pages/171a98/` and prove the check can fail against an English
+    page.
+
 ---
 
 ## Appendix A — Empirically validated claims
@@ -2092,9 +2282,13 @@ Run in the v1 research session on babashka **v1.13.219** (Linux, sandboxed conta
 Verified in the v2 session, from **source and vendor documentation** rather than by execution (no
 five-language build was performed — that is a Phase 3 acceptance test, not a completed verification):
 
-7. **Pagefind segments `zh-Hant`** — `should_segment` matches on the primary subtag `"zh" | "ja" | "th"`
-   (`pagefind/src/fossick/mod.rs`), and `extended = ["dep:charabia"]` (`pagefind/Cargo.toml`) is what
-   supplies the segmenters. `get_stemmer` maps `ta` → Snowball Tamil; there is no Malay stemmer.
+7. **Pagefind routes `zh-Hant` to its segmenter, which does not segment it** — `should_segment` matches
+   on the primary subtag `"zh" | "ja" | "th"` (`pagefind/src/fossick/mod.rs`), and
+   `extended = ["dep:charabia"]` (`pagefind/Cargo.toml`) is what supplies the segmenters. *Corrected in
+   Phase 3 (§11.2 item 37):* the original claim, "Pagefind segments `zh-Hant`", was wrong. charabia
+   runs jieba with its Simplified dictionary, so with Pagefind 1.5.2 extended `每個月都` indexes as
+   `每`/`個`/`月`/`都` while `每个月都` gives `每个`/`月`/`都`: zh-Hant pages are found, matching is
+   loose, and quoted phrases fail. `get_stemmer` maps `ta` → Snowball Tamil; there is no Malay stemmer.
    `<html lang>` is lowercased and used whole as the index key, defaulting to `"unknown"`.
 8. **`GITHUB_TOKEN` pushes do not start new workflow runs** — GitHub docs, quoted verbatim in
    [research/13](research/13-pages-actions-deploy.md) §5, with the `workflow_dispatch` /

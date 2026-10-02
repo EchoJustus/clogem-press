@@ -430,7 +430,8 @@
   same-day articles. The key is computed once per group, not per comparison."
   [groups]
   (->> groups
-       (map (fn [g] [(some-> (:date g) u/date-sort-key) g]))
+       ;; an invalid date (`2026-02-30`) is undated, as in feeds and archives
+       (map (fn [g] [(when-not (u/invalid-date? (:date g)) (some-> (:date g) u/date-sort-key)) g]))
        (sort (fn [[da a] [db b]]
                (cond
                  (and da db (not= da db)) (compare db da)
@@ -461,10 +462,13 @@
 
 (defn archive-key
   "[year month] of a canonical `YYYY-MM-DD …` date string, or nil. Only the
-  leading date is read, so `2026-8-1` and `2026-08-01 09:30:00` both file."
+  leading date is read, so `2026-8-1` and `2026-08-01 09:30:00` both file;
+  a date that does not exist (`2026-02-30`, `2026-13-01`) files nowhere,
+  like an undated one — `check-dates!` has named it."
   [date]
   (when-let [[_ y m] (re-find #"^\s*(\d{4})-(\d{1,2})" (str date))]
-    [(parse-long y) (parse-long m)]))
+    (when-not (u/invalid-date? date)
+      [(parse-long y) (parse-long m)])))
 
 (defn archives
   "{year {month [permalink …]}}, newest year and month first; groups without a
@@ -632,6 +636,101 @@
                  (str "Only one index page can exist at that URL. Rename one so the names "
                       "differ by more than case, spacing or punctuation."))))
 
+(defn check-dates!
+  "A `date:` that is date-shaped but names no real date-time — `2026-02-30`,
+  `2026-13-01`, `24:00:00`, an offset of `+25:00` — warned in analyse, naming
+  the file, so `build` and `doctor` both say it. Such a date used to reach
+  `java.time` at render and crash the build with no file named. The article
+  is treated as undated everywhere: it sorts last and /archives/ and the Atom
+  feeds leave it out."
+  [groups]
+  (doseq [g (sort-by :permalink (vals groups))
+          [_ v] (sort-by (comp str key) (:variants g))
+          :let [d (get-in v [:front-matter :date])]
+          :when (u/invalid-date? d)]
+    (diag/warn! (:rel-path v)
+                (str "`date:` value `" d "` is not a valid date.")
+                (str "The article is treated as undated: it sorts last, and /archives/ and "
+                     "the Atom feeds leave it out. Write a real calendar date, and a time from 00:00:00 to 23:59:59."))))
+
+(defn- orphan-threshold
+  "The largest Damerau-Levenshtein distance at which two base names still
+  look like one renamed article, scaled by the SHORTER name's length: two
+  short names are always a couple of edits apart (`css`/`js`), so a short
+  name must match exactly (case aside), a medium one within 1, a long one
+  within 2."
+  [a b]
+  (let [n (min (count a) (count b))]
+    (cond (<= n 3) 0
+          (<= n 6) 1
+          :else    2)))
+
+(def ^:private post-date-re #"^(\d{4}-\d{2}-\d{2})-(.*)$")
+
+(defn- orphan-base
+  "[date slug] of a variant's lower-cased base name — for a post the
+  `YYYY-MM-DD-` prefix is split off (nil date otherwise)."
+  [v]
+  (let [b (u/lower (str (:base-title v)))]
+    (if-let [[_ d slug] (and (= :post (:kind v)) (re-matches post-date-re b))]
+      [d slug]
+      [nil b])))
+
+(defn check-orphan-translations!
+  "D-P3-5: a translation whose source was renamed. Warned — in analyse, so
+  `build` and `doctor` both say it — when an identity group has exactly one
+  variant, that variant is not in the default language and its file has no
+  explicit `lang:` front matter (writing one is how an author confirms the
+  article stands alone), AND the same directory holds a default-language
+  article lacking that language whose base name equals it case-insensitively
+  or is within `orphan-threshold` Damerau-Levenshtein edits of it (0 for
+  names of up to 3 characters, 1 up to 6, 2 above). A post compares its
+  date-stripped slug, and only against a post of the same date: a weekly
+  series (`2026-08-01-weekly`, `2026-08-08-weekly`) is distinct posts, not
+  one renamed.
+
+  A file that shares its number with another article in its directory is
+  skipped: that is already the scanner's duplicate-number error, which
+  carries this hint in its message instead — and a second diagnostic could
+  only contradict it."
+  [cfg groups]
+  (let [default (config/default-lang cfg)
+        ;; [dir-key order] → the permalinks of the groups numbered there
+        numbered (reduce (fn [m g]
+                           (reduce (fn [m v]
+                                     (if (:order v)
+                                       (update m [(:dir-key v) (:order v)] (fnil conj #{}) (:permalink g))
+                                       m))
+                                   m (vals (:variants g))))
+                         {} (vals groups))
+        dup-number? (fn [g v] (and (:order v)
+                                   (seq (disj (get numbered [(:dir-key v) (:order v)]) (:permalink g)))))]
+    (doseq [g (sort-by :permalink (vals groups))
+            :when (= 1 (count (:variants g)))
+            :let [[l v] (first (:variants g))]
+            :when (and (not= l default) (nil? (get-in v [:front-matter :lang]))
+                       (not (dup-number? g v)))
+            :let [[vd vb] (orphan-base v)
+                  cands (for [g2 (vals groups)
+                              :let [d (get-in g2 [:variants default])]
+                              :when (and d (not= g2 g)
+                                         (= (:dir-key d) (:dir-key v))
+                                         (not (contains? (:variants g2) l)))
+                              :let [[dd db] (orphan-base d)]
+                              :when (= vd dd)
+                              :let [dist (u/damerau-levenshtein vb db)]
+                              :when (<= dist (orphan-threshold vb db))]
+                          [dist (str (:rel-path d)) d])
+                  [_ _ src] (first (sort-by (juxt first second) cands))]
+            :when src]
+      (diag/warn! (:rel-path v)
+                  (str "`" (:rel-path v) "` looks like a translation of `" (:rel-path src)
+                       "` whose source was renamed — rename it to `"
+                       (u/variant-file-name (fs/file-name (:path src)) (name l)
+                                            (when (:suffix? src) (name default)))
+                       "`, or add `lang: " (name l) "` to its front matter to keep it "
+                       "as a standalone article.")))))
+
 (defn build-model
   [cfg entries ledger]
   (let [[entries taken] (resolve-permalinks cfg entries ledger)
@@ -645,6 +744,8 @@
         categories      (index-by :categories articles)
         tags            (index-by :tags articles)]
     (check-slug-collisions! cfg categories tags)
+    (check-dates! groups)
+    (check-orphan-translations! cfg groups)
     {:cfg      cfg
      :entries  entries
      :articles groups
@@ -699,7 +800,9 @@
   fire once per report rather than once per render."
   [{:keys [articles tree catalogue] :as _model}]
   (doseq [g (vals articles)
-          :when (and (:article? g) (nil? (archive-key (:date g))))]
+          ;; an invalid date was already named by analyse (check-dates!)
+          :when (and (:article? g) (nil? (archive-key (:date g)))
+                     (not (u/invalid-date? (:date g))))]
     (diag/warn! (:permalink g)
                 (str "no parseable `date:` on the primary variant ("
                      (get-in g [:variants (:primary g) :rel-path]) "); "
