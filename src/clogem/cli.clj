@@ -149,18 +149,20 @@
     ;; here, before the ledger write and before dist/ exists. Render reports
     ;; only warnings.
     ;;
-    ;; D-P4-11: the whole site is then rendered into memory BEFORE the ledger
-    ;; or a single output file is written, so an exception thrown during
-    ;; render (§11.2 item 2) leaves dist/ and permalinks.edn exactly as they
-    ;; were, rather than a mix of this build's pages and the last one's.
+    ;; D-P4-11: the whole site is then rendered into memory — the site's
+    ;; assets read, not just listed — BEFORE a single output file is written,
+    ;; so an exception thrown during render (§11.2 item 2) or an unreadable
+    ;; asset leaves dist/ exactly as it was, rather than a mix of this build's
+    ;; pages and the last one's. The ledger is written only once dist/ has
+    ;; been, so a failed write leaves permalinks.edn as it was too.
     (let [[m ads]    (diag/collecting (analyse cfg))
           _          (when (seq (diag/errors ads)) (report! ads))
           [result rds]
           (diag/collecting
-           (let [rendered (render/render-site cfg m)]
+           (let [written (render/write-site! (render/render-site cfg m))]
              (when (config/write-front-matter? cfg)
                (model/write-ledger! cfg (model/ledger-from-model m)))
-             (render/write-site! rendered)))
+             written))
           ds         (into (vec ads) rds)]
       (report! ds)
       (println (format "clogem-press: %d pages (%d articles, %d variants) → %s (%d written, %d unchanged)"

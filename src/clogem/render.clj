@@ -595,11 +595,23 @@
   []
   (assets/theme-resource-dir))
 
+(defn- read-asset
+  "The bytes of the site asset `p`, read now, while rendering: an unreadable
+  file fails the build before a single output is written (D-P4-11)."
+  ^bytes [p]
+  (try (fs/read-all-bytes p)
+       (catch Throwable t
+         (throw (ex-info (str "could not read site asset " p ": "
+                              (or (ex-message t) (.getName (class t))))
+                         {:babashka/exit 1 :clogem/file (str p)}
+                         t)))))
+
 (defn asset-outputs
-  "The theme's and the site's assets as outputs ({:file :bytes} or
-  {:file :source}): the theme's from `clogem.assets/files` — the exact bytes
-  their `?v=` fingerprints hash — and the site's own `assets/` tree, copied
-  (never linked) at write time."
+  "The theme's and the site's assets as outputs ({:file :bytes}): the
+  theme's from `clogem.assets/files` — the exact bytes their `?v=`
+  fingerprints hash — and the site's own `assets/` tree, copied (never
+  linked). Every file is READ here, during the render, so an unreadable
+  asset fails the build before `dist/` is touched."
   [cfg theme-files]
   (let [out (config/out-dir cfg)]
     (vec
@@ -610,10 +622,24 @@
         (when (fs/directory? user)
           (for [p (sort (map str (fs/glob user "**")))
                 :when (fs/regular-file? p)]
-            {:file (fs/path out "assets" (fs/relativize user p)) :source (fs/path p)})))))))
+            {:file (fs/path out "assets" (fs/relativize user p)) :bytes (read-asset (fs/path p))})))))))
 
 (defn- html-file? [p]
   (boolean (re-find #"(?i)\.html$" (str (fs/file-name p)))))
+
+(defn- prune-empty-dirs!
+  "Remove `d` and then each of its parents while they are empty directories
+  strictly inside `out` (normalized and absolute). A directory a concurrent
+  build has just put a file in is left alone."
+  [out d]
+  (loop [d d]
+    (when (and d (not= (str d) (str out))
+               (str/starts-with? (str d) (str out java.io.File/separator))
+               (fs/directory? d {:nofollow-links true})
+               (empty? (fs/list-dir d))
+               (try (fs/delete d) true
+                    (catch java.io.IOException _ false)))
+      (recur (fs/parent d)))))
 
 (defn sweep-stale-html!
   "Delete the `.html` files under `out` that this build did not write — the
@@ -638,13 +664,7 @@
                        vec))]
     (doseq [f stale]
       (fs/delete f)
-      (loop [d (fs/parent f)]
-        (when (and d (not= (str d) (str out))
-                   (str/starts-with? (str d) (str out java.io.File/separator))
-                   (fs/directory? d {:nofollow-links true})
-                   (empty? (fs/list-dir d)))
-          (fs/delete d)
-          (recur (fs/parent d)))))
+      (prune-empty-dirs! out (fs/parent f)))
     stale))
 
 (defn- strip-tags
@@ -710,75 +730,236 @@
 ;; ---------------------------------------------------------------------------
 ;; Writing (D-P4-11)
 ;;
-;; A build renders EVERYTHING into memory first — pages, theme assets, feeds,
-;; the sitemap — and only then touches `dist/`. An exception half-way through
-;; rendering used to leave a mixed tree: 150 new pages and 86 old ones, the
-;; new site title on some, a deleted variant's page still served, and the
-;; old feed.xml, sitemap.xml and pagefind/. Now it leaves `dist/` exactly as
-;; it was. Each file is then written atomically (a temp file in the same
-;; directory, renamed over the target) and only when its bytes changed, so a
-;; rebuild with no source change writes nothing at all.
+;; A build renders EVERYTHING into memory first — pages, theme assets, the
+;; site's own assets (read, not just listed), feeds, the sitemap — and only
+;; then touches `dist/`. An exception half-way through rendering used to leave
+;; a mixed tree: 150 new pages and 86 old ones, the new site title on some,
+;; a deleted variant's page still served, and the old feed.xml, sitemap.xml
+;; and pagefind/. Now a render or read failure leaves `dist/` exactly as it
+;; was. Before the first write, every output is checked to lie inside `out`
+;; and not to be blocked by a directory. Each file is then written atomically
+;; (a temp file in the same directory, renamed over the target) and only when
+;; its bytes changed, so a rebuild with no source change writes nothing at
+;; all. An I/O failure WHILE writing (disk full, an unwritable directory) can
+;; still leave some files updated: there is no transaction over a directory.
 
 (def ^:private temp-marker ".clogem-tmp-")
 
+(def ^:private temp-max-age-ms
+  "A temp file older than this is abandoned whoever wrote it: no build holds
+  one for more than the milliseconds a single write takes."
+  (* 10 60 1000))
+
+(def ^:dynamic *windows?*
+  "Is this Windows, where a rename over a file another process holds open
+  can be refused (see `move-into-place!`)?"
+  (str/starts-with? (str/lower-case (str (System/getProperty "os.name"))) "windows"))
+
+(def ^:private windows-backoff-ms
+  "The pauses between retries of a refused rename on Windows: ~2.5 s in all."
+  [5 10 20 40 80 160 320 640 1280])
+
+(defn- temp-path
+  "A fresh temp file name in `dir`: `.clogem-tmp-<pid>-<nanoTime>`. It does
+  not embed the target's name, so it never runs past the 255-byte filename
+  limit a long (or CJK) asset name already comes close to; the PID tells a
+  later sweep whether the build that made it is still running."
+  [dir]
+  (fs/path dir (str temp-marker (.pid (java.lang.ProcessHandle/current)) "-" (System/nanoTime))))
+
+(defn- normal-abs [p] (fs/normalize (fs/absolutize p)))
+
+(defn- inside? [out p]
+  (str/starts-with? (str p) (str out java.io.File/separator)))
+
+(defn exact-entry?
+  "Is `f`'s file name, exactly, one of `names` (its directory's entries)? On a
+  case-insensitive file system (macOS, Windows) `logo.png` also resolves to an
+  existing `Logo.PNG`; only the directory listing tells the two apart."
+  [names f]
+  (contains? names (str (fs/file-name f))))
+
+(defn- entry-names
+  "The set of entry names of directory `d`, listed once per `cache`."
+  [cache d]
+  (let [k (str d)]
+    (or (get @cache k)
+        (let [names (if (fs/directory? d)
+                      (into #{} (map #(str (fs/file-name %))) (fs/list-dir d))
+                      #{})]
+          (swap! cache assoc k names)
+          names))))
+
 (defn- same-bytes?
-  "Does `f` already hold exactly `bytes`? A link is never \"the same\": the
-  rename replaces the link itself rather than writing through it."
-  [f ^bytes bytes]
-  (and (fs/regular-file? f {:nofollow-links true})
+  "Does `f` already hold exactly `bytes`, under exactly its name? A link is
+  never \"the same\": the rename replaces the link itself rather than writing
+  through it. Neither is a file whose name differs only by case — the rename
+  then corrects it, as 0.2.0's write did."
+  [cache f ^bytes bytes]
+  (and (exact-entry? (entry-names cache (fs/parent f)) f)
+       (fs/regular-file? f {:nofollow-links true})
        (= (alength bytes) (fs/size f))
        (java.util.Arrays/equals bytes ^bytes (fs/read-all-bytes f))))
 
+(defn- exception-class-name
+  "The class name of `e`. bb cannot resolve AccessDeniedException or
+  FileSystemException, so they are recognised by name."
+  [^Throwable e]
+  (.getName (class e)))
+
+(defn- refused?
+  "Was a write or rename refused, rather than failed? AccessDenied anywhere;
+  on Windows also the bare FileSystemException a sharing violation raises
+  while another process (`bb dev`'s server, an antivirus) holds the file
+  open without FILE_SHARE_DELETE."
+  [e]
+  (let [n (exception-class-name e)]
+    (or (= n "java.nio.file.AccessDeniedException")
+        (and *windows?* (= n "java.nio.file.FileSystemException")))))
+
+(defn- atomic-move!
+  [tmp f]
+  (java.nio.file.Files/move (fs/path tmp) (fs/path f)
+                            (into-array java.nio.file.CopyOption
+                                        [java.nio.file.StandardCopyOption/REPLACE_EXISTING
+                                         java.nio.file.StandardCopyOption/ATOMIC_MOVE])))
+
+(defn- pause! [ms] (Thread/sleep (long ms)))
+
+(defn- write-bytes!
+  "Write `bytes` to `f` (created or truncated) with the default permissions —
+  never createTempFile's 0600, which a web server running as another user
+  could not read."
+  [f ^bytes bytes]
+  (java.nio.file.Files/write (fs/path f) bytes
+                             ^"[Ljava.nio.file.OpenOption;"
+                             (into-array java.nio.file.OpenOption [])))
+
+(defn- move-into-place!
+  "Rename `tmp` over `f`. On Windows a refused rename is retried with
+  backoff. A rename still refused falls back to writing `bytes` into `f` in
+  place — 0.2.0's write, not atomic but never worse than it. Any other
+  failure (disk full, a read-only file system) is rethrown, the target
+  untouched."
+  [tmp f bytes]
+  (loop [pauses (if *windows?* windows-backoff-ms [])]
+    (let [r (try (atomic-move! tmp f) :moved
+                 (catch java.io.IOException e
+                   (if (refused? e) e (throw e))))]
+      (when-not (= :moved r)
+        (if-let [[ms & more] (seq pauses)]
+          (do (pause! ms) (recur more))
+          (write-bytes! f bytes))))))
+
 (defn- write-atomically!
   "Write `bytes` to `f` through a temp file in the same directory and an
-  atomic rename, so a reader (or a killed build) never sees half a file."
+  atomic rename, so a reader (or a killed build) never sees half a file. A
+  temp file that vanishes under the write (its directory pruned by a
+  concurrent build's sweep) is retried once with a fresh one; a temp file the
+  OS refuses to create falls back to an in-place write, as a refused rename
+  does."
   [f ^bytes bytes]
-  (let [dir (fs/parent f)
-        tmp (fs/path dir (str "." (fs/file-name f) temp-marker (System/nanoTime)))]
-    (fs/create-dirs dir)
-    (try
-      (java.nio.file.Files/write (fs/path tmp) bytes
-                                 ^"[Ljava.nio.file.OpenOption;"
-                                 (into-array java.nio.file.OpenOption []))
-      (fs/move tmp f {:replace-existing true :atomic-move true})
-      (finally (fs/delete-if-exists tmp)))))
+  (let [dir (fs/parent f)]
+    (loop [retry? true]
+      (fs/create-dirs dir)
+      (let [tmp (temp-path dir)
+            r   (try
+                  (if (= :refused (try (write-bytes! tmp bytes) :ok
+                                       (catch java.io.IOException e
+                                         (if (refused? e) :refused (throw e)))))
+                    (write-bytes! f bytes)
+                    (move-into-place! tmp f bytes))
+                  :done
+                  (catch java.nio.file.NoSuchFileException e
+                    (if retry? :retry (throw e)))
+                  (finally
+                    ;; never let the cleanup mask the real exception
+                    (try (fs/delete-if-exists tmp) (catch Throwable _ nil))))]
+        (when (= :retry r) (recur false))))))
 
-(defn- output-bytes
-  ^bytes [{:keys [bytes source]}]
-  (or bytes (fs/read-all-bytes source)))
+(defn- temp-pid
+  "The PID a temp file's name embeds, or nil for a pre-PID (legacy) name."
+  [p]
+  (some->> (re-find #"\.clogem-tmp-(\d+)-\d+$" (str (fs/file-name p))) second parse-long))
 
-(defn- sweep-temp-files!
-  "Remove temp files a killed earlier build left in the directories this one
-  writes to — files only the build itself ever creates."
-  [files]
-  (doseq [d (distinct (map fs/parent files))
-          :when (fs/directory? d {:nofollow-links true})
-          p (fs/list-dir d)
-          :when (and (str/includes? (str (fs/file-name p)) temp-marker)
-                     (fs/regular-file? p {:nofollow-links true}))]
-    (fs/delete-if-exists p)))
+(defn- abandoned?
+  "Is temp file `p` left over from a build that is no longer writing it — its
+  PID is not alive, or it is older than any write takes? A concurrent build's
+  in-flight temp file is neither."
+  [p now]
+  (let [pid (temp-pid p)]
+    (or (> (- now (.toMillis (fs/last-modified-time p {:nofollow-links true}))) temp-max-age-ms)
+        (and (some? pid)
+             (not (.isPresent (java.lang.ProcessHandle/of (long pid))))))))
+
+(defn sweep-temp-files!
+  "Remove the temp files killed builds abandoned anywhere under `out` — in a
+  directory this build still writes, or one it no longer does (a deleted
+  article's `pages/<x>/`), which the pruning then removes when it is left
+  empty. Only regular files whose name carries the temp marker, only inside
+  `out`, never under `<out>/pagefind/`, never through a link, and never a
+  live build's (`abandoned?`). Returns the files deleted."
+  [out]
+  (let [out    (normal-abs out)
+        bundle (fs/path out search/output-subdir)
+        now    (System/currentTimeMillis)]
+    (when (fs/directory? out {:nofollow-links true})
+      (vec
+       (for [p (fs/glob out "**" {:follow-links false :hidden true})
+             :let [p (normal-abs p)]
+             :when (and (str/includes? (str (fs/file-name p)) temp-marker)
+                        (inside? out p)
+                        (not (inside? bundle p))
+                        (try (and (fs/regular-file? p {:nofollow-links true})
+                                  (abandoned? p now)
+                                  (fs/delete-if-exists p))
+                             ;; gone already, or not ours to delete
+                             (catch java.io.IOException _ false)))]
+         (do (prune-empty-dirs! out (fs/parent p))
+             p))))))
+
+(defn- check-outputs!
+  "Throw, before anything is swept or written, if an output would land
+  outside `out` (a `..` that slipped past analysis) or where a directory now
+  stands (an earlier build's `assets/docs/` where `assets/docs` is now a
+  file: a rename would move the file INTO it)."
+  [out outputs]
+  (doseq [{:keys [file]} outputs
+          :let [f (normal-abs file)]]
+    (when-not (inside? out f)
+      (throw (ex-info (str "refusing to write " file ": it is outside the output directory " out)
+                      {:babashka/exit 1 :clogem/file (str file)})))
+    (when (fs/directory? f {:nofollow-links true})
+      (throw (ex-info (str "cannot write " f ": a directory is in the way (left by an earlier build?). "
+                           "Remove " f " or run `bb clean`, then build again.")
+                      {:babashka/exit 1 :clogem/file (str f)})))))
 
 (defn write-outputs!
-  "Write each output whose bytes differ from what is on disk, atomically.
-  Returns {:written n :unchanged n :files [every output file]}."
-  [outputs]
-  (let [files (mapv :file outputs)]
-    (sweep-temp-files! files)
-    (reduce (fn [acc {:keys [file] :as o}]
-              (let [b (output-bytes o)]
-                (if (same-bytes? file b)
-                  (update acc :unchanged inc)
-                  (do (write-atomically! file b)
-                      (update acc :written inc)))))
+  "Write each output whose bytes differ from what is on disk, atomically,
+  into `out`, after checking every output (`check-outputs!`) and sweeping
+  abandoned temp files. Returns {:written n :unchanged n :files [every
+  output file]}."
+  [out outputs]
+  (let [out   (normal-abs out)
+        files (mapv :file outputs)
+        cache (atom {})]
+    (check-outputs! out outputs)
+    (sweep-temp-files! out)
+    (reduce (fn [acc {:keys [file bytes]}]
+              (if (same-bytes? cache file bytes)
+                (update acc :unchanged inc)
+                (do (write-atomically! file bytes)
+                    (update acc :written inc))))
             {:written 0 :unchanged 0 :files files}
             outputs)))
 
 (defn render-site
   "Render the whole site into memory: every page, the theme's and the site's
-  assets, the feeds, the sitemap and robots.txt. Writes nothing. The pages'
-  diagnostics are emitted (in `diag/sorted` order) to the caller's sink.
-  Returns {:outputs [{:file :bytes|:source}] :pages n :articles n
-  :variants n :out dir}."
+  assets (their bytes read here), the feeds, the sitemap and robots.txt.
+  Writes nothing, so any failure here — a page that throws, an asset that
+  cannot be read — leaves `dist/` untouched. The pages' diagnostics are
+  emitted (in `diag/sorted` order) to the caller's sink. Returns
+  {:outputs [{:file :bytes}] :pages n :articles n :variants n :out dir}."
   [cfg model]
   (let [out         (config/out-dir cfg)
         theme-files (assets/files cfg)
@@ -807,7 +988,7 @@
   {:written :unchanged :stale}."
   [{:keys [outputs out] :as rendered}]
   (fs/create-dirs out)
-  (let [{:keys [written unchanged files]} (write-outputs! outputs)
+  (let [{:keys [written unchanged files]} (write-outputs! out outputs)
         stale (sweep-stale-html! out files)]
     (-> rendered
         (dissoc :outputs)
@@ -815,6 +996,7 @@
 
 (defn build!
   "Render, then export: `render-site`, then `write-site!`. Returns a summary
-  map. A render failure raises before a single file is written."
+  map. A render or read failure raises before a single file is written; an
+  I/O failure while writing can leave some files updated."
   [cfg model]
   (write-site! (render-site cfg model)))

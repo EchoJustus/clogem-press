@@ -100,6 +100,25 @@
                        (name (:lang entry)) "; front matter wins.")))
     (or resolved (:lang entry) (config/default-lang cfg))))
 
+(defn- declared-permalink
+  "The front matter's `permalink:`, cleaned, or nil. One with a `.` or `..`
+  segment, or a backslash, is an ERROR naming the file and is dropped: it
+  would be written outside its place in the output directory — `/../../x/`
+  outside `dist/` altogether — and no valid site needs one. (Empty segments
+  never reach this far: `u/clean-url` collapses doubled slashes, as 0.2.0
+  did.)"
+  [entry front]
+  (when-some [raw (:permalink front)]
+    (let [pl (u/clean-url (str raw))]
+      (if (or (str/includes? (str raw) "\\")
+              (some #{"." ".."} (str/split pl #"/")))
+        (do (diag/error! (:rel-path entry)
+                         (str "permalink " (pr-str (str raw)) " has a `.` or `..` segment or a backslash; "
+                              "it would be written outside its place in the output directory.")
+                         "Use a plain path such as /pages/1a2b3c/.")
+            nil)
+        pl))))
+
 (defn load-entries
   "Attach parsed front matter and a resolved language to each scanned entry."
   [cfg entries]
@@ -121,7 +140,7 @@
                              ;; its identity must keep.
                              :base-title   (or (:base-title entry) (:title entry))
                              :title        (or (:title front) (:title entry))
-                             :declared-permalink (some-> (:permalink front) str u/clean-url)))))))
+                             :declared-permalink (declared-permalink entry front)))))))
         entries))
 
 ;; ---------------------------------------------------------------------------

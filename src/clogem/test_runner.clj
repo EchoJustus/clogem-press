@@ -20,6 +20,7 @@
     clogem.seo-test
     clogem.build-test
     clogem.write-test
+    clogem.write-windows-test
     clogem.search-test
     clogem.tools-test
     clogem.lang-test

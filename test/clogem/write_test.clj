@@ -59,6 +59,12 @@
              (str "link → " (fs/read-link p))
              (search/sha256-hex p))])))
 
+(defn- age!
+  "Set `p`'s mtime an hour back: older than any live build's temp file."
+  [p]
+  (fs/set-last-modified-time p (java.nio.file.attribute.FileTime/fromMillis
+                                (- (System/currentTimeMillis) (* 60 60 1000)))))
+
 (defn- written-counts
   "[written unchanged] from a build's summary line."
   [printed]
@@ -129,6 +135,9 @@
         (testing "a temp file a killed build left behind is cleared; a changed file is rewritten"
           (spit (fs/file out "index.html.clogem-tmp-123") "half")
           (spit (fs/file out ".index.html.clogem-tmp-456") "half")
+          ;; legacy names carry no PID: only their age marks them abandoned
+          (doseq [f ["index.html.clogem-tmp-123" ".index.html.clogem-tmp-456"]]
+            (age! (fs/path out f)))
           (spit (fs/file out "index.html") "tampered")
           (let [[w2 _] (written-counts (build! dir {:no-write true}))]
             (is (= 1 w2))
@@ -285,3 +294,214 @@
           (p/shell {:out :string :err :string :continue true} "git" "worktree" "remove" "--force" (str wt))
           (fs/delete-tree tmp))))
     (println (str "stripping-versions-gives-the-reference-build: skipped — " reference-rev-env " is not set"))))
+
+;; ---------------------------------------------------------------------------
+;; Fix round P4-A.1: the write path
+
+(defn- write!
+  "Write `outputs` ({:file :bytes}) into `out` the way a build does."
+  [out outputs]
+  (render/write-site! {:outputs (vec outputs) :out (str out)}))
+
+(defn- out-of [file s] {:file file :bytes (.getBytes ^String s "UTF-8")})
+
+(defn- temp-files
+  "Every file under `dir` whose name carries the temp marker."
+  [dir]
+  (for [p (fs/glob dir "**" {:hidden true :follow-links false})
+        :when (str/includes? (str (fs/file-name p)) ".clogem-tmp-")]
+    (str p)))
+
+(defn- dead-pid
+  "The PID of a process that has already exited."
+  []
+  (let [proc (p/process ["true"])]
+    @proc
+    (.pid ^Process (:proc proc))))
+
+(defn- with-temp-dir [f]
+  (let [d (fs/create-temp-dir {:prefix "clogem-wp"})]
+    (try (binding [diag/*sink* (atom [])] (f d))
+         (finally (fs/delete-tree d)))))
+
+(deftest an-unreadable-site-asset-leaves-dist-untouched
+  (with-demo-copy
+    (fn [dir out]
+      (build! dir)
+      (let [before        (tree-hash out)
+            ledger        (fs/path dir "permalinks.edn")
+            ledger-before (slurp (fs/file ledger))
+            boom          (fs/path dir "assets" "zz-boom.bin")
+            real          fs/read-all-bytes]
+        (spit (fs/file boom) "unreadable")
+        (spit (fs/file dir "site.edn")
+              (str/replace (slurp (fs/file dir "site.edn")) "\"clogem-press demo\"" "\"Renamed demo\""))
+        ;; a new article: a build that got as far as the ledger would add it
+        (spit (fs/file dir "content" "01.Guide" "10.Basics" "05.brand-new.md")
+              "---\ntitle: Brand new\n---\n\nNew.\n")
+        (let [e (with-redefs [fs/read-all-bytes
+                              (fn [p & more]
+                                (if (= "zz-boom.bin" (str (fs/file-name p)))
+                                  (throw (java.io.IOException. "Permission denied"))
+                                  (apply real p more)))]
+                  (try (build! dir) nil (catch clojure.lang.ExceptionInfo e e)))]
+          (is (some? e) "the build fails")
+          (is (= 1 (:babashka/exit (ex-data e))))
+          (is (re-find #"zz-boom\.bin" (str (ex-message e))) (ex-message e)))
+        (is (= before (tree-hash out)) "dist/ is exactly what the good build left")
+        (is (= ledger-before (slurp (fs/file ledger))) "and so is the ledger")))))
+
+(deftest long-file-names-write-and-leave-no-temp-file
+  (with-temp-dir
+    (fn [d]
+      (let [out   (fs/path d "out")
+            names (concat (for [n [230 240 255]]
+                            (str (apply str (repeat (- n 4) "a")) ".png"))
+                          [(str (apply str (repeat 76 "图")) ".png")])]
+        (is (= [230 240 255 232] (map #(alength (.getBytes ^String % "UTF-8")) names)))
+        (let [{:keys [written]} (write! out (for [n names] (out-of (fs/path out "assets" n) n)))]
+          (is (= 4 written)))
+        (doseq [n names]
+          (is (= n (slurp (fs/file out "assets" n))) (str (count n) " chars")))
+        (is (empty? (temp-files out)))))))
+
+(deftest a-directory-where-a-file-now-belongs-fails-the-build
+  (with-temp-dir
+    (fn [d]
+      (let [out    (fs/path d "out")
+            blocker (fs/path out "assets" "docs")
+            readme (fs/path blocker "readme.txt")]
+        (fs/create-dirs blocker)
+        (spit (fs/file readme) "kept")
+        (dotimes [_ 2]
+          (let [e (try (write! out [(out-of (fs/path out "a.txt") "a")
+                                    (out-of blocker "now a file")])
+                       nil
+                       (catch clojure.lang.ExceptionInfo e e))]
+            (is (some? e) "it fails rather than reporting the file written")
+            (is (= 1 (:babashka/exit (ex-data e))))
+            (is (str/includes? (str (ex-message e)) (str (fs/path "assets" "docs"))) (ex-message e))
+            (is (re-find #"clean" (str (ex-message e))) (ex-message e))))
+        (is (empty? (temp-files out)) "no temp file is left behind, however often it runs")
+        (is (= "kept" (slurp (fs/file readme))))
+        (is (= ["readme.txt"] (map #(str (fs/file-name %)) (fs/list-dir blocker))))
+        (is (not (fs/exists? (fs/path out "a.txt"))) "checked before anything is written")))))
+
+(deftest abandoned-temp-files-are-swept-live-ones-kept
+  (with-temp-dir
+    (fn [d]
+      (let [out   (fs/path d "out")
+            gone  (fs/path out "pages" "gone")
+            dead  (dead-pid)
+            live  (.pid (java.lang.ProcessHandle/current))
+            plant (fn [p & [old?]]
+                    (fs/create-dirs (fs/parent p))
+                    (spit (fs/file p) "half")
+                    (when old? (age! p))
+                    p)]
+        (write! out [(out-of (fs/path out "index.html") "home")
+                     (out-of (fs/path gone "index.html") "a deleted article")])
+        (let [abandoned-old  (plant (fs/path gone (str ".clogem-tmp-" dead "-1")) true)
+              abandoned-dead (plant (fs/path out "assets" (str ".clogem-tmp-" dead "-2")))
+              legacy-old     (plant (fs/path out ".index.html.clogem-tmp-99") true)
+              live-fresh     (plant (fs/path out (str ".clogem-tmp-" live "-3")))
+              legacy-fresh   (plant (fs/path out ".x.clogem-tmp-98"))
+              elsewhere      (fs/path d "elsewhere")
+              linked         (plant (fs/path elsewhere (str ".clogem-tmp-" dead "-4")) true)]
+          (spit (fs/file out "CNAME") "docs.example")
+          (spit (fs/file out ".nojekyll") "")
+          (fs/create-sym-link (fs/path out "linked") elsewhere)
+          ;; the next build no longer writes pages/gone/
+          (write! out [(out-of (fs/path out "index.html") "home")])
+          (is (not (fs/exists? abandoned-old)) "old, dead PID, in a directory no longer written")
+          (is (not (fs/exists? gone)) "and that directory goes with the stale page")
+          (is (not (fs/exists? abandoned-dead)) "fresh but its build is dead")
+          (is (not (fs/exists? legacy-old)) "a legacy name, old")
+          (is (fs/exists? live-fresh) "a live build's in-flight temp file stays")
+          (is (fs/exists? legacy-fresh) "a fresh legacy name stays: it could still be in flight")
+          (is (fs/exists? linked) "never through a link")
+          (is (= "docs.example" (slurp (fs/file out "CNAME"))))
+          (is (fs/exists? (fs/path out ".nojekyll"))))))))
+
+(deftest concurrent-writes-into-one-out-dir-never-throw
+  (with-temp-dir
+    (fn [d]
+      (let [out     (fs/path d "out")
+            outputs (vec (for [i (range 40)]
+                           (out-of (fs/path out (str "d" (mod i 4)) (str "f" i ".txt"))
+                                   (apply str (repeat 2000 (str i))))))]
+        (dotimes [round 20]
+          ;; different bytes each round, so every file is rewritten
+          (let [outs (mapv #(update % :bytes (fn [b] (.getBytes (str round (String. ^bytes b "UTF-8")) "UTF-8"))) outputs)
+                fs*  [(future (try (write! out outs) nil (catch Throwable t t)))
+                      (future (try (write! out outs) nil (catch Throwable t t)))]]
+            (is (= [nil nil] (mapv deref fs*)) (str "round " round))))
+        (is (empty? (temp-files out)))))))
+
+(deftest the-exact-name-of-a-directory-entry-decides-same-bytes
+  (is (render/exact-entry? #{"logo.png"} (fs/path "x" "logo.png")))
+  (is (not (render/exact-entry? #{"Logo.PNG"} (fs/path "x" "logo.png")))
+      "a case-insensitive file system's match on Logo.PNG is not logo.png")
+  (is (not (render/exact-entry? #{} (fs/path "x" "logo.png")))))
+
+(defn- case-insensitive-fs?
+  "Does the file system under `d` resolve a name in another case?"
+  [d]
+  (let [f (fs/path d "CaseProbe")]
+    (spit (fs/file f) "")
+    (try (fs/exists? (fs/path d "caseprobe"))
+         (finally (fs/delete f)))))
+
+(deftest a-case-only-rename-is-written-on-a-case-insensitive-fs
+  (with-temp-dir
+    (fn [d]
+      (if-not (case-insensitive-fs? d)
+        (println "a-case-only-rename-is-written-on-a-case-insensitive-fs: skipped — this file system is case-sensitive")
+        (let [out (fs/path d "out")]
+          (write! out [(out-of (fs/path out "assets" "Logo.PNG") "png")])
+          (write! out [(out-of (fs/path out "assets" "logo.png") "png")])
+          (is (= ["logo.png"] (map #(str (fs/file-name %)) (fs/list-dir (fs/path out "assets"))))))))))
+
+(deftest an-output-outside-the-out-dir-is-refused
+  (with-temp-dir
+    (fn [d]
+      (let [out     (fs/path d "site" "dist")
+            outside (fs/path d "escaped" "index.html")
+            planted (fs/path d "escaped" (str ".clogem-tmp-" (dead-pid) "-1"))]
+        (fs/create-dirs (fs/parent planted))
+        (spit (fs/file planted) "not ours")
+        (age! planted)
+        (let [e (try (write! out [(out-of (fs/path out "index.html") "home")
+                                  (out-of (fs/path out ".." ".." "escaped" "index.html") "escaped")])
+                     nil
+                     (catch clojure.lang.ExceptionInfo e e))]
+          (is (some? e))
+          (is (= 1 (:babashka/exit (ex-data e))))
+          (is (re-find #"outside the output directory" (str (ex-message e))) (ex-message e)))
+        (is (not (fs/exists? outside)))
+        (is (not (fs/exists? (fs/path out "index.html"))) "refused before anything is written")
+        (is (fs/exists? planted) "a temp-looking file outside out is never swept")))))
+
+(deftest a-dot-dot-permalink-is-an-error-naming-its-file
+  (with-demo-copy
+    (fn [dir out]
+      (let [escaped (fs/path dir ".." ".." "escaped")
+            rel     "01.Guide/10.Basics/06.escape.md"]
+        (when (fs/exists? escaped)
+          (throw (ex-info (str escaped " exists before the test") {})))
+        (try
+          (spit (fs/file dir "content" rel)
+                "---\ntitle: Escape\npermalink: /../../escaped/\n---\n\nOut.\n")
+          (let [errs (try (:errors (cli/doctor {:site-dir (str dir)}))
+                          (catch clojure.lang.ExceptionInfo e (:clogem/errors (ex-data e))))]
+            (is (some #(and (re-find #"06\.escape\.md" (str (:path %)))
+                            (re-find #"permalink" (str (:message %))))
+                      errs)
+                (pr-str (map (juxt :path :message) errs))))
+          (doseq [no-write [true false]]
+            (let [e (try (build! dir {:no-write no-write}) nil
+                         (catch clojure.lang.ExceptionInfo e e))]
+              (is (some? e) (str "no-write=" no-write))
+              (is (re-find #"06\.escape\.md" (str (ex-message e))) (ex-message e))))
+          (is (not (fs/exists? escaped)) "nothing is written outside out")
+          (finally (fs/delete-tree escaped)))))))
