@@ -50,6 +50,12 @@
 
 (defn- raw-bytes [f] (fs/read-all-bytes f))
 
+(defn- unix-rel
+  "Path `p` as a `/`-separated string: the form `files`' keys take, whatever
+  separator the OS stringifies a path with (`\\` on Windows)."
+  [p]
+  (str/replace (str p) "\\" "/"))
+
 (defn- rewrite-css
   "`css` (a string) with every relative `url(…)` given the `?v=` of the file
   it names, looked up with `version-of` (rel-path → version or nil). A
@@ -59,7 +65,7 @@
                (fn [[whole q url]]
                  (let [[path frag] (str/split url #"#" 2)]
                    (if-let [v (and (relative-ref? url)
-                                   (version-of (str (fs/normalize (fs/path dir path)))))]
+                                   (version-of (unix-rel (fs/normalize (fs/path dir path)))))]
                      (str "url(" q path "?v=" v (when frag (str "#" frag)) q ")")
                      whole)))))
 
@@ -94,7 +100,7 @@
                           :when (fs/directory? from)
                           p    (fs/glob from "**")
                           :when (fs/regular-file? p)
-                          :let [rel (str/replace (str (fs/relativize root p)) "\\" "/")]
+                          :let [rel (unix-rel (fs/relativize root p))]
                           :when (not (skip? cfg rel))]
                       [rel p]))
           ;; non-CSS files first: a stylesheet's url()s name them

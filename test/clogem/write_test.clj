@@ -12,6 +12,7 @@
   build left."
   (:require [babashka.fs :as fs]
             [babashka.process :as p]
+            [clojure.edn]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [clogem.assets :as assets]
@@ -196,13 +197,42 @@
 ;; Cache-busting (D-P4-7)
 
 (defn- version-refs
-  "Every `<path>?v=<v>` in the HTML and CSS under `out`, as [file path v]."
+  "Every `<path>?v=<v>` in the HTML and CSS under `out`, as [file path v]:
+  `href`/`src` attributes and CSS `url()`s alike."
   [out]
   (for [f (concat (fs/glob out "**.html") (fs/glob out "**.css"))
         :let [s (slurp (fs/file f))]
-        [_ path v] (re-seq #"(?:href|src)=\"([^\"?]+)\?v=([^\"&#]+)\"|url\(\"?([^\"?)]+)\?v=([^\")]+)\"?\)" s)
+        [_ p1 v1 p2 v2] (re-seq #"(?:href|src)=\"([^\"?]+)\?v=([^\"&#]+)\"|url\(\"?([^\"?)]+)\?v=([^\")]+)\"?\)" s)
+        :let [path (or p1 p2) v (or v1 v2)]
         :when path]
     [f path v]))
+
+(defn- ref-file
+  "The file under `out` that `path`, referenced from file `f`, names: an
+  absolute path from the out root, a relative one from `f`'s directory."
+  [out f path]
+  (if (str/starts-with? path "/")
+    (fs/path out (str/replace path #"^/" ""))
+    (fs/normalize (fs/path (fs/parent f) path))))
+
+(defn- check-fingerprints!
+  "Every `?v=` under `out` names the bytes of its file; returns the refs."
+  [out]
+  (let [refs (version-refs out)]
+    (doseq [[f path v] refs
+            :let [file (ref-file out f path)
+                  rel  (str/replace (str (fs/relativize out file)) "\\" "/")]]
+      (if (str/starts-with? rel "pagefind/")
+        (is (= "1.5.2" v) path)
+        (is (= (subs (search/sha256-hex file) 0 8) v) (str f ": " path))))
+    (is (every? (fn [[f path]]
+                  (if (str/starts-with? path "/")
+                    (re-find #"^/(clogem|pagefind)/" path)
+                    (str/starts-with? (str/replace (str (fs/relativize out (ref-file out f path))) "\\" "/")
+                                      "clogem/")))
+                refs)
+        "only theme and Pagefind URLs are versioned")
+    refs))
 
 (deftest every-fingerprint-names-the-bytes-of-its-file
   (with-demo-copy
@@ -211,23 +241,22 @@
         (with-out-str (cli/build {:site-dir (str dir) :no-write true})))
       ;; the Pagefind UI files are written by Pagefind, not by this build,
       ;; and carry its pinned version instead
-      (let [refs (version-refs out)
-            css-refs (for [f (fs/glob out "**.css")
-                           [_ path v] (re-seq #"url\(\"?([^\"?)]+)\?v=([0-9a-f]+)\"?\)" (slurp (fs/file f)))]
-                       [f path v])]
+      (let [refs (check-fingerprints! out)]
         (is (seq refs))
-        (doseq [[f path v] refs
-                :let [rel (str/replace path #"^/" "")]]
-          (if (str/starts-with? rel "pagefind/")
-            (is (= "1.5.2" v) path)
-            (is (= (subs (search/sha256-hex (fs/path out rel)) 0 8) v) (str f ": " path))))
-        (is (every? #(re-find #"^/(clogem|pagefind)/" (second %)) refs)
-            "only theme and Pagefind URLs are versioned")
         (testing "and the theme files the head links all carry one"
           (let [h (slurp (fs/file out "pages" "643259" "index.html"))]
             (is (empty? (re-seq #"(?:href|src)=\"/clogem/[^\"?]+\"" h)))
             (is (str/includes? h "bundle-path=\"/pagefind/\"") "the bundle directory itself is not versioned")))
-        (is (empty? css-refs) "the demo ships no stylesheet with url()s: :fonts :system")))))
+        (is (not-any? #(str/ends-with? (str (first %)) ".css") refs)
+            "the demo ships no stylesheet with url()s: :fonts :system"))
+      (testing "with the Tamil font self-hosted, the stylesheet's url()s are checked too"
+        (let [f   (fs/file dir "site.edn")
+              edn (clojure.edn/read-string (slurp f))]
+          (spit f (pr-str (assoc-in edn [:theme :fonts :tamil] :self-hosted))))
+        (with-out-str (cli/build {:site-dir (str dir) :no-write true :no-search true}))
+        (let [css-refs (filter #(str/ends-with? (str (first %)) ".css") (check-fingerprints! out))]
+          (is (= #{"noto-sans-tamil-400.woff2" "noto-sans-tamil-700.woff2"} (set (map second css-refs)))
+              (pr-str css-refs)))))))
 
 (deftest our-css-versions-its-own-url-references
   (let [cfg (first (diag/collecting (config/load-config demo nil {:theme {:fonts {:tamil :self-hosted}}})))
@@ -241,6 +270,14 @@
     (is (= "a{b:url(data:x)} c{d:url(\"/abs.png\")} e{f:url(x.png?v=1)}"
            (#'assets/rewrite-css "a{b:url(data:x)} c{d:url(\"/abs.png\")} e{f:url(x.png?v=1)}" "fonts" (constantly "zz")))
         "data:, absolute and already-versioned URLs are left alone")))
+
+(deftest css-url-versions-do-not-depend-on-the-path-separator
+  ;; Windows stringifies a path with `\`; the keys are `/`-separated (F6)
+  (let [real fs/normalize
+        vs   {"fonts/a.woff2" "11111111" "b.png" "22222222"}]
+    (with-redefs [fs/normalize (fn [p] (str/replace (str (real p)) "/" "\\"))]
+      (is (= "x{src:url(\"a.woff2?v=11111111\")} y{u:url(../b.png?v=22222222)}"
+             (#'assets/rewrite-css "x{src:url(\"a.woff2\")} y{u:url(../b.png)}" "fonts" vs))))))
 
 (deftest the-version-is-stripped-back-to-the-0-2-0-bytes
   (testing "assets/strip-versions undoes exactly what this build adds"
