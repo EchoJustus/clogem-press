@@ -527,7 +527,6 @@
                                       :extendFrontmatter {} :searchMaxSuggestions 5}})]
     (doseq [[k target planned?] [[":pageStyle" ":theme :page-style" false]
                                  [":defaultMode" ":theme :default-mode" false]
-                                 [":sidebarOpen" ":theme :sidebar-open" false]
                                  [":htmlModules" ":theme :html-modules" true]
                                  [":updateBar" ":theme :update-bar" true]
                                  [":categoryText" ":content :category-text" false]
@@ -563,3 +562,88 @@
     (is (= :planned (get-in config/known-keys [[:theme] :blogger])))
     (with-redefs [config/known-keys (assoc-in config/known-keys [[:theme] :blogger] :ok)]
       (is (= [] (warning-messages {:theme {:blogger {:name "me"}}}))))))
+
+;; ---------------------------------------------------------------------------
+;; Fix round P4-A.1: config checks
+
+(deftest every-site-author-shape-is-quiet
+  (testing "the three shapes i18n/resolve-author reads"
+    (doseq [a ["Jane"
+               {:en "Jane" :zh-Hans "简"}
+               {"name" "Jane" "link" "https://jane.example"}
+               {:name {:en "Jane" :zh-Hans "简"} :link "https://jane.example"}]]
+      (is (= [] (warning-messages {:site {:author a}})) (pr-str a))))
+  (testing "a typo in the named shape warns, suggesting the keyword spelling"
+    (doseq [a [{:name "Jane" :lnk "x"} {"name" "Jane" "lnik" "x"}]]
+      (let [[_ ds] (with-site {:site {:author a}})
+            [w & more] (diag/warnings ds)]
+        (is (empty? more) (pr-str a))
+        (is (re-find #"^:site :author (:lnk|\"lnik\") is not a site author option and is ignored\.$" (str (:message w)))
+            (:message w))
+        (is (str/starts-with? (str (:hint w)) "Did you mean :link?") (:hint w))))))
+
+(deftest a-scalar-html-modules-warns-and-never-crashes
+  (doseq [v [false :none true 0]]
+    (is (= [":theme :html-modules has no effect in 0.2.0; nothing is injected."]
+           (warning-messages {:theme {:html-modules v}}))
+        (pr-str v)))
+  (doseq [v [nil {}]]
+    (is (= [] (warning-messages {:theme {:html-modules v}})) (pr-str v))))
+
+(deftest vdoing-statuses-say-what-clogem-does-instead
+  (let [[_ ds] (with-site {:sidebarOpen false :sidebar "structuring" :algolia {:appId "x"}
+                           :theme {:bodyBgImgInterval 15}})
+        by (into {} (map (juxt :message :hint)) (diag/warnings ds))]
+    (is (empty? (diag/errors ds)))
+    (is (contains? by (str ":sidebarOpen is vdoing's spelling; clogem-press reads :theme :sidebar-collapsed "
+                           "(with the opposite sense: sidebarOpen false is :sidebar-collapsed true) — planned, "
+                           "not implemented in 0.2.0. It is ignored."))
+        (pr-str (keys by)))
+    (let [m (str ":sidebar is not needed: clogem-press always generates the structured sidebar from the "
+                 "numbered directory tree (vdoing's 'structuring' mode); it is ignored.")]
+      (is (contains? by m) (pr-str (keys by)))
+      (is (= (str "Remove it. Custom sidebar arrays and sidebar: 'auto' are not supported (DESIGN.md §8). "
+                  "vdoing's `collapsable: false` corresponds to :theme :sidebar-open true.")
+             (by m))))
+    (is (contains? by (str ":algolia is a vdoing option clogem-press defers past v1 (DESIGN.md §8); "
+                           "search is Pagefind's (:search :provider :pagefind).")))
+    (is (contains? by (str ":theme :bodyBgImgInterval is vdoing's spelling; clogem-press reads "
+                           ":theme :body-bg-img-interval — planned, not implemented in 0.2.0. It is ignored.")))
+    (is (= 4 (count by)) (pr-str (keys by))))
+  (is (= [":theme :body-bg-img-interval is planned, not implemented in 0.2.0; it has no effect."]
+         (warning-messages {:theme {:body-bg-img-interval 15}}))))
+
+(deftest a-retired-key-says-why
+  (let [[_ ds] (with-site {:generator {:ref "v0.2.0"}})
+        [w & more] (diag/warnings ds)]
+    (is (empty? (diag/errors ds)))
+    (is (empty? more))
+    (is (= (str ":generator :ref was removed in design v2.1 (D-14); the generator version is pinned only by "
+                "publish.yml's `ref:`. It is ignored.")
+           (:message w)))
+    (is (= "Delete it; to require a minimum generator, set :generator :min-version." (:hint w)))))
+
+(deftest nav-items-are-checked
+  (let [[_ ds] (with-site {:nav [{:txt "Home" :link "/"}
+                                 {:text "A" :items [{:text "b" :lnk "/b/"}]}]})
+        by (into {} (map (juxt :message :hint)) (diag/warnings ds))]
+    (is (empty? (diag/errors ds)))
+    (is (= [":nav 0 :txt is not a nav item option and is ignored."
+            ":nav 1 :items 0 :lnk is not a nav item option and is ignored."]
+           (sort (keys by))))
+    (is (str/starts-with? (by ":nav 0 :txt is not a nav item option and is ignored.") "Did you mean :text?"))
+    (is (str/starts-with? (by ":nav 1 :items 0 :lnk is not a nav item option and is ignored.") "Did you mean :link?")))
+  (testing ":text is a per-language user map, never walked"
+    (is (= [] (warning-messages {:nav [{:text {:en "Home" :zh-Hans "首页" :whatever "x"} :link "/"
+                                        :items [{:text {:ms "A"} :link "/a/"}]}]}))))
+  (testing "the demo's nav is quiet"
+    (is (= [] (warning-messages {:nav (:nav (clojure.edn/read-string (slurp "examples/demo-site/site.edn")))})))))
+
+(deftest unknown-key-messages-use-the-right-article
+  (is (= "an analytics" (config/a-or-an "analytics")))
+  (is (= "an i18n" (config/a-or-an "i18n")))
+  (is (= "a locale" (config/a-or-an "locale")))
+  (is (= "a top-level" (config/a-or-an "top-level")))
+  (is (= [":analytics :providr is not an analytics option and is ignored."
+          ":i18n :fallbak is not an i18n option and is ignored."]
+         (sort (warning-messages {:analytics {:providr :none} :i18n {:fallbak [:en]}})))))

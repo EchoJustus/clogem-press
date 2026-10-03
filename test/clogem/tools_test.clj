@@ -263,16 +263,47 @@
 ;; ---------------------------------------------------------------------------
 ;; Config and the CLI
 
-(deftest tools-config-is-validated-alike
-  (doseq [[edn re] [[{:tools {:chroma {:version "latest"}}} #":tools :chroma :version is \"latest\""]
-                    [{:tools {:chroma {:sha256 "abc"}}} #":tools :chroma :sha256 must map each platform"]
-                    [{:tools {:fswatcher {:version 7}}} #":tools :fswatcher :version is 7"]
-                    [{:tools {:fswatcher {:sha256 {"linux-amd64" "zz"}}}} #":tools :fswatcher :sha256 must map"]]]
+(deftest an-unused-tool-pin-warns-and-keeps-the-built-in-one
+  (testing "0.2.0 accepted any :tools :chroma / :fswatcher pin; nothing runs
+            either yet, so a bad one is a warning and the config is repaired
+            (Pagefind's stay errors: search-config-is-validated)"
+    (doseq [[edn re check] [[{:tools {:chroma {:version "latest"}}} #":tools :chroma :version is \"latest\""
+                             #(= "2.27.0" (get-in % [:tools :chroma :version]))]
+                            [{:tools {:chroma {:sha256 "abc"}}} #":tools :chroma :sha256 must map each platform"
+                             #(not (contains? (get-in % [:tools :chroma]) :sha256))]
+                            [{:tools {:fswatcher {:version 7}}} #":tools :fswatcher :version is 7"
+                             #(= "0.0.7" (get-in % [:tools :fswatcher :version]))]
+                            [{:tools {:fswatcher {:sha256 {"linux-amd64" "zz"}}}} #":tools :fswatcher :sha256 must map"
+                             #(not (contains? (get-in % [:tools :fswatcher]) :sha256))]]]
+      (with-dir
+        (fn [dir]
+          (spit (fs/file dir "site.edn") (pr-str edn))
+          (let [[cfg ds] (diag/collecting (config/load-config (str dir)))
+                ws (diag/warnings ds)]
+            (is (empty? (diag/errors ds)) (pr-str edn))
+            (is (= 1 (count ws)) (pr-str edn (map :message ws)))
+            (is (re-find re (str (:message (first ws)))) (pr-str edn))
+            (is (re-find #"It has no effect in 0\.2\.0 \(nothing runs (chroma|fswatcher) yet\), so the built-in pin is used\."
+                         (str (:hint (first ws))))
+                (:hint (first ws)))
+            (is (check cfg) (pr-str edn (:tools cfg))))))))
+  (testing "0.2.0's own DESIGN §5.6 sketch, verbatim, no longer fails doctor"
     (with-dir
       (fn [dir]
-        (spit (fs/file dir "site.edn") (pr-str edn))
-        (let [[_ ds] (diag/collecting (config/load-config (str dir)))]
-          (is (some #(re-find re (:message %)) (diag/errors ds)) (pr-str edn)))))))
+        (spit (fs/file dir "site.edn")
+              "{:tools {:chroma {:version \"2.27.0\" :sha256 \"…\" :style \"github\" :dark-style \"github-dark\"}}}")
+        (let [[cfg ds] (diag/collecting (config/load-config (str dir)))
+              ms (map :message (diag/warnings ds))]
+          (is (empty? (diag/errors ds)))
+          (is (= 1 (count (filter #(re-find #":tools :chroma :sha256 must map" %) ms))) (pr-str ms))
+          (is (some #(str/starts-with? % ":tools :chroma :style belongs under :highlight :style") ms) (pr-str ms))
+          (is (some #(str/starts-with? % ":tools :chroma :dark-style belongs under :highlight :dark-style") ms) (pr-str ms))
+          (is (= 3 (count ms)) (pr-str ms))
+          (is (= {:version "2.27.0" :style "github" :dark-style "github-dark"} (get-in cfg [:tools :chroma]))))
+        (fs/create-dirs (fs/path dir "content" "01.Guide"))
+        (spit (fs/file dir "content" "01.Guide" "01.a.md") "---\ntitle: A\npermalink: /pages/aaaaaa/\n---\n\nA.\n")
+        (let [r (with-out-str (cli/doctor {:site-dir (str dir)}))]
+          (is (re-find #"0 error" r) r))))))
 
 (deftest fetch-tool-takes-a-tool
   (with-dir

@@ -302,6 +302,16 @@
                             "but the build will not run."))
           (assoc-in cfg path default)))))
 
+(def fatal-tool-ids
+  "The tools whose `:version` / `:sha256` pin is validated as an ERROR: the
+  ones a build actually runs. Any other pinned tool's bad pin is a warning,
+  and the config is repaired to the built-in pin — 0.2.0 accepted any
+  `:tools :chroma` (its own DESIGN §5.6 sketched one with a single
+  `:sha256` string), so a pin nothing reads must not start failing builds.
+  The task that makes a build run a tool adds its id here (Chroma in C, the
+  fswatcher pod in D)."
+  #{:pagefind})
+
 (defn- check-search!
   "D-P3-8 / D-P3-12: the search provider, the Pagefind pin, and the Tamil
   font option."
@@ -314,21 +324,38 @@
         tool-pins {:pagefind  ["1.5.2"  "x86_64-unknown-linux-musl" "aeb1…" "the release's .sha256 file"]
                    :chroma    ["2.27.0" "linux-amd64"               "91e1…" "the release's checksums.txt"]
                    :fswatcher ["0.0.7"  "linux-amd64"               "f94c…" "your own sha256 of the zip"]}]
-    ;; every pinned tool is validated alike (Phase 4 Task A)
-    (doseq [[id [eg-version eg-plat eg-hash source]] tool-pins
-            :let [{:keys [version sha256]} (get-in cfg [:tools id])]]
-      (when-not (and (string? version) (re-matches u/version-re version))
-        (diag/error! nil (str ":tools " id " :version is " (pr-str version)
-                              ", which is not a version string like \"" eg-version "\".")))
-      (when (some? sha256)
-        (when-not (and (map? sha256)
-                       (every? (fn [[k v]] (and (string? k) (string? v) (re-matches #"(?i)[0-9a-f]{64}" v)))
-                               sha256))
-          (diag/error! nil (str ":tools " id " :sha256 must map each platform to its hex sha256, e.g. "
-                                "{\"" eg-plat "\" \"" eg-hash "\"}.")
-                       (str "One hash cannot cover several release assets (DESIGN.md §11.2, D-P3-8); "
-                            "copy each from " source ".")))))
-    cfg))
+    ;; every pinned tool is validated alike (Phase 4 Task A); only a tool in
+    ;; `fatal-tool-ids` turns a bad pin into an error
+    (reduce
+     (fn [cfg [id [eg-version eg-plat eg-hash source]]]
+       (let [{:keys [version sha256]} (get-in cfg [:tools id])
+             fatal? (contains? fatal-tool-ids id)
+             report! (fn [msg hint]
+                       (if fatal?
+                         (diag/error! nil msg hint)
+                         (diag/warn! nil msg
+                                     (str (when hint (str hint " "))
+                                          "It has no effect in " (generator-version) " (nothing runs "
+                                          (name id) " yet), so the built-in pin is used."))))
+             bad-version? (not (and (string? version) (re-matches u/version-re version)))
+             bad-sha256?  (and (some? sha256)
+                               (not (and (map? sha256)
+                                         (every? (fn [[k v]] (and (string? k) (string? v)
+                                                                  (re-matches #"(?i)[0-9a-f]{64}" v)))
+                                                 sha256))))]
+         (when bad-version?
+           (report! (str ":tools " id " :version is " (pr-str version)
+                         ", which is not a version string like \"" eg-version "\".")
+                    nil))
+         (when bad-sha256?
+           (report! (str ":tools " id " :sha256 must map each platform to its hex sha256, e.g. "
+                         "{\"" eg-plat "\" \"" eg-hash "\"}.")
+                    (str "One hash cannot cover several release assets (DESIGN.md §11.2, D-P3-8); "
+                         "copy each from " source ".")))
+         (cond-> cfg
+           (and bad-version? (not fatal?)) (assoc-in [:tools id :version] (get-in defaults [:tools id :version]))
+           (and bad-sha256? (not fatal?))  (update-in [:tools id] dissoc :sha256))))
+     cfg tool-pins)))
 
 (def comments-keys
   "The `:comments` keys the generator reads (D-P3-15). `:mapping` is
@@ -366,7 +393,8 @@
                            ;; Phase 4 Task C
                            :highlight :planned}
    [:site]                {:title :ok :description :ok :url :ok :base :ok :author :ok}
-   [:site :author]        {:name :ok :link :ok}
+   ;; `:site :author` is checked by `check-author!`: only its {:name :link}
+   ;; shape holds options; a per-language map holds user data
    [:generator]           {:repo :ok :min-version :ok}
    [:langs]               {:default :ok :priority :ok :locales :ok}
    [:langs :locales :*]   {:label :ok :html-lang :ok :giscus :ok :dir :ok :og :ok}
@@ -383,7 +411,8 @@
                            :html-modules :ok
                            ;; Phase 4 Tasks B1, E1, E2 (DESIGN.md §5.6 sketches several)
                            :social :planned :banner-bg :planned :body-bg-img :planned
-                           :body-bg-img-opacity :planned :title-badge :planned
+                           :body-bg-img-opacity :planned :body-bg-img-interval :planned
+                           :title-badge :planned
                            :title-badge-icons :planned :blogger :planned :footer :planned
                            :update-bar :planned :right-menu-bar :planned :page-button :planned
                            :content-bg-style :planned :last-updated :planned
@@ -405,17 +434,52 @@
    [:tools]               {:cache-dir :ok :pagefind :ok :chroma :ok :fswatcher :ok}
    [:tools :pagefind]     {:version :ok :sha256 :ok :path :ok :url :ok}
    [:tools :chroma]       {:version :ok :sha256 :ok :path :ok :url :ok}
-   [:tools :fswatcher]    {:version :ok :sha256 :ok :path :ok :url :ok}})
+   [:tools :fswatcher]    {:version :ok :sha256 :ok :path :ok :url :ok}
+   ;; one `:nav` item, at `:nav 0`, `:nav 1 :items 0`, … (`check-nav!`);
+   ;; `:text` is a per-language user map and is not walked
+   [:nav :*]              {:text :ok :link :ok :items :ok}})
+
+(def author-keys
+  "The keys of `:site :author`'s named shape, as `i18n/resolve-author` reads
+  them: keywords or strings."
+  #{:name :link "name" "link"})
+
+(def retired-keys
+  "Keys a design revision removed, as {path → [message hint]}: their own
+  warning, in place of the nearest-key suggestion. Still only warnings."
+  {[:generator :ref]
+   [(str ":generator :ref was removed in design v2.1 (D-14); the generator version is pinned only by "
+         "publish.yml's `ref:`. It is ignored.")
+    "Delete it; to require a minimum generator, set :generator :min-version."]
+   [:tools :chroma :style]
+   [(str ":tools :chroma :style belongs under :highlight :style (DESIGN.md §5.6, corrected in §11.3 "
+         "item 10). It is ignored.")
+    "Move it to :highlight {:style …} — planned for Phase 4 Task C."]
+   [:tools :chroma :dark-style]
+   [(str ":tools :chroma :dark-style belongs under :highlight :dark-style (DESIGN.md §5.6, corrected in "
+         "§11.3 item 10). It is ignored.")
+    "Move it to :highlight {:dark-style …} — planned for Phase 4 Task C."]})
 
 (def vdoing-keys
   "vdoing's `themeConfig` spellings (camelCase, and a few that live in
-  another section here) → [the clogem-press path, its status]. Status is
-  `known-keys`' :ok or :planned, or :dropped for an option Phase 4 removed
-  (DESIGN.md §8). Consulted only for a key that is not known where it was
-  written, so a site migrated from vdoing gets the spelling to use."
+  another section here) → [the clogem-press path, its status, an optional
+  note]. Status is `known-keys`' :ok or :planned, or
+
+    :dropped  — an option Phase 4 removed (DESIGN.md §8);
+    :deferred — one deferred past v1 (DESIGN.md §8's deferred list);
+    :implicit — what clogem-press always does, so there is nothing to set.
+
+  Consulted only for a key that is not known where it was written, so a
+  site migrated from vdoing gets the spelling to use. Every key vdoing's
+  `themeConfig` declares (vdoing/types/index.ts) is here."
   {"pageStyle"               [[:theme :page-style] :ok]
    "defaultMode"             [[:theme :default-mode] :ok]
-   "sidebarOpen"             [[:theme :sidebar-open] :ok]
+   ;; vdoing's sidebarOpen says whether the sidebar PANEL starts open
+   ;; (Layout.vue `created()`: `sidebarOpen === false` closes it); clogem's
+   ;; :sidebar-open opens every group, which is vdoing's
+   ;; `sidebar.collapsable` inverted (D-P4-16)
+   "sidebarOpen"             [[:theme :sidebar-collapsed] :planned
+                              "with the opposite sense: sidebarOpen false is :sidebar-collapsed true"]
    "sidebarDepth"            [[:theme :sidebar-depth] :ok]
    "categoryText"            [[:content :category-text] :ok]
    "extendFrontmatter"       [[:content :extend-frontmatter] :ok]
@@ -428,6 +492,7 @@
    "htmlModules"             [[:theme :html-modules] :planned]
    "bodyBgImg"               [[:theme :body-bg-img] :planned]
    "bodyBgImgOpacity"        [[:theme :body-bg-img-opacity] :planned]
+   "bodyBgImgInterval"       [[:theme :body-bg-img-interval] :planned]
    "bannerBg"                [[:theme :banner-bg] :planned]
    "titleBadge"              [[:theme :title-badge] :planned]
    "titleBadgeIcons"         [[:theme :title-badge-icons] :planned]
@@ -446,10 +511,16 @@
    "docsRepo"                [[:content :edit-link] :planned]
    "docsDir"                 [[:content :edit-link] :planned]
    "docsBranch"              [[:content :edit-link] :planned]
+   "algolia"                 [nil :deferred "search is Pagefind's (:search :provider :pagefind)"]
    "searchMaxSuggestions"    [nil :dropped]
    "displayAllHeaders"       [nil :dropped]
    "sidebarHoverTriggerOpen" [nil :dropped]
-   "sidebar"                 [nil :dropped]})
+   "sidebar"                 [nil :implicit]})
+
+(defn a-or-an
+  "`word` with its indefinite article: \"an analytics\", \"a locale\"."
+  [word]
+  (str (if (re-find #"(?i)^[aeiou]" (str word)) "an " "a ") word))
 
 (defn- path-str
   [path]
@@ -469,6 +540,7 @@
   [path]
   (cond
     (empty? path)                 "top-level"
+    (= :nav (first path))         "nav item"
     (= [:langs :locales] (vec (take 2 path))) "locale"
     :else (str/join " " (map #(if (keyword? %) (name %) (str %)) path))))
 
@@ -477,29 +549,72 @@
 (defn- warn-unknown!
   [path k known]
   (let [kn  (key-name k)
-        [target status] (get vdoing-keys kn)
-        nearest (when-not status
+        p   (path-str (conj path k))
+        [target status note] (get vdoing-keys kn)
+        retired (get retired-keys (conj path k))
+        nearest (when-not (or status retired)
                   (some->> (keys known)
-                           (map (fn [c] [(u/damerau-levenshtein (u/lower kn) (u/lower (name c))) (str c) c]))
+                           (map (fn [c] [(u/damerau-levenshtein (u/lower kn) (u/lower (key-name c))) (str c) c]))
                            (filter #(<= (first %) 2))
                            sort first last))]
-    (case status
-      (:ok :planned)
-      (diag/warn! nil (str (path-str (conj path k)) " is vdoing's spelling; clogem-press reads "
-                           (path-str target)
+    (cond
+      retired
+      (diag/warn! nil (first retired) (second retired))
+
+      (#{:ok :planned} status)
+      (diag/warn! nil (str p " is vdoing's spelling; clogem-press reads " (path-str target)
+                           (when note (str " (" note ")"))
                            (when (= :planned status)
                              (str " — planned, not implemented in " (generator-version)))
                            ". It is ignored.")
                   (str "Write " (path-str target) " instead (DESIGN.md §5.6)."))
-      :dropped
-      (diag/warn! nil (str (path-str (conj path k)) " is a vdoing option clogem-press does not have "
-                           "(dropped in Phase 4, DESIGN.md §8); it is ignored."))
-      (diag/warn! nil (str (path-str (conj path k)) " is not a " (section-label path)
-                           " option and is ignored.")
+
+      (= :dropped status)
+      (diag/warn! nil (str p " is a vdoing option clogem-press does not have "
+                           "(dropped in Phase 4, DESIGN.md §8)" (when note (str "; " note))
+                           "; it is ignored."))
+
+      (= :deferred status)
+      (diag/warn! nil (str p " is a vdoing option clogem-press defers past v1 (DESIGN.md §8)"
+                           (when note (str "; " note)) "."))
+
+      (= :implicit status)
+      (diag/warn! nil (str p " is not needed: clogem-press always generates the structured sidebar "
+                           "from the numbered directory tree (vdoing's 'structuring' mode); it is ignored.")
+                  (str "Remove it. Custom sidebar arrays and sidebar: 'auto' are not supported "
+                       "(DESIGN.md §8). vdoing's `collapsable: false` corresponds to :theme :sidebar-open true."))
+
+      :else
+      (diag/warn! nil (str p " is not " (a-or-an (section-label path)) " option and is ignored.")
                   (str (when nearest (str "Did you mean " nearest "? "))
                        "The options are "
                        (str/join ", " (map str (sort-by str (keep (fn [[k st]] (when (= :ok st) k)) known))))
                        " (config.example.edn).")))))
+
+(defn- check-author!
+  "`:site :author` holds options only in its named shape — {:name … :link …},
+  keyword or string keys, as `i18n/resolve-author` reads it. A per-language
+  map ({:en \"Jane\" :zh-Hans \"简\"}) is user data, and a string is never
+  checked."
+  [m path]
+  (when (and (map? m) (or (contains? m :name) (contains? m "name")))
+    (doseq [k (sort-by str (keys m))
+            :when (not (contains? author-keys k))]
+      (warn-unknown! path k {:name :ok :link :ok}))))
+
+(defn- check-nav!
+  "Walk `:nav` items (`known-keys` `[:nav :*]`) at `:nav 0`, `:nav 1 :items
+  0`, …, recursing into `:items` — never into `:text`, a per-language map."
+  [items path]
+  (when (sequential? items)
+    (doseq [[i item] (map-indexed vector items)
+            :let [p (conj path i)]
+            :when (map? item)]
+      (let [known (get known-keys [:nav :*])]
+        (doseq [k (sort-by str (keys item))
+                :when (not (contains? known k))]
+          (warn-unknown! p k known)))
+      (check-nav! (:items item) (conj p :items)))))
 
 (defn check-keys!
   "Warn about every key of `m` (a site.edn as read, before defaults are
@@ -508,7 +623,10 @@
   Returns nil."
   ([m] (check-keys! m []))
   ([m path]
-   (when (map? m)
+   (cond
+     (= [:nav] path)          (check-nav! m path)
+     (= [:site :author] path) (check-author! m path)
+     (map? m)
      (if-let [known (entry-for path)]
        (doseq [k (sort-by str (keys m))
                :let [v (get m k)]]
@@ -530,7 +648,9 @@
   effect in this version rather than being silently ignored."
   [cfg]
   (let [v (generator-version)]
-    (when (seq (get-in cfg [:theme :html-modules]))
+    (when (let [hm (get-in cfg [:theme :html-modules])]
+            ;; 0.2.0 accepted any value, `false` and `:none` included
+            (if (coll? hm) (seq hm) (some? hm)))
       (diag/warn! nil (str ":theme :html-modules has no effect in " v "; nothing is injected.")
                   "htmlModules support is planned for Phase 4 (DESIGN.md §8)."))
     (let [p (get-in cfg [:analytics :provider])]
