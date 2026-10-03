@@ -56,7 +56,7 @@ and run it against local content with no packaging step.
 
 | Task | What it does |
 |---|---|
-| `bb build` | Render the site to `dist/`. Writes missing front matter unless `--no-write`. Renders every page in memory first (in parallel; `CLOGEM_JOBS=1` for one thread) and writes only when all of it succeeded, file by file and atomically, skipping files whose bytes are unchanged — a failed build leaves `dist/` as it was. Runs Pagefind last under `:search {:provider :pagefind}`; `--no-search` builds without search (no index, no search UI). Removes `.html` files in the output directory that the build did not write, so the output directory must be a directory of its own. |
+| `bb build` | Render the site to `dist/`. Writes missing front matter unless `--no-write`. Renders every page in memory first (in parallel; `CLOGEM_JOBS=1` for one thread) and writes only when all of it succeeded, file by file and atomically, skipping files whose bytes are unchanged — a page that fails to render, or a site asset that cannot be read, leaves `dist/` and `permalinks.edn` as they were (an I/O error while writing, such as a full disk, or a Pagefind failure can still leave some files updated). Runs Pagefind last under `:search {:provider :pagefind}`; `--no-search` builds without search (no index, no search UI). Removes `.html` files in the output directory that the build did not write, so the output directory must be a directory of its own. |
 | `bb dev` | Build, serve on :1888, rebuild on change, push an SSE reload. `--poll` if inotify is unreliable; `--no-search` builds without search. |
 | `bb serve` | Serve an already-built directory, no watching. |
 | `bb doctor` | Report content problems without building. Exits non-zero on errors. |

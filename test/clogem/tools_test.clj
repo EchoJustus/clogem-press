@@ -214,8 +214,11 @@
            (fs/create-dirs (fs/parent bin))
            (spit (fs/file bin) "#!/bin/sh\necho mine\n")
            (testing "the environment variable, relative to the working directory"
-             (binding [tools/*env* {(:env tool) (str bin)}]
-               (is (= (str bin) (tools/ensure-binary! tool (cfg-for dir tool "http://127.0.0.1:1/x" nil))))))
+             (let [rel (str (fs/relativize (fs/cwd) bin))]
+               (is (not (fs/absolute? rel)) rel)
+               (binding [tools/*env* {(:env tool) rel}]
+                 (is (= (str bin)
+                        (str (fs/normalize (fs/absolutize (tools/ensure-binary! tool (cfg-for dir tool "http://127.0.0.1:1/x" nil))))))))))
            (testing ":tools <id> :path, relative to the site"
              (let [cfg (first (diag/collecting
                                (config/load-config (str dir) nil {:tools {(:id tool) {:path "bin/my-tool"}}})))]

@@ -78,8 +78,8 @@
 
   Three rolling rows rather than the (m+1)×(n+1) matrix: the recurrence only
   ever looks two rows back. Under babashka a 2-D `make-array` cost about 6 ms
-  a call, which made analysing a 300-article site take 6 s; this is ~60×
-  faster with identical results (Phase 4 Task A, D-P4-11 — compared against
+  a call, which made analysing a 300-article site take 6 s; this is ~40×
+  faster (measured ~44×, DESIGN.md Appendix A item 21) with identical results (Phase 4 Task A, D-P4-11 — compared against
   the matrix version on random ASCII, CJK and Tamil strings in util-test).
   Compares UTF-16 code units, as the matrix version did."
   [^String a ^String b]

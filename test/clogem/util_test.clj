@@ -97,8 +97,9 @@
 
 (defn- reference-damerau-levenshtein
   "The 0.2.0 implementation — a full (m+1)×(n+1) matrix — kept as the oracle
-  for the rolling-row rewrite in `clogem.util`. Test-only: it is ~60× slower
-  under babashka, which is why it was replaced."
+  for the rolling-row rewrite in `clogem.util`. Test-only: it is ~40× slower
+  under babashka (measured ~44×, DESIGN.md Appendix A item 21), which is why
+  it was replaced."
   [^String a ^String b]
   (let [m (count a) n (count b)
         d (make-array Long/TYPE (inc m) (inc n))]

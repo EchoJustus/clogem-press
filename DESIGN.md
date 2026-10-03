@@ -1619,12 +1619,12 @@ Design points worth stating:
 
 ## 8. Implementation plan
 
-Effort assumes one experienced Clojure developer; "day" = focused day. Line items total **54 focused
+Effort assumes one experienced Clojure developer; "day" = focused day. Line items total **56 focused
 days** — roughly **11 weeks full-time, or ~5–6 months at part-time pace** — to full vdoing parity
 *plus* five-language i18n, with a live site after Phase 0 and a usable one after Phase 1.
 
-*(Rebaselined at the start of Phase 4, §11.3 item 1: Phase 4 grew from 9 to about 16 days, so the
-total from 47 to 54. The paragraph below records v2's own arithmetic as it was.)*
+*(Rebaselined at the start of Phase 4, §11.3 item 1: Phase 4 grew from 9 to 18 days, so the
+total from 47 to 56. The paragraph below records v2's own arithmetic as it was.)*
 
 *(v1's plan was 34 days and mis-stated its own total as "~35"; v2 corrects the arithmetic and adds
 +13 days: a new 9-day i18n phase, a new 2-day repo-split phase, and net +2 days of i18n spillover into
@@ -1677,7 +1677,7 @@ the bot push) and produces a live URL before any real code exists.
   thread per article identity by `check_giscus.py`, the per-language indexes by `check_search.clj`,
   and the Tamil-only article by the `<html lang="ta">` check (§11.2 item 50).
 
-### Phase 4 — Theme polish & advanced features (16 days)
+### Phase 4 — Theme polish & advanced features (18 days)
 
 *Rebaselined at the start of Phase 4 (§11.3 item 1).* v2's 9-day list — a full CSS theme, Chroma,
 live reload, htmlModules and blogger chrome, icons, analytics — understated the surface: vdoing's
@@ -1689,19 +1689,19 @@ order; each builds on A:
   unchanged files; parallel rendering; a fast Damerau-Levenshtein; cache-busting `?v=` on every theme
   asset; warnings for unknown and not-yet-implemented config keys; a generic tool fetcher with Chroma
   and fswatcher-pod descriptors; a CI browser job. *Done (§11.3 items 7, 11, 16, 18).*
-- **B1 — Colour modes** (2.5 d): mode classes on `<html>` with a no-FOUC head script, an accessible
+- **B1 — Colour modes** (2.25 d): mode classes on `<html>` with a no-FOUC head script, an accessible
   palette (WCAG AA), the toggle, icons (§11.3 items 2–6, 8).
-- **C — Chroma highlighting** (2 d): on by default, line numbers as CSS counters, a per-language
+- **C — Chroma highlighting** (2.5 d): on by default, line numbers as CSS counters, a per-language
   process and hash cache, dual-theme variables, a copy button (§11.3 item 10).
-- **D — Dev loop** (1.5 d): debounce, the verified pod fetch, an error overlay, `:base` in dev,
+- **D — Dev loop** (1.75 d): debounce, the verified pod fetch, an error overlay, `:base` in dev,
   Pagefind in the background (§11.3 item 12).
 - **B2 — Page styles and mobile layout** (2 d): card/line, a one-row navbar with a drawer, focus
   rings, monospace code on ta/zh pages (§11.3 item 9).
 - **F — Analytics, verification, static root** (1 d) (§11.3 items 14, 15).
-- **E1 — Blog identity, banner, htmlModules** (2 d) (§11.3 item 13).
-- **E2 — Article-page parity** (2 d): edit link, last-updated, update bar, `titleTag` rows,
+- **E1 — Blog identity, banner, htmlModules** (2.75 d) (§11.3 item 13).
+- **E2 — Article-page parity** (1.75 d): edit link, last-updated, update bar, `titleTag` rows,
   logo/repo, `pageClass`, a 404 page (§11.3 item 16).
-- **G — Cross-language search, then release 0.3.0** (1 d) (§11.3 item 17).
+- **G — Cross-language search, then release 0.3.0** (2 d) (§11.3 item 17).
 - **Exit criterion:** every key of vdoing's `themeConfig`, and every front-matter key vdoing reads, is
   implemented, deferred (below) or removed (below); for a `site.edn` key, `doctor` already says which
   (`config/known-keys`, `config/vdoing-keys`, §11.3 item 16).
@@ -1718,7 +1718,8 @@ order; each builds on A:
 - Release engineering: tags, `release.yml`, moving major tag, pinning documentation, `clogem theme eject` (1 d)
 - User documentation site in `doc/`, built by clogem-press and published to its own project Pages — dogfooding, and the only test of a non-root `:base` (1.5 d)
 
-**Totals:** 2 + 8 + 12 + 9 + 16 + 7 = **54 focused days** (47 before Phase 4's rebaseline).
+**Totals:** 2 + 8 + 12 + 9 + 18 + 7 = **56 focused days** (47 before Phase 4's rebaseline). Phase 4's
+eighteen are its tasks' estimates: 2 + 2.25 + 2.5 + 1.75 + 2 + 1 + 2.75 + 1.75 + 2.
 
 **Deliberately deferred** (post-v1): image zoom, MathJax/KaTeX, flowchart rendering, `tabs` /
 `demo-block` containers, Algolia provider, incremental production builds, JVM execution mode,
@@ -2661,11 +2662,13 @@ Recorded as Phase 4 (§8) is planned and lands. Items 1–18 are the decisions t
 (D-P4-*); an item says *done* when the task that implements it has landed, and later tasks append
 their own findings. Item 19 onward are corrections.
 
-1. **Scope and budget (§8).** Phase 4 is rebaselined from 9 to about 16 days, as nine tasks in six
-   rounds: A foundations (2 d), B1 colour modes (2.5 d), C Chroma (2 d), D dev loop (1.5 d), B2 page
-   styles and mobile layout (2 d), F analytics, verification and static root (1 d), E1 blog identity
-   and htmlModules (2 d), E2 article-page parity (2 d), G cross-language search and release 0.3.0
-   (1 d). The project total moves from 47 to 54 days. Exit criterion: vdoing's `themeConfig` and the
+1. **Scope and budget (§8).** Phase 4 is rebaselined from 9 to 18 days, as nine tasks in six
+   rounds: A foundations (2 d), B1 colour modes (2.25 d), C Chroma (2.5 d), D dev loop (1.75 d), B2
+   page styles and mobile layout (2 d), F analytics, verification and static root (1 d), E1 blog
+   identity and htmlModules (2.75 d), E2 article-page parity (1.75 d), G cross-language search and
+   release 0.3.0 (2 d). The project total moves from 47 to 56 days. (Corrected in fix round
+   P4-A.1: the first statement said "about 16" and 54, which matched neither the plan's per-task
+   estimates nor their sum.) Exit criterion: vdoing's `themeConfig` and the
    front-matter keys it reads are all implemented, deferred or removed. Deferred: front matter
    `navbar: false` and `search: false` (joining §8's list). Removed: `displayAllHeaders`,
    `sidebarHoverTriggerOpen`, `searchMaxSuggestions`, custom sidebar arrays and `sidebar: 'auto'`.
@@ -2716,17 +2719,44 @@ their own findings. Item 19 onward are corrections.
     "`--html-prefix` quirk" of §10 and research/08 is not a bug: `--html-styles` honours
     `--html-prefix` only when `--html` is also passed (verified with the 2.27.0 binary).
 11. **Build robustness and speed (A, D-P4-11) — done.**
-    *Robustness.* `render/render-site` renders every page, the theme and site assets, the feeds, the
-    sitemap and robots.txt into memory (the demo is 13–24 MB) and writes nothing; only when all of it
-    has succeeded does `render/write-site!` write each file — a temp file in the same directory,
-    then an atomic rename — skipping files whose bytes are unchanged, and sweep stale `.html` as
-    before (§11.2 item 46: a build never deletes a non-HTML file it did not write — `CNAME`,
-    `.nojekyll` — and leftover temp files of a killed build are its own). The ledger is written after
-    rendering, not before. A render failure, `Throwable` included, raises naming the page, exit 1,
-    and leaves `dist/` and `permalinks.edn` byte-for-byte as they were (the pre-flight that left 150
-    new pages and 86 old is now a test). The summary line keeps its 0.2.0 start and adds
-    `(N written, M unchanged)`; a no-change rebuild writes 0 files. Non-goal, left for Phase 5:
-    Pagefind failing after the pages are written.
+    *Robustness.* `render/render-site` renders every page, the theme assets, the feeds, the sitemap
+    and robots.txt into memory, and **reads** every site asset there too (the demo is 13–24 MB), and
+    writes nothing; only when all of it has succeeded does `render/write-site!` write each file — a
+    temp file in the same directory, then an atomic rename — skipping files whose bytes are
+    unchanged, and sweep stale `.html` as before (§11.2 item 46: a build never deletes a non-HTML
+    file it did not write — `CNAME`, `.nojekyll` — and abandoned temp files of a killed build are its
+    own). The ledger is written only after `write-site!` has succeeded. A render failure, `Throwable`
+    included, raises naming the page, exit 1; an unreadable site asset raises naming the file, exit
+    1; either leaves `dist/` and `permalinks.edn` byte-for-byte as they were (the pre-flight that left
+    150 new pages and 86 old is now a test, and so is an unreadable asset). **What is not
+    guaranteed:** an I/O failure *while writing* (a full disk, an unwritable subdirectory) can leave
+    some files updated and others not — there is no transaction over a directory — and so can a
+    Pagefind failure after the pages are written (left for Phase 5). The summary line keeps its
+    0.2.0 start and adds `(N written, M unchanged)`; a no-change rebuild writes 0 files.
+    *The write path, fix round P4-A.1.* Before the first write, every output must lie inside the
+    out directory (normalized and absolute) and must not be blocked by a directory: an earlier
+    build's `dist/assets/docs/` where `assets/docs` is now a file used to swallow the rename (bb's
+    `fs/move` moves *into* a directory, like `mv`), report "1 written" and leave a temp file each
+    time; it is now an error naming the path and saying to remove it or run `clean`, and the rename
+    is `Files/move` with `REPLACE_EXISTING` and `ATOMIC_MOVE`. Temp files are named
+    `.clogem-tmp-<pid>-<nanoTime>`, independent of the target's name — `.<name>.clogem-tmp-…` pushed
+    a 232-byte CJK asset name past the 255-byte limit that 0.2.0 wrote fine — and written with
+    `Files/write`'s default permissions (`createTempFile`'s 0600 would hide a published file from a
+    web server running as another user). The temp sweep walks the whole out tree (never through a
+    link, never under `pagefind/`) and deletes only an *abandoned* temp file: its PID is not alive,
+    or it is more than 10 minutes old (a pre-PID name: age only). Sweeping every temp file used to
+    delete a concurrent build's in-flight one (`bb dev` and `bb build` into one `dist/`), failing it
+    about one time in ten; a temp file that vanishes under a write is now retried once. Directories
+    the sweep empties are pruned. On Windows, a rename over a file another process holds open
+    without `FILE_SHARE_DELETE` (`bb dev`'s server, an antivirus) is refused; it is retried with
+    backoff (5 … 1280 ms, ~2.5 s), and a rename — or a temp file — still refused falls back to
+    0.2.0's in-place write; any other I/O error fails at once with the target untouched. **No
+    Windows run has been made**: the retry and fallback are tested with the move stubbed
+    (`write_windows_test.clj`). Skip-unchanged compares the directory entry's *exact* name, so on a
+    case-insensitive file system a case-only asset rename (`Logo.PNG` → `logo.png`) is written, as
+    0.2.0 did, rather than kept in its old case and 404ing on a case-sensitive host. A permalink with
+    a `.` or `..` segment or a backslash is an error naming its file (`/../../escaped/` used to
+    write outside `dist/`; doubled slashes are still collapsed, as in 0.2.0).
     *Speed.* `util/damerau-levenshtein` keeps three rolling rows (persistent vectors — long arrays
     are slower still under sci, every `aget` being reflective) instead of a 2-D `make-array`; a
     property test checks it against the 0.2.0 matrix on 3000 random ASCII, CJK and Tamil pairs. Pages
@@ -2773,6 +2803,19 @@ their own findings. Item 19 onward are corrections.
     `:theme :last-updated` from one `git log` pass; `:theme :sidebar-collapsed`, keeping
     `:sidebar-open`'s 0.2.0 meaning; right-menu-bar, page-button, content-bg-style, back-to-top,
     logo, repo link, hero keys, `pageClass`, and a 404 page (`noindex`, not in the sitemap).
+    *Fix round P4-A.1.* `:site :author` is checked only in its named shape (`:name`/`:link`, keyword
+    or string keys, as `i18n/resolve-author` reads them); its per-language shape is user data. `:nav`
+    items are walked (`:nav 1 :items 0 :lnk`), never their per-language `:text`. A bad `:tools
+    :chroma` or `:tools :fswatcher` pin is a **warning** and is repaired to the built-in pin — nothing
+    runs either tool yet, and 0.2.0's own §5.6 sketch (a single `:sha256` string) passed 0.2.0;
+    Pagefind's pin stays an error (`config/fatal-tool-ids`, which C and D extend). vdoing's
+    `sidebarOpen` is the planned `:theme :sidebar-collapsed`, inverted — it says whether the sidebar
+    *panel* starts open (vdoing `Layout.vue` `created()`); clogem's `:sidebar-open` is vdoing's
+    `sidebar.collapsable`, inverted. `sidebar` is *implicit* (the structured sidebar is what
+    clogem-press always builds), `algolia` *deferred*, `bodyBgImgInterval` planned; `vdoing-keys` now
+    covers every key vdoing's `themeConfig` declares. Retired clogem keys have their own message
+    (`config/retired-keys`: `:generator :ref`, D-14; `:tools :chroma :style`, now `:highlight`). A
+    scalar `:theme :html-modules` warns instead of crashing every task.
     *Unknown-key warnings — done in A (part of D-P4-16).* `config/known-keys` is the one table of
     every section's keys ({path → {key :ok|:planned}}, `:*` for any key); `check-keys!` walks the
     site.edn as written and warns, never errors, on an unknown key — naming its path and the nearest
@@ -2811,6 +2854,15 @@ their own findings. Item 19 onward are corrections.
     itself". That is true of theme strings only (`i18n/tr`); a config map value that has none of the
     chain's languages resolves to the map's **first** value (`i18n/resolve-str`). It now documents
     `:tools :chroma`, `:tools :fswatcher` and `CLOGEM_JOBS` as well.
+
+
+### Known limitations (Phase 5)
+
+- **Case-only permalink changes on a case-insensitive file system** (macOS, Windows; pre-existing,
+  found in fix round P4-A.1). Changing a permalink only in case (`/pages/Abc/` → `/pages/abc/`)
+  writes the new page over the old file — the file system calls them one — and the stale sweep,
+  comparing names exactly, then deletes the page it just wrote, until the next build. Two
+  permalinks that differ only by case overwrite each other there.
 
 ---
 
