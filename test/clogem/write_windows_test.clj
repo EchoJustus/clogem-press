@@ -135,15 +135,39 @@
   (let [d    (fs/create-temp-dir {:prefix "clogem-win"})
         out  (fs/path d "out")
         f    (fs/path out "index.html")
-        real @#'render/write-bytes!]
+        real @#'render/write-bytes!
+        refused (atom 0)]
     (try
       (spit (fs/file (doto (fs/file out) (.mkdirs)) "index.html") "old")
       (binding [diag/*sink* (atom [])]
         (with-redefs-fn {#'render/exception-class-name stub-class-name
                          #'render/write-bytes! (fn [p b]
                                                  (if (.contains (str (fs/file-name p)) ".clogem-tmp-")
-                                                   (throw (failure access-denied))
+                                                   (do (swap! refused inc)
+                                                       (throw (failure access-denied)))
                                                    (real p b)))}
           #(render/write-site! {:outputs [{:file f :bytes (.getBytes "new" "UTF-8")}] :out (str out)})))
+      (is (pos? @refused) "the temp file was refused")
       (is (= "new" (slurp (fs/file f))))
       (finally (fs/delete-tree d)))))
+
+(deftest an-unwritable-directory-with-a-writable-file-is-written-in-place
+  ;; the real thing, where permissions bind (not as root): the directory
+  ;; refuses a new temp file, the file itself is writable — 0.2.0's
+  ;; in-place write succeeded, so this must too
+  (if (= "root" (System/getProperty "user.name"))
+    (println "an-unwritable-directory-with-a-writable-file-is-written-in-place: skipped — root ignores permissions")
+    (let [d   (fs/create-temp-dir {:prefix "clogem-win"})
+          out (fs/path d "out")
+          dir (fs/path out "locked")
+          f   (fs/path dir "index.html")]
+      (try
+        (fs/create-dirs dir)
+        (spit (fs/file f) "old")
+        (fs/set-posix-file-permissions dir "r-xr-xr-x")
+        (binding [diag/*sink* (atom [])]
+          (render/write-site! {:outputs [{:file f :bytes (.getBytes "new" "UTF-8")}] :out (str out)}))
+        (is (= "new" (slurp (fs/file f))))
+        (finally
+          (fs/set-posix-file-permissions dir "rwxr-xr-x")
+          (fs/delete-tree d))))))

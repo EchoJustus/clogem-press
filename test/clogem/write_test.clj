@@ -381,7 +381,7 @@
                                 (if (= "zz-boom.bin" (str (fs/file-name p)))
                                   (throw (java.io.IOException. "Permission denied"))
                                   (apply real p more)))]
-                  (try (build! dir) nil (catch clojure.lang.ExceptionInfo e e)))]
+                  (try (build! dir) nil (catch Exception e e)))]
           (is (some? e) "the build fails")
           (is (= 1 (:babashka/exit (ex-data e))))
           (is (re-find #"zz-boom\.bin" (str (ex-message e))) (ex-message e)))
@@ -461,19 +461,26 @@
           (is (fs/exists? (fs/path out ".nojekyll"))))))))
 
 (deftest concurrent-writes-into-one-out-dir-never-throw
-  (with-temp-dir
-    (fn [d]
-      (let [out     (fs/path d "out")
-            outputs (vec (for [i (range 40)]
-                           (out-of (fs/path out (str "d" (mod i 4)) (str "f" i ".txt"))
-                                   (apply str (repeat 2000 (str i))))))]
-        (dotimes [round 20]
-          ;; different bytes each round, so every file is rewritten
-          (let [outs (mapv #(update % :bytes (fn [b] (.getBytes (str round (String. ^bytes b "UTF-8")) "UTF-8"))) outputs)
-                fs*  [(future (try (write! out outs) nil (catch Throwable t t)))
-                      (future (try (write! out outs) nil (catch Throwable t t)))]]
-            (is (= [nil nil] (mapv deref fs*)) (str "round " round))))
-        (is (empty? (temp-files out)))))))
+  ;; `bb dev` and `bb build` into one dist/: each build's sweep used to
+  ;; delete the other's in-flight temp files (NoSuchFileException). Two
+  ;; writers, each writing 20 times over, keep their sweeps and writes
+  ;; interleaved; three such runs.
+  (dotimes [run 3]
+    (with-temp-dir
+      (fn [d]
+        (let [out     (fs/path d "out")
+              outputs (fn [tag r]
+                        (for [i (range 40)]
+                          (out-of (fs/path out (str "d" (mod i 4)) (str "f" i ".txt"))
+                                  (str tag r (apply str (repeat 500 (str i)))))))
+              worker  (fn [tag]
+                        (future
+                          (try (binding [diag/*sink* (atom [])]
+                                 (dotimes [r 20] (write! out (outputs tag r))))
+                               nil
+                               (catch Throwable t t))))]
+          (is (= [nil nil] (mapv deref [(worker "a") (worker "b")])) (str "run " run))
+          (is (empty? (temp-files out))))))))
 
 (deftest the-exact-name-of-a-directory-entry-decides-same-bytes
   (is (render/exact-entry? #{"logo.png"} (fs/path "x" "logo.png")))
