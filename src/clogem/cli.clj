@@ -155,7 +155,13 @@
     ;; asset leaves dist/ exactly as it was, rather than a mix of this build's
     ;; pages and the last one's. The ledger is written only once dist/ has
     ;; been, so a failed write leaves permalinks.edn as it was too.
-    (let [[m ads]    (diag/collecting (analyse cfg))
+    (let [[m ads]    (diag/collecting
+                      (let [m (analyse cfg)]
+                        ;; two outputs of this build that would collide —
+                        ;; `/assets/demo.txt/` and the asset assets/demo.txt —
+                        ;; are a content error, before anything is rendered
+                        (render/check-output-collisions! m)
+                        m))
           _          (when (seq (diag/errors ads)) (report! ads))
           [result rds]
           (diag/collecting
@@ -244,6 +250,8 @@
                   ;; containers, bad card-list YAML), by rendering every page
                   ;; in memory and discarding it
                   (when (seq (:articles m)) (render/check-pages! m))
+                  ;; … and outputs of one build that would collide
+                  (render/check-output-collisions! m)
                   m))
         ds    (into (vec cds) ds)
         errs  (diag/errors ds)

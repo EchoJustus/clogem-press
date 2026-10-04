@@ -165,7 +165,12 @@
                        base  {:kind kind :page-kind kind :title title
                               :root-uri (model/site-url cfg lang root)
                               :href-for (fn [k] (model/site-url cfg lang (str root (u/slug k) "/")))}
-                       index (get model kind)]]
+                       index (get model kind)
+                       ;; the file whose `permalink:` put this index where it is
+                       src   (let [d (site-file model (pages/file-rel k) (config/default-lang cfg))]
+                               (when (u/blank->nil (str (get-in d [:front-matter :permalink])))
+                                 (some-> (:path d) str)))
+                       m     (fn [seo] (cond-> {:clogem/seo seo} src (assoc :clogem/source src)))]]
              (concat
               (if (= kind :archives)
                 (let [seo (seo-info cfg lang (model/site-url cfg lang root)
@@ -180,7 +185,7 @@
                                               :alt-url (fn [l] (model/site-url cfg l root))
                                               :page-body (body)
                                               :archives index))))
-                      {:clogem/seo seo})]])
+                      (m seo))]])
                 ;; the overview: the bar, then EVERY article paginated below
                 ;; it (DESIGN.md §1, as vdoing's /categories/ and /tags/ do) —
                 ;; a site whose articles carry no tags still lists them
@@ -201,7 +206,7 @@
                                              :page-url (fn [n] (model/paged-url cfg lang root n))
                                              :alt-url (fn [l] (model/paged-url cfg l root n))
                                              :page-body (when (= 1 n) (body))))))
-                     {:clogem/seo seo})])))
+                     (m seo))])))
               ;; one filtered list per category/tag, paginated
               (when (not= kind :archives)
                 (for [[k ids] index
@@ -222,7 +227,7 @@
                                            :page n :total total
                                            :page-url (fn [n] (model/paged-url cfg lang sub n))
                                            :alt-url (fn [l] (model/paged-url cfg l sub n))))))
-                   {:clogem/seo seo})])))))))
+                   (m seo))])))))))
 
 (defn- home-front-matter
   "The homepage options for `lang`: its own `index.<lang>.md` when it has
@@ -280,7 +285,7 @@
                                                 (:body v)
                                                 (link-context model model lang (:rel-path v)))))})]
            (home/home ctx)))
-       {:clogem/seo seo})])))
+       {:clogem/seo seo :clogem/source path})])))
 
 (defn- resolve-target
   "A front matter `prev:`/`next:` value: a permalink or a relative `.md`
@@ -434,7 +439,7 @@
                                ;; the theme renders the title; the body's own
                                ;; `# Title` would be a second <h1>
                                (markdown/->hiccup (markdown/drop-leading-h1 ast) lc))))))
-         {:clogem/seo seo})])
+         {:clogem/seo seo :clogem/source (:path variant)})])
 
       ;; redirect stubs at the bare identity URL when every variant is prefixed
       (when prefix-all?
@@ -442,7 +447,8 @@
           [(model/identity-url cfg group)
            (with-seo
              (fn [] (page/redirect-stub cfg (model/variant-url cfg group (:primary group))))
-             {:clogem/stub true})]))
+             {:clogem/stub true
+              :clogem/source (get-in group [:variants (:primary group) :path])})]))
 
       ;; homes, paginated: /, /page/2/, … per language
       (home-pages model ctx-for)
@@ -630,23 +636,45 @@
                          {:babashka/exit 1 :clogem/file (str p)}
                          t)))))
 
+(defn- site-rel
+  "`p` as the site author would name it: relative to the site directory
+  when it is inside it (`content/01.Guide/a.md`), else as it is."
+  [cfg p]
+  (let [site (fs/normalize (fs/absolutize (config/site-dir cfg)))
+        p    (fs/normalize (fs/absolutize p))]
+    (if (str/starts-with? (str p) (str site java.io.File/separator))
+      (str/replace (str (fs/relativize site p)) "\\" "/")
+      (str p))))
+
+(defn- theme-file-what [rel] {:label (str "the theme file clogem/" rel)})
+
+(defn- site-assets
+  "[[source-path output-file] …] for the site's own `assets/` tree, sorted."
+  [cfg]
+  (let [out  (config/out-dir cfg)
+        user (config/assets-dir cfg)]
+    (when (fs/directory? user)
+      (for [p (sort (map str (fs/glob user "**")))
+            :when (fs/regular-file? p)]
+        [(fs/path p) (fs/path out "assets" (fs/relativize user p))]))))
+
+(defn- site-asset-what [cfg p] {:label (str "the site asset " (site-rel cfg p))})
+
 (defn asset-outputs
-  "The theme's and the site's assets as outputs ({:file :bytes}): the
+  "The theme's and the site's assets as outputs ({:file :bytes :what}): the
   theme's from `clogem.assets/files` — the exact bytes their `?v=`
   fingerprints hash — and the site's own `assets/` tree, copied (never
   linked). Every file is READ here, during the render, so an unreadable
-  asset fails the build before `dist/` is touched."
+  asset fails the build before `dist/` is touched. `:what` names the
+  output in a collision error (`output-collisions`)."
   [cfg theme-files]
   (let [out (config/out-dir cfg)]
     (vec
      (concat
       (for [[rel bytes] theme-files]
-        {:file (fs/path out "clogem" rel) :bytes bytes})
-      (let [user (config/assets-dir cfg)]
-        (when (fs/directory? user)
-          (for [p (sort (map str (fs/glob user "**")))
-                :when (fs/regular-file? p)]
-            {:file (fs/path out "assets" (fs/relativize user p)) :bytes (read-asset (fs/path p))})))))))
+        {:file (fs/path out "clogem" rel) :bytes bytes :what (theme-file-what rel)})
+      (for [[p file] (site-assets cfg)]
+        {:file file :bytes (read-asset p) :what (site-asset-what cfg p)})))))
 
 (defn- html-file? [p]
   (boolean (re-find #"(?i)\.html$" (str (fs/file-name p)))))
@@ -723,33 +751,45 @@
         rel (if (str/starts-with? s b) (subs s (count b)) (str/replace s #"^/+" ""))]
     (fs/path (config/out-dir cfg) rel)))
 
-(defn seo-outputs
-  "Atom feeds, sitemap.xml and robots.txt (D-P3-3, D-P3-4), as outputs
-  ({:file :bytes :uri}). Feeds and the sitemap need an absolute URL, so
-  neither is produced when `:site :url` is blank (D-P3-1). robots.txt counts
-  only at the host root, so it is produced only when the base is `/`: a
-  site's own `<assets>/robots.txt` is copied there — URL or not, since it
-  needs none — and otherwise one is generated when there is a URL."
+(defn- seo-plan
+  "The files `seo-outputs` produces, each {:uri :file :what :content (fn [] s)}
+  — what they are is known without producing any of them."
   [cfg model pages]
   (let [url?  (config/site-url-root cfg)
         model (cond-> model
                 (not (contains? model :site-files)) (assoc :site-files (pages/site-files cfg)))
         model (assoc model :by-rel-path (rel-path-index model) :strings (i18n/load-strings cfg))
-        out   (fn [uri content]
-                {:uri uri :file (file-for cfg uri) :bytes (.getBytes (str content) "UTF-8")})
+        out   (fn [uri label content]
+                {:uri uri :file (file-for cfg uri) :what {:label label} :content content})
         user-robots (fs/path (config/assets-dir cfg) "robots.txt")]
     (vec
      (concat
-      (for [l (seo/feed-langs model)]
-        (out (seo/feed-uri cfg l)
-             (seo/emit-xml (seo/feed-xml model l #(feed-summary model %1 %2)))))
+      (for [l (seo/feed-langs model)
+            :let [uri (seo/feed-uri cfg l)]]
+        (out uri (str "the Atom feed " uri)
+             #(seo/emit-xml (seo/feed-xml model l (fn [g vl] (feed-summary model g vl))))))
       (when (and url? (get-in cfg [:seo :sitemap] true))
-        [(out (seo/sitemap-uri cfg)
-              (seo/emit-xml (seo/sitemap-xml cfg (keep (comp page-seo val) pages))))])
+        [(out (seo/sitemap-uri cfg) (str "the generated " (seo/sitemap-uri cfg))
+              #(seo/emit-xml (seo/sitemap-xml cfg (keep (comp page-seo val) pages))))])
       (when (= "/" (config/base-path cfg))
         (cond
-          (fs/regular-file? user-robots) [(out "/robots.txt" (slurp (fs/file user-robots)))]
-          url?                           [(out "/robots.txt" (seo/robots-txt cfg))]))))))
+          (fs/regular-file? user-robots)
+          [(out "/robots.txt" (str "/robots.txt (copied from the site asset " (site-rel cfg user-robots) ")")
+                #(slurp (fs/file user-robots)))]
+          url?
+          [(out "/robots.txt" "the generated /robots.txt" #(seo/robots-txt cfg))]))))))
+
+(defn seo-outputs
+  "Atom feeds, sitemap.xml and robots.txt (D-P3-3, D-P3-4), as outputs
+  ({:file :bytes :uri :what}). Feeds and the sitemap need an absolute URL, so
+  neither is produced when `:site :url` is blank (D-P3-1). robots.txt counts
+  only at the host root, so it is produced only when the base is `/`: a
+  site's own `<assets>/robots.txt` is copied there — URL or not, since it
+  needs none — and otherwise one is generated when there is a URL."
+  [cfg model pages]
+  (mapv (fn [{:keys [content] :as o}]
+          (-> o (dissoc :content) (assoc :bytes (.getBytes (str (content)) "UTF-8"))))
+        (seo-plan cfg model pages)))
 
 ;; ---------------------------------------------------------------------------
 ;; Writing (D-P4-11)
@@ -947,8 +987,61 @@
          (do (prune-empty-dirs! out (fs/parent p))
              p))))))
 
+(defn- out-rel
+  "`p` (inside `out`) as `dist/assets/demo.txt`: the output directory's own
+  name, then the path below it."
+  [out p]
+  (str/replace (str (fs/file-name out) "/" (fs/relativize out p)) "\\" "/"))
+
+(defn- what-label [out {:keys [file what]}]
+  (or (:label what) (out-rel out (normal-abs file))))
+
+(defn output-collisions
+  "Every output of this build that another output of this same build would
+  have to contain: `/assets/demo.txt/` writes `<out>/assets/demo.txt/index.html`
+  while the site asset `assets/demo.txt` writes `<out>/assets/demo.txt` —
+  one path cannot be both a file and a directory, and whichever is written
+  second either throws mid-write or buries the other. `outputs` are
+  {:file :what} (`:what` {:label :noun :source}); a `:reserved?` one is a
+  directory some other step owns whole (`<out>/pagefind/`), never itself
+  written. Each output's ancestors inside `out` are looked up, one map lookup
+  each, in the set of this build's own outputs: what is already on disk is
+  `check-outputs!`'s business. Returns [{:inner :outer :file}] — `:inner`
+  the output that would go inside `:outer`, `:file` the path both claim."
+  [out outputs]
+  (let [out     (normal-abs out)
+        by-file (into {} (map (fn [o] [(str (normal-abs (:file o))) o])) outputs)]
+    (vec
+     (for [o outputs
+           :when (not (:reserved? o))
+           :let [hit (loop [a (fs/parent (normal-abs (:file o)))]
+                       (when (and a (inside? out a))
+                         (if-let [h (get by-file (str a))]
+                           [a h]
+                           (recur (fs/parent a)))))]
+           :when hit]
+       {:inner o :outer (second hit) :file (first hit)}))))
+
+(defn collision-message
+  "What `output-collisions` found, in words naming both outputs and where
+  each comes from."
+  [out {:keys [inner outer file]}]
+  (let [out   (normal-abs out)
+        page  (some #(when (= "a page" (get-in % [:what :noun])) %) [inner outer])]
+    (str (what-label out inner) " would put " (get-in inner [:what :noun] "a file")
+         " inside " (what-label out outer)
+         (if (:reserved? outer)
+           ", which is replaced whole on every build"
+           (str ": " (out-rel out file) " cannot be both a file and a directory"))
+         ". "
+         (if page
+           (str "Choose another permalink for " (get-in page [:what :uri]) ".")
+           "Rename one of them."))))
+
 (defn- check-outputs!
-  "Throw, before anything is swept or written, if an output would land
+  "Throw, before anything is swept or written, if two of this build's own
+  outputs collide (`output-collisions`: one would have to be a directory
+  holding the other), if an output would land
   outside `out` (a `..` that slipped past analysis), where a directory now
   stands (an earlier build's `assets/docs/` where `assets/docs` is now a
   file: a rename would move the file INTO it), or below a file where a
@@ -957,8 +1050,11 @@
   would throw mid-write and leave `dist/` mixed). A symlinked directory
   inside `out` still counts as a directory. Each ancestor is checked once."
   [out outputs]
+  (when-let [cs (seq (output-collisions out outputs))]
+    (throw (ex-info (str "cannot build: " (str/join "\n" (map #(collision-message out %) cs)))
+                    {:babashka/exit 1 :clogem/file (str (:file (first cs)))})))
   (let [checked (volatile! #{})]
-    (doseq [{:keys [file]} outputs
+    (doseq [{:keys [file]} (remove :reserved? outputs)
             :let [f (normal-abs file)]]
       (when-not (inside? out f)
         (throw (ex-info (str "refusing to write " file ": it is outside the output directory " out)
@@ -970,7 +1066,10 @@
       (loop [a (fs/parent f)]
         (when (and a (inside? out a) (not (contains? @checked (str a))))
           (when (and (fs/exists? a {:nofollow-links true}) (not (fs/directory? a)))
-            (throw (ex-info (str "cannot write " f ": " a " is a file where a directory now belongs "
+            (throw (ex-info (str "cannot write " f ": " a
+                                 (if (and (fs/sym-link? a) (not (fs/exists? a)))
+                                   " is a broken symlink where a directory now belongs "
+                                   " is a file where a directory now belongs ")
                                  "(left by an earlier build?). Remove " a " or run `bb clean`, then build again.")
                             {:babashka/exit 1 :clogem/file (str a)})))
           (vswap! checked conj (str a))
@@ -978,14 +1077,14 @@
 
 (defn write-outputs!
   "Write each output whose bytes differ from what is on disk, atomically,
-  into `out`, after checking every output (`check-outputs!`) and sweeping
-  abandoned temp files. Returns {:written n :unchanged n :files [every
-  output file]}."
-  [out outputs]
+  into `out`, after checking every output (`check-outputs!`, with the
+  `reserved` directories other steps own) and sweeping abandoned temp files.
+  Returns {:written n :unchanged n :files [every output file]}."
+  [out outputs & [reserved]]
   (let [out   (normal-abs out)
         files (mapv :file outputs)
         cache (atom {})]
-    (check-outputs! out outputs)
+    (check-outputs! out (concat outputs reserved))
     (sweep-temp-files! out)
     (reduce (fn [acc {:keys [file bytes]}]
               (if (same-bytes? cache file bytes)
@@ -994,6 +1093,57 @@
                     (update acc :written inc))))
             {:written 0 :unchanged 0 :files files}
             outputs)))
+
+(defn- page-what
+  "A page output's `:what`: its URI and, when known, the file it comes from
+  (`:clogem/source` on its page-map thunk)."
+  [cfg uri f]
+  (let [src (some->> (:clogem/source (meta f)) (site-rel cfg))]
+    {:uri uri :noun "a page" :source src
+     :label (str uri (when src (str " (from " src ")")))}))
+
+(defn- reserved-outputs
+  "The directories under `out` that another step replaces whole: Pagefind's
+  `pagefind/`, when search is on (D-P3-8)."
+  [cfg]
+  (when (search/enabled? cfg)
+    [{:file (fs/path (config/out-dir cfg) search/output-subdir) :reserved? true
+      :what {:label (str "the search index " search/output-subdir "/")}}]))
+
+(defn planned-outputs
+  "Every file a build of `model` would write, as {:file :what}, plus its
+  `reserved-outputs` — the pages (from the page map, none rendered), the
+  theme's and the site's assets (listed, not read), the feeds, the sitemap
+  and robots.txt (none produced)."
+  [model]
+  (let [cfg   (:cfg model)
+        out   (config/out-dir cfg)
+        base  (config/base-path cfg)
+        pages (page-map model)]
+    (vec (concat
+          (for [[uri f] pages]
+            {:file (uri->file base out uri) :what (page-what cfg uri f)})
+          (for [rel (keys (assets/files cfg))]
+            {:file (fs/path out "clogem" rel) :what (theme-file-what rel)})
+          (for [[p file] (site-assets cfg)]
+            {:file file :what (site-asset-what cfg p)})
+          (map #(dissoc % :content) (seo-plan cfg model pages))
+          (reserved-outputs cfg)))))
+
+(defn check-output-collisions!
+  "Report, as errors, the outputs of `model` that would collide
+  (`output-collisions`) — what `doctor` and the build's analysis run, so a
+  permalink such as `/assets/demo.txt/` or `/robots.txt/` is a content error
+  before anything is rendered. The page map's own diagnostics are not
+  repeated here. Returns the collisions."
+  [model]
+  (let [out    (config/out-dir (:cfg model))
+        [plan] (diag/collecting (planned-outputs model))
+        cs     (output-collisions out plan)]
+    (doseq [{:keys [inner outer] :as c} cs]
+      (diag/error! (or (get-in inner [:what :source]) (get-in outer [:what :source]))
+                   (collision-message out c)))
+    cs))
 
 (defn render-site
   "Render the whole site into memory: every page, the theme's and the site's
@@ -1013,10 +1163,14 @@
         base        (config/base-path cfg)
         [rendered ds] (render-pages pages)
         _           (diag/emit-all! ds)
-        page-outs   (mapv (fn [[uri bytes]] {:file (uri->file base out uri) :bytes bytes}) rendered)]
+        page-outs   (mapv (fn [[uri bytes]]
+                            {:file (uri->file base out uri) :bytes bytes
+                             :what (page-what cfg uri (get pages uri))})
+                          rendered)]
     {:outputs  (vec (concat page-outs
                             (asset-outputs cfg theme-files)
                             (seo-outputs cfg model pages)))
+     :reserved (reserved-outputs cfg)
      :pages    (count page-outs)
      :articles (count (:articles model))
      :variants (reduce + (map #(count (:variants %)) (vals (:articles model))))
@@ -1029,12 +1183,12 @@
   and the directories either sweep leaves empty — `CNAME`, `.nojekyll`, a
   verification file the site owner or a CI step put there all stay.
   Returns the render summary plus {:written :unchanged :stale}."
-  [{:keys [outputs out] :as rendered}]
+  [{:keys [outputs reserved out] :as rendered}]
   (fs/create-dirs out)
-  (let [{:keys [written unchanged files]} (write-outputs! out outputs)
+  (let [{:keys [written unchanged files]} (write-outputs! out outputs reserved)
         stale (sweep-stale-html! out files)]
     (-> rendered
-        (dissoc :outputs)
+        (dissoc :outputs :reserved)
         (assoc :written written :unchanged unchanged :stale (count stale)))))
 
 (defn build!

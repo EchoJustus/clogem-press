@@ -147,7 +147,10 @@
   two files naming the same language are one error naming both. An
   `@pages/` file whose `permalink:` is unsafe (`u/unsafe-permalink?`) is an
   error naming it, as for an article, and the permalink is dropped so its
-  index keeps its default path."
+  index keeps its default path — when the file is one whose permalink is
+  read, the site default language's (`clogem.render/index-paths`). Any
+  other language's file has its `permalink:` ignored, so an unsafe one there
+  is a warning that it is unsafe and unused, and is dropped all the same."
   [cfg]
   (let [content  (config/content-dir cfg)
         rel-name (fn [p] (str (fs/relativize content p)))
@@ -162,6 +165,10 @@
                                 (str "two files claim to be the " (name lang) " version of "
                                      rel ".md: " (str/join " and " (map rel-name paths)))
                                 "Keep one spelling; until then the exact canonical suffix is the one read."))
+        ;; the files whose `permalink:` decides an index's path
+        read-pl? (into #{} (keep (fn [[[_ lang] {:keys [path]}]]
+                                   (when (= lang (config/default-lang cfg)) (str path))))
+                       resolved)
         parsed   (reduce (fn [m p]
                            (let [k (str p)]
                              (if (contains? m k)
@@ -172,7 +179,15 @@
                                         (if (and (some? pl)
                                                  (str/starts-with? (rel-name p) "@pages")
                                                  (u/unsafe-permalink? pl))
-                                          (do (model/unsafe-permalink-error! (rel-name p) pl)
+                                          (do (if (read-pl? k)
+                                                (model/unsafe-permalink-error! (rel-name p) pl)
+                                                (diag/warn! (rel-name p)
+                                                            (str "permalink " (pr-str (str pl))
+                                                                 " has a `.` or `..` segment or a backslash; it is unused "
+                                                                 "(an index's path comes from the "
+                                                                 (name (config/default-lang cfg))
+                                                                 " file only), but it would not be safe if it were used.")
+                                                            "Remove it, or use a plain path such as /tags/."))
                                               (update parts :front-matter dissoc :permalink))
                                           parts))))))
                          {} (map (comp :path second) resolved))]

@@ -733,3 +733,127 @@
             (is (= "no such file (NoSuchFileException)" (render/io-failure-reason missing t)))))
         (testing "any other message is kept"
           (is (= "Permission denied" (render/io-failure-reason p (java.io.IOException. "Permission denied")))))))))
+
+;; ---------------------------------------------------------------------------
+;; Fix round P4-A.3: outputs of one build that collide
+
+(defn- set-permalink!
+  "Give the demo's getting-started article the permalink `pl`."
+  [dir pl]
+  (let [f (fs/file dir "content" "01.Guide" "10.Basics" "01.getting-started.md")]
+    (spit f (str/replace (slurp f) #"(?m)^permalink: .*$" (str "permalink: " pl)))))
+
+(defn- write-path-error
+  "Render the site at `dir` and hand it straight to `write-site!` — past the
+  analysis gate, as a model that slipped through it would be. The
+  ExceptionInfo it throws, or nil."
+  [dir]
+  (let [cfg (first (diag/collecting (config/load-config (str dir))))
+        [m] (diag/collecting (cli/analyse cfg))]
+    (try (render/write-site! (first (diag/collecting (render/render-site cfg m)))) nil
+         (catch clojure.lang.ExceptionInfo e e))))
+
+(defn- output-collision-is-refused
+  "With the getting-started article at permalink `pl`, which collides with
+  the output `outer-re` names: doctor reports it, the build refuses it
+  before writing a thing — over a good build's dist/ and into an empty one —
+  and so does the write path on its own, naming both outputs every time."
+  [pl outer-re]
+  (let [names-both? (fn [msg]
+                      (and (str/includes? (str msg) (str pl " (from content/01.Guide/10.Basics/01.getting-started.md)"))
+                           (re-find outer-re (str msg))))]
+    (with-demo-copy
+      (fn [dir out]
+        (build! dir)
+        (set-permalink! dir pl)
+        (let [before (tree-hash out)]
+          (testing "doctor"
+            (let [errs (try (:errors (cli/doctor {:site-dir (str dir)}))
+                            (catch clojure.lang.ExceptionInfo e (:clogem/errors (ex-data e))))]
+              (is (some #(names-both? (:message %)) errs)
+                  (pr-str (map (juxt :path :message) errs)))))
+          (testing "build, over a good build's dist/"
+            (doseq [no-write [true false]]
+              (let [e (try (build! dir {:no-write no-write}) nil
+                           (catch clojure.lang.ExceptionInfo e e))]
+                (is (some? e) "a clear error, not a raw FileSystemException")
+                (is (= 1 (:babashka/exit (ex-data e))))
+                (is (names-both? (ex-message e)) (ex-message e))))
+            (is (= before (tree-hash out)) "dist/ is exactly what the good build left"))
+          (testing "the write path, past analysis"
+            (let [e (write-path-error dir)]
+              (is (some? e))
+              (is (= 1 (:babashka/exit (ex-data e))))
+              (is (names-both? (ex-message e)) (ex-message e)))
+            (is (= before (tree-hash out))))
+          (testing "into an empty dist/"
+            (fs/delete-tree out)
+            (let [e (try (build! dir) nil (catch clojure.lang.ExceptionInfo e e))]
+              (is (some? e))
+              (is (names-both? (ex-message e)) (ex-message e)))
+            (let [e (write-path-error dir)]
+              (is (some? e))
+              (is (names-both? (ex-message e)) (ex-message e)))
+            (is (empty? (when (fs/exists? out) (tree-hash out))) "nothing is written")))))))
+
+(deftest a-page-inside-a-site-asset-is-refused-before-anything-is-written
+  ;; 0.2.0 buried assets/demo.txt under a directory and exited 0; 53bce0b
+  ;; threw a raw FileSystemException with 232 of 240 files written
+  (output-collision-is-refused "/assets/demo.txt/" #"inside the site asset assets/demo\.txt"))
+
+(deftest a-page-inside-the-generated-robots-txt-is-refused
+  (output-collision-is-refused "/robots.txt/" #"inside the generated /robots\.txt"))
+
+(deftest a-page-inside-pagefind-is-refused-when-search-is-on
+  (with-temp-dir
+    (fn [d]
+      (let [out (fs/path d "out")
+            cs  (render/output-collisions
+                 out
+                 [{:file (fs/path out "pagefind" "x" "index.html")
+                   :what {:uri "/pagefind/x/" :noun "a page" :label "/pagefind/x/ (from content/x.md)"}}
+                  {:file (fs/path out "pagefind") :reserved? true
+                   :what {:label "the search index pagefind/"}}])]
+        (is (= 1 (count cs)))
+        (is (re-find #"^/pagefind/x/ \(from content/x\.md\) would put a page inside the search index pagefind/, which is replaced whole"
+                     (render/collision-message out (first cs))))))))
+
+(deftest outputs-that-do-not-nest-do-not-collide
+  (with-temp-dir
+    (fn [d]
+      (let [out (fs/path d "out")]
+        (is (empty? (render/output-collisions
+                     out
+                     [{:file (fs/path out "assets" "demo.txt")}
+                      {:file (fs/path out "assets" "demo.txt.d" "index.html")}
+                      {:file (fs/path out "assets" "index.html")}
+                      {:file (fs/path out "index.html")}])))))))
+
+(deftest an-unused-language-variants-unsafe-pages-permalink-is-a-warning
+  (with-demo-copy
+    (fn [dir _]
+      (spit (fs/file dir "content" "@pages" "tagsPage.zh-Hans.md")
+            "---\ntagsPage: true\ntitle: 标签\npermalink: /./tags/\narticle: false\n---\n")
+      (let [{:keys [errors warnings]} (cli/doctor {:site-dir (str dir)})]
+        (is (empty? errors) (pr-str (map :message errors)))
+        (is (some #(and (re-find #"tagsPage\.zh-Hans\.md" (str (:path %)))
+                        (re-find #"\"/\./tags/\".* unused" (str (:message %))))
+                  warnings)
+            (pr-str (map (juxt :path :message) warnings))))
+      (build! dir)
+      (is (fs/exists? (fs/path dir "dist" "zh-Hans" "tags" "index.html"))
+          "the index keeps the path the default language's file gives it"))))
+
+(deftest a-broken-symlink-where-a-directory-belongs-says-so
+  (with-temp-dir
+    (fn [d]
+      (let [out  (fs/path d "out")
+            link (fs/path out "assets" "docs")]
+        (fs/create-dirs (fs/parent link))
+        (fs/create-sym-link link (fs/path d "nowhere"))
+        (let [e (try (write! out [(out-of (fs/path link "readme.txt") "x")]) nil
+                     (catch clojure.lang.ExceptionInfo e e))]
+          (is (= 1 (:babashka/exit (ex-data e))))
+          (is (re-find #"is a broken symlink where a directory now belongs" (str (ex-message e)))
+              (ex-message e)))
+        (is (fs/sym-link? link) "the link is left as it was")))))
