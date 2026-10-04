@@ -57,8 +57,8 @@ and run it against local content with no packaging step.
 | Task | What it does |
 |---|---|
 | `bb build` | Render the site to `dist/`. Writes missing front matter unless `--no-write`. Renders every page in memory first (in parallel; `CLOGEM_JOBS=1` for one thread) and writes only when all of it succeeded, file by file and atomically (temp file and rename; in place when the OS refuses the temp file or the rename), skipping files whose bytes are unchanged — a page that fails to render, or a site asset that cannot be read, leaves `dist/` and `permalinks.edn` as they were (an I/O error while writing, such as a full disk, or a Pagefind failure can still leave some files updated). Runs Pagefind last under `:search {:provider :pagefind}`; `--no-search` builds without search (no index, no search UI). Removes `.html` files in the output directory that the build did not write, so the output directory must be a directory of its own. |
-| `bb dev` | Build, serve on :1888, rebuild on change, push an SSE reload. `--poll` if inotify is unreliable; `--no-search` builds without search. |
-| `bb serve` | Serve an already-built directory, no watching. |
+| `bb dev` | Build, serve on 127.0.0.1:1888, rebuild on change, push a reload to the browser. See [Working locally](#working-locally). |
+| `bb serve` | Serve an already-built directory at the site's `:base`, no watching. `--host`, `--port`, `--base`. |
 | `bb doctor` | Report content problems without building. Exits non-zero on errors. |
 | `bb fm-fix` | Front-matter normalization only — what CI runs before the build. `--dry-run` to preview. |
 | `bb clean` | Remove the output directory. |
@@ -66,6 +66,40 @@ and run it against local content with no packaging step.
 | `bb test` | Run the test suite. The browser tests over a built site are separate: `test/browser/README.md`. |
 
 Every task takes `--help`.
+
+## Working locally
+
+```bash
+cd my-site
+bb --config ../clogem-press/bb.edn dev            # http://127.0.0.1:1888/
+```
+
+`bb dev` builds, serves `dist/` and rebuilds on every change to `content/`,
+`assets/`, `i18n/`, `overrides/`, `site.edn` and the generator's own theme
+resources. Saves are collected until 100 ms pass quietly, so a burst of writes
+is one rebuild, and editor temp files (`.#x`, `x~`, `4913`, `*.swp`, `*.tmp`)
+are ignored. A rebuild of the demo takes about 0.3 s; the page reloads about
+half a second after a save, and a stylesheet-only change swaps the CSS in
+place. Search is re-indexed in the background after the reload; the previous
+index keeps working meanwhile.
+
+When a rebuild fails, the terminal says why and the open page shows the error
+in an overlay over the last good build; saving a fix clears it. Escape hides
+it.
+
+| Flag | |
+|---|---|
+| `--port 1888`, `--host 127.0.0.1` | Where to listen. Both servers listen on loopback only; `--host 0.0.0.0` to reach it from another device. |
+| `--base /project/` | The site's base path (default: `:site :base`). `dist/` is served there, and `/` redirects to it, so a project site's links work locally. `bb serve --base` too. |
+| `--poll`, `--interval 500` | Watch by polling instead of the fswatcher pod. Not usually needed: dev proves the pod delivers events at startup and polls on its own when it does not (`--probe-ms 3000` is that check's budget). |
+| `--no-search` | Build without search (no index, no search UI). |
+| `--no-write` | Never write front matter or `permalinks.edn` back to the source tree (dev writes them by default, as `build` does). |
+| `--reload-code` | When working on the generator: also reload the theme's `.clj` code on change. |
+
+The fswatcher pod is fetched on first use like Pagefind — pinned, sha256-verified
+and cached (`bb fetch-tool --tool fswatcher`); offline, or on a platform it has
+no build for (Windows on ARM), dev polls. With the pod, a `site.edn` change that
+moves `:content :dir` needs a restart; with `--poll` it does not.
 
 ## Conventions in one screen
 

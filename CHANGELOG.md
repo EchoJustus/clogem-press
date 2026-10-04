@@ -4,7 +4,57 @@
 
 Phase 4, Task B1 — colour modes, an accessible palette, the mode toggle and
 icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
-(§11.3 items 7, 11, 16, 18). The version stays 0.2.0.
+(§11.3 items 7, 11, 16, 18), then Task D — the dev loop (§11.3 item 12). The
+version stays 0.2.0.
+
+### Changed (D)
+
+- **`bb dev` and `bb serve` listen on 127.0.0.1** instead of every
+  interface. `--host 0.0.0.0` restores the old behaviour.
+- **A missing UI string key warns once per key and language, in `build`
+  too**, naming the string file to add it to (`i18n/ta.edn`). It used to
+  warn only in dev — where it never fired, because the rebuild dropped the
+  dev flag — and once per call. `build` still renders the key's name;
+  `bb dev` renders `⟦key⟧`. `:i18n {:missing-key :silent}` turns it off.
+- **`dist/clogem/` is the generator's own directory**: a build deletes any
+  file there it did not write, so a deleted `overrides/custom.css` no
+  longer lingers as `dist/clogem/overrides/custom.css`. Everything else a
+  build did not write outside `dist/clogem/` and `.html` stays (`CNAME`,
+  `.nojekyll`).
+
+### Added (D)
+
+- **One rebuild per burst of saves.** `bb dev` collects changes until
+  100 ms pass quietly and ignores editor temp files; 20 quick writes were 20
+  full rebuilds.
+- **A build-error overlay.** A failed rebuild shows its error over the page
+  (self-contained, no theme CSS), and the next good build clears it. While
+  no build has succeeded, pages show a plain error page.
+- **`:base` in `dev` and `serve`.** With `:base "/project/"`, `dist/` is
+  served at `/project/`, `/` redirects there, and links work. `bb serve
+  --base`, defaulting to the site's `:base`.
+- **`--host`** on `dev` and `serve`; **`--base`**, **`--no-write`** and
+  **`--reload-code`** (reload the theme's `.clj` code) on `dev`.
+- **Theme hot reload.** `bb dev` watches the generator's theme resources;
+  a theme CSS change swaps in place.
+
+### Fixed (D)
+
+- **The fswatcher pod is fetched, sha256-verified and cached** through
+  `clogem.tools` and loaded from that path, not from the pod registry.
+  Offline on the first run, or with no build for the platform, dev polls
+  with one message. Its registrations are spaced 20 ms apart: back-to-back
+  ones hung the pod more often than not, and dev then fell back to
+  polling after its 3 s probe.
+- **Search no longer 404s during a dev rebuild.** The index is rebuilt in
+  the background after the reload, into a staging directory swapped in
+  whole; it was deleted first and rebuilt before the reload was sent.
+- **A new or deleted `overrides/custom.css` reloads the page** instead of
+  waiting for a manual reload (the CSS swap only re-fetches stylesheets the
+  page already links).
+- **The poll loop survives an `Error`**, and so do pod callbacks.
+- **A `site.edn` change that moves `:content :dir`** is followed when
+  polling (with the pod, dev says to restart).
 
 ### Breaking (B1)
 

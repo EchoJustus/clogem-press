@@ -580,6 +580,23 @@ render on a bounded parallel pool, an unchanged file is not rewritten, and the a
 have the invalidation bugs a dependency graph invites — identity siblings, sidebars and indexes are
 simply re-rendered with everything else. The watcher and SSE parts above stand.
 
+*Amended in Phase 4 Task D (§11.3 item 12):* every watcher only **submits** paths to one queue, after
+dropping editor temp files; one thread drains it once 100 ms pass with nothing arriving and runs one
+full rebuild for the batch, so a burst of writes is one rebuild and two rebuilds never overlap. A
+rebuild that fails — `Throwable` included — keeps the loop alive and is sent to the browser as an SSE
+`event: build-error` with `{"message","file"}`, shown by the injected script as a self-contained
+overlay; the next good build's `reload` (or `css`) clears it, and while no build has succeeded yet a
+page request gets a plain error page. A batch whose files are all stylesheets is `data: css` only when
+the set of stylesheets under `dist/clogem/` did not change and the previous build succeeded; adding or
+deleting `overrides/custom.css` is a full reload. The reload is sent **before** search is indexed:
+Pagefind runs in the background, one run at a time with requests during a run coalesced into one
+more, into `dist/.pagefind-staging-…/` (`--output-path`), which then replaces `dist/pagefind/` by two
+renames — the old bundle is served until the new one is complete. The pod is fetched and verified by
+`clogem.tools` and loaded from that path; its `watch` calls are 20 ms apart. The generator's theme
+`resources/` are watched when they are on disk; `--reload-code` watches the theme's `.clj` too and
+`require … :reload`s a changed namespace before rebuilding. Both servers mount `dist/` at `:base` and
+listen on 127.0.0.1 unless given `--host`.
+
 ### 5.5 Caching strategy
 
 quickblog's changelog ("Fix caching (this is hard)") is the cautionary tale, and a KB has *more*
@@ -595,6 +612,9 @@ cross-page artifacts (sidebar, indexes, backlinks, now hreflang groups) than a b
   *Amended in Phase 4 (§11.3 item 11):* there is no dev incrementality — every change is a full
   rebuild made fast (§5.4). What is incremental is the **write**: a file whose bytes did not change
   is not rewritten, so a no-change rebuild writes nothing.
+  *Amended in Phase 4 Task D (§11.3 item 12):* dev's one stateful piece is outside the build: the
+  search index is rebuilt in the background after the reload, into a staging directory swapped in
+  whole, never deleted first. `bb build` still deletes and re-indexes in place.
 - Content-hash disk caching for production is a *later* optimization, only if build times ever warrant
   it. Note that i18n does **not** multiply build cost by the number of languages: cost is per
   *variant file that exists*, and most articles will have exactly one.
@@ -628,7 +648,7 @@ any more). Note what arrived: `:generator`, `:langs`, `:i18n`, `:analytics`, `:s
  :i18n  {:strings-dir   "i18n"          ; <lang>.edn, deep-merged over the theme's defaults
          :prefix-default? false         ; false → primary variant at /pages/xxxxxx/ (D-10)
          :fallback      [:site-default :en] ; after the requested lang; configured langs or :site-default (§11.2 item 36)
-         :missing-key   :warn           ; :warn in dev, :silent in prod
+         :missing-key   :warn           ; :warn (once per key and language) | :silent
          :category-labels {}            ; e.g. {"Basics" {:zh-Hans "基础"}}  (D-12)
          :show-fallback-notice true     ; "This page is shown in English" banner on index rows
          :preference    :banner}        ; stored language on a bare URL: :banner | :redirect | :ignore (§11.2 item 48)
@@ -2895,7 +2915,7 @@ their own findings. Item 19 onward are corrections.
     pagefind|chroma|fswatcher` (default pagefind). Real fetches on linux-amd64 verified against the
     pins: chroma 2.27.0, the fswatcher pod 0.0.7, pagefind_extended 1.5.2.
     *Config.* Unknown keys warn (item 16).
-12. **Dev loop (D).** Debounce plus a temp-file filter; a 20 ms gap between pod registrations; a
+12. **Dev loop (D) — done.** Debounce plus a temp-file filter; a 20 ms gap between pod registrations; a
     verified pod fetch; the dev flag passed through `cli/build`; missing-key warnings deduplicated in
     build and dev; an SSE `build-error` overlay; `:base` mounted, and `serve --base`; bind 127.0.0.1
     by default, plus `--host`; Pagefind in the background in dev; theme resources watched.
@@ -2906,6 +2926,68 @@ their own findings. Item 19 onward are corrections.
     `clogem.tools/fswatcher` were computed by the project owner from the release zips on 2026-10-02 —
     trust on first use: they prove the bytes have not changed since, not that they were right then.
     `CLOGEM_FSWATCHER` or `:tools :fswatcher :path` names an installed pod instead.
+    *Done (D).* Measured on Linux (4 cores, bb 1.13.219) unless noted; §5.4 and §5.5 are amended.
+    - *The queue.* `dev/drain-loop!` takes path batches from one `LinkedBlockingQueue` and calls
+      the rebuild once 100 ms pass with none (`take!` is injected: the test drives it on a virtual
+      clock — 20 events 2.5 ms apart are one batch at 147.5 ms). The pod's callback and the poll
+      loop both submit through `dev/submitter`, which drops `.#x`, `x~`, vim's `4913`, `*.swp`
+      (`.swo`, `.swx`), `*.tmp`, `.clogem-tmp-*` and the probe file. On the demo, 20 appends to an
+      article interleaved with `.#lock`, `4913` and `x.swp` touches gave one rebuild naming only the
+      article. A `Throwable` from a rebuild, a poll pass or a pod callback is printed and the loop
+      goes on. *Correction to the brief:* 0.2.0's rebuild already caught `Throwable`; what an
+      `Error` could kill was the poll loop (a file deleted between its listing and its `stat`
+      threw there) and, in pod mode, the callback thread, and pod callbacks could run rebuilds
+      concurrently.
+    - *The pod.* `dev/load-pod!` calls `tools/ensure-binary!` with the `:fswatcher` descriptor and
+      `(pods/load-pod "<verified path>")`; offline on the first run, a platform with no asset, or a
+      hash mismatch prints one line and dev polls. A bad `:tools :fswatcher` pin stays a warning
+      (not in `config/fatal-tool-ids`). Registration: `watch` calls are `registration-gap-ms` (20)
+      apart; re-measured here, back-to-back registration of four directories hung 5 of 6 runs and
+      a 20 ms gap passed 6 of 6. Dev now registers up to six paths (the theme resources are new).
+    - *The dev flag.* `cli/build` takes `:clogem/dev? true` from `bb dev` (not a CLI option),
+      puts it on the config it loads, and returns `:clogem/cfg` and, with search on,
+      `:search :deferred`. Missing UI string keys: `tr` records [key lang] in
+      `i18n/*missing-keys*` (bound over analysis and render in `build`, and over `doctor`'s
+      checks), and one warning per pair is emitted afterwards, naming `i18n/<lang>.edn` and the
+      chain it tried; dev renders `⟦key⟧`, a build renders the key's name, and `:i18n {:missing-key
+      :silent}` turns the warning off. Removing `:mode/label` from the theme gives 5 warnings on a
+      five-language site, not one per page. Outside such a binding (`tr` called directly) a miss
+      still warns at once. The demo's `doctor` is still exactly 1 warning.
+    - *The overlay.* Pushed as `event: build-error` / `data: {"message","file"}`, `file` from the
+      first diagnostic error or `:clogem/file`; a client that connects while the build is broken
+      gets it on connect. The script defines no global and touches no `window.clogem`; the overlay
+      is a `position:fixed` `role="alert"` div with inline styles, the message set as text; Escape
+      hides it. Before any good build, page requests (a directory, `.html`, or no extension) get
+      `dev/error-page` with status 500 and the reload script.
+    - *Base and host.* `dev/make-handler` strips `:base` (`dev/strip-base`): `/project/…` is
+      served, `/` and `/project` redirect to `/project/`, anything else 404s with a link to the
+      base; `/__reload` stays at the root. `bb serve --base` defaults to the site's `:base` when
+      `--site-dir` holds its `site.edn`. `--host` (default `127.0.0.1`) on both; `dev/server-options`.
+    - *Pagefind in dev.* `search/run-staged!` and `dev/background-runner`; `search/sweep-staging!`
+      removes staging and retired bundles of dead processes. On the demo the index takes 0.7–0.85 s
+      after a reload that takes 0.3 s.
+    - *Theme.* `dev/theme-dir`: `clogem/theme/resources/` when it is a directory on disk (a
+      generator checkout, not a jar); with `--reload-code` its parent, and `dev/theme-namespaces`
+      maps a changed `.clj` to its namespace. A theme CSS edit hot-swaps; a `.clj` with a syntax
+      error is a failed build (overlay), and the fix reloads it.
+    - *Stylesheets and `dist/clogem/`.* `dev/reload-kind` compares `dev/linked-stylesheets`
+      before and after. `render/sweep-stale-html!` now also deletes every file under
+      `<out>/clogem/` this build did not write, whatever its extension, with the stale-HTML sweep's
+      guards (inside `out`, never through a link, never a link itself, never a `.clogem-tmp-`
+      file): `dist/clogem/` is the generator's own directory, which **extends** §11.2 item 46's
+      rule that a build never deletes a non-HTML file it did not write — that rule now reads
+      "outside `dist/clogem/`". The summary prints `removed N stale file(s) from dist/clogem`.
+      Switching a `dist/` to `--no-search` now also removes `clogem/js/search.js`.
+    - *Small items.* After a build whose `site.edn` changed, dev takes the new config; polling
+      recomputes the watched paths on every pass (a moved `:content :dir` is followed), while the
+      pod keeps what it registered at startup and dev says to restart. The output directory and
+      `:base` are fixed at startup. `bb dev --no-write` never writes front matter or
+      `permalinks.edn` (dev writes both by default, as `build` does).
+    - *Measured edit-to-reload* (write → `data: reload` on the SSE stream, demo, 227 pages): pod
+      0.49 s (≈100 ms pod coalescing + 100 ms quiet + a 0.27–0.34 s build); polling every 500 ms
+      0.66–0.72 s. In Chromium (`test/browser/dev.test.mjs`): edit visible after 0.60 s, overlay
+      0.23 s after breaking the front matter (a parse error fails before rendering), page back
+      0.54 s after the fix.
 13. **Blog identity and htmlModules (E1).** Kebab-case keys; 7 slots plus 2 show-modes (§1.2
     corrected); wrappers get `data-pagefind-ignore` and overflow-safe CSS; per-language values use the
     fallback chain only, and `""` suppresses; `{{base}}` is interpolated; raw HTML from the owner is
@@ -2992,7 +3074,11 @@ their own findings. Item 19 onward are corrections.
 - **Concurrent builds with search on** (pre-existing, 0.2.0). `bb dev` and `bb build` into one
   `dist/` no longer delete each other's temp files, but `search/run!` still deletes
   `<out>/pagefind/` and rebuilds it, so two builds with search on can collide there. Give one
-  `--no-search`, or a separate `--out`.
+  `--no-search`, or a separate `--out`. (`bb dev` itself now swaps a staged bundle in, Task D, but
+  a concurrent `bb build` still deletes it.)
+- **The pod keeps its startup directories** (Task D). With the fswatcher pod, a `site.edn` change
+  that moves `:content :dir`, `:assets-dir` or `:i18n :strings-dir` is not watched until `bb dev`
+  restarts (it says so); `--poll` follows it. `:build :out` and `:site :base` are read at startup.
 - **The stale-HTML sweep skips a symlinked output directory** (pre-existing, 0.2.0).
   `sweep-stale-html!` checks the out directory with `:nofollow-links`, so with `dist ->
   /var/www/site` the `.html` of deleted articles is never removed there. The temp sweep resolves
