@@ -15,6 +15,7 @@ depends on the network.
 |---|---|
 | `overflow.test.mjs` | At 320 and 360 px wide, every HTML page has `document.documentElement.scrollWidth <= innerWidth`. |
 | `modes.test.mjs` | Colour modes (Phase 4 B1): the root background of the first animation frame for stored, OS, blocked-storage, garbage and no-JS cases; the toggle by keyboard (Tab, Enter, arrows, Escape) and its stored choice; a live OS change in auto mode; the Pagefind trigger and dialog on `--mainBg` in dark, read and light; print hides the chrome; `overrides/custom.css` applies, last. |
+| `code.test.mjs` | Code blocks (Phase 4 C): every highlighted token's computed colour, the line numbers and the language label reach 4.5:1 on the background behind them in light, dark, read and auto-under-a-dark-OS; line numbers are drawn but are not text; the copy button puts exactly the fenced source on the clipboard, shows `check` and announces "Copied", then resets, and is labelled in the page's language; no button without JS; wide code scrolls inside its box at 320 px. Needs a build that highlights (`CLOGEM_CHROMA` on CI). |
 
 ## Running locally
 
