@@ -24,7 +24,8 @@
     clogem.search-test
     clogem.tools-test
     clogem.lang-test
-    clogem.comments-test])
+    clogem.comments-test
+    clogem.theme-modes-test])
 
 (defn run
   [{:keys [pattern]}]

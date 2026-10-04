@@ -14,6 +14,7 @@ depends on the network.
 | Test | What it asserts |
 |---|---|
 | `overflow.test.mjs` | At 320 and 360 px wide, every HTML page has `document.documentElement.scrollWidth <= innerWidth`. |
+| `modes.test.mjs` | Colour modes (Phase 4 B1): the root background of the first animation frame for stored, OS, blocked-storage, garbage and no-JS cases; the toggle by keyboard (Tab, Enter, arrows, Escape) and its stored choice; a live OS change in auto mode; the Pagefind trigger and dialog on `--mainBg` in dark, read and light; print hides the chrome; `overrides/custom.css` applies, last. |
 
 ## Running locally
 
