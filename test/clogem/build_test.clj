@@ -792,7 +792,7 @@
                        [["ms" "page" "2" "index.html"] "ms"]
                        [["zh-Hant" "categories" "guide" "page" "2" "index.html"] "zh-Hant"]
                        [["zh-Hant" "pages" "643259" "index.html"] "zh-Hant"]]]
-    (is (str/includes? (apply slurp-out path) (str "<html dir=\"ltr\" lang=\"" lang "\">")) (pr-str path))))
+    (is (str/includes? (apply slurp-out path) (str " dir=\"ltr\" lang=\"" lang "\"><head>")) (pr-str path))))
 
 (deftest an-article-page-carries-exactly-one-h1
   (testing "the theme renders the title; the body's leading `# Title` is dropped (D-P2-9)"

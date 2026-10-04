@@ -70,4 +70,11 @@
  ;; New in 0.2.0, and these strings need native review (DESIGN §10).
  :banner/available            "இந்தப் பக்கம் {{lang}} மொழியிலும் உள்ளது."
  :banner/read                 "{{lang}} மொழியில் படிக்க →"
- :banner/dismiss              "மூடு"}
+ :banner/dismiss              "மூடு"
+ ;; The colour-mode toggle (D-P4-3): its button label and the four modes,
+ ;; in vdoing's order. Awaiting native review (CHANGELOG, Unreleased).
+ :mode/label                  "வண்ணப் பயன்முறை"
+ :mode/auto                   "கணினியைப் பின்பற்று"
+ :mode/light                  "வெளிர்"
+ :mode/dark                   "இருள்"
+ :mode/read                   "வாசிப்பு"}

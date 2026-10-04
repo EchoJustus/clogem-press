@@ -107,7 +107,9 @@
                 "data-strict" "1" "data-reactions-enabled" "1" "data-emit-metadata" "0"
                 "data-input-position" "bottom" "data-theme" "preferred_color_scheme"
                 "data-lang" "zh-CN" "data-loading" "lazy" "crossorigin" "anonymous"
-                "async" "async"}
+                ;; B1: deferred, so js/comments.js runs first and sets the
+                ;; stored mode's data-theme before client.js reads it
+                "defer" "defer"}
                (attrs tag))
             "these and nothing else")
         (is (str/ends-with? tag "></script>") "an empty element: no inline HTML comments")))))

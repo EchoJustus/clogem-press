@@ -160,7 +160,43 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
 .clogem-navbar__caret { margin-left: 0.2em; font-size: 0.8em; color: var(--textColorSubtle); }
 .clogem-navbar__item details[open] .clogem-navbar__caret { transform: rotate(180deg); }
 .clogem-navbar__menu { list-style: none; position: absolute; top: 100%; left: 0; min-width: 10rem; margin: 0;
-  padding: 0.4rem 0.8rem; background: var(--bodyBg); border: 1px solid var(--borderColor); border-radius: 6px; z-index: 20; }
+  padding: 0.4rem 0.8rem; background: var(--mainBg); border: 1px solid var(--borderColor); border-radius: 6px; z-index: 20; }
+
+/* D-P4-3: the colour-mode menu button. The button shows the icon of the
+ * mode in <html data-mode> (set by the head script); the menu lists all four. */
+.clogem-mode { position: relative; }
+.clogem-mode[hidden], .clogem-mode__menu[hidden] { display: none; }
+.clogem-mode__button {
+  display: inline-flex; align-items: center; justify-content: center;
+  font: inherit; font-size: 1.1rem; line-height: 1; color: var(--textColor);
+  background: none; border: 1px solid transparent; border-radius: 6px;
+  padding: 0.3rem 0.4rem; cursor: pointer;
+}
+.clogem-mode__button:hover { border-color: var(--borderColor); }
+.clogem-mode__button .clogem-icon { display: none; }
+.clogem-mode__button .clogem-icon.is-auto,
+[data-mode="light"] .clogem-mode__button .clogem-icon.is-light,
+[data-mode="dark"] .clogem-mode__button .clogem-icon.is-dark,
+[data-mode="read"] .clogem-mode__button .clogem-icon.is-read { display: inline-block; }
+[data-mode="light"] .clogem-mode__button .clogem-icon.is-auto,
+[data-mode="dark"] .clogem-mode__button .clogem-icon.is-auto,
+[data-mode="read"] .clogem-mode__button .clogem-icon.is-auto { display: none; }
+.clogem-mode__menu {
+  list-style: none; position: absolute; top: calc(100% + 0.3rem); right: 0; z-index: 20;
+  min-width: 11rem; margin: 0; padding: 0.3rem;
+  background: var(--mainBg); border: 1px solid var(--borderColor); border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+.clogem-mode__menu button {
+  display: flex; align-items: center; gap: 0.5rem; width: 100%;
+  font: inherit; font-size: 0.9rem; color: var(--textColor); text-align: start;
+  background: none; border: 0; border-radius: 4px; padding: 0.35rem 0.6rem; cursor: pointer;
+}
+.clogem-mode__menu button:hover { background: var(--customBlockBg); }
+.clogem-mode__menu button[aria-pressed="true"] { color: var(--accent); font-weight: 600; }
+.clogem-mode__button:focus-visible, .clogem-mode__menu button:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
 .clogem-navbar__menu li { padding: 0.2rem 0; }
 
 /* the list wraps, like the navbar around it: a long :label used to widen a
