@@ -2757,6 +2757,19 @@ their own findings. Item 19 onward are corrections.
     0.2.0 did, rather than kept in its old case and 404ing on a case-sensitive host. A permalink with
     a `.` or `..` segment or a backslash is an error naming its file (`/../../escaped/` used to
     write outside `dist/`; doubled slashes are still collapsed, as in 0.2.0).
+    *Fix round P4-A.2.* The reverse blocker is checked too: before the first write, every ancestor
+    of an output inside the out directory that exists and is not a directory (a symlinked
+    subdirectory counts as one) is an error — an earlier build's file `dist/assets/docs` when
+    `assets/docs/readme.txt` now needs a directory used to make `create-dirs` throw a raw
+    `FileAlreadyExistsException` mid-write and leave `dist/` mixed; now it names the file and says
+    to remove it or run `bb clean`, and nothing is written. The temp sweep resolves the out
+    directory's own link (`dist -> /var/www/site`; it used to skip such a `dist/` altogether) and
+    still follows none below it. The `..` rule is one predicate, `util/unsafe-permalink?`, applied to
+    every source of a permalink: article front matter, an `@pages/` file's `permalink:` (an error
+    naming `@pages/tagsPage.md`; the index keeps its default path — `/tags/../` used to overwrite the
+    home page), and the keys of `permalinks.edn` (an error naming the file and quoting the key,
+    raised in pass 1, so write mode never copies the value into an article before failing).
+    `check-outputs!` stays as the backstop.
     *Speed.* `util/damerau-levenshtein` keeps three rolling rows (persistent vectors — long arrays
     are slower still under sci, every `aget` being reflective) instead of a 2-D `make-array`; a
     property test checks it against the 0.2.0 matrix on 3000 random ASCII, CJK and Tamil pairs. Pages
@@ -2863,6 +2876,14 @@ their own findings. Item 19 onward are corrections.
   writes the new page over the old file — the file system calls them one — and the stale sweep,
   comparing names exactly, then deletes the page it just wrote, until the next build. Two
   permalinks that differ only by case overwrite each other there.
+- **Concurrent builds with search on** (pre-existing, 0.2.0). `bb dev` and `bb build` into one
+  `dist/` no longer delete each other's temp files, but `search/run!` still deletes
+  `<out>/pagefind/` and rebuilds it, so two builds with search on can collide there. Give one
+  `--no-search`, or a separate `--out`.
+- **The stale-HTML sweep skips a symlinked output directory** (pre-existing, 0.2.0).
+  `sweep-stale-html!` checks the out directory with `:nofollow-links`, so with `dist ->
+  /var/www/site` the `.html` of deleted articles is never removed there. The temp sweep resolves
+  that root link (fix round P4-A.2); this one does not yet.
 
 ---
 

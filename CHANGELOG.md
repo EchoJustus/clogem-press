@@ -36,7 +36,11 @@ The version stays 0.2.0.
   `java.util.zip`) are fetchable, though nothing uses them yet. The pod's
   hashes are trust-on-first-use: upstream publishes none. Since nothing
   runs them, a malformed `:tools :chroma` or `:tools :fswatcher` pin is a
-  warning and the built-in pin is used; Pagefind's stays an error.
+  warning and the built-in pin is used; Pagefind's stays an error. That
+  holds for a value that is not a map at all (`:tools {:chroma "2.27.0"}`,
+  which 0.2.0 accepted), and the pin is repaired as one unit: a bad
+  `:version` or `:sha256` resets both, so a custom version is never kept
+  without hashes to verify it (every other key, such as `:url`, is kept).
 - **`CLOGEM_JOBS`**: pages render on a bounded parallel pool, one worker per
   processor by default; `CLOGEM_JOBS=1` renders on one thread. The output
   and the diagnostics are identical either way.
@@ -50,7 +54,8 @@ The version stays 0.2.0.
 - **A failed render no longer leaves a mixed `dist/`** (D-P4-11). Every
   page and generated file is rendered in memory first, and every site
   asset read; only when all of it has succeeded is each file written,
-  atomically (temp file and rename), and only if its bytes changed. A
+  atomically (temp file and rename; in place when the OS refuses either),
+  and only if its bytes changed. A
   render failure — any `Throwable` — exits 1 naming the page, and an
   unreadable site asset exits 1 naming the file; either leaves `dist/` and
   `permalinks.edn` exactly as they were (the ledger is now written after
@@ -62,11 +67,20 @@ The version stays 0.2.0.
   never deleted.
 - **Writing** (D-P4-11). Every output must lie inside the output directory,
   and a directory left where a file now belongs is an error naming it
-  (remove it or run `bb clean`) rather than a silently missing file. Temp
+  (remove it or run `bb clean`) rather than a silently missing file; so is
+  the reverse, a file left where a directory now belongs (an earlier
+  build's `assets/docs` file when `assets/docs/readme.txt` now needs a
+  directory), which used to fail mid-write with a raw
+  `FileAlreadyExistsException` and a mixed `dist/`. Both are checked
+  before anything is written. Temp
   files are `.clogem-tmp-<pid>-<nanoTime>`, so a name near the 255-byte
   limit still writes. Only abandoned temp files (a dead PID, or older than
-  10 minutes) are swept, anywhere in the output tree, so `bb dev` and
-  `bb build` into one `dist/` no longer break each other. On Windows a
+  10 minutes) are swept, anywhere in the output tree — also when the
+  output directory is itself a symlink (`dist -> /var/www/site`) — so
+  `bb dev` and `bb build` into one `dist/` no longer delete each other's
+  temp files. With search on, two builds into one `dist/` can still
+  collide while Pagefind rebuilds `dist/pagefind/`, as in 0.2.0 (Phase 5):
+  give one of them `--no-search`, or a separate `--out`. On Windows a
   rename refused because another process holds the file open is retried
   for ~2.5 s, then written in place as 0.2.0 did (untested on Windows
   itself). On a case-insensitive file system a case-only asset rename is
@@ -83,8 +97,17 @@ The version stays 0.2.0.
 - `bb dev` survives a rebuild that throws an `Error` (it caught only
   `Exception`).
 - A permalink with a `.` or `..` segment or a backslash
-  (`permalink: /../../escaped/`) is now an **error** naming the file: it
-  used to be written outside `dist/`. No valid site can rely on that.
+  (`permalink: /../../escaped/`) is now an **error** naming its source: it
+  used to be written outside `dist/`, or with `/tags/../` over the home
+  page. No valid site can rely on that. One rule (`clogem.util/unsafe-permalink?`)
+  covers an article's front matter, an `@pages/` file's `permalink:`
+  (`@pages/tagsPage.md`; its index keeps the default path) and the keys of
+  `permalinks.edn`. A bad ledger key is caught before write mode copies it
+  into an article's front matter, so the failing build changes no source
+  file.
+- An unreadable site asset whose exception carries only the path reads
+  "could not read site asset <p>: access denied (AccessDeniedException)",
+  not the path twice.
 
 ### Documentation
 
@@ -104,7 +127,12 @@ The version stays 0.2.0.
   Windows.
 - config.example.edn: a config map value falls back to the map's first
   value, not "the key itself"; documents `:tools :chroma`,
-  `:tools :fswatcher` and `CLOGEM_JOBS`.
+  `:tools :fswatcher` and `CLOGEM_JOBS`; no longer promises that a failed
+  build leaves `dist/` exactly as it was (only a render or read failure
+  does).
+- DESIGN.md §11.3's known limitations add two for Phase 5: concurrent
+  builds with search on, and the stale-HTML sweep skipping a symlinked
+  output directory.
 
 ## 0.2.0 — Phase 3: internationalization
 

@@ -218,9 +218,12 @@
                                                ; warns: no effect in 0.2.0
 
  ;; --------------------------------------------------------------- build ----
- ;; Every page is rendered in memory before anything is written; then each file
- ;; is written atomically, and only when its bytes changed, so a failed build
- ;; leaves dist/ exactly as it was and a no-change rebuild writes nothing.
+ ;; Every page is rendered in memory, and every site asset read, before
+ ;; anything is written, so a render or read failure leaves dist/ and
+ ;; permalinks.edn untouched. Then each file is written through a temp file
+ ;; and a rename (in place if the OS refuses either), and only when its bytes
+ ;; changed, so a no-change rebuild writes nothing. An I/O failure while
+ ;; writing (a full disk), or a Pagefind failure, can leave some files updated.
  ;; Pages render in parallel, one worker per processor; the environment
  ;; variable CLOGEM_JOBS sets the number (CLOGEM_JOBS=1: one thread, as in
  ;; 0.2.0). The output is byte-identical either way.
