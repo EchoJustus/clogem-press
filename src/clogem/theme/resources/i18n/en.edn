@@ -70,4 +70,11 @@
  ;; language, {{lang}} being that language's own :label.
  :banner/available            "This page is also available in {{lang}}."
  :banner/read                 "Read in {{lang}} →"
- :banner/dismiss              "Dismiss"}
+ :banner/dismiss              "Dismiss"
+ ;; The colour-mode toggle (D-P4-3): its button label and the four modes,
+ ;; in vdoing's order.
+ :mode/label                  "Colour mode"
+ :mode/auto                   "Follow system"
+ :mode/light                  "Light"
+ :mode/dark                   "Dark"
+ :mode/read                   "Reading"}

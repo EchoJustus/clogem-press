@@ -109,9 +109,20 @@
            :permalinks-file "permalinks.edn"}
 
  ;; --------------------------------------------------------------- theme ----
+ ;; Colour modes (§11.3 items 2–4): the mode a FIRST visit sees. The navbar's
+ ;; mode button lets the reader choose; the choice is kept in localStorage
+ ;; ("clogem-mode") and beats this. :auto follows the OS (live, and without
+ ;; JS through a media query); :read is a sepia page with a dark code block.
+ ;; The classes are on <html>: `.theme-mode-dark`, `.theme-style-card`.
+ ;;
+ ;; Your own CSS: overrides/custom.css (beside site.edn) ships as
+ ;; dist/clogem/overrides/custom.css, cache-busted, linked LAST — after the
+ ;; theme's and Pagefind's stylesheets. Write `.theme-mode-dark { … }`, not
+ ;; `body.theme-mode-dark` (0.2.0's classes were on <body>).
  :theme {:default-mode :auto          ; :auto | :light | :dark | :read; anything else
                                       ; is a config error (giscus starts :read as light)
-         :page-style   :card          ; :card | :line
+         :page-style   :card          ; :card | :line — vdoing's pageStyle; anything else
+                                      ; warns and falls back to :card (B2 styles them)
          :sidebar-open true           ; true → every sidebar group starts open;
                                       ; false → only the current article's trail
                                       ; (vdoing's `sidebar.collapsable`, inverted; vdoing's

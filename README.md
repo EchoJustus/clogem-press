@@ -127,6 +127,50 @@ A Tamil-only article lives at `/pages/d4e5f6/`, in Tamil. Every article is
 reachable at its identity URL, so sidebar entries, index rows and links never
 need to know which languages exist.
 
+## Theme
+
+**Colour modes.** Four, in vdoing's order: *Follow system*, *Light*, *Dark*
+and *Reading* (a sepia page with a dark code block). `:theme :default-mode`
+picks the one a first visit sees; the navbar's mode button lets the reader
+choose, and the choice is remembered in `localStorage` (`clogem-mode`). The
+button is a menu button that opens four choices: Enter or Space opens it, the
+arrow keys move, Escape closes it. It is revealed by JavaScript, so a reader
+without JS never meets a dead control; such a reader gets `:default-mode`,
+with *Follow system* following the OS through a media query. The palette is
+WCAG AA in every mode — text, muted text and the accent at 4.5:1 or better on
+every surface, which `bb test` checks against `theme.css` — and links inside
+prose are underlined. Pagefind's search dialog and giscus follow the mode;
+printing uses the light palette and drops the chrome.
+
+The mode and page-style classes are on `<html>`, unqualified:
+`.theme-mode-dark`, `.theme-style-card`. (0.2.0 put them on `<body>`; CSS
+written as `body.theme-mode-dark` must drop `body`.)
+
+**Your own CSS.** Put it in `overrides/custom.css` in your site. It ships as
+`dist/clogem/overrides/custom.css` with a cache-busting `?v=` and is linked
+**last**, after the theme's and Pagefind's stylesheets, so a rule of the same
+specificity wins. `bb dev` hot-swaps it without a reload.
+
+**Icons** come from one sprite, `dist/clogem/icons.svg`, built from vendored
+[Lucide](https://lucide.dev) (ISC; Feather-derived icons also MIT) and, for
+brands, [Simple Icons](https://simpleicons.org) (CC0) and
+[Tabler](https://tabler.io/icons) (MIT). The licence notices are at the top of
+the sprite; sources, versions and hashes are in
+`src/clogem/theme/resources/icons/MANIFEST.edn`.
+
+**Content-Security-Policy.** Every page carries exactly one inline script,
+the colour-mode script in `<head>`, and it is byte-identical on every page,
+so one hash covers the site:
+
+```
+script-src 'self' 'sha256-aykGrfu05czJ6oIj+Xn+Qrjxa7JG8hF3RGl0W0liGmw='
+```
+
+`:i18n {:preference :redirect}` adds a second inline script, giscus needs
+`https://giscus.app` in `script-src`, `frame-src` and `style-src`, and
+Pagefind needs `worker-src 'self'` and `'wasm-unsafe-eval'` (DESIGN.md §6.8,
+§11.2 items 42 and 49).
+
 ## Development
 
 ```bash

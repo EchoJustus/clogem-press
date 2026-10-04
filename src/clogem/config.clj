@@ -690,8 +690,29 @@
 
 (def theme-modes
   "`:theme :default-mode` values: the four colour modes of §1.2, each a
-  `body.theme-mode-*` block in theme.css (:light is the :root palette)."
+  `.theme-mode-*` block in theme.css, on `<html>` since Phase 4 B1 (:light
+  is also the :root palette)."
   #{:auto :light :dark :read})
+
+(def page-styles
+  "`:theme :page-style` values (vdoing's `pageStyle`). Phase 4 B2 styles
+  them; B1 stamps the class `theme-style-*` on `<html>`."
+  #{:card :line})
+
+(defn- check-page-style!
+  "`:theme :page-style` outside `page-styles` is a WARNING, repaired to
+  :card: 0.2.0 accepted any value and stamped it as a class, so a site that
+  set one must not start failing."
+  [cfg]
+  (let [v (get-in cfg [:theme :page-style])]
+    (cond
+      (nil? v) (assoc-in cfg [:theme :page-style] (get-in defaults [:theme :page-style]))
+      (contains? page-styles v) cfg
+      :else
+      (do (diag/warn! nil (str ":theme :page-style is " (pr-str v) ", but it must be one of "
+                               (str/join ", " (map pr-str (sort page-styles))) "; using :card.")
+                      "It names vdoing's page style: :card (content on cards) or :line (DESIGN.md §1.2).")
+          (assoc-in cfg [:theme :page-style] :card)))))
 
 (defn- check-i18n-comments!
   "D-P3-14 / D-P3-15: the stored-preference behaviour, the comments
@@ -705,7 +726,8 @@
                    "giscus is the only comments provider (DESIGN.md §6.8).")
       check-comments-keys!
       (check-enum! [:theme :default-mode] theme-modes
-                   "It names the colour mode a page starts in (DESIGN.md §1.2, §6.8).")))
+                   "It names the colour mode a page starts in (DESIGN.md §1.2, §6.8).")
+      check-page-style!))
 
 (defn- real-path
   "`p` absolute, normalized, and with every existing link resolved — so a

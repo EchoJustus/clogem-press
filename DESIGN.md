@@ -1281,6 +1281,14 @@ needs `script-src`, `frame-src` and `style-src https://giscus.app` — client.js
 The mapping is not configurable, so there is no `:comments :mapping`; `:mapping :permalink`, which
 §5.6's sketch used to show, is accepted quietly and any other value warns.)*
 
+*(CSP, Phase 4 B1, §11.3 item 2: every page also carries one inline script, the colour-mode script
+at the top of `<head>`. It is byte-identical on every page — it reads the default from
+`<html data-default-mode>` rather than embedding it — so one hash covers the whole site:
+`script-src 'sha256-aykGrfu05czJ6oIj+Xn+Qrjxa7JG8hF3RGl0W0liGmw='` (551 bytes; `bb test` pins the
+hash, so a change to `layout/mode-script` must update it here and in the README). giscus's
+`client.js` is now `defer`, not `async`, so `js/comments.js` sets its `data-theme` from the stored
+mode first; that changes nothing for the policy.)*
+
 v1's `data-mapping="pathname"` would have created a separate discussion for
 `/zh-Hans/pages/a1b2c3/`, fragmenting one article's conversation across languages. Keying on the
 identity also decouples the thread from the URL scheme, so a future change to the prefix layout (D-10)
@@ -1690,7 +1698,8 @@ order; each builds on A:
   asset; warnings for unknown and not-yet-implemented config keys; a generic tool fetcher with Chroma
   and fswatcher-pod descriptors; a CI browser job. *Done (§11.3 items 7, 11, 16, 18).*
 - **B1 — Colour modes** (2.25 d): mode classes on `<html>` with a no-FOUC head script, an accessible
-  palette (WCAG AA), the toggle, icons (§11.3 items 2–6, 8).
+  palette (WCAG AA), the toggle, icons (§11.3 items 2–6, 8). *Done; it also took B2's `:where(:lang())`
+  font fix, which C depends on (§11.3 item 9).*
 - **C — Chroma highlighting** (2.5 d): on by default, line numbers as CSS counters, a per-language
   process and hash cache, dual-theme variables, a copy button (§11.3 item 10).
 - **D — Dev loop** (1.75 d): debounce, the verified pod fetch, an error overlay, `:base` in dev,
@@ -2677,17 +2686,92 @@ their own findings. Item 19 onward are corrections.
    and follows OS changes live; `localStorage['clogem-mode']` beats `:default-mode`. Without JS the
    media-query fallback still applies. User CSS written as `body.theme-mode-*` breaks — a documented
    incompatibility.
+   *Done (B1).* `layout/document` stamps `<html class="theme-mode-<default> theme-style-<style>"
+   data-default-mode="<default>">`; `<body>` keeps `lang-*` and `page-*`. `layout/mode-script` is the
+   first script in `<head>`, after the charset, viewport and `<meta name="color-scheme" content="light
+   dark">` tags and before every stylesheet (and before `lang-head`'s redirect): 551 bytes,
+   `'sha256-aykGrfu05czJ6oIj+Xn+Qrjxa7JG8hF3RGl0W0liGmw='` (pinned by `theme_modes_test`; the CSP
+   note is in §6.8). It reads storage inside try/catch, falls back to `data-default-mode` and then to
+   auto, sets `data-mode` to the chosen mode, swaps the `theme-mode-*` class for the resolved one, and
+   re-applies on a `prefers-color-scheme` change while `data-mode` is auto (`addListener` for Safari
+   before 14). It is longer than the ~480-byte prototype by that fallback and a `trim()` that keeps the
+   class attribute tidy. Selectors are unqualified; `.theme-mode-auto` plus a `prefers-color-scheme:
+   dark` block that a test holds equal to `.theme-mode-dark` is the no-JS path. The root background is
+   on `<html>`, so the first frame is in the mode. A node harness runs the script against a stub
+   document; `test/browser/modes.test.mjs` records the root background in the first animation frame
+   for stored dark on a light OS, stored read on a dark OS, nothing stored, blocked storage, a garbage
+   value (falls back to the *default*, checked with a page whose default is read) and JS disabled.
 3. **The toggle (B1).** A navbar menu button opening four `aria-pressed` choices in vdoing's order,
    hidden until JS runs, which also syncs giscus (`window.clogem.setCommentsTheme`, §11.2 item 49).
+   *Done (B1).* `layout/mode-toggle` renders `<div class="clogem-mode" hidden>` holding a button
+   (`aria-expanded`, `aria-controls`, `aria-label` and `title` = `:mode/label`) and a `hidden` list of
+   four buttons — auto, light, dark, read, each an icon and its label. The button shows the current
+   mode's icon from CSS keyed on `<html data-mode>`, so it is right before `js/mode.js` runs.
+   `js/mode.js` extends `window.clogem` with `getMode()` and `setMode(m)` (storage in try/catch, the
+   classes, `data-mode`, `aria-pressed`, then `clogem:modechange` on `document` with `{mode,
+   resolved}`), follows a `storage` event from another tab, and reveals the toggle. It is a disclosure,
+   not an ARIA menu: Enter or Space opens it and focuses the current mode; arrows, Home and End move;
+   Tab moves too; Escape closes it and returns focus to the button, as choosing a mode does; a click
+   outside or focus leaving it closes it. No Popover API. Five strings in all five languages
+   (`:mode/label`, `:mode/auto|light|dark|read`; ms and ta await native review). giscus: `client.js` is
+   now `defer` rather than `async` — deferred scripts run in document order, so `js/comments.js` (in
+   `<head>`) sets `data-theme` from `data-mode` before `client.js` reads it once; it re-sends the
+   theme on the iframe's first `message` from `https://giscus.app`, and follows `clogem:modechange`
+   (dark → `dark`, light and read → `light`, auto → `preferred_color_scheme`).
 4. **Accessible palette (B1), WCAG AA or better.** Light and read modes: accent `#1a7350`; muted
    `#5f6873` (light) and `#5f5a50` (read); new body and main colours. Dark mode keeps `#3eaf7c`, with
    muted `#9aa3ad`. Links in prose are underlined. vdoing's full set of colour variables,
    `color-scheme`, print styles and reduced motion. The read-mode code block is dark (vdoing parity).
+   *Done (B1).* Every mode block (`:root, .theme-mode-light`, `.theme-mode-read`, `.theme-mode-dark`
+   and the auto media block) defines `--bodyBg --mainBg --sidebarBg --blurBg --customBlockBg
+   --textColor --textLightenColor --borderColor --codeBg --codeColor --accent --textColorSubtle` and
+   `color-scheme`. Light: body `#f4f5f7`, main and sidebar `#fff`, custom blocks `#f1f3f5`, text
+   `#2c3e50`. Read: body `#ece6d6`, main and sidebar `#f5f2e9`, custom blocks `#f0ebdf`, text `#3d362a`,
+   code `#dcdfe4` on `#282c34`. Dark keeps 0.2.0's backgrounds (`#16181d`, sidebar `#1b1e24`, code and
+   custom blocks `#1f2329`). `theme_modes_test` parses theme.css and checks text, muted and accent on
+   all four surfaces and code on its block in every mode: minimums text 9.58, muted 5.08 (light muted
+   on its custom-block grey), accent 4.67 (read accent on the read body), code 10.48. Inline code
+   takes `--customBlockBg` and the text colour, so read mode's dark block does not make dark chips in
+   sepia text; the sticky badge's text is `--mainBg` (white on `#3eaf7c` was 2.6:1); an untranslated
+   switcher entry is muted rather than at 0.6 opacity (which put the accent below AA). Prose links —
+   `.clogem-content`, catalogue descriptions, features, excerpts — are underlined; chrome links are
+   not. Print: a light palette whatever the mode (`html[class]` outranks every mode block), the navbar,
+   sidebar, TOC, toggle, search, comments, banner, prev/next and heading anchors hidden. Reduced
+   motion: no transitions, animations or smooth scroll. The language font rules are `:where(:lang(…))`,
+   so `code, pre, kbd, samp` keep the monospace stack on zh and ta pages (item 9's fix, done here).
+   `:theme :page-style` is validated: `:card | :line`, anything else a warning that falls back to
+   `:card` (0.2.0 accepted anything); B2 styles them.
 5. **Pagefind's `--pf-*` variables** are mapped to the palette (B1).
+   *Done (B1).* Pagefind 1.5.2's `pagefind-component-ui.css` declares its defaults on `:root` (and a
+   dark set on `[data-pf-theme="dark"]`, which nothing sets) and is linked after theme.css, so the
+   mapping is on `html[class]` (0,1,1), which every page's `<html>` matches: `--pf-text`,
+   `-text-secondary`, `-text-muted`, `-background` (`--mainBg`), `-border`, `-border-focus`,
+   `-skeleton`, `-skeleton-shine`, `-hover`, `-mark` and `-outline-focus`. Its icons are masks, so they
+   take the text colour. The browser test checks the trigger and the open dialog against `--mainBg` in
+   dark, read and light.
 6. **Icons (B1).** Sources: Lucide (ISC/MIT), Simple Icons (CC0) for brands, Tabler (MIT) for gaps,
    a generic link icon as the fallback. Delivered as one built sprite, `clogem/icons.svg`, holding
    only the brands in use, through `(icons/icon ctx :name opts)`. Social links are
    `:theme :social {:icons […]}`; an unknown icon is a config error.
+   *Done (B1), apart from `:theme :social` (E1).* Vendored under `theme/resources/icons/`: `ui/` (28
+   Lucide icons from `lucide-static` 1.52.0), `brands/` (22: 20 from `simple-icons` 16.34.0, LinkedIn
+   and Douban from `@tabler/icons` 3.48.0 — Simple Icons has no LinkedIn, and its Douban carries a
+   custom licence, douban.com/about/legal, so Tabler's MIT one is used; Weibo is Simple Icons'
+   `sinaweibo`), `LICENSES/` (the three licences and the Simple Icons disclaimer) and `MANIFEST.edn`
+   (per source: package, version, tarball URL and the sha256 of the npm tarball; per icon: source and
+   upstream path, and whether Lucide lists it as Feather-derived). `clogem.sprite` builds the sprite —
+   titles, comments and Tabler's invisible bounding box stripped, path data untouched, presentation
+   attributes kept on each `<symbol>` — with the licence notices (the ISC and MIT permission texts,
+   the Feather-derived icons named; CC0 and the trademark note only when a brand is in) as its opening
+   comment; the default sprite is 9,375 bytes (the test allows 12 KB). Brand ids are `brand-<name>`,
+   since Lucide and Simple Icons both have an `x`; `sprite/brands-in-use` returns `#{}` until E1, and
+   the mechanism is tested with `#{:github :linkedin}`. `clogem.assets/files` ships the sprite as
+   `icons.svg` (so it is fingerprinted like any theme asset, D-P4-7) and no longer copies `icons/`.
+   `clogem.theme.icons/icon` is a macro over `icon*`, so an unknown name throws naming the template's
+   namespace and line and the icon; the build then fails naming the page. The CSS glyphs `▾ ▸ ›` are
+   now `chevron-down` / `chevron-right` icons in the nav dropdowns, the sidebar summaries (rotated
+   when open, mirrored under RTL) and the breadcrumbs; the heading anchor `#` stays text. Besides the
+   brief's list the UI set has `chevron-up` and `languages`.
 7. **Cache-busting (A, D-P4-7) — done.** GitHub Pages caches for 10 minutes. Every theme asset URL
    the layout emits (`/clogem/…` CSS, JS, font CSS) carries `?v=<first 8 hex of the sha256 of the
    file bytes as written to dist/>`, implemented once in `clogem.assets/href` (`layout/asset-href`),
@@ -2701,9 +2785,14 @@ their own findings. Item 19 onward are corrections.
    byte-identical to 0.2.0's (240 files, compared against a `git worktree` at `03249b7`; opt-in test
    `CLOGEM_COMPARE_REV`). CI's link resolvers strip the query before mapping an href to a file.
 8. **`overrides/custom.css` is linked last** (B1), after every theme stylesheet.
+   *Done (B1).* A site's `overrides/custom.css` is one of `clogem.assets/files`' outputs, so it ships
+   as `dist/clogem/overrides/custom.css` with a `?v=` and is in the collision checks; `layout/document`
+   links it after Pagefind's stylesheet. `bb dev` already watched `overrides/`, and a change there is a
+   CSS-only change, so it hot-swaps (verified: `data: css` on the SSE stream, the new bytes served).
+   The demo ships one, which adds a mark to the footer so the browser test can see it apply.
 9. **Mobile layout (B2).** A one-row navbar with a drawer at ≤ 50 rem; `--navbarHeight` and
    `scroll-margin-top`; a `:where(:lang())` fix so code stays monospace on ta/zh pages;
-   `focus-visible` rings.
+   `focus-visible` rings. (The `:where(:lang())` fix landed in B1, because C depends on it.)
 10. **Highlighting on by default (C).** `:highlight {:provider :chroma}`; `:none` or `--no-highlight`
     turns it off. A fetch failure is an error in `build` and a warning in `dev`. Line numbers are CSS
     counters, never text — Chroma's own numbers pollute the Pagefind index. One Chroma process per
@@ -2884,6 +2973,13 @@ their own findings. Item 19 onward are corrections.
     itself". That is true of theme strings only (`i18n/tr`); a config map value that has none of the
     chain's languages resolves to the map's **first** value (`i18n/resolve-str`). It now documents
     `:tools :chroma`, `:tools :fswatcher` and `CLOGEM_JOBS` as well.
+21. **Notes from B1.** The opt-in byte-identity test of item 7 (`CLOGEM_COMPARE_REV`) compared the
+    demo against 0.2.0 with every `?v=` stripped; B1 changes the output on purpose (the `<html>`
+    classes, the head script, the toggle, the icons), so that comparison no longer holds against
+    `03249b7`, as item 7 foresaw — it remains useful against a B1-or-later revision. `clogem.assets`
+    listed an `icons/` resource directory to copy from Phase 1 on, though none existed; with the
+    vendored sources there now, copying it would have shipped them raw, so it is gone and the sprite is
+    a generated file instead (item 6).
 
 
 ### Known limitations (Phase 5)

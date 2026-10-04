@@ -72,4 +72,11 @@
  ;; New in 0.2.0, and these strings need native review (DESIGN §10).
  :banner/available            "Halaman ini juga tersedia dalam {{lang}}."
  :banner/read                 "Baca dalam {{lang}} →"
- :banner/dismiss              "Tutup"}
+ :banner/dismiss              "Tutup"
+ ;; The colour-mode toggle (D-P4-3): its button label and the four modes,
+ ;; in vdoing's order. Awaiting native review (CHANGELOG, Unreleased).
+ :mode/label                  "Mod warna"
+ :mode/auto                   "Ikut sistem"
+ :mode/light                  "Cerah"
+ :mode/dark                   "Gelap"
+ :mode/read                   "Bacaan"}

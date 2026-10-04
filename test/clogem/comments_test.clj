@@ -107,7 +107,9 @@
                 "data-strict" "1" "data-reactions-enabled" "1" "data-emit-metadata" "0"
                 "data-input-position" "bottom" "data-theme" "preferred_color_scheme"
                 "data-lang" "zh-CN" "data-loading" "lazy" "crossorigin" "anonymous"
-                "async" "async"}
+                ;; B1: deferred, so js/comments.js runs first and sets the
+                ;; stored mode's data-theme before client.js reads it
+                "defer" "defer"}
                (attrs tag))
             "these and nothing else")
         (is (str/ends-with? tag "></script>") "an empty element: no inline HTML comments")))))
@@ -266,8 +268,11 @@
     (let [[cfg ds] (load-cfg {:theme {:default-mode m}})]
       (is (empty? (diag/errors ds)) (str m))
       (is (= m (get-in cfg [:theme :default-mode])))))
-  (testing ":read is a real mode: theme.css styles body.theme-mode-read"
-    (is (str/includes? (slurp (fs/file "src/clogem/theme/resources/css/theme.css")) "body.theme-mode-read {"))))
+  (testing ":read is a real mode: theme.css styles .theme-mode-read — on
+            <html> since Phase 4 B1, so the selector is unqualified"
+    (let [css (slurp (fs/file "src/clogem/theme/resources/css/theme.css"))]
+      (is (str/includes? css "\n.theme-mode-read {"))
+      (is (not (str/includes? css "body.theme-mode-"))))))
 
 (defn- check-giscus
   "Run .github/scripts/check_giscus.py over `out`: [exit-code output]."

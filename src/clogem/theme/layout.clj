@@ -20,6 +20,7 @@
             [clogem.model :as model]
             [clogem.search :as search]
             [clogem.seo :as seo]
+            [clogem.theme.icons :as icons]
             [clogem.util :as u]))
 
 ;; ---------------------------------------------------------------------------
@@ -209,9 +210,12 @@
                                 ;; the URI, encoded once below
                                 (model/variant-url cfg g (model/best-variant g lang))
                                 (index-href ctx :categories c))]
-                  [:li (if target
-                         [:a {:href (href ctx target)} (category-label ctx c)]
-                         (category-label ctx c))]))
+                  ;; the separator is an icon (B1), and decoration: the
+                  ;; list's structure is what a screen reader announces
+                  [:li (icons/icon ctx :chevron-right {:class "clogem-breadcrumbs__sep"})
+                   (if target
+                     [:a {:href (href ctx target)} (category-label ctx c)]
+                     (category-label ctx c))]))
               cats))])))
 
 (defn prev-next
@@ -336,7 +340,7 @@
         a     (if link [:a {:href (nav-href ctx link)} label] [:span label])]
     (if (seq items)
       [:li.clogem-navbar__item.has-items
-       [:details [:summary a]
+       [:details [:summary a (icons/icon ctx :chevron-down {:class "clogem-navbar__caret"})]
         (into [:ul.clogem-navbar__menu] (map #(nav-item ctx %) items))]]
       [:li.clogem-navbar__item a])))
 
@@ -380,6 +384,30 @@
      (when-not (search-ui-strings ctx)
        [:pagefind-modal])]))
 
+(def modes
+  "The colour modes in vdoing's toggle order, each with its icon."
+  [[:auto :monitor] [:light :sun] [:dark :moon] [:read :book-open]])
+
+(defn mode-toggle
+  "The colour-mode menu button (D-P4-3): a disclosure button
+  (`aria-expanded`, `aria-controls`) opening four `aria-pressed` buttons in
+  vdoing's order, each an icon and the page language's label. Rendered
+  `hidden` — js/mode.js reveals it, so a reader without JS never meets a dead
+  control — and the button shows the icon of the current mode, chosen in
+  CSS from `<html data-mode>`, which the head script sets before the first
+  paint. No Popover API: older iOS Safari lacks it."
+  [ctx]
+  [:div.clogem-mode {:hidden true :data-clogem-mode ""}
+   (into [:button.clogem-mode__button {:type "button" :aria-expanded "false"
+                                       :aria-controls "clogem-mode-menu"
+                                       :aria-label (i18n/tr ctx :mode/label)
+                                       :title (i18n/tr ctx :mode/label)}]
+         (for [[m ic] modes] (icons/icon ctx ic {:class (str "is-" (name m))})))
+   (into [:ul#clogem-mode-menu.clogem-mode__menu {:hidden true}]
+         (for [[m ic] modes]
+           [:li [:button {:type "button" :data-mode (name m) :aria-pressed "false"}
+                 (icons/icon ctx ic) " " [:span (i18n/tr ctx (keyword "mode" (name m)))]]]))])
+
 (defn navbar
   [{:keys [cfg lang] :as ctx}]
   [:header.clogem-navbar
@@ -388,6 +416,7 @@
    [:nav.clogem-navbar__nav
     (into [:ul] (map #(nav-item ctx %) (:nav cfg)))]
    (search-box ctx)
+   (mode-toggle ctx)
    (lang-switcher ctx)])
 
 (defn- sidebar-node
@@ -400,7 +429,8 @@
            (cond-> {:class (when (contains? trail (:dir-key node)) "is-active-trail")}
              (or open-all? (contains? trail (:dir-key node))) (assoc :open true))
            ;; a directory title IS a category name: D-12 labels apply
-           [:summary (category-label ctx (:title node))]]
+           [:summary (icons/icon ctx :chevron-right {:class "clogem-sidebar__caret"})
+            (category-label ctx (:title node))]]
           [(into [:ul]
                  (for [c (:children node)]
                    (if (= :dir (:kind c))
@@ -637,10 +667,11 @@
         (not (false? (get-in group [:variants (:primary group) :front-matter :comment]))))))
 
 (defn giscus-theme
-  "`data-theme` from `:theme :default-mode` — the theme the widget starts in.
-  The Phase 4 toggle changes it with `window.clogem.setCommentsTheme`, whose
-  message is lost if the iframe has not loaded yet, so this initial value
-  is what most readers see."
+  "`data-theme` from `:theme :default-mode` — the theme the widget starts in
+  when js/comments.js has not run. comments.js replaces it with the stored
+  mode's before client.js runs (the scripts are deferred, in order), re-sends
+  it on the iframe's first message, and follows the toggle — the same
+  mapping as here."
   [cfg]
   (case (get-in cfg [:theme :default-mode])
     :light "light"
@@ -676,7 +707,51 @@
                  :data-lang (str (get-in cfg [:langs :locales lang :giscus]))
                  :data-loading "lazy"
                  :crossorigin "anonymous"
-                 :async true}]])))
+                 ;; B1: deferred, not async — deferred scripts run in
+                 ;; document order, so js/comments.js (in <head>) sets
+                 ;; data-theme from the stored colour mode before client.js
+                 ;; reads it (client.js reads it once, via currentScript)
+                 :defer true}]])))
+
+;; ---------------------------------------------------------------------------
+;; Colour modes (D-P4-2)
+
+(def mode-script
+  "The inline head script of D-P4-2, BYTE-IDENTICAL on every page so one CSP
+  `sha256-…` covers the whole site (the hash is in DESIGN.md §6.8 and the
+  README; a test pins it). It runs before any stylesheet is linked:
+
+    - the mode is `localStorage['clogem-mode']` when that holds one of
+      auto|light|dark|read — read inside try/catch, since storage can be
+      blocked — else `<html data-default-mode>` (from `:theme
+      :default-mode`), else auto;
+    - it sets `<html data-mode>` to the mode, and replaces the server's
+      `theme-mode-*` class with the RESOLVED mode: auto becomes
+      theme-mode-light or theme-mode-dark from `prefers-color-scheme`;
+    - while `data-mode` is auto, an OS change re-applies it, live
+      (`addListener` for Safari before 14).
+
+  Without JS the server's `theme-mode-<default>` stays, and
+  `.theme-mode-auto` follows the OS through theme.css's media query."
+  (str "(function(){var d=document.documentElement,v=/^(auto|light|dark|read)$/,"
+       "q=window.matchMedia&&matchMedia(\"(prefers-color-scheme: dark)\"),m;"
+       "try{m=localStorage.getItem(\"clogem-mode\")}catch(e){}"
+       "if(!v.test(m))m=d.getAttribute(\"data-default-mode\");if(!v.test(m))m=\"auto\";"
+       "d.setAttribute(\"data-mode\",m);"
+       "function a(){var n=d.getAttribute(\"data-mode\");if(n==\"auto\")n=q&&q.matches?\"dark\":\"light\";"
+       "d.className=(d.className.replace(/(^|\\s)theme-mode-\\S+/g,\"\")+\" theme-mode-\"+n).trim()}"
+       "a();q&&(q.addEventListener?q.addEventListener(\"change\",a):q.addListener(a))})();"))
+
+(defn mode-script-hash
+  "The CSP source for `mode-script`: `'sha256-<base64>'`."
+  []
+  (let [md (java.security.MessageDigest/getInstance "SHA-256")]
+    (str "'sha256-" (.encodeToString (java.util.Base64/getEncoder)
+                                     (.digest md (.getBytes ^String mode-script "UTF-8")))
+         "'")))
+
+(defn default-mode [cfg] (get-in cfg [:theme :default-mode] :auto))
+(defn page-style [cfg] (get-in cfg [:theme :page-style] :card))
 
 ;; ---------------------------------------------------------------------------
 ;; Document
@@ -728,11 +803,22 @@
   index, so it is not decoration (§6.4 rule 2)."
   [{:keys [cfg lang title] :as ctx} & body]
   (let [loc (config/locale cfg lang)]
+    ;; D-P4-2: the mode and style classes live on <html>, where the head
+    ;; script can set them before <body> exists; data-default-mode is what
+    ;; it falls back to
     [:html {:lang (config/html-lang cfg lang)
-            :dir  (name (or (:dir loc) :ltr))}
+            :dir  (name (or (:dir loc) :ltr))
+            :class (str "theme-mode-" (name (default-mode cfg))
+                        " theme-style-" (name (page-style cfg)))
+            :data-default-mode (name (default-mode cfg))}
      [:head
       [:meta {:charset "utf-8"}]
       [:meta {:name "viewport" :content "width=device-width, initial-scale=1"}]
+      ;; scrollbars and form controls follow the resolved mode (theme.css
+      ;; sets color-scheme per mode class)
+      [:meta {:name "color-scheme" :content "light dark"}]
+      ;; before every stylesheet, so the first frame is already in the mode
+      [:script (h/raw mode-script)]
       [:meta {:name "generator" :content (str "clogem-press " (:clogem/version cfg))}]
       [:title (str title
                    (when-let [st (i18n/resolve-str ctx (get-in cfg [:site :title]))]
@@ -758,6 +844,12 @@
          ;; order, so this runs after the components are defined
          (when (search-ui-strings ctx)
            [:script {:src (asset-href ctx "js/search.js") :defer true}])))
+      ;; D-P4-8: the site's own stylesheet, LAST, after Pagefind's — so a
+      ;; rule of the same specificity overrides anything above it
+      (when (assets/version cfg assets/custom-css)
+        [:link {:rel "stylesheet" :href (asset-href ctx assets/custom-css)}])
+      ;; D-P4-3: the toggle and window.clogem.getMode/setMode
+      [:script {:src (asset-href ctx "js/mode.js") :defer true}]
       ;; D-P3-15: window.clogem.setCommentsTheme, beside the widget it drives
       (when (comments? ctx)
         [:script {:src (asset-href ctx "js/comments.js") :defer true}])
@@ -765,9 +857,7 @@
       ;; and only on a page that renders a TOC for it to spy on
       (when (seq (:toc ctx))
         [:script {:src (asset-href ctx "js/toc.js") :defer true}])]
-     (into [:body {:class (str "theme-mode-" (name (get-in cfg [:theme :default-mode] :auto))
-                               " theme-style-" (name (get-in cfg [:theme :page-style] :card))
-                               " lang-" (name lang)
+     (into [:body {:class (str "lang-" (name lang)
                                (when-let [k (:page-kind ctx)] (str " page-" (name k))))}
             (search-config ctx)]
            body)]))

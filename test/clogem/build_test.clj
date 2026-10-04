@@ -37,7 +37,15 @@
 
 (use-fixtures :once build-fixture)
 
-(defn- slurp-out [& parts] (slurp (fs/file (apply fs/path *out-dir* parts))))
+(defn- no-icons
+  "`html` without its `clogem-icon` SVGs (Phase 4 B1 put icons in the
+  breadcrumbs, the sidebar summaries and the nav dropdowns): these tests
+  assert on the text and links around them; theme_modes_test asserts on the
+  icons."
+  [html]
+  (some-> html (str/replace #"<svg [^>]*class=\"clogem-icon[^\"]*\"[^>]*>.*?</svg>" "")))
+
+(defn- slurp-out [& parts] (no-icons (slurp (fs/file (apply fs/path *out-dir* parts)))))
 (defn- exists? [& parts] (fs/exists? (apply fs/path *out-dir* parts)))
 
 (defn- group-titled [title]
@@ -291,7 +299,7 @@
   [cfg-f uri]
   (let [pm (first (diag/collecting (render/page-map (update *model* :cfg cfg-f))))
         f  (get pm uri)]
-    (when f (str (hiccup2.core/html (f))))))
+    (when f (no-icons (str (hiccup2.core/html (f)))))))
 
 (deftest an-article-shows-only-its-own-top-level-tree
   (let [html (slurp-out "pages" "643259" "index.html")]
@@ -644,7 +652,7 @@
             ;; render everything NOW — the thunks read files under `dir`,
             ;; which is deleted before the caller looks at the result
             [rendered ds] (diag/collecting
-                           (into {} (map (fn [[u f]] [u (str (hiccup2.core/html (f)))]))
+                           (into {} (map (fn [[u f]] [u (no-icons (str (hiccup2.core/html (f))))]))
                                  (render/page-map m)))]
         (is (empty? (diag/errors ds)))
         [m (set (keys rendered)) (fn [uri] (get rendered uri)) ds])
@@ -784,7 +792,7 @@
                        [["ms" "page" "2" "index.html"] "ms"]
                        [["zh-Hant" "categories" "guide" "page" "2" "index.html"] "zh-Hant"]
                        [["zh-Hant" "pages" "643259" "index.html"] "zh-Hant"]]]
-    (is (str/includes? (apply slurp-out path) (str "<html dir=\"ltr\" lang=\"" lang "\">")) (pr-str path))))
+    (is (str/includes? (apply slurp-out path) (str " dir=\"ltr\" lang=\"" lang "\"><head>")) (pr-str path))))
 
 (deftest an-article-page-carries-exactly-one-h1
   (testing "the theme renders the title; the body's leading `# Title` is dropped (D-P2-9)"

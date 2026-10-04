@@ -69,4 +69,11 @@
  ;; language, {{lang}} being that language's own :label.
  :banner/available            "本页也有{{lang}}版本。"
  :banner/read                 "阅读{{lang}}版 →"
- :banner/dismiss              "关闭"}
+ :banner/dismiss              "关闭"
+ ;; The colour-mode toggle (D-P4-3): its button label and the four modes,
+ ;; in vdoing's order.
+ :mode/label                  "主题模式"
+ :mode/auto                   "跟随系统"
+ :mode/light                  "浅色模式"
+ :mode/dark                   "深色模式"
+ :mode/read                   "阅读模式"}
