@@ -149,9 +149,12 @@ console.log(JSON.stringify([
 ;; 3. The palette (D-P4-4)
 
 (def full-set
-  "vdoing's variables, plus the accent and the muted text."
+  "vdoing's variables, plus the accent and the muted text, and (Phase 4 C)
+  the code block's line numbers and highlighted line — their contrast is
+  checked in highlight_test.clj, against every token colour."
   #{"--bodyBg" "--mainBg" "--sidebarBg" "--blurBg" "--customBlockBg" "--textColor"
-    "--textLightenColor" "--borderColor" "--codeBg" "--codeColor" "--accent" "--textColorSubtle"})
+    "--textLightenColor" "--borderColor" "--codeBg" "--codeColor" "--accent" "--textColorSubtle"
+    "--codeLineNumber" "--codeHlBg"})
 
 (defn- block
   "The declarations of the first rule whose selector is exactly `sel`

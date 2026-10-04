@@ -121,3 +121,78 @@
                     ["COPYING" "README.md"])]
         (apply p/shell {:dir (str stage)} "tar" "-czf" (str tgz) (concat extra [member]))
         (str tgz)))))
+
+;; ---------------------------------------------------------------------------
+;; A stand-in for Chroma (Phase 4 C)
+
+(def highlight-fixtures
+  "Real Chroma 2.27.0 output, captured once: `--list` and the two styles'
+  `--html --html-styles`. The fake serves them, so a fake build ships the
+  same highlight.css a real one does."
+  "test/fixtures/highlight")
+
+(defn fake-chroma!
+  "Write an executable `chroma` stand-in into `dir` and return its path. It
+  answers `--version`; `--list` with the captured real listing;
+  `--html --html-styles --style=S` with the captured `github` or
+  `github-dark` CSS; and `--lexer=L --html --html-only f…` with one
+  `<pre class=\"chroma\"><code>…</code></pre>` per file, one
+  `<span class=\"line\"><span class=\"cl\">` per line, escaped, with the
+  word `defn` wrapped in `<span class=\"k\">` so a test can see a token.
+  Every run appends its arguments to `calls.txt` and its working
+  directory to `cwd.txt` beside itself. `:exit` makes the highlighting
+  runs (not `--list`) fail with that status; `:split-wrong` makes them
+  print one block too many."
+  [dir & {:keys [exit split-wrong]}]
+  (let [f (fs/path dir "chroma")]
+    (fs/create-dirs dir)
+    (doseq [n ["chroma-2.27.0-list.txt" "github.css" "github-dark.css"]]
+      (fs/copy (fs/path highlight-fixtures n) (fs/path dir n) {:replace-existing true}))
+    (spit (fs/file f)
+          (str/join
+           "\n"
+           ["#!/bin/sh"
+            "d=$(cd \"$(dirname \"$0\")\" && pwd)"
+            "printf '%s\\n' \"$*\" >> \"$d/calls.txt\""
+            "pwd >> \"$d/cwd.txt\""
+            "case \"$1\" in"
+            "  --version) echo '2.27.0-fake'; exit 0;;"
+            "  --list) cat \"$d/chroma-2.27.0-list.txt\"; exit 0;;"
+            "esac"
+            "styles=''; style=''; files=''"
+            "for a in \"$@\"; do"
+            "  case \"$a\" in"
+            "    --html-styles) styles=1;;"
+            "    --style=*) style=\"${a#--style=}\";;"
+            "    -*) ;;"
+            "    *) files=\"$files $a\";;"
+            "  esac"
+            "done"
+            "if [ -n \"$styles\" ]; then"
+            "  if [ \"$style\" = github-dark ]; then cat \"$d/github-dark.css\"; else cat \"$d/github.css\"; fi"
+            "  exit 0"
+            "fi"
+            (if exit (str "echo 'fake chroma: boom' >&2; exit " exit) ":")
+            "for f in $files; do"
+            "  printf '<pre class=\"chroma\"><code>'"
+            "  awk '{ gsub(/&/, \"\\\\&amp;\"); gsub(/</, \"\\\\&lt;\"); gsub(/>/, \"\\\\&gt;\"); gsub(/\"/, \"\\\\&#34;\");"
+            "        gsub(/defn/, \"<span class=\\\"k\\\">defn</span>\");"
+            "        printf \"<span class=\\\"line\\\"><span class=\\\"cl\\\">%s\\n</span></span>\", $0 }' \"$f\""
+            "  printf '</code></pre>'"
+            "done"
+            (if split-wrong "printf '<pre class=\"chroma\"><code></code></pre>'" ":")
+            "exit 0"
+            ""]))
+    (fs/set-posix-file-permissions f "rwxr-xr-x")
+    (str f)))
+
+(defn chroma-calls
+  "The argument lines the fake chroma at `bin` was run with, in order."
+  [bin]
+  (let [f (fs/path (fs/parent bin) "calls.txt")]
+    (if (fs/exists? f) (str/split-lines (slurp (fs/file f))) [])))
+
+(defn chroma-runs
+  "Only the highlighting runs (`--lexer=…`) of the fake at `bin`."
+  [bin]
+  (filterv #(str/starts-with? % "--lexer=") (chroma-calls bin)))
