@@ -16,9 +16,11 @@
   the way out: a relative `url(…)` inside it (the Tamil font files) gets the
   `?v=` of the file it names, so a font change busts the font too.
 
-  One file is not copied from the theme's resources (Phase 4 Task B1):
+  Two files are not copied from the theme's resources (Phase 4 Task B1):
   `icons.svg`, the sprite `clogem.sprite` builds from the vendored icon
-  sources (which never ship themselves)."
+  sources (which never ship themselves), and `overrides/custom.css`, the
+  site's own `overrides/custom.css` when it has one (D-P4-8), copied as it
+  is."
   (:require [babashka.fs :as fs]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -93,17 +95,31 @@
     "js/comments.js" (not= :giscus (get-in cfg [:comments :provider]))
     false))
 
-(defn- generated
-  "The files built rather than copied: the icon sprite."
+(def custom-css
+  "D-P4-8: where the site's own stylesheet ships, under `<out>/clogem/`."
+  "overrides/custom.css")
+
+(defn custom-css-source
+  "The site's `overrides/custom.css`, or nil when it has none."
   [cfg]
-  {"icons.svg" (.getBytes ^String (sprite/sprite (sprite/brands-in-use cfg)) "UTF-8")})
+  (when-let [dir (:clogem/site-dir cfg)]
+    (let [f (fs/path dir "overrides" "custom.css")]
+      (when (fs/regular-file? f) f))))
+
+(defn- generated
+  "The files built rather than copied: the icon sprite, and the site's
+  custom stylesheet when it has one (its bytes as they are — its `url(…)`s
+  are the site's, relative to `overrides/`)."
+  [cfg]
+  (cond-> {"icons.svg" (.getBytes ^String (sprite/sprite (sprite/brands-in-use cfg)) "UTF-8")}
+    (custom-css-source cfg) (assoc custom-css (raw-bytes (custom-css-source cfg)))))
 
 (defn files
   "{rel-path → bytes} for every theme file this site ships under
   `<out>/clogem/`, in the bytes the build writes: the i18n EDN maps are
   build-time inputs and never shipped; fonts ship only to a site that asked
   for them (D-P3-12); our CSS has its relative `url(…)`s versioned; the
-  sprite is `generated`. A sorted map, so
+  sprite and the site's custom stylesheet are `generated`. A sorted map, so
   the export order is stable."
   [cfg]
   (if-let [root (theme-resource-dir)]

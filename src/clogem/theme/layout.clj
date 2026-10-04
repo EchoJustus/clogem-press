@@ -844,6 +844,12 @@
          ;; order, so this runs after the components are defined
          (when (search-ui-strings ctx)
            [:script {:src (asset-href ctx "js/search.js") :defer true}])))
+      ;; D-P4-8: the site's own stylesheet, LAST, after Pagefind's — so a
+      ;; rule of the same specificity overrides anything above it
+      (when (assets/version cfg assets/custom-css)
+        [:link {:rel "stylesheet" :href (asset-href ctx assets/custom-css)}])
+      ;; D-P4-3: the toggle and window.clogem.getMode/setMode
+      [:script {:src (asset-href ctx "js/mode.js") :defer true}]
       ;; D-P3-15: window.clogem.setCommentsTheme, beside the widget it drives
       (when (comments? ctx)
         [:script {:src (asset-href ctx "js/comments.js") :defer true}])

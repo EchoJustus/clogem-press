@@ -1,0 +1,12 @@
+/* The demo's user stylesheet (D-P4-8, DESIGN.md §11.3 item 8).
+ *
+ * A site's overrides/custom.css ships as dist/clogem/overrides/custom.css,
+ * fingerprinted like the theme's own assets, and is linked LAST — after
+ * theme.css and Pagefind's stylesheet — so a rule here wins over one of the
+ * same specificity there. Mode classes are on <html> and unqualified:
+ * write `.theme-mode-dark { … }`, not `body.theme-mode-dark { … }`.
+ *
+ * The demo uses it for one visible, harmless mark, so CI and the browser
+ * tests can see that it loaded.
+ */
+.clogem-footer p::after { content: " · overrides/custom.css"; }
