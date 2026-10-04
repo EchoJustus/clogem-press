@@ -99,12 +99,27 @@ The version stays 0.2.0.
 - A permalink with a `.` or `..` segment or a backslash
   (`permalink: /../../escaped/`) is now an **error** naming its source: it
   used to be written outside `dist/`, or with `/tags/../` over the home
-  page. No valid site can rely on that. One rule (`clogem.util/unsafe-permalink?`)
+  page. Such permalinks are now rejected because they can escape or alias
+  `dist/`, even where 0.2.0 built them harmlessly (`/./tags/`, which a
+  browser resolves to `/tags/`): write the clean spelling instead. One rule
+  (`clogem.util/unsafe-permalink?`)
   covers an article's front matter, an `@pages/` file's `permalink:`
   (`@pages/tagsPage.md`; its index keeps the default path) and the keys of
   `permalinks.edn`. A bad ledger key is caught before write mode copies it
   into an article's front matter, so the failing build changes no source
-  file.
+  file. In an `@pages/` file whose `permalink:` is never read — any
+  language variant but the default language's — an unsafe value is a
+  warning that it is unused, not an error.
+- **A page that would sit inside another output of the same build** is an
+  error in `doctor` and before a build writes anything, naming both and
+  where each comes from: `permalink: /assets/demo.txt/` beside the site
+  asset `assets/demo.txt`, or `permalink: /robots.txt/` beside the
+  generated `robots.txt` (or, with search on, a page under `/pagefind/`).
+  0.2.0 silently buried the asset under a directory; the previous
+  development build failed mid-write with a raw `FileSystemException`.
+  Choose another permalink.
+- A dangling symlink where the build needs a directory is reported as a
+  broken symlink, not as a file.
 - An unreadable site asset whose exception carries only the path reads
   "could not read site asset <p>: access denied (AccessDeniedException)",
   not the path twice.

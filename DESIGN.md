@@ -2770,6 +2770,23 @@ their own findings. Item 19 onward are corrections.
     home page), and the keys of `permalinks.edn` (an error naming the file and quoting the key,
     raised in pass 1, so write mode never copies the value into an article before failing).
     `check-outputs!` stays as the backstop.
+    *Fix round P4-A.3.* Two outputs of *one* build can collide, which no check of the disk sees: a
+    page at `/assets/demo.txt/` needs `dist/assets/demo.txt/` to be a directory while the site asset
+    `assets/demo.txt` needs it to be a file (0.2.0 buried the asset and exited 0; P4-A.2 threw a raw
+    `FileSystemException` with 232 of 240 files written, then blamed "an earlier build"); so does
+    `/robots.txt/` against the generated `robots.txt`. `render/output-collisions` looks up each
+    output's ancestors inside the out directory, one map lookup each, in the build's own set of
+    outputs — pages, theme and site assets, feeds, the sitemap, `robots.txt`, and, with search on,
+    `pagefind/` as a directory Pagefind replaces whole — and names both outputs and where each comes
+    from ("/assets/demo.txt/ (from content/…/01.getting-started.md) would put a page inside the site
+    asset assets/demo.txt"). `render/planned-outputs` lists the same set without rendering or reading
+    anything, so `doctor` and the build's analysis gate report a collision as a content error;
+    `check-outputs!` checks it again, first, as the backstop. An `@pages/` variant whose `permalink:`
+    is never read (only the default language's file sets an index's path) has an unsafe value
+    reported as a *warning* that it is unused, not as an error that it would escape. An ancestor that
+    is a dangling symlink is reported as a broken symlink, not as a file. Not checked: two outputs at
+    the *same* path (a site asset `assets/x/index.html` and a page `/assets/x/`) — the later one wins,
+    as in 0.2.0.
     *Speed.* `util/damerau-levenshtein` keeps three rolling rows (persistent vectors — long arrays
     are slower still under sci, every `aget` being reflective) instead of a 2-D `make-array`; a
     property test checks it against the 0.2.0 matrix on 3000 random ASCII, CJK and Tamil pairs. Pages
