@@ -85,7 +85,9 @@ a:hover { text-decoration: underline; }
 .clogem-navbar__nav > ul { list-style: none; display: flex; gap: 1rem; margin: 0; padding: 0; }
 .clogem-navbar__item { position: relative; }
 .clogem-navbar__item details > summary { list-style: none; cursor: pointer; }
-.clogem-navbar__item details > summary::after { content: " ▾"; font-size: 0.7em; color: var(--textColorSubtle); }
+.clogem-navbar__item details > summary::-webkit-details-marker { display: none; }
+.clogem-navbar__caret { margin-left: 0.2em; font-size: 0.8em; color: var(--textColorSubtle); }
+.clogem-navbar__item details[open] .clogem-navbar__caret { transform: rotate(180deg); }
 .clogem-navbar__menu { list-style: none; position: absolute; top: 100%; left: 0; min-width: 10rem; margin: 0;
   padding: 0.4rem 0.8rem; background: var(--bodyBg); border: 1px solid var(--borderColor); border-radius: 6px; z-index: 20; }
 .clogem-navbar__menu li { padding: 0.2rem 0; }
@@ -135,6 +137,14 @@ a:hover { text-decoration: underline; }
 }
 .clogem-variants { font-size: 0.9rem; display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: baseline; }
 .clogem-variants__links { display: flex; gap: 0.6rem; }
+
+/* Icons (D-P4-6): `<svg class="clogem-icon"><use href="…icons.svg#name"/>`,
+ * sized by the text around them and coloured by it (currentColor). */
+.clogem-icon {
+  width: 1em; height: 1em; flex: none;
+  vertical-align: -0.125em;
+  overflow: visible;
+}
 
 /* D-P3-14: the "also available" note js/lang.js inserts at the top of the
  * main column — in the flow, so it moves the page down by its own height and
@@ -204,8 +214,10 @@ img { max-width: 100%; height: auto; }
 
 /* ---- Phase 2: sidebar tree ---- */
 .clogem-sidebar__dir > summary { cursor: pointer; font-weight: 600; padding: 0.2rem 0; list-style: none; }
-.clogem-sidebar__dir > summary::before { content: "▸ "; color: var(--textColorSubtle); font-size: 0.8em; }
-.clogem-sidebar__dir[open] > summary::before { content: "▾ "; }
+.clogem-sidebar__dir > summary::-webkit-details-marker { display: none; }
+.clogem-sidebar__caret { color: var(--textColorSubtle); font-size: 0.85em; margin-right: 0.3em; }
+.clogem-sidebar__dir[open] > summary > .clogem-sidebar__caret { transform: rotate(90deg); }
+[dir="rtl"] .clogem-sidebar__dir:not([open]) > summary > .clogem-sidebar__caret { transform: scaleX(-1); }
 .clogem-sidebar__dir > ul { padding-left: 0.9rem; border-left: 1px solid var(--borderColor); margin-left: 0.3rem; }
 .clogem-sidebar .is-active-trail > summary { color: var(--accent); }
 
@@ -229,7 +241,9 @@ img { max-width: 100%; height: auto; }
 
 /* ---- Phase 2: article chrome ---- */
 .clogem-breadcrumbs ol { list-style: none; display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0; margin: 0 0 1rem; font-size: 0.85rem; color: var(--textColorSubtle); }
-.clogem-breadcrumbs li + li::before { content: "›"; margin-right: 0.35rem; }
+.clogem-breadcrumbs li { display: inline-flex; align-items: center; gap: 0.35rem; }
+.clogem-breadcrumbs__sep { font-size: 0.9em; }
+[dir="rtl"] .clogem-breadcrumbs__sep { transform: scaleX(-1); }
 .clogem-prev-next { display: flex; justify-content: space-between; gap: 1rem; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--borderColor); }
 .clogem-prev-next__next { margin-left: auto; text-align: right; }
 .clogem-prev-next span { display: block; font-size: 0.75rem; color: var(--textColorSubtle); }

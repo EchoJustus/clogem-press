@@ -14,11 +14,16 @@
   what it returns, and `version` hashes the same thing, so a fingerprint can
   never name bytes other than the ones on disk. Our own CSS is rewritten on
   the way out: a relative `url(…)` inside it (the Tamil font files) gets the
-  `?v=` of the file it names, so a font change busts the font too."
+  `?v=` of the file it names, so a font change busts the font too.
+
+  One file is not copied from the theme's resources (Phase 4 Task B1):
+  `icons.svg`, the sprite `clogem.sprite` builds from the vendored icon
+  sources (which never ship themselves)."
   (:require [babashka.fs :as fs]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [clogem.config :as config]))
+            [clogem.config :as config]
+            [clogem.sprite :as sprite]))
 
 (defn theme-resource-dir
   "Locate the theme's static resources on the classpath, so they are found
@@ -70,8 +75,10 @@
                      whole)))))
 
 (defn- exported-subdirs
+  "The resource directories copied to `<out>/clogem/`. `icons/` is not one:
+  its sources are built into `icons.svg` (`clogem.sprite`)."
   [cfg]
-  (cond-> ["css" "js" "icons"]
+  (cond-> ["css" "js"]
     (= :self-hosted (get-in cfg [:theme :fonts :tamil])) (conj "fonts")))
 
 (defn- skip?
@@ -86,12 +93,18 @@
     "js/comments.js" (not= :giscus (get-in cfg [:comments :provider]))
     false))
 
+(defn- generated
+  "The files built rather than copied: the icon sprite."
+  [cfg]
+  {"icons.svg" (.getBytes ^String (sprite/sprite (sprite/brands-in-use cfg)) "UTF-8")})
+
 (defn files
   "{rel-path → bytes} for every theme file this site ships under
   `<out>/clogem/`, in the bytes the build writes: the i18n EDN maps are
   build-time inputs and never shipped; fonts ship only to a site that asked
-  for them (D-P3-12); our CSS has its relative `url(…)`s versioned. A sorted
-  map, so the export order is stable."
+  for them (D-P3-12); our CSS has its relative `url(…)`s versioned; the
+  sprite is `generated`. A sorted map, so
+  the export order is stable."
   [cfg]
   (if-let [root (theme-resource-dir)]
     (let [raw (into (sorted-map)
@@ -108,12 +121,13 @@
                       (for [[rel p] raw :when (not (str/ends-with? rel ".css"))]
                         [rel (raw-bytes p)]))
           v-of  (fn [rel] (some-> (get plain rel) fingerprint))]
-      (into plain
-            (for [[rel p] raw :when (str/ends-with? rel ".css")]
-              [rel (.getBytes ^String (rewrite-css (String. ^bytes (raw-bytes p) "UTF-8")
-                                                   (str (or (fs/parent rel) ""))
-                                                   v-of)
-                              "UTF-8")])))
+      (-> plain
+          (into (for [[rel p] raw :when (str/ends-with? rel ".css")]
+                  [rel (.getBytes ^String (rewrite-css (String. ^bytes (raw-bytes p) "UTF-8")
+                                                       (str (or (fs/parent rel) ""))
+                                                       v-of)
+                                  "UTF-8")]))
+          (into (generated cfg))))
     (sorted-map)))
 
 (defn versions

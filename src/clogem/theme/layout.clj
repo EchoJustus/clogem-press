@@ -20,6 +20,7 @@
             [clogem.model :as model]
             [clogem.search :as search]
             [clogem.seo :as seo]
+            [clogem.theme.icons :as icons]
             [clogem.util :as u]))
 
 ;; ---------------------------------------------------------------------------
@@ -209,9 +210,12 @@
                                 ;; the URI, encoded once below
                                 (model/variant-url cfg g (model/best-variant g lang))
                                 (index-href ctx :categories c))]
-                  [:li (if target
-                         [:a {:href (href ctx target)} (category-label ctx c)]
-                         (category-label ctx c))]))
+                  ;; the separator is an icon (B1), and decoration: the
+                  ;; list's structure is what a screen reader announces
+                  [:li (icons/icon ctx :chevron-right {:class "clogem-breadcrumbs__sep"})
+                   (if target
+                     [:a {:href (href ctx target)} (category-label ctx c)]
+                     (category-label ctx c))]))
               cats))])))
 
 (defn prev-next
@@ -336,7 +340,7 @@
         a     (if link [:a {:href (nav-href ctx link)} label] [:span label])]
     (if (seq items)
       [:li.clogem-navbar__item.has-items
-       [:details [:summary a]
+       [:details [:summary a (icons/icon ctx :chevron-down {:class "clogem-navbar__caret"})]
         (into [:ul.clogem-navbar__menu] (map #(nav-item ctx %) items))]]
       [:li.clogem-navbar__item a])))
 
@@ -400,7 +404,8 @@
            (cond-> {:class (when (contains? trail (:dir-key node)) "is-active-trail")}
              (or open-all? (contains? trail (:dir-key node))) (assoc :open true))
            ;; a directory title IS a category name: D-12 labels apply
-           [:summary (category-label ctx (:title node))]]
+           [:summary (icons/icon ctx :chevron-right {:class "clogem-sidebar__caret"})
+            (category-label ctx (:title node))]]
           [(into [:ul]
                  (for [c (:children node)]
                    (if (= :dir (:kind c))

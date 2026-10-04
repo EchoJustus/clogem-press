@@ -1,0 +1,93 @@
+;; Vendored icon sources (DESIGN.md §11.3 item 6, D-P4-6). Read by clogem.sprite,
+;; which builds dist/clogem/icons.svg from these files; nothing here ships as is.
+;;
+;; Each source is pinned to an exact upstream release. The sha256 is that of the
+;; npm tarball the files were copied from, unmodified (the sprite builder strips
+;; titles, comments and Tabler's invisible bounding-box path when it builds).
+;; To update: `npm pack <package>@<version>`, check the sha256, copy the files,
+;; bump :version, :tarball and :sha256 here.
+{:sources
+ {:lucide
+  {:name         "Lucide"
+   :package      "lucide-static"
+   :version      "1.52.0"
+   :tarball      "https://registry.npmjs.org/lucide-static/-/lucide-static-1.52.0.tgz"
+   :sha256       "4d2aa079171e4eba4c704844b8b0c9edb6e4cfb2fb8bd86f7b14353994f04a87"
+   :license      "ISC; icons derived from Feather are also MIT"
+   :license-file "LICENSES/lucide-ISC-and-feather-MIT.txt"}
+  :simple-icons
+  {:name         "Simple Icons"
+   :package      "simple-icons"
+   :version      "16.34.0"
+   :tarball      "https://registry.npmjs.org/simple-icons/-/simple-icons-16.34.0.tgz"
+   :sha256       "25887ddf96a084a82f9181dc3a7e99750d6b5ac4339fe9321d0e2bf14669dc65"
+   :license      "CC0-1.0 (brand marks remain their owners' trademarks; see the disclaimer)"
+   :license-file "LICENSES/simple-icons-CC0-1.0.md"
+   :disclaimer   "LICENSES/simple-icons-DISCLAIMER.md"}
+  :tabler
+  {:name         "Tabler Icons"
+   :package      "@tabler/icons"
+   :version      "3.48.0"
+   :tarball      "https://registry.npmjs.org/@tabler/icons/-/icons-3.48.0.tgz"
+   :sha256       "28447dcf6f0bb2b8d92c59a1b3d30900a180de2e97d7db4d267e6320dc68f449"
+   :license      "MIT"
+   :license-file "LICENSES/tabler-icons-MIT.txt"}}
+
+ ;; name → {:source :upstream (path inside the package)}. :feather marks a
+ ;; Lucide icon that Lucide's LICENSE lists as derived from Feather (MIT).
+ :ui
+ {:sun             {:source :lucide :upstream "icons/sun.svg"}
+  :moon            {:source :lucide :upstream "icons/moon.svg" :feather true}
+  :monitor         {:source :lucide :upstream "icons/monitor.svg" :feather true}
+  :book-open       {:source :lucide :upstream "icons/book-open.svg"}
+  :search          {:source :lucide :upstream "icons/search.svg" :feather true}
+  :menu            {:source :lucide :upstream "icons/menu.svg"}
+  :x               {:source :lucide :upstream "icons/x.svg" :feather true}
+  :chevron-down    {:source :lucide :upstream "icons/chevron-down.svg" :feather true}
+  :chevron-right   {:source :lucide :upstream "icons/chevron-right.svg" :feather true}
+  :chevron-left    {:source :lucide :upstream "icons/chevron-left.svg" :feather true}
+  :chevron-up      {:source :lucide :upstream "icons/chevron-up.svg" :feather true}
+  :arrow-up        {:source :lucide :upstream "icons/arrow-up.svg" :feather true}
+  :external-link   {:source :lucide :upstream "icons/external-link.svg" :feather true}
+  :pencil          {:source :lucide :upstream "icons/pencil.svg"}
+  :copy            {:source :lucide :upstream "icons/copy.svg"}
+  :check           {:source :lucide :upstream "icons/check.svg" :feather true}
+  :link            {:source :lucide :upstream "icons/link.svg" :feather true}
+  :rss             {:source :lucide :upstream "icons/rss.svg" :feather true}
+  :mail            {:source :lucide :upstream "icons/mail.svg"}
+  :calendar        {:source :lucide :upstream "icons/calendar.svg" :feather true}
+  :clock           {:source :lucide :upstream "icons/clock.svg" :feather true}
+  :user            {:source :lucide :upstream "icons/user.svg"}
+  :folder          {:source :lucide :upstream "icons/folder.svg"}
+  :tag             {:source :lucide :upstream "icons/tag.svg"}
+  :hash            {:source :lucide :upstream "icons/hash.svg" :feather true}
+  :globe           {:source :lucide :upstream "icons/globe.svg"}
+  :message-square  {:source :lucide :upstream "icons/message-square.svg"}
+  :languages       {:source :lucide :upstream "icons/languages.svg"}}
+
+ ;; Curated brands (§11.3 item 6). Only those a site uses are built into its
+ ;; sprite. Simple Icons has no LinkedIn; its Douban carries a custom licence
+ ;; (douban.com/about/legal), so both come from Tabler's MIT brand set.
+ :brands
+ {:bilibili   {:source :simple-icons :upstream "icons/bilibili.svg"}
+  :bluesky    {:source :simple-icons :upstream "icons/bluesky.svg"}
+  :csdn       {:source :simple-icons :upstream "icons/csdn.svg"}
+  :discord    {:source :simple-icons :upstream "icons/discord.svg"}
+  :douban     {:source :tabler :upstream "icons/outline/brand-douban.svg"}
+  :facebook   {:source :simple-icons :upstream "icons/facebook.svg"}
+  :gitee      {:source :simple-icons :upstream "icons/gitee.svg"}
+  :github     {:source :simple-icons :upstream "icons/github.svg"}
+  :gitlab     {:source :simple-icons :upstream "icons/gitlab.svg"}
+  :instagram  {:source :simple-icons :upstream "icons/instagram.svg"}
+  :juejin     {:source :simple-icons :upstream "icons/juejin.svg"}
+  :linkedin   {:source :tabler :upstream "icons/filled/brand-linkedin.svg"}
+  :mastodon   {:source :simple-icons :upstream "icons/mastodon.svg"}
+  :npm        {:source :simple-icons :upstream "icons/npm.svg"}
+  :qq         {:source :simple-icons :upstream "icons/qq.svg"}
+  :telegram   {:source :simple-icons :upstream "icons/telegram.svg"}
+  :v2ex       {:source :simple-icons :upstream "icons/v2ex.svg"}
+  :wechat     {:source :simple-icons :upstream "icons/wechat.svg"}
+  :weibo      {:source :simple-icons :upstream "icons/sinaweibo.svg"}
+  :x          {:source :simple-icons :upstream "icons/x.svg"}
+  :youtube    {:source :simple-icons :upstream "icons/youtube.svg"}
+  :zhihu      {:source :simple-icons :upstream "icons/zhihu.svg"}}}
