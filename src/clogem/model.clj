@@ -100,24 +100,25 @@
                        (name (:lang entry)) "; front matter wins.")))
     (or resolved (:lang entry) (config/default-lang cfg))))
 
+(defn unsafe-permalink-error!
+  "The one error every source of a permalink — article front matter, an
+  `@pages/` file, a permalinks.edn key — reports for a `u/unsafe-permalink?`
+  value, naming `source`."
+  [source raw]
+  (diag/error! source
+               (str "permalink " (pr-str (str raw)) " has a `.` or `..` segment or a backslash; "
+                    "it would be written outside its place in the output directory.")
+               "Use a plain path such as /pages/1a2b3c/."))
+
 (defn- declared-permalink
-  "The front matter's `permalink:`, cleaned, or nil. One with a `.` or `..`
-  segment, or a backslash, is an ERROR naming the file and is dropped: it
-  would be written outside its place in the output directory — `/../../x/`
-  outside `dist/` altogether — and no valid site needs one. (Empty segments
-  never reach this far: `u/clean-url` collapses doubled slashes, as 0.2.0
-  did.)"
+  "The front matter's `permalink:`, cleaned, or nil. An unsafe one
+  (`u/unsafe-permalink?`) is an ERROR naming the file and is dropped."
   [entry front]
   (when-some [raw (:permalink front)]
-    (let [pl (u/clean-url (str raw))]
-      (if (or (str/includes? (str raw) "\\")
-              (some #{"." ".."} (str/split pl #"/")))
-        (do (diag/error! (:rel-path entry)
-                         (str "permalink " (pr-str (str raw)) " has a `.` or `..` segment or a backslash; "
-                              "it would be written outside its place in the output directory.")
-                         "Use a plain path such as /pages/1a2b3c/.")
-            nil)
-        pl))))
+    (if (u/unsafe-permalink? raw)
+      (do (unsafe-permalink-error! (:rel-path entry) raw)
+          nil)
+      (u/clean-url (str raw)))))
 
 (defn load-entries
   "Attach parsed front matter and a resolved language to each scanned entry."
@@ -194,6 +195,23 @@
        hash of the identity key"
   [cfg entries ledger]
   (let [read-only? (not (config/write-front-matter? cfg))
+        ;; An unsafe ledger key (`u/unsafe-permalink?`) is an ERROR naming
+        ;; permalinks.edn, and is dropped before anything reads the ledger.
+        ;; Write mode's pass 1 runs this inside `diag/collecting` and stops
+        ;; on the error, so the value is never copied into an article's
+        ;; front matter — a source file changed by a build that then fails.
+        ledger        (reduce (fn [ledger section]
+                                (update ledger section
+                                        (fn [m]
+                                          (into (empty (or m {}))
+                                                (remove (fn [[pl _]]
+                                                          (when (u/unsafe-permalink? pl)
+                                                            (unsafe-permalink-error!
+                                                             (str (fs/file-name (config/permalinks-file cfg)))
+                                                             pl)
+                                                            true)))
+                                                m))))
+                              ledger [:permalinks :tombstones])
         ledger-by-key (into {} (map (fn [[pl m]] [(:key m) pl])) (:permalinks ledger))
         declared      (into #{} (keep :declared-permalink) entries)
         tombstoned    (set (keys (:tombstones ledger)))

@@ -25,6 +25,7 @@
             [clogem.diag :as diag]
             [clogem.frontmatter :as fm]
             [clogem.i18n :as i18n]
+            [clogem.model :as model]
             [clogem.util :as u]))
 
 (def index-kinds
@@ -143,7 +144,10 @@
   every `site-file-rels` entry that resolves to a file. Called from
   `clogem.cli/analyse`: each distinct file is parsed exactly ONCE, so its
   YAML error is one diagnostic however many languages fall back to it, and
-  two files naming the same language are one error naming both."
+  two files naming the same language are one error naming both. An
+  `@pages/` file whose `permalink:` is unsafe (`u/unsafe-permalink?`) is an
+  error naming it, as for an article, and the permalink is dropped so its
+  index keeps its default path."
   [cfg]
   (let [content  (config/content-dir cfg)
         rel-name (fn [p] (str (fs/relativize content p)))
@@ -160,7 +164,17 @@
                                 "Keep one spelling; until then the exact canonical suffix is the one read."))
         parsed   (reduce (fn [m p]
                            (let [k (str p)]
-                             (if (contains? m k) m (assoc m k (fm/read-file p)))))
+                             (if (contains? m k)
+                               m
+                               (let [parts (fm/read-file p)
+                                     pl    (get-in parts [:front-matter :permalink])]
+                                 (assoc m k
+                                        (if (and (some? pl)
+                                                 (str/starts-with? (rel-name p) "@pages")
+                                                 (u/unsafe-permalink? pl))
+                                          (do (model/unsafe-permalink-error! (rel-name p) pl)
+                                              (update parts :front-matter dissoc :permalink))
+                                          parts))))))
                          {} (map (comp :path second) resolved))]
     (into {}
           (map (fn [[k {:keys [path own?]}]]

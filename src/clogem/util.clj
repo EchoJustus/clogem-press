@@ -176,6 +176,17 @@
       ensure-leading-slash
       ensure-trailing-slash))
 
+(defn unsafe-permalink?
+  "Would permalink `s` be written outside its place in the output directory?
+  True when it has a backslash, or a `.` or `..` segment once `clean-url`
+  has normalized it (`/../../x/` lands outside `dist/` altogether,
+  `/tags/../` on the home page). No valid site needs either. Empty segments
+  are not unsafe: `clean-url` collapses doubled slashes, as 0.2.0 did."
+  [s]
+  (boolean
+   (or (str/includes? (str s) "\\")
+       (some #{"." ".."} (str/split (clean-url s) #"/")))))
+
 (defn- percent-encode
   "Percent-encode every character of `s` that does not match `keep`, as the
   UTF-8 bytes of the whole CODE POINT. `(?s).` matches a surrogate pair as one

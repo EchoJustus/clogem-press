@@ -22,7 +22,8 @@
             [clogem.fake-tools :as fake]
             [clogem.render :as render]
             [clogem.search :as search]
-            [clogem.theme.page :as page]))
+            [clogem.theme.page :as page]
+            [clogem.util :as u]))
 
 (def demo "examples/demo-site")
 
@@ -529,7 +530,10 @@
 (deftest a-dot-dot-permalink-is-an-error-naming-its-file
   (with-demo-copy
     (fn [dir out]
-      (let [escaped (fs/path dir ".." ".." "escaped")
+      ;; where `/../../escaped/` lands: two levels above dist/, not above
+      ;; the site (that path could never be written, so the check below
+      ;; could never fail — and the `finally` deleted the wrong directory)
+      (let [escaped (fs/normalize (fs/path out ".." ".." "escaped"))
             rel     "01.Guide/10.Basics/06.escape.md"]
         (when (fs/exists? escaped)
           (throw (ex-info (str escaped " exists before the test") {})))
@@ -549,3 +553,82 @@
               (is (re-find #"06\.escape\.md" (str (ex-message e))) (ex-message e))))
           (is (not (fs/exists? escaped)) "nothing is written outside out")
           (finally (fs/delete-tree escaped)))))))
+
+;; ---------------------------------------------------------------------------
+;; Fix round P4-A.2
+
+(defn- source-hash
+  "`tree-hash` of the site directory without its build output: every source
+  file, and anything a build wrote outside `dist/`."
+  [dir]
+  (into (sorted-map) (remove #(str/starts-with? (key %) "dist")) (tree-hash dir)))
+
+(defn- unsafe-permalink-is-refused
+  "Build the demo, `mutate!` it, then check that doctor and both kinds of
+  build report an error whose source matches `source-re`, that no source
+  file changes and nothing is written outside dist/ (`outside`, relative to
+  dist/, must not exist), and that dist/index.html is unchanged."
+  [mutate! source-re outside]
+  (with-demo-copy
+    (fn [dir out]
+      (build! dir)
+      (mutate! dir)
+      (let [escaped (fs/normalize (apply fs/path out outside))
+            home    (slurp (fs/file out "index.html"))
+            before  (source-hash dir)]
+        (when (fs/exists? escaped)
+          (throw (ex-info (str escaped " exists before the test") {})))
+        (try
+          (let [errs (try (:errors (cli/doctor {:site-dir (str dir)}))
+                          (catch clojure.lang.ExceptionInfo e (:clogem/errors (ex-data e))))]
+            (is (some #(and (re-find source-re (str (:path %)))
+                            (re-find #"permalink .* has a `\.` or `\.\.` segment" (str (:message %))))
+                      errs)
+                (pr-str (map (juxt :path :message) errs))))
+          (doseq [no-write [true false]]
+            (let [e (try (build! dir {:no-write no-write}) nil
+                         (catch clojure.lang.ExceptionInfo e e))]
+              (is (some? e) (str "no-write=" no-write))
+              (is (= 1 (:babashka/exit (ex-data e))))
+              (is (re-find source-re (str (ex-message e))) (ex-message e))))
+          (is (not (fs/exists? escaped)) "nothing is written outside out")
+          (is (= before (source-hash dir)) "no source file changes, nothing lands beside dist/")
+          (is (= home (slurp (fs/file out "index.html"))) "the home page is not overwritten")
+          (finally (fs/delete-tree escaped)))))))
+
+(deftest an-unsafe-pages-permalink-is-an-error-naming-its-file
+  (doseq [pl ["/tags/../" "/../../escaped-tags/" "/./tags/"]]
+    (testing pl
+      (unsafe-permalink-is-refused
+       (fn [dir]
+         (let [f (fs/file dir "content" "@pages" "tagsPage.md")]
+           (spit f (str/replace (slurp f) "permalink: /tags/" (str "permalink: " pl)))))
+       #"@pages/tagsPage\.md"
+       [".." ".." "escaped-tags"]))))
+
+(deftest an-unsafe-ledger-key-is-an-error-naming-permalinks-edn
+  (unsafe-permalink-is-refused
+   (fn [dir]
+     (let [ledger (fs/file dir "permalinks.edn")
+           f      (fs/file dir "content" "01.Guide" "10.Basics" "01.getting-started.md")]
+       (spit ledger (str/replace (slurp ledger) "\"/pages/3ce486/\"" "\"/../../escaped/\""))
+       (spit f (str/replace (slurp f) "permalink: /pages/3ce486/\n" ""))))
+   #"permalinks\.edn"
+   [".." ".." "escaped"])
+  (testing "the key is quoted"
+    (with-demo-copy
+      (fn [dir _]
+        (spit (fs/file dir "permalinks.edn")
+              (str/replace (slurp (fs/file dir "permalinks.edn")) "\"/pages/3ce486/\"" "\"/pages/../x/\""))
+        (let [[_ ds] (diag/collecting (cli/analyse (config/load-config (str dir))))]
+          (is (some #(and (= "permalinks.edn" (:path %))
+                          (str/includes? (:message %) "\"/pages/../x/\""))
+                    (diag/errors ds))
+              (pr-str (map (juxt :path :message) (diag/errors ds)))))))))
+
+(deftest unsafe-permalinks-are-recognised
+  (doseq [pl ["/../x/" "/a/../" "/./a/" "a/." "/a\\b/" ".." "/a/b/.."]]
+    (is (u/unsafe-permalink? pl) pl))
+  (doseq [pl ["/pages/1a2b3c/" "/tags/" "//a//b" "/a.b/" "/..a/" "/a../" "/"]]
+    (is (not (u/unsafe-permalink? pl)) pl)))
+

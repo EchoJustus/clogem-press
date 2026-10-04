@@ -83,14 +83,17 @@
 
 (defn index-paths
   "{kind → site-relative root path} for every enabled index: the `@pages/`
-  file's `permalink:` when it has one, else the default."
+  file's `permalink:` when it has one, else the default. An unsafe one
+  (`u/unsafe-permalink?`) never reaches here — `pages/site-files` reports
+  and drops it — but falls back to the default too, as a backstop."
   [model]
   (let [cfg (:cfg model)]
     (into {}
           (for [{:keys [kind default-path] :as k} (pages/enabled-kinds cfg)
-                :let [pl (get-in (site-file model (pages/file-rel k) (config/default-lang cfg))
-                                 [:front-matter :permalink])]]
-            [kind (u/clean-url (or (u/blank->nil (str pl)) default-path))]))))
+                :let [pl (u/blank->nil
+                          (str (get-in (site-file model (pages/file-rel k) (config/default-lang cfg))
+                                       [:front-matter :permalink])))]]
+            [kind (u/clean-url (if (and pl (not (u/unsafe-permalink? pl))) pl default-path))]))))
 
 ;; ---------------------------------------------------------------------------
 ;; Page map
