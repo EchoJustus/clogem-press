@@ -17,6 +17,7 @@
     clogem.render-test
     clogem.ledger-test
     clogem.dev-test
+    clogem.dev-loop-test
     clogem.seo-test
     clogem.build-test
     clogem.write-test

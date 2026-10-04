@@ -284,9 +284,11 @@
         (let [harness (str "var links=[{href:'http://localhost:1888/clogem/css/theme.css?v=8882e30e'},"
                            "{href:'http://localhost:1888/pagefind/pagefind-component-ui.css?v=1.5.2'}];"
                            "var document={querySelectorAll:function(){return links;}};"
+                           "document.getElementById=function(){return null;};document.addEventListener=function(){};"
                            "var handler;function EventSource(){var s=this;setTimeout(function(){"
                            "s.onmessage({data:'css'});s.onmessage({data:'css'});"
                            "console.log(JSON.stringify(links.map(function(l){return l.href;})));},0);}"
+                           "EventSource.prototype.addEventListener=function(){};"
                            "var location={reload:function(){}};"
                            js)
               {:keys [out exit err]} (babashka.process/shell {:out :string :err :string :continue true}
