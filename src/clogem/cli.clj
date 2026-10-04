@@ -15,7 +15,8 @@
             [clogem.pages :as pages]
             [clogem.render :as render]
             [clogem.scan :as scan]
-            [clogem.search :as search]))
+            [clogem.search :as search]
+            [clogem.tools :as tools]))
 
 ;; ---------------------------------------------------------------------------
 ;; Shared option spec
@@ -146,25 +147,40 @@
     ;; populated dist/. Every content ERROR — the numbered tree's, and
     ;; index*.md's and @pages/*'s, which analyse parses too — stops the build
     ;; here, before the ledger write and before dist/ exists. Render reports
-    ;; only warnings. What remains (DESIGN.md §11.2 item 2) is an EXCEPTION
-    ;; thrown during render, which can still leave a partial dist/.
-    (let [[m ads]    (diag/collecting (analyse cfg))
+    ;; only warnings.
+    ;;
+    ;; D-P4-11: the whole site is then rendered into memory — the site's
+    ;; assets read, not just listed — BEFORE a single output file is written,
+    ;; so an exception thrown during render (§11.2 item 2) or an unreadable
+    ;; asset leaves dist/ exactly as it was, rather than a mix of this build's
+    ;; pages and the last one's. The ledger is written only once dist/ has
+    ;; been, so a failed write leaves permalinks.edn as it was too.
+    (let [[m ads]    (diag/collecting
+                      (let [m (analyse cfg)]
+                        ;; two outputs of this build that would collide —
+                        ;; `/assets/demo.txt/` and the asset assets/demo.txt —
+                        ;; are a content error, before anything is rendered
+                        (render/check-output-collisions! m)
+                        m))
           _          (when (seq (diag/errors ads)) (report! ads))
           [result rds]
           (diag/collecting
-           (when (config/write-front-matter? cfg)
-             (model/write-ledger! cfg (model/ledger-from-model m)))
-           (render/build! cfg m))
+           (let [written (render/write-site! (render/render-site cfg m))]
+             (when (config/write-front-matter? cfg)
+               (model/write-ledger! cfg (model/ledger-from-model m)))
+             written))
           ds         (into (vec ads) rds)]
       (report! ds)
-      (println (format "clogem-press: %d pages (%d articles, %d variants) → %s"
-                       (:pages result) (:articles result) (:variants result) (:out result)))
+      (println (format "clogem-press: %d pages (%d articles, %d variants) → %s (%d written, %d unchanged)"
+                       (:pages result) (:articles result) (:variants result) (:out result)
+                       (:written result) (:unchanged result)))
       (when (pos? (:stale result 0))
         (println (format "clogem-press: removed %d stale page%s from %s"
                          (:stale result) (if (= 1 (:stale result)) "" "s") (:out result))))
       ;; D-P3-8: search runs last, over the finished dist/. A failure here is
       ;; a build error (exit 1) even though dist/ is already written — the
-      ;; known limitation of §11.2: CI stops before deploying it.
+      ;; known limitation of §11.2, left for Phase 5: CI stops before
+      ;; deploying it.
       (if (search/enabled? cfg)
         (let [{:keys [languages pages]} (search/index! cfg)]
           (println (format "clogem-press: search index → %s/%s (%d language%s, %d pages)"
@@ -173,13 +189,25 @@
           (assoc result :search {:languages languages :pages pages}))
         result))))
 
-(defn ^{:org.babashka/cli {:spec common-spec}}
+(defn ^{:org.babashka/cli
+        {:spec (assoc common-spec
+                      :tool {:desc "The tool to fetch: pagefind, chroma or fswatcher."
+                             :default "pagefind" :ref "<name>"})}}
   fetch-tool
-  "§4's fetch-tool helper: fetch, verify and cache the Pagefind binary this
-  site pins, and print its path — what CI exports as CLOGEM_PAGEFIND."
+  "§4's fetch-tool helper: fetch, verify and cache a binary tool this site
+  pins — Pagefind by default, or `--tool chroma` / `--tool fswatcher` — and
+  print its path, which is what CI exports as CLOGEM_PAGEFIND."
   [opts]
-  (let [cfg (load-cfg! opts)
-        bin (search/ensure-binary! cfg)]
+  (let [id   (str/lower-case (str (or (:tool opts) "pagefind")))
+        tool (get tools/descriptors (keyword id))
+        _    (when-not tool
+               (throw (ex-info (str "clogem-press: fetch-tool: unknown tool " (pr-str id) "; "
+                                    "the tools are " (str/join ", " (map name (sort (keys tools/descriptors)))) ".")
+                               {:babashka/exit 1})))
+        cfg  (load-cfg! opts)
+        bin  (if (= :pagefind (:id tool))
+               (search/ensure-binary! cfg)
+               (tools/ensure-binary! tool cfg))]
     (println bin)
     bin))
 
@@ -222,6 +250,8 @@
                   ;; containers, bad card-list YAML), by rendering every page
                   ;; in memory and discarding it
                   (when (seq (:articles m)) (render/check-pages! m))
+                  ;; … and outputs of one build that would collide
+                  (render/check-output-collisions! m)
                   m))
         ds    (into (vec cds) ds)
         errs  (diag/errors ds)

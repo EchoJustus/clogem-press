@@ -11,6 +11,7 @@
             [cheshire.core :as json]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [clogem.assets :as assets]
             [clogem.cli :as cli]
             [clogem.config :as config]
             [clogem.diag :as diag]))
@@ -68,7 +69,12 @@
           second
           (json/parse-string false)))
 
-(def ^:private lang-js "<script defer=\"defer\" src=\"/clogem/js/lang.js\"></script>")
+(def ^:private lang-js
+  "The lang.js tag with its `?v=` (D-P4-7) stripped: tests compare
+  `(unv html)`, so a fingerprint change does not churn them."
+  "<script defer=\"defer\" src=\"/clogem/js/lang.js\"></script>")
+
+(defn- unv [s] (assets/strip-versions s))
 
 ;; ---------------------------------------------------------------------------
 ;; D-P3-13: the preference and its writer
@@ -93,7 +99,7 @@
     (fn [out]
       (doseq [uri ["/" "/zh-Hans/" "/pages/t00001/" "/zh-Hans/pages/t00001/" "/pages/c00001/"
                    "/categories/" "/ta/tags/x/" "/archives/" "/page/2/"]]
-        (is (str/includes? (html out uri) lang-js) uri))
+        (is (str/includes? (unv (html out uri)) lang-js) uri))
       (is (fs/exists? (fs/path out "clogem" "js" "lang.js"))))))
 
 (deftest a-single-language-site-ships-nothing
@@ -201,7 +207,7 @@
         (is (= "/b/zh-Hans/pages/t00001/" (get-in d ["alternates" "zh-Hans" "url"]))))
       (is (= "/b/" (get (lang-data (html out "/")) "id")))
       (is (= "/b/ms/" (get-in (lang-data (html out "/")) ["alternates" "ms" "url"])))
-      (is (str/includes? (html out "/") "<script defer=\"defer\" src=\"/b/clogem/js/lang.js\"></script>")))))
+      (is (re-find #"<script defer=\"defer\" src=\"/b/clogem/js/lang\.js\?v=[0-9a-f]{8}\"></script>" (html out "/"))))))
 
 (deftest the-banner-data-is-percent-encoded
   (with-built {"01.Guide/01.t.md" "---\ntitle: T\npermalink: /pages/中文/\n---\n\nBody.\n"
@@ -240,7 +246,7 @@
             "only to a language in the page's set; never `__proto__`")
         (is (str/includes? head "p!==d.lang") "a preference equal to the page's language stays")
         (is (str/includes? head "catch(e){}") "blocked storage leaves the page alone")
-        (is (str/includes? head lang-js) "the switcher still stores the choice"))
+        (is (str/includes? (unv head) lang-js) "the switcher still stores the choice"))
       (testing "a prefixed URL never redirects"
         (doseq [uri ["/zh-Hans/pages/t00001/" "/ta/" "/zh-Hans/categories/" "/tags/x/"]]
           (is (not (str/includes? (html out uri) "location.replace")) uri))))))
@@ -252,7 +258,7 @@
               :let [h (html out uri)]]
         (is (not (str/includes? h "clogem-lang-data")) uri)
         (is (not (str/includes? h "location.replace")) uri)
-        (is (str/includes? h lang-js) uri)
+        (is (str/includes? (unv h) lang-js) uri)
         (is (str/includes? h "data-clogem-lang=\"zh-Hans\"") uri)))))
 
 (deftest the-preference-is-validated-at-config-load

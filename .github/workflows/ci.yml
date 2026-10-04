@@ -206,6 +206,8 @@ jobs:
           hrefs=$(grep -ohE '(href|src)="/[^"]*"' -r dist-base --include='*.html' \
                   | sed -E 's/^(href|src)="//; s/"$//' | sort -u)
           for href in $hrefs; do
+            # theme assets carry ?v=<fingerprint> (D-P4-7): a query, not a file
+            href="${href%%[?#]*}"
             case "$href" in
               "$base"*) ;;
               *) echo "::error::link does not carry the base: $href"; missing=$((missing+1)); continue ;;
@@ -254,6 +256,7 @@ jobs:
           hrefs=$(grep -ohE '(href|src)="/[^"]*"' -r dist-nosearch --include='*.html' \
                   | sed -E 's/^(href|src)="//; s/"$//' | sort -u)
           for href in $hrefs; do
+            href="${href%%[?#]*}"
             rel="${href#/}"
             rel="$(printf '%b' "${rel//%/\\x}")"
             [ -f "dist-nosearch/$rel" ] && continue
@@ -271,3 +274,72 @@ jobs:
       - name: Report output size
         working-directory: examples/demo-site
         run: du -sh dist
+
+  # D-P4-18: Playwright over the built demo. Nothing in test/browser/ ships;
+  # the job builds the demo exactly as `test` does, serves it on loopback
+  # and runs every test/browser/*.test.mjs (test/browser/README.md).
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeLaGuardo/setup-clojure@13
+        with:
+          bb: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Show versions
+        run: |
+          bb --version
+          node --version
+
+      - name: Pagefind pin
+        id: pagefind
+        run: |
+          bb -e "(require 'clogem.config 'clogem.search)
+                 (let [v (get-in clogem.config/defaults [:tools :pagefind :version])
+                       p (clogem.search/platform)]
+                   (println (str \"key=pagefind-v2-\" v \"-\" p \"-\" (get-in clogem.search/known-sha256 [v p]))))" \
+            >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+      - name: Cache the tools directory
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/clogem-press/tools
+          key: ${{ steps.pagefind.outputs.key }}
+
+      - name: Fetch Pagefind and export CLOGEM_PAGEFIND
+        working-directory: examples/demo-site
+        run: |
+          set -euo pipefail
+          bin=$(bb --config ../../bb.edn fetch-tool | tail -n 1)
+          test -x "$bin"
+          "$bin" --version
+          echo "CLOGEM_PAGEFIND=$bin" >> "$GITHUB_ENV"
+
+      - name: Build demo site
+        working-directory: examples/demo-site
+        run: bb --config ../../bb.edn build
+
+      - name: Install Playwright and Chromium
+        working-directory: test/browser
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run the browser tests
+        working-directory: test/browser
+        run: |
+          set -euo pipefail
+          python3 -m http.server --bind 127.0.0.1 8000 --directory ../../examples/demo-site/dist \
+            > "$RUNNER_TEMP/http.log" 2>&1 &
+          # wait for the server; curl stays quiet until it answers
+          for _ in $(seq 50); do
+            curl -fs -o /dev/null http://127.0.0.1:8000/ && break
+            sleep 0.2
+          done
+          npm test

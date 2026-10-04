@@ -44,6 +44,29 @@
 (defn warn!  [path msg & [hint]] (emit! :warn  path msg hint))
 (defn error! [path msg & [hint]] (emit! :error path msg hint))
 
+(def ^:private level-rank {:info 0 :warn 1 :error 2})
+
+(defn sorted
+  "`ds` in a deterministic order — severity (info, warn, error: print-all!'s
+  order), then file, then line, then message — so a build that rendered its
+  pages in parallel reports exactly what a one-thread build does (D-P4-11).
+  The sort is stable: identical diagnostics keep their relative order."
+  [ds]
+  (vec (sort-by (juxt #(level-rank (:level %) 3)
+                      #(str (:path %))
+                      #(or (:line %) -1)
+                      #(str (:message %))
+                      #(str (:hint %)))
+                ds)))
+
+(defn emit-all!
+  "Re-emit already-collected diagnostics `ds`, in order, to the current sink
+  (or stderr when there is none)."
+  [ds]
+  (doseq [{:keys [level path message hint]} ds]
+    (emit! level path message hint))
+  ds)
+
 (defn errors   [ds] (filterv #(= :error (:level %)) ds))
 (defn warnings [ds] (filterv #(= :warn  (:level %)) ds))
 

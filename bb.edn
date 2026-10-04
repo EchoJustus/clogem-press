@@ -30,5 +30,5 @@
   clean   {:doc "Remove the output directory."                 :task (exec 'clogem.cli/clean)}
   doctor  {:doc "Report content problems without building."    :task (exec 'clogem.cli/doctor)}
   fm-fix  {:doc "Write missing front matter into source files."  :task (exec 'clogem.cli/fm-fix)}
-  fetch-tool {:doc "Fetch, verify and cache Pagefind; print its path." :task (exec 'clogem.cli/fetch-tool)}
+  fetch-tool {:doc "Fetch, verify and cache Pagefind (or --tool chroma|fswatcher); print its path." :task (exec 'clogem.cli/fetch-tool)}
   test    {:doc "Run the test suite."                          :task (exec 'clogem.cli/test-cmd)}}}

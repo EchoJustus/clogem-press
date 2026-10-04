@@ -56,14 +56,14 @@ and run it against local content with no packaging step.
 
 | Task | What it does |
 |---|---|
-| `bb build` | Render the site to `dist/`. Writes missing front matter unless `--no-write`. Runs Pagefind last under `:search {:provider :pagefind}`; `--no-search` builds without search (no index, no search UI). Removes `.html` files in the output directory that the build did not write, so the output directory must be a directory of its own. |
+| `bb build` | Render the site to `dist/`. Writes missing front matter unless `--no-write`. Renders every page in memory first (in parallel; `CLOGEM_JOBS=1` for one thread) and writes only when all of it succeeded, file by file and atomically (temp file and rename; in place when the OS refuses the temp file or the rename), skipping files whose bytes are unchanged — a page that fails to render, or a site asset that cannot be read, leaves `dist/` and `permalinks.edn` as they were (an I/O error while writing, such as a full disk, or a Pagefind failure can still leave some files updated). Runs Pagefind last under `:search {:provider :pagefind}`; `--no-search` builds without search (no index, no search UI). Removes `.html` files in the output directory that the build did not write, so the output directory must be a directory of its own. |
 | `bb dev` | Build, serve on :1888, rebuild on change, push an SSE reload. `--poll` if inotify is unreliable; `--no-search` builds without search. |
 | `bb serve` | Serve an already-built directory, no watching. |
 | `bb doctor` | Report content problems without building. Exits non-zero on errors. |
 | `bb fm-fix` | Front-matter normalization only — what CI runs before the build. `--dry-run` to preview. |
 | `bb clean` | Remove the output directory. |
-| `bb fetch-tool` | Fetch, sha256-verify and cache the pinned Pagefind binary; print its path. |
-| `bb test` | Run the test suite. |
+| `bb fetch-tool` | Fetch, sha256-verify and cache a pinned binary — Pagefind by default, `--tool chroma` or `--tool fswatcher` — and print its path. |
+| `bb test` | Run the test suite. The browser tests over a built site are separate: `test/browser/README.md`. |
 
 Every task takes `--help`.
 

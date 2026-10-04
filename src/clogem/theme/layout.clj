@@ -14,6 +14,7 @@
   (:require [cheshire.core :as json]
             [clojure.string :as str]
             [hiccup2.core :as h]
+            [clogem.assets :as assets]
             [clogem.config :as config]
             [clogem.i18n :as i18n]
             [clogem.model :as model]
@@ -25,16 +26,23 @@
 ;; URLs
 
 (defn asset-href
-  "A FILE under the theme's exported assets (css/js). `clean-url` would append
-  a slash to a file path, so the base is joined directly."
+  "A FILE under the theme's exported assets (css/js/fonts), base-inclusive
+  and with its cache-busting `?v=<fingerprint>` (D-P4-7) — see
+  `clogem.assets/href`, which every theme asset URL goes through."
   [ctx path]
-  (str/replace (str (config/base-path (:cfg ctx)) "/clogem/" path) #"/{2,}" "/"))
+  (assets/href (:cfg ctx) path))
 
 (defn search-href
   "A file of the Pagefind bundle, which Pagefind writes to `dist/pagefind/`
-  (D-P3-8): base-inclusive, like every other emitted URL."
+  (D-P3-8): base-inclusive, like every other emitted URL. A file (not the
+  bundle directory itself, which `<pagefind-config>` takes) carries
+  `?v=<pinned Pagefind version>` (D-P4-7): the bundle's UI files are
+  Pagefind's, and change exactly when the pin does."
   [ctx file]
-  (str/replace (str (config/base-path (:cfg ctx)) "/" search/output-subdir "/" file) #"/{2,}" "/"))
+  (let [url (str/replace (str (config/base-path (:cfg ctx)) "/" search/output-subdir "/" file) #"/{2,}" "/")]
+    (if (str/blank? (str file))
+      url
+      (str url "?v=" (search/version (:cfg ctx))))))
 
 (defn pagefind
   "`{k \"\"}` when the site indexes with Pagefind, else nil — so a

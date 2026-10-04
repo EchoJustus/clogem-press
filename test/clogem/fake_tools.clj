@@ -81,3 +81,43 @@
       (let [s (slurp in :encoding "UTF-8")]
         (assoc (json/parse-string (subs s (str/index-of s "{")) true)
                :lang (first (str/split (str (fs/file-name f)) #"_")))))))
+
+(defn- fake-binary!
+  "An executable shell script at `f` that prints `output`."
+  [f output]
+  (fs/create-dirs (fs/parent f))
+  (spit (fs/file f) (str "#!/bin/sh\necho '" output "'\n"))
+  (fs/set-posix-file-permissions f "rwxr-xr-x")
+  f)
+
+(defn fake-tool-archive!
+  "A release archive for the `clogem.tools` descriptor `tool` holding a fake
+  binary named for `platform` that prints `output`, laid out as upstream
+  ships it: Pagefind's and Chroma's are .tar.gz (Chroma's root also holds
+  COPYING and README.md), the fswatcher pod's a zip whose single member is
+  the binary. `:extra-zip-entries` adds {name → content} entries to a zip.
+  Returns the archive's path."
+  [dir tool platform & {:keys [output extra-zip-entries] :or {output "fake tool ran"}}]
+  (let [member ((:member tool) platform)
+        stage  (fs/path dir (str "stage-" (name (:id tool))))]
+    (fs/create-dirs stage)
+    (fake-binary! (fs/path stage member) output)
+    (case (:archive tool)
+      :zip
+      (let [zip (fs/path dir (str (name (:id tool)) ".zip"))]
+        (with-open [zout (java.util.zip.ZipOutputStream. (io/output-stream (fs/file zip)))]
+          (doseq [[n content] extra-zip-entries]
+            (.putNextEntry zout (java.util.zip.ZipEntry. ^String n))
+            (.write zout (.getBytes (str content) "UTF-8"))
+            (.closeEntry zout))
+          (.putNextEntry zout (java.util.zip.ZipEntry. ^String member))
+          (.write zout (fs/read-all-bytes (fs/path stage member)))
+          (.closeEntry zout))
+        (str zip))
+      (let [tgz   (fs/path dir (str (name (:id tool)) ".tar.gz"))
+            extra (when (= :chroma (:id tool))
+                    (spit (fs/file stage "COPYING") "MIT\n")
+                    (spit (fs/file stage "README.md") "chroma\n")
+                    ["COPYING" "README.md"])]
+        (apply p/shell {:dir (str stage)} "tar" "-czf" (str tgz) (concat extra [member]))
+        (str tgz)))))

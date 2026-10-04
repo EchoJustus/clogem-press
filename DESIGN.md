@@ -137,10 +137,17 @@ These were verified against vdoing's source (`getSidebarData.js`, `setFrontmatte
 - **Two page styles** — `pageStyle: card | line`, also body classes (`.theme-style-card/line`).
 - **Blog identity** — blogger profile card (avatar/name/slogan), social icons, footer, "recent
   updates" bar, sticky posts, detailed/simple/none homepage post list with pagination,
-  banner/background images with opacity and rotation, content background patterns, animated title
-  badges.
-- **htmlModules** — raw HTML injected into 9 named regions (sidebar top/bottom, page top/bottom,
-  fixed windows, homepage sidebar) — vdoing's "no-code" extension story.
+  banner/background images with opacity and rotation, content background patterns, title badges.
+  *Corrected in Phase 4 (§11.3 item 19):* a title badge is a random **static** icon, not an animated
+  one — vdoing's `mixins/titleBadge.js` picks one of three built-in PNG data URIs (or
+  `titleBadgeIcons`) with `Math.random()` on each route change, and `Page.vue` renders it as a plain
+  `<img>` before the `<h1>` text.
+- **htmlModules** — raw HTML injected into **7 named slots** (`homeSidebarB sidebarT sidebarB pageT
+  pageB windowLB windowRB`: homepage sidebar, sidebar top/bottom, page top/bottom, fixed windows) plus
+  **2 show-modes** (`pageTshowMode pageBshowMode`, `'article' | 'custom'`, which say on which pages
+  the page slots appear) — vdoing's "no-code" extension story. *Corrected in Phase 4 (§11.3 item
+  19):* v2 said "9 named regions", counting the two show-modes as regions; vdoing's own
+  `types/index.ts` declares the nine `htmlModules` keys, of which seven are HTML.
 - **Article page** — breadcrumbs, author/date/category/tag info line, right-hand TOC bar with scroll
   spy, prev/next buttons, edit link, comment slot.
 - **Markdown extensions** — containers (exact source-verified set: `note tip warning danger right
@@ -512,7 +519,8 @@ Build phases in detail:
   1. `site.edn` options (§5.6) — covers everything vdoing's `themeConfig` covers, plus `:langs`/`:i18n`;
   2. CSS variable overrides — user drops one CSS file in `overrides/` after the theme stylesheet;
   3. i18n string overrides — `i18n/<lang>.edn` in the content repo, deep-merged over theme defaults;
-  4. `:html-modules` — raw HTML strings injected into the same 9 named regions vdoing defines (plus
+  4. `:html-modules` — raw HTML strings injected into the same 7 slots vdoing defines, with its 2
+     show-modes (§1.2, corrected in §11.3 item 19; plus
      `:head-extra` for analytics/fonts);
   5. Template override — quickblog's copy-on-first-use story: `clogem theme eject sidebar` copies
      `theme/sidebar.clj` into `overrides/`, which then shadows the built-in (user code is loaded onto
@@ -563,6 +571,15 @@ The one i18n-specific subtlety: editing *one* variant invalidates *all* siblings
 bar and the hreflang set are shared. Re-rendering a whole identity group is still a handful of pages,
 so the dev loop stays interactive.
 
+*Amended in Phase 4 (§11.3 item 11):* the dependency-tracked incremental re-render in the diagram —
+re-parse one file, re-render its variant, its identity siblings and the affected structural pages —
+is **not** built. `bb dev` runs the same **full rebuild** as `bb build`, made fast instead: pages
+render on a bounded parallel pool, an unchanged file is not rewritten, and the analysis hot spot
+(Damerau-Levenshtein) is ~40× cheaper. A full rebuild of the 227-page demo takes about 0.4 s and of a
+300-article site about 1.5 s (Appendix A item 21), which is interactive; and a full rebuild cannot
+have the invalidation bugs a dependency graph invites — identity siblings, sidebars and indexes are
+simply re-rendered with everything else. The watcher and SSE parts above stand.
+
 ### 5.5 Caching strategy
 
 quickblog's changelog ("Fix caching (this is hard)") is the cautionary tale, and a KB has *more*
@@ -575,6 +592,9 @@ cross-page artifacts (sidebar, indexes, backlinks, now hreflang groups) than a b
 - **Dev incrementality** is an in-memory model atom (no disk cache to poison): one file change
   re-parses one file; identity siblings and structural pages recompute from the model (cheap pure
   functions). If anything looks wrong, restarting `bb dev` is a full rebuild.
+  *Amended in Phase 4 (§11.3 item 11):* there is no dev incrementality — every change is a full
+  rebuild made fast (§5.4). What is incremental is the **write**: a file whose bytes did not change
+  is not rewritten, so a no-change rebuild writes nothing.
 - Content-hash disk caching for production is a *later* optimization, only if build times ever warrant
   it. Note that i18n does **not** multiply build cost by the number of languages: cost is per
   *variant file that exists*, and most articles will have exactly one.
@@ -639,12 +659,18 @@ any more). Note what arrived: `:generator`, `:langs`, `:i18n`, `:analytics`, `:s
          :feeds true                    ; one Atom feed per language (§6.6, §11.2 item 32)
          :indexnow {:enabled false :key nil}}
  :tools {:pagefind {:version "1.5.2" :sha256 {"x86_64-unknown-linux-musl" "…"}} ; per platform (§11.2 item 40)
-         :chroma   {:version "2.27.0" :sha256 "…" :style "github" :dark-style "github-dark"}}}
+         :chroma   {:version "2.27.0" :sha256 {"linux-amd64" "…"}}}    ; per platform too (§11.3 item 10)
+ :highlight {:provider :chroma :style "github" :dark-style "github-dark"}} ; styles live here, not under :tools
 ```
 
 Any string-valued config key may be either a plain string (same in all languages) or a map keyed by
 language code. The resolver applies the §6.5 fallback chain uniformly, so there is exactly one rule to
 learn.
+
+*Corrected in Phase 4 (§11.3 item 10):* v2 sketched `:tools :chroma` with one `:sha256` string and
+the highlighting styles beside it. One hash cannot cover Chroma's eight release assets — it needs the
+same per-platform map as Pagefind — and the styles are a rendering choice, not a property of the
+binary, so they belong under `:highlight`.
 
 ---
 
@@ -1134,6 +1160,11 @@ Verified against Pagefind's docs **and source** ([research/12](research/12-i18n-
   then loads the index matching the page it is on. Our five `<html lang>` values produce five indexes
   (`en`, `zh-hans`, `zh-hant`, `ms`, `ta`) with **zero configuration**. Search from an English page
   searches English pages.
+  *Corrected in Phase 4 (§11.3 item 17):* "the index matching the page" is a fallback chain, read from
+  the 1.5.2 bundle's `pagefind.js`: `findIndex(language)` tries the exact lowercased language, then
+  its base subtag (`language.split("-")[0]`), then **the index with the most pages**
+  (`sort((a,b)=>b.page_count-a.page_count)`). So a page in a language with no indexed pages yet does
+  not search nothing — it searches the largest index (English, on the demo and the real site).
 - **`zh-Hant` is routed to the segmenter, but is NOT segmented into words (corrected in Phase 3,
   §11.2 item 37).** From `pagefind/src/fossick/mod.rs`:
   `matches!(data.language.split('-').next().unwrap(), "zh" | "ja" | "th")` — the match is on the
@@ -1176,7 +1207,11 @@ Verified against Pagefind's docs **and source** ([research/12](research/12-i18n-
 - **Cross-language search is nevertheless possible, and this is now settled rather than open (v2.1).**
   Pagefind's JS API exposes **`pagefind.mergeIndex(bundleUrl, {language: "…"})`** — documented on the
   multisite page — which loads a second index *at query time* alongside the primary one, with each
-  index keeping its own stemmer and segmenter. That is strictly better than `--force-language`: the
+  index keeping its own stemmer and segmenter. *Corrected in Phase 4 (§11.3 item 17):* only
+  segmentation is the merged index's own — it happened at index time, by that index's language.
+  Stemming at query time is **the primary page's**: a merged instance is initialised with
+  `init(…, {load_wasm: false})` and searches with the primary's WASM, so a Tamil page merging the
+  English index stems English queries with the Tamil stemmer (and a Malay page, with none). That is strictly better than `--force-language`: the
   per-language indexes stay intact and the merge is a reader-facing affordance ("search other languages
   too") rather than a build-wide decision. Two facts constrain the wiring, both load-bearing:
   - **The primary index's language cannot be overridden.** It is chosen by `<html lang>` detection,
@@ -1584,9 +1619,12 @@ Design points worth stating:
 
 ## 8. Implementation plan
 
-Effort assumes one experienced Clojure developer; "day" = focused day. Line items total **47 focused
-days** — roughly **9–10 weeks full-time, or ~4–5 months at part-time pace** — to full vdoing parity
+Effort assumes one experienced Clojure developer; "day" = focused day. Line items total **56 focused
+days** — roughly **11 weeks full-time, or ~5–6 months at part-time pace** — to full vdoing parity
 *plus* five-language i18n, with a live site after Phase 0 and a usable one after Phase 1.
+
+*(Rebaselined at the start of Phase 4, §11.3 item 1: Phase 4 grew from 9 to 18 days, so the
+total from 47 to 56. The paragraph below records v2's own arithmetic as it was.)*
 
 *(v1's plan was 34 days and mis-stated its own total as "~35"; v2 corrects the arithmetic and adds
 +13 days: a new 9-day i18n phase, a new 2-day repo-split phase, and net +2 days of i18n spillover into
@@ -1639,15 +1677,37 @@ the bot push) and produces a live URL before any real code exists.
   thread per article identity by `check_giscus.py`, the per-language indexes by `check_search.clj`,
   and the Tamil-only article by the `<html lang="ta">` check (§11.2 item 50).
 
-### Phase 4 — Theme polish & advanced features (9 days)
+### Phase 4 — Theme polish & advanced features (18 days)
 
-- Full CSS theme: card/line styles, four color modes, no-FOUC head script, toggle UI (3 d)
-- Chroma integration: fetch-tool helper, hash cache, dual-theme CSS variables, line numbers, copy button (1.5 d)
-- Dev server live reload: SSE + fswatcher + debounce + `--poll` fallback + incremental model updates incl. identity-sibling invalidation (2 d)
-- htmlModules injection slots; blogger card, social icons, footer, banner/bg options (1.5 d)
-- Vendored icon set + sprite helper (0.5 d)
-- Analytics slot (GA4 / Plausible / Umami) + Search Console / Bing verification file support (0.5 d)
-- **Exit criterion:** feature parity with vdoing's themeConfig surface (§1.2), minus explicitly-deferred items.
+*Rebaselined at the start of Phase 4 (§11.3 item 1).* v2's 9-day list — a full CSS theme, Chroma,
+live reload, htmlModules and blogger chrome, icons, analytics — understated the surface: vdoing's
+`themeConfig` and the front-matter keys it reads, an accessible palette rather than a copied one, and
+the build robustness every later task stands on. Phase 4 now runs as nine tasks in six rounds, in this
+order; each builds on A:
+
+- **A — Foundations** (2 d): a build that renders everything in memory and writes atomically, skipping
+  unchanged files; parallel rendering; a fast Damerau-Levenshtein; cache-busting `?v=` on every theme
+  asset; warnings for unknown and not-yet-implemented config keys; a generic tool fetcher with Chroma
+  and fswatcher-pod descriptors; a CI browser job. *Done (§11.3 items 7, 11, 16, 18).*
+- **B1 — Colour modes** (2.25 d): mode classes on `<html>` with a no-FOUC head script, an accessible
+  palette (WCAG AA), the toggle, icons (§11.3 items 2–6, 8).
+- **C — Chroma highlighting** (2.5 d): on by default, line numbers as CSS counters, a per-language
+  process and hash cache, dual-theme variables, a copy button (§11.3 item 10).
+- **D — Dev loop** (1.75 d): debounce, the verified pod fetch, an error overlay, `:base` in dev,
+  Pagefind in the background (§11.3 item 12).
+- **B2 — Page styles and mobile layout** (2 d): card/line, a one-row navbar with a drawer, focus
+  rings, monospace code on ta/zh pages (§11.3 item 9).
+- **F — Analytics, verification, static root** (1 d) (§11.3 items 14, 15).
+- **E1 — Blog identity, banner, htmlModules** (2.75 d) (§11.3 item 13).
+- **E2 — Article-page parity** (1.75 d): edit link, last-updated, update bar, `titleTag` rows,
+  logo/repo, `pageClass`, a 404 page (§11.3 item 16).
+- **G — Cross-language search, then release 0.3.0** (2 d) (§11.3 item 17).
+- **Exit criterion:** every key of vdoing's `themeConfig`, and every front-matter key vdoing reads, is
+  implemented, deferred (below) or removed (below); for a `site.edn` key, `doctor` already says which
+  (`config/known-keys`, `config/vdoing-keys`, §11.3 item 16).
+- **Removed, not deferred:** `displayAllHeaders`, `sidebarHoverTriggerOpen`, `searchMaxSuggestions`,
+  custom `sidebar` arrays and `sidebar: 'auto'` — the sidebar is always generated from the directory
+  tree, and search is Pagefind's. A site that sets one gets a warning naming it.
 
 ### Phase 5 — Automation, packaging, documentation (7 days)
 
@@ -1658,15 +1718,17 @@ the bot push) and produces a live URL before any real code exists.
 - Release engineering: tags, `release.yml`, moving major tag, pinning documentation, `clogem theme eject` (1 d)
 - User documentation site in `doc/`, built by clogem-press and published to its own project Pages — dogfooding, and the only test of a non-root `:base` (1.5 d)
 
-**Totals:** 2 + 8 + 12 + 9 + 9 + 7 = **47 focused days.**
+**Totals:** 2 + 8 + 12 + 9 + 18 + 7 = **56 focused days** (47 before Phase 4's rebaseline). Phase 4's
+eighteen are its tasks' estimates: 2 + 2.25 + 2.5 + 1.75 + 2 + 1 + 2.75 + 1.75 + 2.
 
 **Deliberately deferred** (post-v1): image zoom, MathJax/KaTeX, flowchart rendering, `tabs` /
 `demo-block` containers, Algolia provider, incremental production builds, JVM execution mode,
 localized *assets* (mkdocs-static-i18n's `image.fr.png` trick), machine-translation tooling,
 translation-staleness tracking (comparing variant mtimes to flag drift), RTL layout support (none of
 en/zh/ms/ta is RTL, so the `:dir` config key is present but exercises only `:ltr`), Jawi script for
-Malay, and comment providers other than giscus. The `clogem migrate` report names any of these it finds
-in an imported site.
+Malay, comment providers other than giscus, and the front-matter keys `navbar: false` and
+`search: false` (added in Phase 4's rebaseline, §11.3 item 1). The `clogem migrate` report names any
+of these it finds in an imported site.
 
 ### Dependencies summary (the entire footprint)
 
@@ -1818,7 +1880,7 @@ the document). D-9 through D-15 are new, surfaced by v2's design work.
 | **i18n complexity** — five languages multiplying every template, index, and URL | **Medium-high (new)** | Contained by one rule: identity-by-permalink. Indexes hold article ids, so dedupe is structural (§5.2). Build cost is per *variant that exists*, not per language, so a mostly-English site pays almost nothing. Chrome language ≡ content language (§6.4) removes the entire class of "which language is this widget in" bugs. The five-language fixture corpus exists from Phase 1, not Phase 3. |
 | **CI front-matter write-back**: bot pushes to `main`, loops, races, protected branches | **Medium (new)** | Three independent loop guards, any one sufficient (§7.2). Race handled by rebase-before-push with a non-fatal failure (site stays correct; repo catches up). Protected-branch behaviour is a documented one-time check (D-9). Auto-fill is surgical and covered by golden-file tests. |
 | **Artifact-flow constraints**: 1 GB site cap, 10-minute deploy timeout, dotfiles excluded by default, deploy is same-repo only | **Low-medium (new; symlink row corrected in v2.1)** | CI **hard-fails** above 500 MB (§7.3); tool cache outside `dist/`; no dotfiles emitted by design. Symlinks are *not* a platform constraint — `upload-pages-artifact` tars with `--dereference --hard-dereference` — but the exporter copies rather than symlinks as a house rule, since a dereferenced link ships its target's full bytes against the 1 GB cap. The same-repo restriction is not a mitigation target — it is the reason the repo split happened. |
-| **Pagefind index fragmentation across languages** — a zh-Hans reader can't find a zh-Hant-only article | Low (new; **downgraded in v2.1**) | No longer an accepted limitation: `pagefind.mergeIndex(absoluteBundleUrl, {language: …})` adds other languages' indexes at query time with their stemmers intact (§6.7), so this becomes an opt-in "search all languages" affordance rather than a wall. `--force-language` stays rejected. Articles that matter in both scripts should still have both variants; `doctor` can report zh-Hans articles lacking a zh-Hant sibling. |
+| **Pagefind index fragmentation across languages** — a zh-Hans reader can't find a zh-Hant-only article | Low (new; **downgraded in v2.1**) | No longer an accepted limitation: `pagefind.mergeIndex(absoluteBundleUrl, {language: …})` adds other languages' indexes at query time (§6.7), so this becomes an opt-in "search all languages" affordance rather than a wall. `--force-language` stays rejected. Articles that matter in both scripts should still have both variants; `doctor` can report zh-Hans articles lacking a zh-Hant sibling. *Corrected in Phase 4 (§11.3 item 17):* merged indexes keep their own **segmentation** but stem with the **primary page's** WASM (`load_wasm: false`), not their own stemmer; and a page whose language has no indexed pages searches the **largest** index (`findIndex`: exact language → base subtag → most pages), not nothing. |
 | **Pagefind UI strings for `zh-Hant` silently render Simplified** — UI-string resolution has no language-script key, so `zh-Hant` reaches `zh.json` | Low (**new in v2.1**) | Wiring, not a missing feature: pass Traditional strings via the Default UI `translations` option, the same path already planned for `ms` (§6.7). Caught in the Phase 3 acceptance test by asserting on rendered UI strings, not just on index file names. |
 | **giscus strict mode hides pre-existing discussions** — threads not created by the giscus bot carry no `<!-- sha1: … -->` body marker, so under `data-strict="1"` the widget shows nothing and the next comment opens a duplicate thread | Low, one-time (**new in v2.1**) | Only affects sites with discussions predating the switch. Migration retitles **and** appends the marker (§6.8, §7.4 step 8); `clogem migrate` computes it. Verified on one article before the switch is announced. Not mitigated by disabling strict mode — that reintroduces fuzzy title merging, which is worse. |
 | **Translation drift** — variants silently diverge as the English original is edited | Medium (new) | A staleness check (variant mtime/commit-date vs primary) is designed but deferred; in the meantime the fallback notice (§6.8) at least tells readers when they're seeing an untranslated page. |
@@ -1828,9 +1890,9 @@ the document). D-9 through D-15 are new, surfaced by v2's design work.
 | fswatcher/inotify unreliable in containers/NFS | **Confirmed real** (reproduced in this session) | `--poll` fallback via `babashka.fs/modified-since` is designed in from the start, not bolted on. |
 | Incremental-build cache bugs (quickblog's "this is hard") | Medium | Sidestepped: production = always full rebuild; dev incrementality is in-memory only; disk caching deferred until build times demand it. |
 | Front-matter write-back corrupts user files | Medium | Surgical insertion (never reserialize), collision-checked permalinks, `--no-write` mode, golden-file tests. vdoing's known json2yaml mangling is the anti-pattern to avoid. |
-| Chroma quirks (e.g. `--html-styles` ignores `--html-prefix`, observed) | Low | One string transform in bb; CSS output is checked in, so breakage is visible in diff. |
+| Chroma flag interactions | Low | *Corrected in Phase 4 (§11.3 item 10):* the "quirk" v2 recorded here — `--html-styles` ignoring `--html-prefix` — is not a bug. `--html-styles` honours `--html-prefix` only when `--html` is passed too: with Chroma 2.27.0, `chroma --style=github --html-styles --html-prefix=hl-` prints `.chroma .err {…}`, and adding `--html` prints `.hl-chroma .hl-err {…}`. Pass all three; no string transform is needed. Generated CSS stays reviewable in diffs. |
 | Pagefind/Chroma binary supply chain | Low | Pinned versions + sha256 in config; both have 4-platform coverage; each replaceable behind a one-function seam. |
-| GitHub Pages CDN cache (10 min, not configurable) | Low | Fingerprinted assets so HTML/CSS can't pair mismatched. |
+| GitHub Pages CDN cache (10 min, not configurable) | Low | Fingerprinted assets so HTML/CSS can't pair mismatched — *done in Phase 4 (§11.3 item 7):* every theme asset URL carries `?v=<sha256 prefix of the bytes written>`, Pagefind's UI `?v=<its version>`. |
 | **CJK + Tamil edge cases** (heading slugs, search, line wrapping) | **Low-medium (downgraded — slugs now measured)** | **Heading slugs: settled in Phase 1, and the news is good.** nextjournal/markdown preserves CJK and Tamil **verbatim** in heading ids — `你好世界` → `你好世界`, `வணக்கம் உலகம்` → `வணக்கம்-உலகம்`, with Tamil grapheme clusters intact. What the measurement *did* overturn is the description: the slugger is **not** GitHub-style — it lower-cases and hyphenates whitespace but does **not** strip punctuation (`Hello, World!` → `hello,-world!`, `100% Done` → `100%-done`), and a tab inside a heading survives into the id, which is invalid HTML. Handled by one uniform repair (whitespace → `-`) applied to both heading ids and the TOC, plus percent-encoding on the href side; recorded as characterization tests so a babashka bump that changes the bundled parser breaks a test instead of silently rewriting every anchor. Pagefind's zh routing is verified from source (§6.7), but **zh-Hant is not word-segmented** (corrected in Phase 3, §11.2 item 37): charabia's jieba uses a Simplified dictionary, so Traditional text indexes mostly as single characters — pages are found, matching is loose, and quoted phrases fail. Phase 3 part B accepted this as is (§11.2 item 41); the five-language index build is now asserted in CI on every push (§11.2 items 40–41). Line wrapping is still a Phase 3 typography pass. |
 | Scale: full rebuild too slow for very large KBs (>1–2k pages) | Low now | Measured baseline in CI; content-hash caching is the designed-but-deferred answer; Chroma cache already amortizes the expensive part. |
 | Solo-maintainer sustainability | Medium | The stack *is* the mitigation: zero-to-two Clojure deps, two pinned binaries, everything else is the best-maintained artifact in the ecosystem (babashka itself). The repo split adds one seam to maintain, but removes a credential and a whole class of deploy bug. |
@@ -2594,6 +2656,252 @@ item 11.
     every clause of §8's Phase 3 exit criterion is checked on the bytes CI builds. `version.edn` is
     `0.2.0`.
 
+## 11.3 Phase 4 implementation changelog
+
+Recorded as Phase 4 (§8) is planned and lands. Items 1–18 are the decisions taken at its start
+(D-P4-*); an item says *done* when the task that implements it has landed, and later tasks append
+their own findings. Item 19 onward are corrections.
+
+1. **Scope and budget (§8).** Phase 4 is rebaselined from 9 to 18 days, as nine tasks in six
+   rounds: A foundations (2 d), B1 colour modes (2.25 d), C Chroma (2.5 d), D dev loop (1.75 d), B2
+   page styles and mobile layout (2 d), F analytics, verification and static root (1 d), E1 blog
+   identity and htmlModules (2.75 d), E2 article-page parity (1.75 d), G cross-language search and
+   release 0.3.0 (2 d). The project total moves from 47 to 56 days. (Corrected in fix round
+   P4-A.1: the first statement said "about 16" and 54, which matched neither the plan's per-task
+   estimates nor their sum.) Exit criterion: vdoing's `themeConfig` and the
+   front-matter keys it reads are all implemented, deferred or removed. Deferred: front matter
+   `navbar: false` and `search: false` (joining §8's list). Removed: `displayAllHeaders`,
+   `sidebarHoverTriggerOpen`, `searchMaxSuggestions`, custom sidebar arrays and `sidebar: 'auto'`.
+2. **Mode classes (B1).** `theme-mode-X theme-style-Y` move to `<html>`. An inline head script,
+   byte-identical on every page and placed before every stylesheet, resolves `auto` to light or dark
+   and follows OS changes live; `localStorage['clogem-mode']` beats `:default-mode`. Without JS the
+   media-query fallback still applies. User CSS written as `body.theme-mode-*` breaks — a documented
+   incompatibility.
+3. **The toggle (B1).** A navbar menu button opening four `aria-pressed` choices in vdoing's order,
+   hidden until JS runs, which also syncs giscus (`window.clogem.setCommentsTheme`, §11.2 item 49).
+4. **Accessible palette (B1), WCAG AA or better.** Light and read modes: accent `#1a7350`; muted
+   `#5f6873` (light) and `#5f5a50` (read); new body and main colours. Dark mode keeps `#3eaf7c`, with
+   muted `#9aa3ad`. Links in prose are underlined. vdoing's full set of colour variables,
+   `color-scheme`, print styles and reduced motion. The read-mode code block is dark (vdoing parity).
+5. **Pagefind's `--pf-*` variables** are mapped to the palette (B1).
+6. **Icons (B1).** Sources: Lucide (ISC/MIT), Simple Icons (CC0) for brands, Tabler (MIT) for gaps,
+   a generic link icon as the fallback. Delivered as one built sprite, `clogem/icons.svg`, holding
+   only the brands in use, through `(icons/icon ctx :name opts)`. Social links are
+   `:theme :social {:icons […]}`; an unknown icon is a config error.
+7. **Cache-busting (A, D-P4-7) — done.** GitHub Pages caches for 10 minutes. Every theme asset URL
+   the layout emits (`/clogem/…` CSS, JS, font CSS) carries `?v=<first 8 hex of the sha256 of the
+   file bytes as written to dist/>`, implemented once in `clogem.assets/href` (`layout/asset-href`),
+   so an asset a later task adds is versioned for free. The build snapshots the fingerprints of the
+   very bytes it writes (`assets/files` is the single source of both), so a `?v=` cannot name other
+   bytes. Pagefind's UI files carry `?v=<pinned Pagefind version>`; the bundle directory handed to
+   `<pagefind-config>` does not. Our own CSS versions its relative `url()`s too (the Tamil woff2
+   files). dev's CSS hot-swap already used `URLSearchParams.set('t', …)`, which keeps `v` (tested by
+   running the reload script under node). A query, not renamed files, so the layout and any
+   hand-written link are 0.2.0's; stripping every `?v=` from the demo's `dist/` gives output
+   byte-identical to 0.2.0's (240 files, compared against a `git worktree` at `03249b7`; opt-in test
+   `CLOGEM_COMPARE_REV`). CI's link resolvers strip the query before mapping an href to a file.
+8. **`overrides/custom.css` is linked last** (B1), after every theme stylesheet.
+9. **Mobile layout (B2).** A one-row navbar with a drawer at ≤ 50 rem; `--navbarHeight` and
+   `scroll-margin-top`; a `:where(:lang())` fix so code stays monospace on ta/zh pages;
+   `focus-visible` rings.
+10. **Highlighting on by default (C).** `:highlight {:provider :chroma}`; `:none` or `--no-highlight`
+    turns it off. A fetch failure is an error in `build` and a warning in `dev`. Line numbers are CSS
+    counters, never text — Chroma's own numbers pollute the Pagefind index. One Chroma process per
+    language plus an in-memory hash cache (thread-safe: pages render in parallel, item 11).
+    `--hl-*` variables are generated from the `github` and `github-dark` styles. Fence syntax
+    `lang{1,3-5}`, and `:line-numbers` / `:no-line-numbers`. The copy button is added by JS only when
+    the clipboard API exists. The binary comes from the generic fetcher (item 11): Chroma 2.27.0,
+    MIT, static builds, `{linux,darwin,windows}-{amd64,arm64}` plus `linux-386` and `windows-386`,
+    every asset (Windows included) a `.tar.gz` with `COPYING`, `README.md` and `chroma(.exe)` at its
+    root; the eight hashes are upstream's `chroma-2.27.0-checksums.txt` (linux-amd64 and
+    windows-amd64 re-verified by download). `:tools :chroma {:version :sha256 :path :url}` and
+    `CLOGEM_CHROMA` work like Pagefind's; the styles belong under `:highlight` (§5.6 corrected). The
+    "`--html-prefix` quirk" of §10 and research/08 is not a bug: `--html-styles` honours
+    `--html-prefix` only when `--html` is also passed (verified with the 2.27.0 binary).
+11. **Build robustness and speed (A, D-P4-11) — done.**
+    *Robustness.* `render/render-site` renders every page, the theme assets, the feeds, the sitemap
+    and robots.txt into memory, and **reads** every site asset there too (the demo is 13–24 MB), and
+    writes nothing; only when all of it has succeeded does `render/write-site!` write each file — a
+    temp file in the same directory, then an atomic rename — skipping files whose bytes are
+    unchanged, and sweep stale `.html` as before (§11.2 item 46: a build never deletes a non-HTML
+    file it did not write — `CNAME`, `.nojekyll` — and abandoned temp files of a killed build are its
+    own). The ledger is written only after `write-site!` has succeeded. A render failure, `Throwable`
+    included, raises naming the page, exit 1; an unreadable site asset raises naming the file, exit
+    1; either leaves `dist/` and `permalinks.edn` byte-for-byte as they were (the pre-flight that left
+    150 new pages and 86 old is now a test, and so is an unreadable asset). **What is not
+    guaranteed:** an I/O failure *while writing* (a full disk, an unwritable subdirectory) can leave
+    some files updated and others not — there is no transaction over a directory — and so can a
+    Pagefind failure after the pages are written (left for Phase 5). The summary line keeps its
+    0.2.0 start and adds `(N written, M unchanged)`; a no-change rebuild writes 0 files.
+    *The write path, fix round P4-A.1.* Before the first write, every output must lie inside the
+    out directory (normalized and absolute) and must not be blocked by a directory: an earlier
+    build's `dist/assets/docs/` where `assets/docs` is now a file used to swallow the rename (bb's
+    `fs/move` moves *into* a directory, like `mv`), report "1 written" and leave a temp file each
+    time; it is now an error naming the path and saying to remove it or run `clean`, and the rename
+    is `Files/move` with `REPLACE_EXISTING` and `ATOMIC_MOVE`. Temp files are named
+    `.clogem-tmp-<pid>-<nanoTime>`, independent of the target's name — `.<name>.clogem-tmp-…` pushed
+    a 232-byte CJK asset name past the 255-byte limit that 0.2.0 wrote fine — and written with
+    `Files/write`'s default permissions (`createTempFile`'s 0600 would hide a published file from a
+    web server running as another user). The temp sweep walks the whole out tree (never through a
+    link, never under `pagefind/`) and deletes only an *abandoned* temp file: its PID is not alive,
+    or it is more than 10 minutes old (a pre-PID name: age only). Sweeping every temp file used to
+    delete a concurrent build's in-flight one (`bb dev` and `bb build` into one `dist/`), failing it
+    about one time in ten; a temp file that vanishes under a write is now retried once. Directories
+    the sweep empties are pruned. On Windows, a rename over a file another process holds open
+    without `FILE_SHARE_DELETE` (`bb dev`'s server, an antivirus) is refused; it is retried with
+    backoff (5 … 1280 ms, ~2.5 s), and a rename — or a temp file — still refused falls back to
+    0.2.0's in-place write; any other I/O error fails at once with the target untouched. **No
+    Windows run has been made**: the retry and fallback are tested with the move stubbed
+    (`write_windows_test.clj`). Skip-unchanged compares the directory entry's *exact* name, so on a
+    case-insensitive file system a case-only asset rename (`Logo.PNG` → `logo.png`) is written, as
+    0.2.0 did, rather than kept in its old case and 404ing on a case-sensitive host. A permalink with
+    a `.` or `..` segment or a backslash is an error naming its file (`/../../escaped/` used to
+    write outside `dist/`; doubled slashes are still collapsed, as in 0.2.0).
+    *Fix round P4-A.2.* The reverse blocker is checked too: before the first write, every ancestor
+    of an output inside the out directory that exists and is not a directory (a symlinked
+    subdirectory counts as one) is an error — an earlier build's file `dist/assets/docs` when
+    `assets/docs/readme.txt` now needs a directory used to make `create-dirs` throw a raw
+    `FileAlreadyExistsException` mid-write and leave `dist/` mixed; now it names the file and says
+    to remove it or run `bb clean`, and nothing is written. The temp sweep resolves the out
+    directory's own link (`dist -> /var/www/site`; it used to skip such a `dist/` altogether) and
+    still follows none below it. The `..` rule is one predicate, `util/unsafe-permalink?`, applied to
+    every source of a permalink: article front matter, an `@pages/` file's `permalink:` (an error
+    naming `@pages/tagsPage.md`; the index keeps its default path — `/tags/../` used to overwrite the
+    home page), and the keys of `permalinks.edn` (an error naming the file and quoting the key,
+    raised in pass 1, so write mode never copies the value into an article before failing).
+    `check-outputs!` stays as the backstop.
+    *Fix round P4-A.3.* Two outputs of *one* build can collide, which no check of the disk sees: a
+    page at `/assets/demo.txt/` needs `dist/assets/demo.txt/` to be a directory while the site asset
+    `assets/demo.txt` needs it to be a file (0.2.0 buried the asset and exited 0; P4-A.2 threw a raw
+    `FileSystemException` with 232 of 240 files written, then blamed "an earlier build"); so does
+    `/robots.txt/` against the generated `robots.txt`. `render/output-collisions` looks up each
+    output's ancestors inside the out directory, one map lookup each, in the build's own set of
+    outputs — pages, theme and site assets, feeds, the sitemap, `robots.txt`, and, with search on,
+    `pagefind/` as a directory Pagefind replaces whole — and names both outputs and where each comes
+    from ("/assets/demo.txt/ (from content/…/01.getting-started.md) would put a page inside the site
+    asset assets/demo.txt"). `render/planned-outputs` lists the same set without rendering or reading
+    anything, so `doctor` and the build's analysis gate report a collision as a content error;
+    `check-outputs!` checks it again, first, as the backstop. An `@pages/` variant whose `permalink:`
+    is never read (only the default language's file sets an index's path) has an unsafe value
+    reported as a *warning* that it is unused, not as an error that it would escape. An ancestor that
+    is a dangling symlink is reported as a broken symlink, not as a file. Not checked: two outputs at
+    the *same* path (a site asset `assets/x/index.html` and a page `/assets/x/`) — the later one wins,
+    as in 0.2.0.
+    *Speed.* `util/damerau-levenshtein` keeps three rolling rows (persistent vectors — long arrays
+    are slower still under sci, every `aget` being reflective) instead of a 2-D `make-array`; a
+    property test checks it against the 0.2.0 matrix on 3000 random ASCII, CJK and Tamil pairs. Pages
+    render on a bounded pool — `render/jobs`: the available processors, or `CLOGEM_JOBS` (`1` renders
+    on the calling thread as 0.2.0 did); each page has its own diagnostic sink, and the diagnostics
+    are re-emitted sorted by severity, file, line and message, so `CLOGEM_JOBS=1` and the default
+    give byte-identical `dist/` trees and identical diagnostics (tested). Shared render-path caches
+    must be thread-safe (`render-pages`' docstring). Measured (Appendix A item 21): the demo builds
+    in 0.37 s instead of 0.68 s, a synthetic 300-article site in 1.6 s instead of 7.7 s, its analysis
+    in 0.25 s instead of 4.4 s.
+    *Dev.* A full rebuild made fast replaces §5.4's dependency-tracked incremental rendering; §5.4 and
+    §5.5 are amended.
+    *Tools.* The generic half of `clogem.search` moved to `clogem.tools`, driven by a descriptor (the
+    platform function, URL template, archive type and member, env-var override, known hashes, hint
+    text). Pagefind's behaviour, messages, `CLOGEM_PAGEFIND`, `:tools :pagefind` and on-disk cache
+    layout are unchanged, so existing caches stay valid; `bb fetch-tool --tool
+    pagefind|chroma|fswatcher` (default pagefind). Real fetches on linux-amd64 verified against the
+    pins: chroma 2.27.0, the fswatcher pod 0.0.7, pagefind_extended 1.5.2.
+    *Config.* Unknown keys warn (item 16).
+12. **Dev loop (D).** Debounce plus a temp-file filter; a 20 ms gap between pod registrations; a
+    verified pod fetch; the dev flag passed through `cli/build`; missing-key warnings deduplicated in
+    build and dev; an SSE `build-error` overlay; `:base` mounted, and `serve --base`; bind 127.0.0.1
+    by default, plus `--host`; Pagefind in the background in dev; theme resources watched.
+    *The pod fetch (descriptor added in A):* `org.babashka/fswatcher` 0.0.7 for `linux-amd64`,
+    `linux-aarch64`, `macos-aarch64`, `macos-amd64` and `windows-amd64` (there is no windows-arm64
+    asset); each asset is a zip whose single member, `pod-babashka-fswatcher(.exe)`, is extracted with
+    `java.util.zip` and made executable. **Upstream publishes no checksums.** The five pins in
+    `clogem.tools/fswatcher` were computed by the project owner from the release zips on 2026-10-02 —
+    trust on first use: they prove the bytes have not changed since, not that they were right then.
+    `CLOGEM_FSWATCHER` or `:tools :fswatcher :path` names an installed pod instead.
+13. **Blog identity and htmlModules (E1).** Kebab-case keys; 7 slots plus 2 show-modes (§1.2
+    corrected); wrappers get `data-pagefind-ignore` and overflow-safe CSS; per-language values use the
+    fallback chain only, and `""` suppresses; `{{base}}` is interpolated; raw HTML from the owner is
+    trusted; the footer's end year is the newest article's year; the title badge is chosen by a hash
+    of the permalink (vdoing picks at random per route; a static build must be deterministic).
+14. **Analytics (F).** A self-hosted loader, with no inline script; never loaded in dev, only on the
+    `:site :url` host; DNT/GPC respected by default; providers GA4, Plausible and Umami, default
+    `:none`; GA4 gets an opt-in consent default; the docs cover CSP and the site owner's PDPA duty.
+15. **Verification and static root (F).** `:seo :verification {:google :bing}` emits meta tags;
+    `:content :static-dir "public"` is copied to the `<base>` root, survives the stale-file sweep, and
+    has collision errors; it serves CNAME, the favicon and the IndexNow key file. The IndexNow push
+    is Phase 5.
+16. **Parity details (E2, and A).** `:content :edit-link {:repo :branch :dir}` plus `editLink: false`;
+    `:theme :last-updated` from one `git log` pass; `:theme :sidebar-collapsed`, keeping
+    `:sidebar-open`'s 0.2.0 meaning; right-menu-bar, page-button, content-bg-style, back-to-top,
+    logo, repo link, hero keys, `pageClass`, and a 404 page (`noindex`, not in the sitemap).
+    *Fix round P4-A.1.* `:site :author` is checked only in its named shape (`:name`/`:link`, keyword
+    or string keys, as `i18n/resolve-author` reads them); its per-language shape is user data. `:nav`
+    items are walked (`:nav 1 :items 0 :lnk`), never their per-language `:text`. A bad `:tools
+    :chroma` or `:tools :fswatcher` pin is a **warning** and is repaired to the built-in pin — nothing
+    runs either tool yet, and 0.2.0's own §5.6 sketch (a single `:sha256` string) passed 0.2.0;
+    Pagefind's pin stays an error (`config/fatal-tool-ids`, which C and D extend). vdoing's
+    `sidebarOpen` is the planned `:theme :sidebar-collapsed`, inverted — it says whether the sidebar
+    *panel* starts open (vdoing `Layout.vue` `created()`); clogem's `:sidebar-open` is vdoing's
+    `sidebar.collapsable`, inverted. `sidebar` is *implicit* (the structured sidebar is what
+    clogem-press always builds), `algolia` *deferred*, `bodyBgImgInterval` planned; `vdoing-keys` now
+    covers every key vdoing's `themeConfig` declares. Retired clogem keys have their own message
+    (`config/retired-keys`: `:generator :ref`, D-14; `:tools :chroma :style`, now `:highlight`). A
+    scalar `:theme :html-modules` warns instead of crashing every task.
+    *Unknown-key warnings — done in A (part of D-P4-16).* `config/known-keys` is the one table of
+    every section's keys ({path → {key :ok|:planned}}, `:*` for any key); `check-keys!` walks the
+    site.edn as written and warns, never errors, on an unknown key — naming its path and the nearest
+    known key within Damerau-Levenshtein 2 — and on a `:planned` key ("planned, not implemented in
+    0.2.0"). `config/vdoing-keys` maps vdoing's camelCase spellings (`pageStyle` → `:theme
+    :page-style`, `htmlModules`, `bodyBgImg`, `updateBar`, `categoryText`, …) to ours, and names the
+    removed ones. A non-empty `:theme :html-modules`, an `:analytics :provider` other than `:none` and
+    `:seo :indexnow :enabled true` warn "has no effect in 0.2.0". `:comments :mapping :permalink`
+    stays silent. A pre-flight build with `:analytics {:provider :ga4 …}`, `:html-modules`,
+    `:blogger`, `:footer` and `:bodyBgImg` used to produce zero warnings; the demo's `doctor` still
+    reports exactly its one, and EchoJustus.github.io's `site.edn` none. **A task that makes the
+    generator read a new key registers it in `known-keys`.**
+17. **Cross-language search (G).** Opt-in `:search {:cross-language true}`: a named Pagefind
+    instance with absolute `mergeIndex` URLs and `indexWeight` 0.001, so the reader's own language
+    leads; only languages that have indexed pages are merged; a per-reader checkbox, off by default,
+    plus a language filter. Two facts from the 1.5.2 bundle correct §6.7 and §10: `findIndex` falls
+    back from the exact language to its base subtag and then to the **largest** index, so a language
+    with no indexed pages searches the largest one; and a merged instance is initialised with
+    `load_wasm: false`, so **stemming follows the primary page's language** while segmentation (done
+    at index time) still follows each index's.
+18. **CI browser job (A, D-P4-18) — done.** A `browser` job builds the demo exactly as `test` does,
+    serves it with `python3 -m http.server --bind 127.0.0.1` and runs `test/browser/run.mjs`, which
+    executes every `test/browser/*.test.mjs` in one headless Chromium with third-party requests
+    aborted. Playwright is pinned exactly (1.63.0, `package.json` + committed `package-lock.json`,
+    `npm ci`, `npx playwright install --with-deps chromium`, Node 22). The first test,
+    `overflow.test.mjs`, asserts `scrollWidth <= innerWidth` on every page at 320 and 360 px; 0.2.0
+    passes (908 checks). `CLOGEM_CHROMIUM` launches a preinstalled Chromium of another revision for
+    local runs (`test/browser/README.md`). Nothing in `test/browser/` ships, and `bb test` never loads
+    it.
+19. **§1.2 corrected: htmlModules and title badges.** vdoing's `htmlModules` has 7 HTML slots
+    (`homeSidebarB sidebarT sidebarB pageT pageB windowLB windowRB`) plus 2 show-modes
+    (`pageTshowMode pageBshowMode`), not "9 regions" (`vdoing/types/index.ts`, l.165–175). The title
+    badge is a random **static** icon, not an animated one (`vdoing/mixins/titleBadge.js` picks one of
+    three PNG data URIs with `Math.random()`; `Page.vue` renders a plain `<img>`).
+20. **`config.example.edn` corrected.** Its header said every fallback chain ends in "→ the key
+    itself". That is true of theme strings only (`i18n/tr`); a config map value that has none of the
+    chain's languages resolves to the map's **first** value (`i18n/resolve-str`). It now documents
+    `:tools :chroma`, `:tools :fswatcher` and `CLOGEM_JOBS` as well.
+
+
+### Known limitations (Phase 5)
+
+- **Case-only permalink changes on a case-insensitive file system** (macOS, Windows; pre-existing,
+  found in fix round P4-A.1). Changing a permalink only in case (`/pages/Abc/` → `/pages/abc/`)
+  writes the new page over the old file — the file system calls them one — and the stale sweep,
+  comparing names exactly, then deletes the page it just wrote, until the next build. Two
+  permalinks that differ only by case overwrite each other there.
+- **Concurrent builds with search on** (pre-existing, 0.2.0). `bb dev` and `bb build` into one
+  `dist/` no longer delete each other's temp files, but `search/run!` still deletes
+  `<out>/pagefind/` and rebuilds it, so two builds with search on can collide there. Give one
+  `--no-search`, or a separate `--out`.
+- **The stale-HTML sweep skips a symlinked output directory** (pre-existing, 0.2.0).
+  `sweep-stale-html!` checks the out directory with `:nofollow-links`, so with `dist ->
+  /var/www/site` the `.html` of deleted articles is never removed there. The temp sweep resolves
+  that root link (fix round P4-A.2); this one does not yet.
+
 ---
 
 ## Appendix A — Empirically validated claims
@@ -2699,6 +3007,14 @@ Settled during the **Phase 1 implementation**, by measurement under bb 1.13.219:
 20. **The fswatcher pod's absence degrades cleanly to `--poll`.** Reproduced again in this session
     (the pod download fails behind the sandbox proxy), and the polling watcher was verified
     end-to-end: file change → detected → rebuild in ~30 ms → served.
+21. **Build speed, Phase 4 Task A (§11.3 item 11).** Native babashka 1.13.219, 4 cores, Linux; median
+    of three; `--no-write --no-search` unless noted. 0.2.0 (`03249b7`) → Task A:
+    `util/damerau-levenshtein` on ~19-character strings ~22 ms → ~0.5 ms a call (~44×, identical
+    results; the pre-flight measured ~60×); analysing a synthetic 300-article site (400 files) 4.40 s → 0.25 s;
+    building it 7.7 s → 1.6 s (3.3 s with `CLOGEM_JOBS=1`); the demo (227 pages) 0.68 s → 0.37 s
+    (0.55 s with `CLOGEM_JOBS=1`), with Pagefind 1.0 s → 0.66 s; `bb test` 37 s (404 tests) → 35 s
+    (430 tests, of which the 26 new ones take ~4.6 s). A rebuild with no change writes 0 files. The
+    figures are this container's; the shape, not the seconds, is the claim.
 
 Explicitly **still not** verified: release *dates* for the Pages action
 majors (the session's proxy blocks `api.github.com`, and a summarized read of the releases page gave

@@ -1,5 +1,154 @@
 # Changelog
 
+## Unreleased
+
+Phase 4, Task A — foundations (DESIGN.md §8, §11.3 items 7, 11, 16, 18).
+The version stays 0.2.0.
+
+### Added
+
+- **Cache-busting** (D-P4-7). Every theme asset URL the layout emits
+  (`/clogem/…` CSS, JS and font CSS) carries `?v=<first 8 hex of the sha256
+  of the file as written to dist/>`, and Pagefind's UI files
+  `?v=<pinned Pagefind version>`, so GitHub Pages' 10-minute cache can no
+  longer pair new HTML with an old stylesheet. Our own CSS versions its
+  relative `url()`s too (the Tamil fonts). Implemented once, in
+  `clogem.assets/href`; the file layout is unchanged, and stripping every
+  `?v=` gives 0.2.0's bytes.
+- **Config key warnings** (part of D-P4-16). An unknown key anywhere in
+  `site.edn` warns with its path and the nearest known key; vdoing's
+  camelCase spellings (`pageStyle`, `htmlModules`, `bodyBgImg`, `updateBar`,
+  …) warn with the clogem-press key; keys planned for a later Phase 4 task
+  warn "planned, not implemented in 0.2.0"; a non-empty
+  `:theme :html-modules`, an `:analytics :provider` other than `:none` and
+  `:seo :indexnow :enabled true` warn that they have no effect. `:nav` items
+  are checked too (`:nav 1 :items 0 :lnk`), `:site :author` only in its
+  `{:name :link}` shape, and keys a design revision removed
+  (`:generator :ref`) say why. vdoing's `sidebarOpen` maps to the planned
+  `:theme :sidebar-collapsed` (inverted), `sidebar` is reported as what
+  clogem-press always does, `algolia` as deferred. All warnings, never
+  errors. One table, `clogem.config/known-keys`.
+- **`bb fetch-tool --tool pagefind|chroma|fswatcher`** (default
+  `pagefind`). A new `clogem.tools` fetches, verifies and caches any pinned
+  binary from a descriptor; Chroma 2.27.0 (`CLOGEM_CHROMA`,
+  `:tools :chroma`) and the `org.babashka/fswatcher` 0.0.7 pod
+  (`CLOGEM_FSWATCHER`, `:tools :fswatcher`, a zip unpacked with
+  `java.util.zip`) are fetchable, though nothing uses them yet. The pod's
+  hashes are trust-on-first-use: upstream publishes none. Since nothing
+  runs them, a malformed `:tools :chroma` or `:tools :fswatcher` pin is a
+  warning and the built-in pin is used; Pagefind's stays an error. That
+  holds for a value that is not a map at all (`:tools {:chroma "2.27.0"}`,
+  which 0.2.0 accepted), and the pin is repaired as one unit: a bad
+  `:version` or `:sha256` resets both, so a custom version is never kept
+  without hashes to verify it (every other key, such as `:url`, is kept).
+- **`CLOGEM_JOBS`**: pages render on a bounded parallel pool, one worker per
+  processor by default; `CLOGEM_JOBS=1` renders on one thread. The output
+  and the diagnostics are identical either way.
+- **A CI `browser` job** (D-P4-18): Playwright 1.63.0 (pinned, `npm ci`)
+  over the built demo, running every `test/browser/*.test.mjs`; the first
+  asserts that no page scrolls sideways at 320 or 360 px. Nothing in
+  `test/browser/` ships.
+
+### Changed
+
+- **A failed render no longer leaves a mixed `dist/`** (D-P4-11). Every
+  page and generated file is rendered in memory first, and every site
+  asset read; only when all of it has succeeded is each file written,
+  atomically (temp file and rename; in place when the OS refuses either),
+  and only if its bytes changed. A
+  render failure — any `Throwable` — exits 1 naming the page, and an
+  unreadable site asset exits 1 naming the file; either leaves `dist/` and
+  `permalinks.edn` exactly as they were (the ledger is now written after
+  `dist/`). An I/O error *while writing* (a full disk, an unwritable
+  directory) can still leave some files updated, and so can Pagefind
+  failing after the pages are written (Phase 5). The summary line gains
+  `(N written, M unchanged)`; a rebuild with no source change writes 0
+  files. Files the build did not write (`CNAME`, `.nojekyll`) are still
+  never deleted.
+- **Writing** (D-P4-11). Every output must lie inside the output directory,
+  and a directory left where a file now belongs is an error naming it
+  (remove it or run `bb clean`) rather than a silently missing file; so is
+  the reverse, a file left where a directory now belongs (an earlier
+  build's `assets/docs` file when `assets/docs/readme.txt` now needs a
+  directory), which used to fail mid-write with a raw
+  `FileAlreadyExistsException` and a mixed `dist/`. Both are checked
+  before anything is written. Temp
+  files are `.clogem-tmp-<pid>-<nanoTime>`, so a name near the 255-byte
+  limit still writes. Only abandoned temp files (a dead PID, or older than
+  10 minutes) are swept, anywhere in the output tree — also when the
+  output directory is itself a symlink (`dist -> /var/www/site`) — so
+  `bb dev` and `bb build` into one `dist/` no longer delete each other's
+  temp files. With search on, two builds into one `dist/` can still
+  collide while Pagefind rebuilds `dist/pagefind/`, as in 0.2.0 (Phase 5):
+  give one of them `--no-search`, or a separate `--out`. On Windows a
+  rename refused because another process holds the file open is retried
+  for ~2.5 s, then written in place as 0.2.0 did (untested on Windows
+  itself). On a case-insensitive file system a case-only asset rename is
+  written rather than kept in its old case.
+- **Faster builds** (D-P4-11): Damerau-Levenshtein keeps rolling rows
+  instead of a matrix (~40× faster; a 300-article site analyses in 0.25 s
+  instead of 4.4 s), and pages render in parallel (that site builds in
+  1.6 s instead of 7.7 s, the demo in 0.37 s instead of 0.68 s).
+- Render diagnostics are reported in a fixed order: severity, file, line,
+  message.
+
+### Fixed
+
+- `bb dev` survives a rebuild that throws an `Error` (it caught only
+  `Exception`).
+- A permalink with a `.` or `..` segment or a backslash
+  (`permalink: /../../escaped/`) is now an **error** naming its source: it
+  used to be written outside `dist/`, or with `/tags/../` over the home
+  page. Such permalinks are now rejected because they can escape or alias
+  `dist/`, even where 0.2.0 built them harmlessly (`/./tags/`, which a
+  browser resolves to `/tags/`): write the clean spelling instead. One rule
+  (`clogem.util/unsafe-permalink?`)
+  covers an article's front matter, an `@pages/` file's `permalink:`
+  (`@pages/tagsPage.md`; its index keeps the default path) and the keys of
+  `permalinks.edn`. A bad ledger key is caught before write mode copies it
+  into an article's front matter, so the failing build changes no source
+  file. In an `@pages/` file whose `permalink:` is never read — any
+  language variant but the default language's — an unsafe value is a
+  warning that it is unused, not an error.
+- **A page that would sit inside another output of the same build** is an
+  error in `doctor` and before a build writes anything, naming both and
+  where each comes from: `permalink: /assets/demo.txt/` beside the site
+  asset `assets/demo.txt`, or `permalink: /robots.txt/` beside the
+  generated `robots.txt` (or, with search on, a page under `/pagefind/`).
+  0.2.0 silently buried the asset under a directory; the previous
+  development build failed mid-write with a raw `FileSystemException`.
+  Choose another permalink.
+- A dangling symlink where the build needs a directory is reported as a
+  broken symlink, not as a file.
+- An unreadable site asset whose exception carries only the path reads
+  "could not read site asset <p>: access denied (AccessDeniedException)",
+  not the path twice.
+
+### Documentation
+
+- DESIGN.md §8 Phase 4 rebaselined to 18 days in nine tasks (the
+  total is now 56 days), with its exit criterion, the deferred front-matter
+  keys `navbar: false` and `search: false`, and the dropped vdoing options.
+  New §11.3, the Phase 4 implementation changelog, records the phase's
+  decisions. Corrections: htmlModules has 7 slots plus 2 show-modes, not 9
+  regions, and the title badge is a random static icon (§1.2); Chroma's
+  `--html-styles` honours `--html-prefix` with `--html` (§10, research/08);
+  Pagefind falls back to the largest index for a language with none, and
+  merged indexes stem with the primary page's WASM (§6.7, §10); dev is a
+  fast full rebuild, not an incremental one (§5.4, §5.5); `:tools :chroma`
+  takes a per-platform hash map and styles go under `:highlight` (§5.6).
+- DESIGN.md §11.3 records the write path's guarantees and limits, and a
+  known limitation for Phase 5: a case-only permalink change on macOS or
+  Windows.
+- config.example.edn: a config map value falls back to the map's first
+  value, not "the key itself"; documents `:tools :chroma`,
+  `:tools :fswatcher` and `CLOGEM_JOBS`; no longer promises that a failed
+  build leaves `dist/` exactly as it was (only a render or read failure
+  does).
+- DESIGN.md §11.3's known limitations add two for Phase 5: concurrent
+  builds with search on, and the stale-HTML sweep skipping a symlinked
+  output directory.
+
 ## 0.2.0 — Phase 3: internationalization
 
 Phase 3 is complete: the demo's five-language corpus builds with correct

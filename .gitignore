@@ -14,3 +14,7 @@ dist-*/
 .lsp/.cache/
 *.jar
 .DS_Store
+
+# The browser tests' Playwright install (test/browser/README.md); the
+# package-lock.json beside it is committed.
+test/browser/node_modules/
