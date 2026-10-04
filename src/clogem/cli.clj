@@ -123,7 +123,12 @@
                                    :coerce :boolean}})}}
   build
   [opts]
-  (let [cfg (load-cfg! opts)]
+  ;; `:clogem/dev?` is set by `bb dev` (never on the command line): pages
+  ;; render dev's ⟦key⟧ for a missing UI string, and search is left to dev's
+  ;; background indexer (§11.3 item 12) — the result says `:search :deferred`
+  ;; and carries the config the build used as `:clogem/cfg`
+  (let [dev? (boolean (:clogem/dev? opts))
+        cfg  (cond-> (load-cfg! opts) dev? (assoc :clogem/dev? true))]
     ;; Pass 1 — normalize front matter. Its diagnostics are discarded because
     ;; pass 2 re-derives them from the normalized tree and is the authoritative
     ;; report; but content ERRORS abort before anything is written, since
@@ -155,17 +160,23 @@
     ;; asset leaves dist/ exactly as it was, rather than a mix of this build's
     ;; pages and the last one's. The ledger is written only once dist/ has
     ;; been, so a failed write leaves permalinks.edn as it was too.
-    (let [[m ads]    (diag/collecting
-                      (let [m (analyse cfg)]
-                        ;; two outputs of this build that would collide —
-                        ;; `/assets/demo.txt/` and the asset assets/demo.txt —
-                        ;; are a content error, before anything is rendered
-                        (render/check-output-collisions! m)
-                        m))
+    ;; a UI string key no language defines is reported once per (key,
+    ;; language) over analysis and render together, not once per page
+    (let [missing    (atom #{})
+          [m ads]    (diag/collecting
+                      (binding [i18n/*missing-keys* missing]
+                        (let [m (analyse cfg)]
+                          ;; two outputs of this build that would collide —
+                          ;; `/assets/demo.txt/` and the asset assets/demo.txt —
+                          ;; are a content error, before anything is rendered
+                          (render/check-output-collisions! m)
+                          m)))
           _          (when (seq (diag/errors ads)) (report! ads))
           [result rds]
           (diag/collecting
-           (let [written (render/write-site! (render/render-site cfg m))]
+           (let [written (binding [i18n/*missing-keys* missing]
+                           (render/write-site! (render/render-site cfg m)))]
+             (i18n/report-missing-keys! cfg @missing)
              (when (config/write-front-matter? cfg)
                (model/write-ledger! cfg (model/ledger-from-model m)))
              written))
@@ -177,16 +188,28 @@
       (when (pos? (:stale result 0))
         (println (format "clogem-press: removed %d stale page%s from %s"
                          (:stale result) (if (= 1 (:stale result)) "" "s") (:out result))))
+      (when (pos? (:stale-theme result 0))
+        (println (format "clogem-press: removed %d stale file%s from %s/clogem"
+                         (:stale-theme result) (if (= 1 (:stale-theme result)) "" "s") (:out result))))
       ;; D-P3-8: search runs last, over the finished dist/. A failure here is
       ;; a build error (exit 1) even though dist/ is already written — the
       ;; known limitation of §11.2, left for Phase 5: CI stops before
       ;; deploying it.
-      (if (search/enabled? cfg)
+      (cond
+        (and dev? (search/enabled? cfg))
+        (assoc result :search :deferred :clogem/cfg cfg)
+
+        dev?
+        (assoc result :clogem/cfg cfg)
+
+        (search/enabled? cfg)
         (let [{:keys [languages pages]} (search/index! cfg)]
           (println (format "clogem-press: search index → %s/%s (%d language%s, %d pages)"
                            (:out result) search/output-subdir
                            languages (if (= 1 languages) "" "s") pages))
           (assoc result :search {:languages languages :pages pages}))
+
+        :else
         result))))
 
 (defn ^{:org.babashka/cli
@@ -241,18 +264,20 @@
   ;; same — D-P2-12: a config error is an error.
   (let [[cfg cds] (load-cfg* opts)
         [m ds] (diag/collecting
-                (let [m (analyse cfg)]
-                  ;; findings that must not fire inside analyse (undated
-                  ;; articles, disagreeing variants, over-deep directories,
-                  ;; unresolved catalogue paths) …
-                  (model/doctor-checks! m)
-                  ;; … and the render-time ones (dead links, unknown
-                  ;; containers, bad card-list YAML), by rendering every page
-                  ;; in memory and discarding it
-                  (when (seq (:articles m)) (render/check-pages! m))
-                  ;; … and outputs of one build that would collide
-                  (render/check-output-collisions! m)
-                  m))
+                (i18n/reporting-missing-keys
+                 cfg
+                 (let [m (analyse cfg)]
+                   ;; findings that must not fire inside analyse (undated
+                   ;; articles, disagreeing variants, over-deep directories,
+                   ;; unresolved catalogue paths) …
+                   (model/doctor-checks! m)
+                   ;; … and the render-time ones (dead links, unknown
+                   ;; containers, bad card-list YAML), by rendering every page
+                   ;; in memory and discarding it
+                   (when (seq (:articles m)) (render/check-pages! m))
+                   ;; … and outputs of one build that would collide
+                   (render/check-output-collisions! m)
+                   m)))
         ds    (into (vec cds) ds)
         errs  (diag/errors ds)
         warns (diag/warnings ds)]
@@ -278,21 +303,32 @@
     (when (fs/exists? out) (fs/delete-tree out))
     (println "clogem-press: removed" (str out))))
 
+(def server-spec
+  "The options `serve` and `dev` share: where to listen (§11.3 item 12)."
+  {:port {:desc "Port." :default 1888 :coerce :long :alias :p}
+   :host {:desc "Address to listen on; 0.0.0.0 for every interface." :default "127.0.0.1" :ref "<addr>"}})
+
 (defn ^{:org.babashka/cli
-        {:spec {:dir  {:desc "Directory to serve." :default "dist" :ref "<dir>"}
-                :port {:desc "Port." :default 1888 :coerce :long :alias :p}}}}
+        {:spec (merge common-spec server-spec
+                      {:dir  {:desc "Directory to serve." :default "dist" :ref "<dir>"}
+                       :base {:desc "Serve it at this path, e.g. /project/ (default: the site's :base when --site-dir has a site.edn, else /)."
+                              :ref "<path>"}})}}
   serve
   [opts]
   ((requiring-resolve 'clogem.dev/serve!) opts))
 
 (defn ^{:org.babashka/cli
-        {:spec (merge common-spec
+        {:spec (merge common-spec server-spec
                       {:out      {:desc "Output directory." :default "dist" :alias :o}
-                       :port     {:desc "Port." :default 1888 :coerce :long :alias :p}
+                       :base     {:desc "Site base path, e.g. /project/; the site is served there." :ref "<path>"}
                        :poll     {:desc "Poll the filesystem instead of using inotify."
                                   :coerce :boolean}
-                       :no-search {:desc "Do not rebuild the search index on each rebuild."
+                       :no-search {:desc "Build without search (no index, no search UI)."
                                    :coerce :boolean}
+                       :no-write {:desc "Never write front matter or permalinks.edn back to the source tree."
+                                  :coerce :boolean}
+                       :reload-code {:desc "Also watch the theme's .clj code and reload it on change."
+                                     :coerce :boolean}
                        :interval {:desc "Poll interval in ms." :default 500 :coerce :long}
                        :probe-ms {:desc "How long to wait for the watcher to prove it delivers events."
                                   :default 3000 :coerce :long}})}}

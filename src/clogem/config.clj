@@ -308,17 +308,20 @@
   and the config is repaired to the built-in pin — 0.2.0 accepted any
   `:tools :chroma` (its own DESIGN §5.6 sketched one with a single
   `:sha256` string), so a pin nothing reads must not start failing builds.
-  The task that makes a build run a tool adds its id here (Chroma in C, the
-  fswatcher pod in D)."
+  The task that makes a build run a tool adds its id here (Chroma in C).
+  The fswatcher pod stays out (Task D): only `bb dev` runs it, and a pod it
+  cannot fetch, verify or load only means watching by polling."
   #{:pagefind})
 
 (defn- unused-tool-hint
-  "B2's hint for a bad pin of a tool nothing runs yet (not in
-  `fatal-tool-ids`): why it is only a warning, and what is used instead."
+  "B2's hint for a bad pin of a tool not in `fatal-tool-ids`: why it is only
+  a warning, and what is used instead."
   [id hint]
   (str (when hint (str hint " "))
-       "It has no effect in " (generator-version) " (nothing runs "
-       (name id) " yet), so the built-in pin is used."))
+       (if (= :fswatcher id)
+         "Only `bb dev` runs the fswatcher pod, and it falls back to polling when it cannot, so the built-in pin is used."
+         (str "It has no effect in " (generator-version) " (nothing runs "
+              (name id) " yet), so the built-in pin is used."))))
 
 (defn- check-search!
   "D-P3-8 / D-P3-12: the search provider, the Pagefind pin, and the Tamil

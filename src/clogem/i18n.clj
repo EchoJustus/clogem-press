@@ -45,18 +45,61 @@
                  (let [v (get vars (keyword k) (get vars k))]
                    (if (some? v) (str v) whole)))))
 
+(defn string-file
+  "The site's string file for `lang`, as a site-relative path: `i18n/ta.edn`."
+  [cfg lang]
+  (str (get-in cfg [:i18n :strings-dir]) "/" (name lang) ".edn"))
+
+(def ^:dynamic *missing-keys*
+  "An atom of the [key lang] pairs `tr` found no string for, bound by
+  `reporting-missing-keys` so each is reported once per build rather than
+  once per call (a key the theme reads on every page used to give one line
+  per page). Rendering workers inherit the binding (`bound-fn`)."
+  nil)
+
+(defn- missing-key-warning!
+  [cfg lang k]
+  (diag/warn! (string-file cfg lang)
+              (str "missing UI string key `" k "` for " (name lang) ": no language along its fallback chain ("
+                   (str/join " → " (map name (config/fallback-chain cfg lang))) ") defines it.")
+              (str "Add it to " (string-file cfg lang) ". Pages show ⟦" k "⟧ in `bb dev` and `" (name k)
+                   "` in a build; :i18n {:missing-key :silent} turns this warning off.")))
+
+(defn report-missing-keys!
+  "One warning per [key lang] in `missing`, sorted, naming the string file."
+  [cfg missing]
+  (doseq [[k lang] (sort-by (fn [[k l]] [(name l) (str k)]) missing)]
+    (missing-key-warning! cfg lang k)))
+
+(defmacro reporting-missing-keys
+  "Run body collecting the keys `tr` misses, then warn once per (key,
+  language) (§6.5, §11.3 item 12) — in `build`, `doctor` and `dev` alike,
+  unless `:i18n :missing-key` is `:silent`."
+  [cfg & body]
+  `(let [seen# (atom #{})
+         r#    (binding [*missing-keys* seen#] ~@body)]
+     (report-missing-keys! ~cfg @seen#)
+     r#))
+
+(defn- note-missing!
+  [cfg lang k]
+  (when-not (= :silent (get-in cfg [:i18n :missing-key]))
+    (if *missing-keys*
+      (swap! *missing-keys* conj [k lang])
+      (missing-key-warning! cfg lang k))))
+
 (defn tr
-  "Resolve a UI string key for `lang`, applying the fallback chain."
+  "Resolve a UI string key for `lang`, applying the fallback chain. A key no
+  language along it defines renders as ⟦key⟧ in dev (loud) and as the key's
+  name in a build (quiet), and is warned about either way (`note-missing!`)."
   ([ctx k] (tr ctx k nil))
   ([{:keys [strings lang cfg dev?]} k vars]
    (let [chain (config/fallback-chain cfg lang)
          hit   (some (fn [l] (get-in strings [l k])) chain)]
      (cond
-       hit (interpolate hit vars)
-       dev? (do (when (= :warn (get-in cfg [:i18n :missing-key]))
-                  (diag/warn! nil (str "missing i18n key " k " for language " lang)))
-                (str "⟦" k "⟧"))
-       :else (str (name k))))))
+       hit   (interpolate hit vars)
+       :else (do (note-missing! cfg lang k)
+                 (if dev? (str "⟦" k "⟧") (str (name k))))))))
 
 (defn resolved-lang
   "The language `tr` takes key `k` from for `lang` — the first along the

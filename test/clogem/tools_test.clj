@@ -268,7 +268,8 @@
 
 (deftest an-unused-tool-pin-warns-and-keeps-the-built-in-one
   (testing "0.2.0 accepted any :tools :chroma / :fswatcher pin; nothing runs
-            either yet, so a bad one is a warning and the config is repaired
+            chroma yet and only `bb dev` runs the pod, falling back to polling,
+            so a bad one is a warning and the config is repaired
             (Pagefind's stay errors: search-config-is-validated)"
     (doseq [[edn re check] [[{:tools {:chroma {:version "latest"}}} #":tools :chroma :version is \"latest\""
                              #(= "2.27.0" (get-in % [:tools :chroma :version]))]
@@ -286,7 +287,9 @@
             (is (empty? (diag/errors ds)) (pr-str edn))
             (is (= 1 (count ws)) (pr-str edn (map :message ws)))
             (is (re-find re (str (:message (first ws)))) (pr-str edn))
-            (is (re-find #"It has no effect in 0\.2\.0 \(nothing runs (chroma|fswatcher) yet\), so the built-in pin is used\."
+            (is (re-find (if (contains? (:tools edn) :fswatcher)
+                           #"Only `bb dev` runs the fswatcher pod, and it falls back to polling when it cannot, so the built-in pin is used\."
+                           #"It has no effect in 0\.2\.0 \(nothing runs chroma yet\), so the built-in pin is used\.")
                          (str (:hint (first ws))))
                 (:hint (first ws)))
             (is (check cfg) (pr-str edn (:tools cfg))))))))
