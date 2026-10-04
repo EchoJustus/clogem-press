@@ -266,8 +266,11 @@
     (let [[cfg ds] (load-cfg {:theme {:default-mode m}})]
       (is (empty? (diag/errors ds)) (str m))
       (is (= m (get-in cfg [:theme :default-mode])))))
-  (testing ":read is a real mode: theme.css styles body.theme-mode-read"
-    (is (str/includes? (slurp (fs/file "src/clogem/theme/resources/css/theme.css")) "body.theme-mode-read {"))))
+  (testing ":read is a real mode: theme.css styles .theme-mode-read — on
+            <html> since Phase 4 B1, so the selector is unqualified"
+    (let [css (slurp (fs/file "src/clogem/theme/resources/css/theme.css"))]
+      (is (str/includes? css "\n.theme-mode-read {"))
+      (is (not (str/includes? css "body.theme-mode-"))))))
 
 (defn- check-giscus
   "Run .github/scripts/check_giscus.py over `out`: [exit-code output]."

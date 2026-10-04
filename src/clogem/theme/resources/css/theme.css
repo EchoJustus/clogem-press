@@ -1,60 +1,110 @@
-/* clogem-press default theme — Phase 1 minimum.
+/* clogem-press default theme.
  *
- * vdoing's theming is verifiably just CSS custom properties plus body classes
- * (DESIGN.md §1.2), so there is no build step here and never will be. Phase 4
- * fills in the four colour modes and the card/line page styles; what follows is
- * the smallest sheet that makes a five-language site legible.
+ * vdoing's theming is verifiably just CSS custom properties plus classes
+ * (DESIGN.md §1.2), so there is no build step here and never will be.
+ *
+ * Colour modes (Phase 4 B1, D-P4-2, D-P4-4). The classes are on <html>:
+ * `theme-mode-*` and `theme-style-*`. The server stamps
+ * `theme-mode-<:default-mode>`; the inline head script replaces it, before
+ * the first paint, with the RESOLVED mode — light, dark or read (auto
+ * becomes light or dark) — and sets <html data-mode> to the chosen one.
+ * Without JS, `.theme-mode-auto` is the light palette plus the
+ * `prefers-color-scheme: dark` block below, which must define exactly what
+ * `.theme-mode-dark` defines (a test compares them).
+ *
+ * Every mode block defines vdoing's full variable set plus --accent and
+ * --textColorSubtle (muted text). Text, muted and accent reach WCAG AA
+ * (4.5:1) on every surface (--bodyBg, --mainBg, --sidebarBg,
+ * --customBlockBg), and --codeColor on --codeBg; `bb test` parses this file
+ * and checks every pair (theme_modes_test.clj). Read mode's code block is
+ * dark, as vdoing's is.
+ *
+ * Selectors are unqualified (`.theme-mode-dark`): 0.2.0 put the classes on
+ * <body>, and user CSS that qualified them with `body` must drop it.
  */
 
-:root {
-  --bodyBg: #fff;
-  --mainBg: #fff;
-  --sidebarBg: #fafafa;
+:root, .theme-mode-light {
+  --bodyBg: #f4f5f7;
+  --mainBg: #ffffff;
+  --sidebarBg: #ffffff;
+  --blurBg: #ffffffe6;
+  --customBlockBg: #f1f3f5;
   --textColor: #2c3e50;
-  --textColorSubtle: #6a737d;
-  --borderColor: #e5e7eb;
-  --accent: #3eaf7c;
-  --codeBg: #f6f8fa;
-  --maxWidth: 62rem;
+  --textLightenColor: #145c40;
+  --textColorSubtle: #5f6873;
+  --borderColor: #dfe2e6;
+  --accent: #1a7350;
+  --codeBg: #f1f3f5;
+  --codeColor: #24292f;
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  body.theme-mode-auto {
-    --bodyBg: #16181d;
-    --mainBg: #16181d;
-    --sidebarBg: #1b1e24;
-    --textColor: #d5d8dc;
-    --textColorSubtle: #8b949e;
-    --borderColor: #2c313a;
-    --codeBg: #1f2329;
-  }
+:root { --maxWidth: 62rem; }
+
+.theme-mode-read {
+  --bodyBg: #ece6d6;
+  --mainBg: #f5f2e9;
+  --sidebarBg: #f5f2e9;
+  --blurBg: #f5f2e9e6;
+  --customBlockBg: #f0ebdf;
+  --textColor: #3d362a;
+  --textLightenColor: #145c40;
+  --textColorSubtle: #5f5a50;
+  --borderColor: #d9cfb8;
+  --accent: #1a7350;
+  --codeBg: #282c34;
+  --codeColor: #dcdfe4;
+  color-scheme: light;
 }
 
-body.theme-mode-dark {
+.theme-mode-dark {
   --bodyBg: #16181d;
   --mainBg: #16181d;
   --sidebarBg: #1b1e24;
+  --blurBg: #16181de6;
+  --customBlockBg: #1f2329;
   --textColor: #d5d8dc;
-  --textColorSubtle: #8b949e;
+  --textLightenColor: #6cc99c;
+  --textColorSubtle: #9aa3ad;
   --borderColor: #2c313a;
+  --accent: #3eaf7c;
   --codeBg: #1f2329;
+  --codeColor: #dcdfe4;
+  color-scheme: dark;
 }
 
-body.theme-mode-read {
-  --bodyBg: #f5f2e9;
-  --mainBg: #f5f2e9;
-  --sidebarBg: #efeade;
-  --textColor: #40382c;
+/* the no-JS fallback for :auto — identical to .theme-mode-dark */
+@media (prefers-color-scheme: dark) {
+  .theme-mode-auto {
+    --bodyBg: #16181d;
+    --mainBg: #16181d;
+    --sidebarBg: #1b1e24;
+    --blurBg: #16181de6;
+    --customBlockBg: #1f2329;
+    --textColor: #d5d8dc;
+    --textLightenColor: #6cc99c;
+    --textColorSubtle: #9aa3ad;
+    --borderColor: #2c313a;
+    --accent: #3eaf7c;
+    --codeBg: #1f2329;
+    --codeColor: #dcdfe4;
+    color-scheme: dark;
+  }
 }
 
 * { box-sizing: border-box; }
 
-body {
-  margin: 0;
+/* the background is the root's, so the very first frame (and any overscroll)
+ * is in the mode */
+html {
   background: var(--bodyBg);
   color: var(--textColor);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
                "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  margin: 0;
   line-height: 1.7;
   overflow-wrap: break-word;
   word-break: normal;   /* §6.9: CJK wraps between characters, Tamil must not
@@ -63,22 +113,43 @@ body {
 
 /* §6.9 — the two Chinese scripts need separate rules, because CSS :lang()
    matches on the tag prefix and :lang(zh) alone would collapse them onto one
-   stack and produce visibly wrong shapes for one of the two. */
-:lang(zh-Hans) { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
-:lang(zh-Hant) { font-family: "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", sans-serif; }
-:lang(ta) {
+   stack and produce visibly wrong shapes for one of the two.
+   :where() keeps them at zero specificity, so `code`, `pre` and `kbd` keep
+   the monospace stack on zh and ta pages (0.2.0 rendered code in PingFang or
+   Noto Sans Tamil there, because :lang(ta) outranked `code`). */
+:where(:lang(zh-Hans)) { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+:where(:lang(zh-Hant)) { font-family: "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", sans-serif; }
+:where(:lang(ta)) {
   font-family: "Noto Sans Tamil", "Tamil Sangam MN", "Nirmala UI", Latha, Roboto, sans-serif;
   line-height: 1.85;   /* taller than the Latin default — Tamil glyphs are tall */
 }
 
 a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
+a:hover { color: var(--textLightenColor); text-decoration: underline; }
+
+/* WCAG 1.4.1: a link inside prose must not rely on colour alone — the accent
+ * against body text is only about 1.9:1 — so prose links are underlined.
+ * Navigation and chrome links are recognisable by place and need not be. */
+.clogem-content a:not(.header-anchor):not(.card-item),
+.clogem-catalogue__desc a, .clogem-feature a, .clogem-post-card__excerpt a {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+/* Icons (D-P4-6): `<svg class="clogem-icon"><use href="…icons.svg#name"/>`,
+ * sized by the text around them and coloured by it (currentColor). */
+.clogem-icon {
+  width: 1em; height: 1em; flex: none;
+  vertical-align: -0.125em;
+  overflow: visible;
+}
 
 .clogem-navbar {
   display: flex; align-items: center; gap: 1.5rem;
   padding: 0.75rem 1.25rem;
   border-bottom: 1px solid var(--borderColor);
-  position: sticky; top: 0; background: var(--bodyBg); z-index: 10;
+  position: sticky; top: 0; background: var(--blurBg); z-index: 10;
+  -webkit-backdrop-filter: saturate(150%) blur(6px); backdrop-filter: saturate(150%) blur(6px);
   flex-wrap: wrap;
 }
 .clogem-navbar__brand { font-weight: 700; font-size: 1.1rem; color: var(--textColor); }
@@ -130,21 +201,14 @@ a:hover { text-decoration: underline; }
 .clogem-main[tabindex="-1"]:focus { outline: none; }
 .clogem-article h1 { margin-top: 0; }
 .clogem-meta { color: var(--textColorSubtle); font-size: 0.85rem; display: flex; gap: 1rem; flex-wrap: wrap; }
-.clogem-langs a.is-untranslated { opacity: 0.6; }
+/* muted rather than faded: opacity took the accent below AA */
+.clogem-langs a.is-untranslated { color: var(--textColorSubtle); }
 .clogem-visually-hidden {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
 .clogem-variants { font-size: 0.9rem; display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: baseline; }
 .clogem-variants__links { display: flex; gap: 0.6rem; }
-
-/* Icons (D-P4-6): `<svg class="clogem-icon"><use href="…icons.svg#name"/>`,
- * sized by the text around them and coloured by it (currentColor). */
-.clogem-icon {
-  width: 1em; height: 1em; flex: none;
-  vertical-align: -0.125em;
-  overflow: visible;
-}
 
 /* D-P3-14: the "also available" note js/lang.js inserts at the top of the
  * main column — in the flow, so it moves the page down by its own height and
@@ -175,11 +239,14 @@ a:hover { text-decoration: underline; }
 :is(h1, h2, h3, h4, h5, h6):hover .header-anchor { opacity: 0.5; }
 
 pre.clogem-code {
-  background: var(--codeBg); padding: 0.9rem 1rem; border-radius: 6px;
+  background: var(--codeBg); color: var(--codeColor); padding: 0.9rem 1rem; border-radius: 6px;
   overflow-x: auto;   /* wide code scrolls inside its own box, never the page */
 }
-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; }
-:not(pre) > code { background: var(--codeBg); padding: 0.1em 0.35em; border-radius: 3px; }
+code, pre, kbd, samp { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+code { font-size: 0.9em; }
+/* inline code sits in the text, so it takes the text's colours, not the
+ * code block's (read mode's block is dark) */
+:not(pre) > code { background: var(--customBlockBg); padding: 0.1em 0.35em; border-radius: 3px; }
 
 table { border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }
 th, td { border: 1px solid var(--borderColor); padding: 0.4rem 0.7rem; }
@@ -230,7 +297,7 @@ img { max-width: 100%; height: auto; }
 .clogem-post-card__title { margin: 0 0 0.4rem; font-size: 1.25rem; }
 .clogem-sticky, .clogem-title-tag {
   font-size: 0.7rem; margin: 0 0.4rem; padding: 0.05rem 0.4rem; vertical-align: middle;
-  border-radius: 3px; background: var(--accent); color: #fff;
+  border-radius: 3px; background: var(--accent); color: var(--mainBg);
 }
 .clogem-title-tag { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
 .clogem-post-card__more { font-size: 0.9rem; }
@@ -278,7 +345,7 @@ img { max-width: 100%; height: auto; }
 .clogem-toc li.is-active > a { color: var(--accent); font-weight: 600; }
 
 /* ---- Phase 2: containers and card lists (class names mirror vdoing) ---- */
-.custom-block { margin: 1rem 0; padding: 0.6rem 1rem; border-left: 4px solid var(--borderColor); background: var(--codeBg); border-radius: 4px; }
+.custom-block { margin: 1rem 0; padding: 0.6rem 1rem; border-left: 4px solid var(--borderColor); background: var(--customBlockBg); border-radius: 4px; }
 .custom-block-title, .custom-block.theorem > .title { font-weight: 700; margin: 0 0 0.3rem; }
 .custom-block.tip { border-color: var(--accent); }
 .custom-block.warning { border-color: #e7c000; }
@@ -301,3 +368,39 @@ img { max-width: 100%; height: auto; }
 .card-img-list .box-img img { width: 100%; height: 100%; display: block; }
 .card-img-list .box-info { padding: 0.75rem; }
 .card-img-list .title { font-weight: 700; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ---- Phase 4 B1: reduced motion and print (D-P4-4) ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  /* the light palette whatever the mode: html[class] outranks every
+   * .theme-mode-* block */
+  html[class] {
+    --bodyBg: #ffffff;
+    --mainBg: #ffffff;
+    --sidebarBg: #ffffff;
+    --blurBg: #ffffff;
+    --customBlockBg: #f1f3f5;
+    --textColor: #1f2328;
+    --textLightenColor: #145c40;
+    --textColorSubtle: #5f6873;
+    --borderColor: #dfe2e6;
+    --accent: #1a7350;
+    --codeBg: #f1f3f5;
+    --codeColor: #24292f;
+    color-scheme: light;
+  }
+  .clogem-navbar, .clogem-sidebar, .clogem-toc, .clogem-mode, .clogem-search,
+  .clogem-comments, .clogem-lang-banner, .clogem-prev-next, .header-anchor { display: none !important; }
+  .clogem-shell, .clogem-shell--toc, .clogem-shell--single.clogem-shell--toc {
+    display: block; max-width: none; padding: 0;
+  }
+  .clogem-content a { text-decoration: underline; }
+  pre.clogem-code { white-space: pre-wrap; overflow: visible; }
+}
