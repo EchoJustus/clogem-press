@@ -405,6 +405,25 @@ img { max-width: 100%; height: auto; }
 .card-img-list .box-info { padding: 0.75rem; }
 .card-img-list .title { font-weight: 700; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
 
+/* ---- Phase 4 B1: Pagefind follows the mode (D-P4-5) ----
+ * Pagefind's Component UI declares its --pf-* defaults on :root, and its
+ * stylesheet is linked after this one; `html[class]` (0,1,1) outranks
+ * `:root` (0,1,0) wherever it is, and every page's <html> has a class. The
+ * modal, the trigger, results and filters all draw from these. */
+html[class] {
+  --pf-text: var(--textColor);
+  --pf-text-secondary: var(--textColorSubtle);
+  --pf-text-muted: var(--textColorSubtle);
+  --pf-background: var(--mainBg);
+  --pf-border: var(--borderColor);
+  --pf-border-focus: var(--accent);
+  --pf-skeleton: var(--customBlockBg);
+  --pf-skeleton-shine: var(--bodyBg);
+  --pf-hover: var(--customBlockBg);
+  --pf-mark: var(--textColor);
+  --pf-outline-focus: var(--accent);
+}
+
 /* ---- Phase 4 B1: reduced motion and print (D-P4-4) ---- */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
