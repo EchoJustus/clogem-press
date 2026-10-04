@@ -379,20 +379,24 @@
                        [lang v]  (sort-by key (:variants group))
                        :when (not (catalogue-node model group (:rel-path v)))]
                    [lang v])
+          ;; a variant whose parse throws is left out: its page parses it
+          ;; again and fails naming its URI, as it always has
           parsed (highlight/parallel-map
                   (jobs)
                   (fn [[lang v]]
-                    (diag/collecting (markdown/parse (:body v) (link-context model model lang (:rel-path v)))))
+                    (try (diag/collecting (markdown/parse (:body v) (link-context model model lang (:rel-path v))))
+                         (catch Exception _ nil)))
                   vs)]
-      (highlight/warm! hl (mapcat (fn [[ast]] (highlight/pairs hl ast)) parsed))
+      (highlight/warm! hl (mapcat (fn [[ast]] (when ast (highlight/pairs hl ast))) parsed))
       (into {}
-            (map (fn [[_ v] [ast ds]]
-                   (let [[_ unknown] (diag/collecting
-                                      (doseq [n (highlight/code-nodes ast)]
-                                        (highlight/warn-unknown! hl (:rel-path v)
-                                                                 (:lang (highlight/parse-info (:info n))))))]
-                     [(:path v) [ast (into (vec ds) unknown)]]))
-                 vs parsed)))))
+            (keep (fn [[[_ v] [ast ds]]]
+                    (when ast
+                      (let [[_ unknown] (diag/collecting
+                                         (doseq [n (highlight/code-nodes ast)]
+                                           (highlight/warn-unknown! hl (:rel-path v)
+                                                                    (:lang (highlight/parse-info (:info n))))))]
+                        [(:path v) [ast (into (vec ds) unknown)]]))))
+            (map vector vs parsed)))))
 
 (defn page-map
   "{uri → (fn [] hiccup)} for every emitted document.

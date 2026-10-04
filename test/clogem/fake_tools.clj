@@ -142,8 +142,8 @@
   Every run appends its arguments to `calls.txt` and its working
   directory to `cwd.txt` beside itself. `:exit` makes the highlighting
   runs (not `--list`) fail with that status; `:split-wrong` makes them
-  print one block too many."
-  [dir & {:keys [exit split-wrong]}]
+  print one block too many; `:styles-exit` makes `--html-styles` fail."
+  [dir & {:keys [exit split-wrong styles-exit]}]
   (let [f (fs/path dir "chroma")]
     (fs/create-dirs dir)
     (doseq [n ["chroma-2.27.0-list.txt" "github.css" "github-dark.css"]]
@@ -169,6 +169,7 @@
             "  esac"
             "done"
             "if [ -n \"$styles\" ]; then"
+            (if styles-exit (str "  echo 'fake chroma: no styles' >&2; exit " styles-exit) ":")
             "  if [ \"$style\" = github-dark ]; then cat \"$d/github-dark.css\"; else cat \"$d/github.css\"; fi"
             "  exit 0"
             "fi"

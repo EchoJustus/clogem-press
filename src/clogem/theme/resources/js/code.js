@@ -47,7 +47,7 @@
   }
 
   var status = document.createElement("span");
-  status.className = "clogem-visually-hidden";
+  status.className = "clogem-visually-hidden clogem-code-status";
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
   document.body.appendChild(status);

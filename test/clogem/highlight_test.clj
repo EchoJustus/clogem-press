@@ -453,6 +453,21 @@
           (is (not (fs/exists? out)) (str what ": nothing is written"))))
       {:fake-opts fake-opts})))
 
+(deftest a-failed-style-run-fails-the-build-and-only-warns-in-dev
+  (with-site {"01.Guide/01.a.md" (article "A" "/pages/aaaaa1/" "```clojure\n(a)\n```\n")}
+    (fn [dir out _]
+      (let [{:keys [error]} (build! dir out)
+            msg (str (ex-message error))]
+        (is (= 1 (:babashka/exit (ex-data error))))
+        (is (re-find #"--style=github failed \(exit 4\): fake chroma: no styles" msg) msg)
+        (is (str/includes? msg "--no-highlight") msg)
+        (is (not (fs/exists? out))))
+      (let [{:keys [error err]} (build! dir out {:clogem/dev-loop? true})]
+        (is (nil? error) (str error))
+        (is (= 1 (count (re-seq #"fake chroma: no styles" err))) err)
+        (is (str/includes? (page out "pages" "aaaaa1") "<code class=\"language-clojure\">(a)\n</code>"))))
+    {:fake-opts {:styles-exit 4}}))
+
 (deftest a-missing-binary-fails-the-build-naming-no-highlight
   (with-site {"01.Guide/01.a.md" (article "A" "/pages/aaaaa1/" "```clojure\n(a)\n```\n")}
     (fn [dir out bin]

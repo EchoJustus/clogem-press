@@ -285,6 +285,14 @@
 
 (defn- soft? [cfg] (boolean (:clogem/dev-loop? cfg)))
 
+(defn- jobs
+  "How many Chroma processes run at once: `CLOGEM_JOBS` when it is a
+  positive integer, else the number of processors — the render pool's
+  bound (`clogem.render/jobs`, which warns about a bad value)."
+  []
+  (let [n (some-> (System/getenv "CLOGEM_JOBS") str/trim parse-long)]
+    (if (and n (pos? n)) n (.availableProcessors (Runtime/getRuntime)))))
+
 (defn- with-hint
   "A `clogem.tools` failure, with the hint naming `--no-highlight`."
   [^Throwable e]
@@ -329,14 +337,16 @@
   (concat (for [[_ g] (:articles model) [_ v] (:variants g)] (:body v))
           (map :body (vals (:site-files model)))))
 
+(declare render-stylesheet)
+
 (defn session
   "What a build highlights with, or nil when highlighting is off, the site
   has no code (`code-in?` over `sources`: a site without a code block never
   fetches Chroma), or, in a dev rebuild, Chroma is unavailable: the
   binary, its sha256, the lexer table, the styles, and a per-build set of
-  the unknown languages already warned about. Fetches and verifies Chroma
-  on first use: in `build` a failure raises (exit 1), in a dev rebuild it
-  warns once and returns nil."
+  the unknown languages already warned about, and the bytes of
+  highlight.css. Fetches and verifies Chroma on first use: in `build` a
+  failure raises (exit 1), in a dev rebuild it warns once and returns nil."
   [cfg model]
   (when (and (enabled? cfg) (code-in? (sources model)))
     (let [pin [(tools/version tools/chroma cfg) (get-in cfg [:tools :chroma]) (tools/getenv "CLOGEM_CHROMA")]]
@@ -345,7 +355,9 @@
           (let [bin     (tools/ensure-binary! tools/chroma cfg)
                 bin-sha (binary-sha bin)
                 {:keys [lexers styles] n :count} (listing bin bin-sha)]
-            {:bin bin :bin-sha bin-sha
+            ;; the stylesheet is rendered here, so its Chroma runs fail (or,
+            ;; in a dev rebuild, warn) like every other part of the session
+            (as-> {:bin bin :bin-sha bin-sha
              :version (tools/version tools/chroma cfg)
              :lexers lexers :lexer-count n
              :style (check-style! styles :style (get-in cfg [:highlight :style]))
@@ -354,7 +366,8 @@
              :soft? (soft? cfg)
              :broken (atom false)
              :warned (atom #{})
-             :jobs (max 1 (.availableProcessors (Runtime/getRuntime)))})
+             :jobs (jobs)} s
+              (assoc s :css (render-stylesheet s))))
           (catch clojure.lang.ExceptionInfo e
             (if (soft? cfg)
               (do (dev-warn! pin e) nil)
@@ -628,8 +641,7 @@
           (.put ^java.util.concurrent.ConcurrentHashMap style-css k out)
           out))))
 
-(defn stylesheet
-  "The bytes of `css/highlight.css` for this build's session."
+(defn- render-stylesheet
   ^bytes [session]
   (.getBytes ^String (css-from-rules {:light      (style-rules (style-css! session (:style session)))
                                       :dark       (style-rules (style-css! session (:dark-style session)))
@@ -637,3 +649,8 @@
                                       :dark-name  (:dark-style session)
                                       :version    (:version session)})
              "UTF-8"))
+
+(defn stylesheet
+  "The bytes of `css/highlight.css` for this build's session."
+  ^bytes [session]
+  (:css session))
