@@ -79,4 +79,8 @@
  :mode/auto                   "Ikut sistem"
  :mode/light                  "Cerah"
  :mode/dark                   "Gelap"
- :mode/read                   "Bacaan"}
+ :mode/read                   "Bacaan"
+
+ ;; Code blocks (Phase 4 C), the copy button. Awaiting native review (CHANGELOG, Unreleased).
+ :code/copy                   "Salin"
+ :code/copied                 "Disalin"}

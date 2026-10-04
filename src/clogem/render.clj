@@ -19,6 +19,7 @@
             [clogem.assets :as assets]
             [clogem.config :as config]
             [clogem.diag :as diag]
+            [clogem.highlight :as highlight]
             [clogem.i18n :as i18n]
             [clogem.markdown :as markdown]
             [clogem.model :as model]
@@ -361,6 +362,38 @@
                                  " is not an integer from 0 to 5; using " default "."))
                 default))))
 
+(declare jobs)
+
+(defn- parsed-variants
+  "Phase 4 C (§11.3 item 10): with highlighting on, every article variant's
+  body parsed ONCE, up front, in parallel — {source path → [ast
+  diagnostics]} — so its code blocks reach Chroma in a few batched runs
+  (`highlight/warm!`) before any page renders. The article page reuses the
+  AST and re-emits the parse's diagnostics into its own sink, so a build
+  reports what it did when each page parsed itself; an unknown code
+  language is warned about here, once, at its first use in permalink and
+  language order. nil with highlighting off: pages parse as before."
+  [model]
+  (when-let [hl (get-in model [:cfg :clogem/highlight])]
+    (let [vs     (for [[_ group] (sort-by key (:articles model))
+                       [lang v]  (sort-by key (:variants group))
+                       :when (not (catalogue-node model group (:rel-path v)))]
+                   [lang v])
+          parsed (highlight/parallel-map
+                  (jobs)
+                  (fn [[lang v]]
+                    (diag/collecting (markdown/parse (:body v) (link-context model model lang (:rel-path v)))))
+                  vs)]
+      (highlight/warm! hl (mapcat (fn [[ast]] (highlight/pairs hl ast)) parsed))
+      (into {}
+            (map (fn [[_ v] [ast ds]]
+                   (let [[_ unknown] (diag/collecting
+                                      (doseq [n (highlight/code-nodes ast)]
+                                        (highlight/warn-unknown! hl (:rel-path v)
+                                                                 (:lang (highlight/parse-info (:info n))))))]
+                     [(:path v) [ast (into (vec ds) unknown)]]))
+                 vs parsed)))))
+
 (defn page-map
   "{uri → (fn [] hiccup)} for every emitted document.
 
@@ -389,6 +422,7 @@
         model   (assoc model :by-rel-path (rel-path-index model) :strings strings :index-paths paths
                        ;; which languages have an Atom feed, for autodiscovery (D-P3-3)
                        :feed-langs (set (seo/feed-langs model)))
+        parsed  (parsed-variants model)
         prefix-all? (get-in cfg [:i18n :prefix-default?])
         ;; D-P3-10: the search UI strings a language needs, worked out once
         ;; per language rather than once per page (it reads the site's i18n
@@ -433,7 +467,9 @@
                                            :page-component (:page-component group)))
                ;; parse ONCE: the body hiccup and the TOC come from the same
                ;; AST, so TOC ids and heading anchors agree by construction
-               (let [ast   (markdown/parse (:body variant) lc)
+               (let [[ast ds] (or (get parsed (:path variant))
+                                  [(markdown/parse (:body variant) lc)])
+                     _     (diag/emit-all! ds)
                      depth (toc-depth cfg variant)]
                  (page/article (assoc ctx :toc (markdown/toc ast depth))
                                ;; the theme renders the title; the body's own
@@ -1154,6 +1190,11 @@
   {:outputs [{:file :bytes}] :pages n :articles n :variants n :out dir}."
   [cfg model]
   (let [out         (config/out-dir cfg)
+        ;; §11.3 item 10: Chroma is fetched, verified and listed before a
+        ;; page renders — in `build` a failure stops here, before anything
+        ;; is written; highlight.css is one of the theme files
+        hl          (highlight/session cfg model)
+        cfg         (cond-> cfg hl (assoc :clogem/highlight hl))
         theme-files (assets/files cfg)
         ;; the fingerprints every page's asset URLs carry are those of the
         ;; very bytes asset-outputs writes (D-P4-7)

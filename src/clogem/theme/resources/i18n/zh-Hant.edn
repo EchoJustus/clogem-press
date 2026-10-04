@@ -79,4 +79,8 @@
  :mode/auto                   "跟隨系統"
  :mode/light                  "淺色模式"
  :mode/dark                   "深色模式"
- :mode/read                   "閱讀模式"}
+ :mode/read                   "閱讀模式"
+
+ ;; 程式碼區塊（Phase 4 C）：js/code.js 加入的複製按鈕。
+ :code/copy                   "複製"
+ :code/copied                 "已複製"}

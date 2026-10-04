@@ -17,7 +17,11 @@
  * (4.5:1) on every surface (--bodyBg, --mainBg, --sidebarBg,
  * --customBlockBg), and --codeColor on --codeBg; `bb test` parses this file
  * and checks every pair (theme_modes_test.clj). Read mode's code block is
- * dark, as vdoing's is.
+ * dark, as vdoing's is. Code blocks (Phase 4 C, §11.3 item 10) also take
+ * --codeLineNumber (line numbers and the language label) and --codeHlBg (a
+ * highlighted line): every Chroma token colour of highlight.css, the line
+ * numbers and --codeColor reach 4.5:1 on both --codeBg and --codeHlBg
+ * (highlight_test.clj).
  *
  * Selectors are unqualified (`.theme-mode-dark`): 0.2.0 put the classes on
  * <body>, and user CSS that qualified them with `body` must drop it.
@@ -34,8 +38,10 @@
   --textColorSubtle: #5f6873;
   --borderColor: #dfe2e6;
   --accent: #1a7350;
-  --codeBg: #f1f3f5;
+  --codeBg: #f6f8fa;
   --codeColor: #24292f;
+  --codeLineNumber: #5f6873;
+  --codeHlBg: #fffbdd;
   color-scheme: light;
 }
 
@@ -52,8 +58,10 @@
   --textColorSubtle: #5f5a50;
   --borderColor: #d9cfb8;
   --accent: #1a7350;
-  --codeBg: #282c34;
+  --codeBg: #252526;
   --codeColor: #dcdfe4;
+  --codeLineNumber: #9aa3ad;
+  --codeHlBg: #1e2620;
   color-scheme: light;
 }
 
@@ -70,6 +78,8 @@
   --accent: #3eaf7c;
   --codeBg: #1f2329;
   --codeColor: #dcdfe4;
+  --codeLineNumber: #9aa3ad;
+  --codeHlBg: #1a2620;
   color-scheme: dark;
 }
 
@@ -88,6 +98,8 @@
     --accent: #3eaf7c;
     --codeBg: #1f2329;
     --codeColor: #dcdfe4;
+    --codeLineNumber: #9aa3ad;
+    --codeHlBg: #1a2620;
     color-scheme: dark;
   }
 }
@@ -274,10 +286,52 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
 .header-anchor { opacity: 0; margin-left: 0.35rem; text-decoration: none; }
 :is(h1, h2, h3, h4, h5, h6):hover .header-anchor { opacity: 0.5; }
 
+/* Code blocks (§11.3 item 10). The <code> is the scroll box, not the <pre>,
+ * so the language label and the copy button (both pinned to the <pre>'s
+ * corner) stay put while wide code scrolls on its own — never the page.
+ * Highlighted code is one `.line` per line; the <code> is a one-column
+ * grid, so every line is as wide as the widest and a highlighted line's
+ * background runs the whole scroll width. Line numbers are a CSS counter,
+ * never text: nothing to copy, nothing for Pagefind to glue to the code. */
 pre.clogem-code {
-  background: var(--codeBg); color: var(--codeColor); padding: 0.9rem 1rem; border-radius: 6px;
-  overflow-x: auto;   /* wide code scrolls inside its own box, never the page */
+  position: relative;
+  background: var(--codeBg); color: var(--codeColor); padding: 0; border-radius: 6px;
+  max-width: 100%; min-width: 0;
+  overflow: hidden;   /* a clipping box: its content never widens the layout */
 }
+pre.clogem-code > code {
+  display: grid; grid-template-columns: minmax(100%, max-content);
+  overflow-x: auto;   /* wide code scrolls inside its own box, never the page */
+  padding: 0.9rem 1rem; counter-reset: clogem-ln;
+}
+pre.clogem-code[data-lang] > code, pre.clogem-code.has-copy > code { padding-top: 1.9rem; }
+pre.clogem-code[data-lang]::before {
+  content: attr(data-lang);
+  position: absolute; top: 0.35rem; right: 0.8rem;
+  font-size: 0.75rem; line-height: 1.2; color: var(--codeLineNumber);
+  pointer-events: none;
+}
+pre.clogem-code.has-copy[data-lang]::before { right: 2.6rem; }
+pre.clogem-code .line { display: block; }
+pre.clogem-code .line.hl { background: var(--codeHlBg); box-shadow: inset 3px 0 0 var(--accent); }
+pre.clogem-code.line-numbers .line::before {
+  counter-increment: clogem-ln; content: counter(clogem-ln);
+  display: inline-block; width: 2ch; margin-right: 1.25ch; text-align: right;
+  color: var(--codeLineNumber); -webkit-user-select: none; user-select: none;
+}
+pre.clogem-code.ln-w3 .line::before { width: 3ch; }
+pre.clogem-code.ln-w4 .line::before { width: 4ch; }
+pre.clogem-code.ln-w5 .line::before { width: 5ch; }
+pre.clogem-code.ln-w6 .line::before { width: 6ch; }
+.clogem-copy {
+  position: absolute; top: 0.25rem; right: 0.35rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 1.6rem; padding: 0; border: 1px solid transparent; border-radius: 4px;
+  background: transparent; color: var(--codeLineNumber); cursor: pointer; font: inherit;
+}
+.clogem-copy:hover { border-color: var(--codeLineNumber); }
+.clogem-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.clogem-copy.is-copied { color: var(--codeColor); }
 code, pre, kbd, samp { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
 code { font-size: 0.9em; }
 /* inline code sits in the text, so it takes the text's colours, not the
@@ -447,8 +501,10 @@ html[class] {
     --textColorSubtle: #5f6873;
     --borderColor: #dfe2e6;
     --accent: #1a7350;
-    --codeBg: #f1f3f5;
+    --codeBg: #f6f8fa;
     --codeColor: #24292f;
+    --codeLineNumber: #5f6873;
+    --codeHlBg: #fffbdd;
     color-scheme: light;
   }
   .clogem-navbar, .clogem-sidebar, .clogem-toc, .clogem-mode, .clogem-search,
@@ -457,5 +513,7 @@ html[class] {
     display: block; max-width: none; padding: 0;
   }
   .clogem-content a { text-decoration: underline; }
-  pre.clogem-code { white-space: pre-wrap; overflow: visible; }
+  pre.clogem-code, pre.clogem-code > code { white-space: pre-wrap; overflow: visible; }
+  pre.clogem-code > code { display: block; }
+  .clogem-copy { display: none !important; }
 }

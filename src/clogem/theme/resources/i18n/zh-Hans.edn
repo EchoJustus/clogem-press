@@ -76,4 +76,8 @@
  :mode/auto                   "跟随系统"
  :mode/light                  "浅色模式"
  :mode/dark                   "深色模式"
- :mode/read                   "阅读模式"}
+ :mode/read                   "阅读模式"
+
+ ;; 代码块（Phase 4 C）：js/code.js 添加的复制按钮。
+ :code/copy                   "复制"
+ :code/copied                 "已复制"}

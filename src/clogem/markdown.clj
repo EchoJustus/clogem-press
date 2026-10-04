@@ -9,7 +9,7 @@
                                 box instead of the author's HTML.
     :heading                    anchor link built from the pre-computed slug
     :link                       permalink-aware rewriting with dead-link warnings
-    :code                       plain fenced output (Chroma arrives in Phase 4)
+    :code                       `clogem.highlight/code-block` (Chroma, Phase 4 C)
 
   ## Heading slugs: what nextjournal/markdown actually does
 
@@ -44,6 +44,7 @@
             [nextjournal.markdown :as md]
             [clogem.containers :as containers]
             [clogem.diag :as diag]
+            [clogem.highlight :as highlight]
             [clogem.util :as u]))
 
 (defn anchor-id
@@ -176,16 +177,11 @@
                             :alt (or alt (md/node->text node))}
                      title (assoc :title title))]))
 
-         ;; Phase 1 emits plain fenced code. Phase 4 swaps in Chroma behind the
-         ;; same seam, which is why the class name already follows the
-         ;; `language-x` convention highlighters expect.
+         ;; Phase 4 Task C: Chroma behind the seam Phase 1 left here
+         ;; (`clogem.highlight`). The fence info is parsed from the raw
+         ;; `:info` string — `js{1,3-5}` used to leak into the class.
          :code
-         (fn [_ctx node]
-           (let [lang (some-> (:info node) (str/split #"\s+") first u/blank->nil)
-                 text (apply str (map :text (:content node)))]
-             [:pre {:class (str "clogem-code" (when lang (str " language-" lang)))}
-              [:code (cond-> {} lang (assoc :class (str "language-" lang)))
-               text]]))))
+         (fn [_ctx node] (highlight/code-block link-ctx node))))
 
 ;; ---------------------------------------------------------------------------
 ;; Public API
