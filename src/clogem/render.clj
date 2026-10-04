@@ -693,6 +693,10 @@
                     (catch java.io.IOException _ false)))
       (recur (fs/parent d)))))
 
+(def ^:private temp-marker
+  "What names a temp file of `write-atomically!` (§11.3 item 11)."
+  ".clogem-tmp-")
+
 (defn sweep-stale-html!
   "Delete the `.html` files under `out` that this build did not write — the
   pages of articles since deleted or moved — so neither `bb serve` nor
@@ -700,15 +704,25 @@
   `.html` files, only inside `out`, never through a link: a symlinked
   directory is not descended and a symlink is never deleted. `<out>/pagefind/`
   is left to `search/run!`, which replaces it whole. Directories emptied by
-  the sweep are removed. Returns the files deleted."
+  the sweep are removed. Returns the files deleted.
+
+  `<out>/clogem/` is the generator's own directory (§11.3 item 12): every
+  file in it is one this build wrote, so anything else there — a deleted
+  `overrides/custom.css`, a theme file since dropped — is swept too,
+  whatever its extension, under the same guards. A temp file
+  (`.clogem-tmp-…`) is left to `sweep-temp-files!`, which knows whether its
+  build is still running."
   [out written]
   (let [out     (fs/normalize (fs/absolutize out))
         keep?   (into #{} (map #(str (fs/normalize (fs/absolutize %)))) written)
         bundle  (fs/path out search/output-subdir)
+        theme   (fs/path out "clogem")
         stale   (when (fs/directory? out {:nofollow-links true})
                   (->> (fs/glob out "**" {:follow-links false :hidden true})
                        (map #(fs/normalize (fs/absolutize %)))
-                       (filter #(and (html-file? %)
+                       (filter #(and (or (html-file? %)
+                                         (and (str/starts-with? (str %) (str theme java.io.File/separator))
+                                              (not (str/includes? (str (fs/file-name %)) temp-marker))))
                                      (fs/regular-file? % {:nofollow-links true})
                                      (str/starts-with? (str %) (str out java.io.File/separator))
                                      (not (str/starts-with? (str %) (str bundle java.io.File/separator)))
@@ -806,8 +820,6 @@
 ;; its bytes changed, so a rebuild with no source change writes nothing at
 ;; all. An I/O failure WHILE writing (disk full, an unwritable directory) can
 ;; still leave some files updated: there is no transaction over a directory.
-
-(def ^:private temp-marker ".clogem-tmp-")
 
 (def ^:private temp-max-age-ms
   "A temp file older than this is abandoned whoever wrote it: no build holds
@@ -1182,14 +1194,18 @@
   deletes only the temp files killed builds abandoned (`sweep-temp-files!`)
   and the directories either sweep leaves empty — `CNAME`, `.nojekyll`, a
   verification file the site owner or a CI step put there all stay.
-  Returns the render summary plus {:written :unchanged :stale}."
+  Returns the render summary plus {:written :unchanged :stale :stale-theme}:
+  stale pages, and stale files under `<out>/clogem/`, which is the
+  generator's own (`sweep-stale-html!`)."
   [{:keys [outputs reserved out] :as rendered}]
   (fs/create-dirs out)
   (let [{:keys [written unchanged files]} (write-outputs! out outputs reserved)
-        stale (sweep-stale-html! out files)]
+        stale (sweep-stale-html! out files)
+        pages (count (filter html-file? stale))]
     (-> rendered
         (dissoc :outputs :reserved)
-        (assoc :written written :unchanged unchanged :stale (count stale)))))
+        (assoc :written written :unchanged unchanged :stale pages
+               :stale-theme (- (count stale) pages)))))
 
 (defn build!
   "Render, then export: `render-site`, then `write-site!`. Returns a summary

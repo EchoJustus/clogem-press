@@ -217,6 +217,63 @@
                   "fix the cause, or build with `--no-search`.")))
     {:binary bin :output output}))
 
+(def ^:private staging-re
+  "`<out>/.pagefind-staging-<pid>-<nanos>` and `.pagefind-old-<pid>-<nanos>`:
+  `run-staged!`'s working directories."
+  #"^\.pagefind-(?:staging|old)-(\d+)-\d+$")
+
+(defn sweep-staging!
+  "Remove the staging and retired bundles `run-staged!` runs that were
+  killed left in `out`: those of a process no longer alive, and this
+  process's own (it runs one index at a time, so none of them is in use).
+  Never through a link. Returns the paths deleted."
+  [out]
+  (let [me (.pid (java.lang.ProcessHandle/current))]
+    (when (fs/directory? out)
+      (vec
+       (for [p (fs/list-dir out)
+             :let [[_ pid] (re-matches staging-re (str (fs/file-name p)))]
+             :when (and pid
+                        (let [pid (parse-long pid)]
+                          (or (= me pid) (not (.isPresent (java.lang.ProcessHandle/of pid))))))]
+         (do (if (fs/directory? p {:nofollow-links true}) (fs/delete-tree p) (fs/delete-if-exists p))
+             p))))))
+
+(defn run-staged!
+  "`bb dev`'s indexer (DESIGN.md §5.4, §11.3 item 12): index into a fresh
+  `<out>/.pagefind-staging-…/` (`--output-path`), then swap it in for
+  `<out>/pagefind/` with two renames — so the page a reload has just loaded
+  keeps searching the previous bundle until the new one is complete, rather
+  than 404ing while `run!` deletes it and Pagefind rebuilds it. The staging
+  directory holds no HTML, so neither Pagefind nor the stale-HTML sweep
+  sees it. `bb build` keeps `run!`. Returns {:binary :output}."
+  [cfg]
+  (let [bin     (ensure-binary! cfg)
+        out     (config/out-dir cfg)
+        tag     (str (.pid (java.lang.ProcessHandle/current)) "-" (System/nanoTime))
+        staging (fs/path out (str ".pagefind-staging-" tag))
+        retired (fs/path out (str ".pagefind-old-" tag))
+        live    (fs/path out output-subdir)]
+    (sweep-staging! out)
+    (try
+      (let [{:keys [exit] :as r}
+            (try (p/shell {:out :string :err :string :continue true}
+                          bin "--site" (str out) "--output-path" (str staging))
+                 (catch Exception e
+                   (fail! (str "could not run " bin ": " (ex-message e)))))
+            output (str (:out r) (:err r))]
+        (when-not (zero? exit)
+          (fail! (str "Pagefind exited " exit ":\n" (str/trimr output))
+                 "The previous search index is still in place."))
+        (when (fs/exists? live {:nofollow-links true})
+          (fs/move live retired {:atomic-move true}))
+        (fs/move staging live {:atomic-move true})
+        {:binary bin :output output})
+      (finally
+        (doseq [d [staging retired]
+                :when (fs/exists? d {:nofollow-links true})]
+          (if (fs/directory? d {:nofollow-links true}) (fs/delete-tree d) (fs/delete d)))))))
+
 (defn index!
   "`run!`, then read back what Pagefind wrote: {:languages n :pages n}, from
   `pagefind-entry.json`."
