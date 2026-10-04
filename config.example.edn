@@ -153,6 +153,30 @@
                              ; Cross-language search (pagefind.mergeIndex) is
                              ; deferred to Phase 4 (D-P3-11).
 
+ ;; ----------------------------------------------------------- highlight ----
+ ;; §11.3 item 10: code blocks are highlighted by Chroma at build time — ON BY
+ ;; DEFAULT. The first build of a site with a code block fetches Chroma (about
+ ;; 8 MB, sha256-verified, cached outside the site under :tools below); a
+ ;; failed fetch or a failed Chroma run fails `build` (exit 1) and only warns
+ ;; in `bb dev`. `--no-highlight` (build, dev) or :provider :none renders code
+ ;; as plain <pre><code>. Every bad value here is a warning, and the default
+ ;; is used.
+ :highlight {:provider     :chroma   ; :chroma | :none
+             :line-numbers true      ; drawn by CSS, never copied or indexed;
+                                     ; ```js:no-line-numbers / ```js:line-numbers
+                                     ; override it for one block
+             :copy-button  true      ; js/code.js: a copy button where the
+                                     ; browser has the clipboard API
+             :style        "github"        ; light mode (and print)
+             :dark-style   "github-dark"}  ; dark AND reading mode (its code
+                                           ; block is dark). Any style
+                                           ; `chroma --list` names; each must
+                                           ; keep tokens at 4.5:1 on the
+                                           ; theme's --codeBg — the defaults do
+ ;; Fences: ```clojure, ```clj, ```edn — a lexer's name, alias or file
+ ;; extension. ```js{1,3-5} or ```js {2} highlights lines. An unknown
+ ;; language is plain text, with one warning per language per build.
+
  ;; --------------------------------------------------------------- tools ----
  ;; D-P3-8: fetched over HTTPS (honouring HTTPS_PROXY / HTTP_PROXY, NO_PROXY,
  ;; and user:pass@ in the proxy URL), sha256-checked against a per-platform
@@ -180,10 +204,12 @@
          ;;                                                      ; CLOGEM_PAGEFIND (relative to the cwd):
          ;;                                                      ; skips download + verification
          ;;            :url  "https://mirror.example/v{{version}}/pagefind_extended-v{{version}}-{{platform}}.tar.gz"}
-         ;; Chroma, the syntax highlighter (MIT). Fetchable now; rendering uses
-         ;; it from Phase 4 Task C. Env CLOGEM_CHROMA. Its eight platform hashes
-         ;; are built in, from upstream's chroma-2.27.0-checksums.txt:
-         ;; {linux,darwin,windows}-{amd64,arm64}, linux-386, windows-386.
+         ;; Chroma, the syntax highlighter (MIT), run by `build` under
+         ;; :highlight {:provider :chroma}. Env CLOGEM_CHROMA. Its eight platform
+         ;; hashes are built in, from upstream's chroma-2.27.0-checksums.txt:
+         ;; {linux,darwin,windows}-{amd64,arm64}, linux-386, windows-386. A bad
+         ;; pin here is an error, as for :pagefind. The styles are not set here:
+         ;; they are :highlight :style and :dark-style.
          :chroma {:version "2.27.0"}
          ;; :chroma {:version "2.27.0"
          ;;          :sha256 {"linux-amd64" "91e1…" "darwin-arm64" "92f4…"}
