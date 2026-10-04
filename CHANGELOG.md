@@ -2,8 +2,82 @@
 
 ## Unreleased
 
-Phase 4, Task A — foundations (DESIGN.md §8, §11.3 items 7, 11, 16, 18).
-The version stays 0.2.0.
+Phase 4, Task B1 — colour modes, an accessible palette, the mode toggle and
+icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
+(§11.3 items 7, 11, 16, 18). The version stays 0.2.0.
+
+### Breaking (B1)
+
+- **The mode and page-style classes moved from `<body>` to `<html>`.**
+  `theme-mode-*` and `theme-style-*` are now on `<html>` (with
+  `data-default-mode`, and `data-mode` once the head script has run);
+  `<body>` keeps `lang-*` and `page-*`. The theme's selectors are
+  unqualified (`.theme-mode-dark`). User CSS written as
+  `body.theme-mode-dark { … }` no longer matches: drop `body`.
+
+### Added (B1)
+
+- **Colour modes that work from the first frame** (D-P4-2). An inline
+  script at the top of every `<head>` (byte-identical everywhere, 551
+  bytes, CSP `'sha256-aykGrfu05czJ6oIj+Xn+Qrjxa7JG8hF3RGl0W0liGmw='`)
+  applies the reader's stored mode — or `:theme :default-mode` — before any
+  stylesheet loads, resolves *Follow system* to light or dark, and follows
+  an OS change live. Without JavaScript, `:default-mode` applies and
+  *Follow system* follows the OS through a media query.
+  `<meta name="color-scheme" content="light dark">` and a per-mode
+  `color-scheme`, so scrollbars and form controls match.
+- **A mode toggle in the navbar** (D-P4-3): a menu button opening *Follow
+  system*, *Light*, *Dark* and *Reading*, each with an icon; Enter or Space
+  opens it, the arrow keys move, Escape closes it. Revealed by JavaScript,
+  so there is never a dead control. The choice is remembered
+  (`localStorage['clogem-mode']`) and shared between tabs.
+  `window.clogem.getMode()` / `setMode(m)` and a `clogem:modechange` event
+  for scripts. giscus follows the mode, including on its first load.
+- **A new, WCAG AA palette in every mode** (D-P4-4): new light and reading
+  backgrounds, a darker accent (`#1a7350`) and muted text in light and
+  reading modes, a lighter muted text in dark mode, and a dark code block in
+  reading mode (as vdoing has). Text, muted text and links reach 4.5:1 or
+  better on every surface — checked by `bb test` against `theme.css`.
+- **Links inside article text are underlined** (WCAG 1.4.1); navigation
+  links are not.
+- **Print styles**: the light palette whatever the mode, and no navbar,
+  sidebar, TOC, toggle, search, comments or language banner. Reduced motion
+  turns transitions and animations off.
+- **Pagefind's search box and dialog follow the mode** (D-P4-5); they used
+  to stay white in dark mode.
+- **Icons** (D-P4-6): one sprite, `dist/clogem/icons.svg` (9.4 KB), built
+  from vendored Lucide 1.52.0 (ISC; Feather-derived icons also MIT), with
+  22 curated brand icons from Simple Icons 16.34.0 (CC0) and Tabler 3.48.0
+  (MIT) ready for the social links of a later task — a sprite carries only
+  the brands a site uses, and none yet. The licence notices head the
+  sprite. The navbar dropdowns, sidebar groups and breadcrumbs use icons
+  instead of the `▾ ▸ ›` text glyphs.
+- **`overrides/custom.css`** (D-P4-8): a site's own stylesheet ships as
+  `dist/clogem/overrides/custom.css`, cache-busted, and is linked last,
+  after the theme's and Pagefind's. `bb dev` hot-swaps it.
+- **`:theme :page-style` is validated**: `:card` or `:line`; anything else
+  is a warning and falls back to `:card` (0.2.0 accepted any value). The
+  two styles themselves arrive in Task B2.
+
+### Changed (B1)
+
+- **Code stays monospace on Chinese and Tamil pages.** The language font
+  rules are now `:where(:lang(…))`, so `code`, `pre` and `kbd` keep the
+  monospace stack; 0.2.0 rendered code in PingFang or Noto Sans Tamil there.
+- **Inline code** takes the custom-block background and the text colour,
+  not the code block's; an untranslated language in the switcher is shown
+  in the muted colour rather than faded.
+- **giscus's `client.js` is deferred rather than async**, so the theme it
+  starts in is the reader's stored mode.
+
+### Needs native review (B1)
+
+- The five new theme strings (`:mode/label`, `:mode/auto`, `:mode/light`,
+  `:mode/dark`, `:mode/read`) in **Malay** (`Mod warna`, `Ikut sistem`,
+  `Cerah`, `Gelap`, `Bacaan`) and **Tamil** (`வண்ணப் பயன்முறை`,
+  `கணினியைப் பின்பற்று`, `வெளிர்`, `இருள்`, `வாசிப்பு`).
+
+**Task A — foundations** (§11.3 items 7, 11, 16, 18):
 
 ### Added
 
