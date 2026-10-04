@@ -158,8 +158,9 @@
 (def chroma
   "Chroma, the syntax highlighter (MIT; static binaries, CGO_ENABLED=0).
   Every archive, Windows included, is a .tar.gz whose root holds COPYING,
-  README.md and `chroma` (`chroma.exe`). Phase 4 Task A adds the descriptor
-  only; rendering does not use it yet (Task C)."
+  README.md and `chroma` (`chroma.exe`). The build runs it when
+  `:highlight :provider` is :chroma, the default (`clogem.highlight`,
+  §11.3 item 10), so every hint names the way to build without it."
   {:id           :chroma
    :name         "Chroma"
    :error-prefix "highlight"
@@ -180,14 +181,15 @@
                             "windows-amd64" "de93529e44c17490b9f0ce23099d22fd5688ae1c2054d41fcb2d56f9bf92009f"
                             "windows-arm64" "21e156e2ce06ebf58daf9648e93cdc9c2763aec380a353f9d4af19fef96737d9"}}
    :hints        {:offline      (fn [dir]
-                                  (str "No cached binary at " dir ". Point CLOGEM_CHROMA (or :tools :chroma :path) "
+                                  (str "No cached binary at " dir ". Build without highlighting with `--no-highlight`, "
+                                       "or set :highlight {:provider :none}; or point CLOGEM_CHROMA (or :tools :chroma :path) "
                                        "at an installed chroma."))
-                  :no-platform  "Install chroma yourself and set CLOGEM_CHROMA."
+                  :no-platform  "Install chroma yourself and set CLOGEM_CHROMA, or use --no-highlight (:highlight {:provider :none})."
                   :no-sha       (fn [plat]
                                   (str "Add it from the release's checksums.txt: :tools {:chroma {:sha256 {\""
                                        plat "\" \"<hex>\"}}}."))
-                  :preinstalled "CLOGEM_CHROMA and :tools :chroma :path name an installed chroma."
-                  :unpack       "Install tar (any POSIX tar or bsdtar), or point CLOGEM_CHROMA at an installed chroma."}})
+                  :preinstalled "CLOGEM_CHROMA and :tools :chroma :path name an installed chroma; --no-highlight (:highlight {:provider :none}) builds without it."
+                  :unpack       "Install tar (any POSIX tar or bsdtar), or point CLOGEM_CHROMA at an installed chroma; or use --no-highlight (:highlight {:provider :none})."}})
 
 (def fswatcher
   "The babashka filesystem-watcher pod, org.babashka/fswatcher. Each release

@@ -67,6 +67,12 @@
   "`:comments :repo`: a GitHub `owner/name`, as giscus's data-repo takes it."
   #"[A-Za-z0-9-]+/[A-Za-z0-9._-]+")
 
+(def highlight-defaults
+  "§11.3 item 10: highlighting is on by default. A test runner may switch
+  the provider in `defaults` off; this map keeps the shipped values."
+  {:provider :chroma :line-numbers true :copy-button true
+   :style "github" :dark-style "github-dark"})
+
 (def defaults
   {:site    {:title "clogem-press site" :url "" :base "/"}
    :generator {}
@@ -98,15 +104,16 @@
              :fonts {:tamil :system}}    ; :system | :self-hosted (§6.9, D-P3-12)
    :nav     []
    :search   {:provider :none}           ; :none | :pagefind (§6.7, D-P3-8)
+   :highlight highlight-defaults          ; :provider :chroma | :none (§11.3 item 10)
    :comments {:provider :none}
    :analytics {:provider :none}
    :seo     {:sitemap true :hreflang true :x-default :primary :feeds true}
    :build   {:out "dist"}
    ;; D-P3-8: the per-platform hashes for the default version live in the
    ;; tool's descriptor (`clogem.tools`), so a site that pins another
-   ;; version does not inherit hashes that cannot match it. Chroma and the
-   ;; fswatcher pod are fetchable (`bb fetch-tool --tool …`) but not yet
-   ;; used by the build (Phase 4 Tasks C and D).
+   ;; version does not inherit hashes that cannot match it. The build runs
+   ;; Pagefind and Chroma; the fswatcher pod is fetchable (`bb fetch-tool
+   ;; --tool fswatcher`) but not yet used (Phase 4 Task D).
    :tools   {:pagefind  {:version "1.5.2"}
              :chroma    {:version "2.27.0"}
              :fswatcher {:version "0.0.7"}}})
@@ -308,9 +315,9 @@
   and the config is repaired to the built-in pin — 0.2.0 accepted any
   `:tools :chroma` (its own DESIGN §5.6 sketched one with a single
   `:sha256` string), so a pin nothing reads must not start failing builds.
-  The task that makes a build run a tool adds its id here (Chroma in C, the
-  fswatcher pod in D)."
-  #{:pagefind})
+  The task that makes a build run a tool adds its id here: Chroma in C
+  (§11.3 item 10), the fswatcher pod in D."
+  #{:pagefind :chroma})
 
 (defn- unused-tool-hint
   "B2's hint for a bad pin of a tool nothing runs yet (not in
@@ -367,6 +374,37 @@
            cfg)))
      cfg tool-pins)))
 
+(defn- check-highlight!
+  "§11.3 item 10: `:highlight`. Every bad value is a WARNING, repaired to
+  the default — highlighting is cosmetic, and 0.2.0 accepted (and ignored)
+  any `:highlight` — except that `:provider` must be :chroma or :none to
+  mean anything. A style is checked here for shape only (a Chroma style
+  name; nothing path-like reaches `--style`); whether the binary has it is
+  checked when the build runs it (`clogem.highlight/session`)."
+  [cfg]
+  (let [hl (get cfg :highlight)
+        repair (fn [cfg k msg]
+                 (let [default (get-in defaults [:highlight k])]
+                   (diag/warn! nil (str ":highlight " k " is " (pr-str (get-in cfg [:highlight k])) ", " msg
+                                        "; using " (pr-str default) ".")
+                               "See config.example.edn (DESIGN.md §11.3 item 10).")
+                   (assoc-in cfg [:highlight k] default)))]
+    (if-not (map? hl)
+      (assoc cfg :highlight (:highlight defaults))
+      (reduce (fn [cfg [k ok? msg]]
+                (let [v (get-in cfg [:highlight k])]
+                  (cond (nil? v) (assoc-in cfg [:highlight k] (get-in defaults [:highlight k]))
+                        (ok? v)  cfg
+                        :else    (repair cfg k msg))))
+              cfg
+              [[:provider     #{:chroma :none}  "but it must be :chroma or :none"]
+               [:line-numbers boolean?          "but it must be true or false"]
+               [:copy-button  boolean?          "but it must be true or false"]
+               [:style        #(and (string? %) (re-matches #"[A-Za-z0-9][A-Za-z0-9_-]*" %))
+                "which is not a Chroma style name such as \"github\""]
+               [:dark-style   #(and (string? %) (re-matches #"[A-Za-z0-9][A-Za-z0-9_-]*" %))
+                "which is not a Chroma style name such as \"github-dark\""]]))))
+
 (def comments-keys
   "The `:comments` keys the generator reads (D-P3-15). `:mapping` is
   accepted too: §5.6 used to sketch `:mapping :permalink`, and real site.edn
@@ -400,8 +438,8 @@
   {[]                     {:site :ok :generator :ok :langs :ok :i18n :ok :content :ok
                            :theme :ok :nav :ok :search :ok :comments :ok :analytics :ok
                            :seo :ok :build :ok :tools :ok
-                           ;; Phase 4 Task C
-                           :highlight :planned}
+                           ;; Phase 4 Task C (§11.3 item 10)
+                           :highlight :ok}
    [:site]                {:title :ok :description :ok :url :ok :base :ok :author :ok}
    ;; `:site :author` is checked by `check-author!`: only its {:name :link}
    ;; shape holds options; a per-language map holds user data
@@ -429,6 +467,7 @@
                            :sidebar-collapsed :planned :back-to-top :planned :logo :planned
                            :repo :planned}
    [:theme :fonts]        {:tamil :ok}
+   [:highlight]           {:provider :ok :line-numbers :ok :copy-button :ok :style :ok :dark-style :ok}
    [:search]              {:provider :ok
                            ;; Phase 4 Task G
                            :cross-language :planned}
@@ -464,11 +503,11 @@
    [:tools :chroma :style]
    [(str ":tools :chroma :style belongs under :highlight :style (DESIGN.md §5.6, corrected in §11.3 "
          "item 10). It is ignored.")
-    "Move it to :highlight {:style …} — planned for Phase 4 Task C."]
+    "Move it to :highlight {:style …}."]
    [:tools :chroma :dark-style]
    [(str ":tools :chroma :dark-style belongs under :highlight :dark-style (DESIGN.md §5.6, corrected in "
          "§11.3 item 10). It is ignored.")
-    "Move it to :highlight {:dark-style …} — planned for Phase 4 Task C."]})
+    "Move it to :highlight {:dark-style …}."]})
 
 (def vdoing-keys
   "vdoing's `themeConfig` spellings (camelCase, and a few that live in
@@ -821,7 +860,7 @@
     (when (< (count priority) (count locales))
       (diag/warn! nil ":langs :priority does not cover every locale; missing ones were appended.")))
   (-> cfg check-theme! check-floor! check-fallback! check-site-url! check-x-default! check-search!
-      check-i18n-comments! check-out-dir! check-no-effect!))
+      check-i18n-comments! check-out-dir! check-no-effect! check-highlight!))
 
 (defn- map-paths
   "Every path in `m` whose value is a map, outermost first."
@@ -838,8 +877,8 @@
   crash with a ClassCastException. A config error, repaired to the default
   so `doctor` can keep going. nil is allowed — deep-merge lets it un-set a
   section, and every reader falls back to the default. A tool nothing runs
-  yet (`:tools :chroma`, not in `fatal-tool-ids`) gets a warning instead:
-  0.2.0 accepted any value there."
+  yet (`:tools :fswatcher`, not in `fatal-tool-ids`) and `:highlight` get a
+  warning instead: 0.2.0 accepted any value there."
   [cfg]
   (reduce (fn [cfg path]
             (let [v (get-in cfg path ::absent)]
@@ -849,9 +888,15 @@
                                (pr-str (get-in defaults path)) ".")]
                   ;; 0.2.0 accepted any value for a tool nothing runs
                   ;; (`:tools {:chroma "2.27.0"}`): a warning, as for a bad pin
-                  (if (and (= 2 (count path)) (= :tools (first path))
-                           (not (contains? fatal-tool-ids (second path))))
+                  (cond
+                    (and (= 2 (count path)) (= :tools (first path))
+                         (not (contains? fatal-tool-ids (second path))))
                     (diag/warn! nil msg (unused-tool-hint (second path) nil))
+                    ;; 0.2.0 accepted any :highlight (it was planned, and
+                    ;; ignored); a cosmetic option stays a warning
+                    (= [:highlight] path)
+                    (diag/warn! nil msg "Using the default.")
+                    :else
                     (diag/error! nil msg "Using the default so the rest of the report is readable, but the build will not run."))
                   (assoc-in cfg path (get-in defaults path))))))
           cfg (map-paths defaults)))
