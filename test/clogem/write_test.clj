@@ -632,3 +632,104 @@
   (doseq [pl ["/pages/1a2b3c/" "/tags/" "//a//b" "/a.b/" "/..a/" "/a../" "/"]]
     (is (not (u/unsafe-permalink? pl)) pl)))
 
+(deftest the-temp-sweep-runs-in-a-symlinked-out-dir
+  ;; `dist -> /var/www/site`: the sweep's nofollow check on the root itself
+  ;; was false, so abandoned temp files there survived for ever
+  (with-temp-dir
+    (fn [d]
+      (let [real   (fs/path d "www" "site")
+            out    (fs/path d "dist")
+            behind (fs/path d "behind")
+            dead   (dead-pid)
+            live   (.pid (java.lang.ProcessHandle/current))
+            plant  (fn [p & [old?]]
+                     (fs/create-dirs (fs/parent p))
+                     (spit (fs/file p) "half")
+                     (when old? (age! p))
+                     p)]
+        (fs/create-dirs real)
+        (fs/create-sym-link out real)
+        ;; pages/gone/ holds only a temp file: the stale-HTML sweep has the
+        ;; same blind spot for a linked out (DESIGN §11.3, Phase 5)
+        (write! out [(out-of (fs/path out "index.html") "home")])
+        (let [old-one  (plant (fs/path real "pages" "gone" (str ".clogem-tmp-" dead "-1")) true)
+              dead-one (plant (fs/path real "assets" (str ".clogem-tmp-" dead "-2")))
+              live-one (plant (fs/path real (str ".clogem-tmp-" live "-3")))
+              linked   (plant (fs/path behind (str ".clogem-tmp-" dead "-4")) true)]
+          (fs/create-sym-link (fs/path real "linked") behind)
+          (write! out [(out-of (fs/path out "index.html") "home")])
+          (is (not (fs/exists? old-one)) "an old one under the real directory is swept")
+          (is (not (fs/exists? (fs/path real "pages" "gone"))) "and its emptied directory pruned")
+          (is (not (fs/exists? dead-one)) "a dead build's is swept")
+          (is (fs/exists? live-one) "a live build's stays")
+          (is (fs/exists? linked) "a link below out is still never followed")
+          (is (fs/sym-link? out) "out is still the link")
+          (is (= "home" (slurp (fs/file real "index.html")))))))))
+
+(deftest a-file-where-a-directory-now-belongs-fails-the-build
+  (with-temp-dir
+    (fn [d]
+      (let [out     (fs/path d "out")
+            blocker (fs/path out "assets" "docs")]
+        (fs/create-dirs (fs/parent blocker))
+        (spit (fs/file blocker) "an earlier build's file")
+        (dotimes [_ 2]
+          (let [e (try (write! out [(out-of (fs/path out "a.txt") "a")
+                                    (out-of (fs/path blocker "readme.txt") "now in a directory")
+                                    (out-of (fs/path out "z" "b.txt") "b")])
+                       nil
+                       (catch clojure.lang.ExceptionInfo e e))]
+            (is (some? e) "a clear error, not a raw FileAlreadyExistsException")
+            (is (= 1 (:babashka/exit (ex-data e))))
+            (is (str/includes? (str (ex-message e)) (str (fs/path "assets" "docs"))) (ex-message e))
+            (is (re-find #"is a file where a directory now belongs" (str (ex-message e))) (ex-message e))
+            (is (re-find #"clean" (str (ex-message e))) (ex-message e)))
+          (is (= "an earlier build's file" (slurp (fs/file blocker))) "the blocker is unchanged")
+          (is (empty? (temp-files out)) "no temp file is left")
+          (is (= #{"assets"} (set (map #(str (fs/file-name %)) (fs/list-dir out))))
+              "checked before anything is written")
+          (is (= ["docs"] (map #(str (fs/file-name %)) (fs/list-dir (fs/path out "assets"))))))
+        (testing "a symlinked directory below out is still a directory"
+          (let [elsewhere (fs/path d "elsewhere")]
+            (fs/create-dirs elsewhere)
+            (fs/create-sym-link (fs/path out "linked") elsewhere)
+            (write! out [(out-of (fs/path out "linked" "x.txt") "x")])
+            (is (= "x" (slurp (fs/file elsewhere "x.txt")))))))))
+  (testing "end to end: dist/ is unchanged"
+    (with-demo-copy
+      (fn [dir out]
+        (build! dir)
+        (let [blocker (fs/path out "assets" "docs")]
+          (spit (fs/file blocker) "an earlier build's file")
+          (fs/create-dirs (fs/path dir "assets" "docs"))
+          (spit (fs/file dir "assets" "docs" "readme.txt") "read me")
+          (let [before (tree-hash out)
+                e      (try (build! dir) nil (catch clojure.lang.ExceptionInfo e e))]
+            (is (= 1 (:babashka/exit (ex-data e))))
+            (is (str/includes? (str (ex-message e)) (str (fs/path "assets" "docs"))) (ex-message e))
+            (is (re-find #"clean" (str (ex-message e))) (ex-message e))
+            (is (= before (tree-hash out)) "dist/ is exactly what it was")))))))
+
+(deftest an-unreadable-asset-names-why-not-the-path-twice
+  (with-temp-dir
+    (fn [d]
+      (let [p    (fs/path d "assets" "x.bin")
+            real fs/read-all-bytes]
+        (fs/create-dirs (fs/parent p))
+        (spit (fs/file p) "x")
+        (let [e (with-redefs [fs/read-all-bytes
+                              (fn [q & more]
+                                (if (= (str p) (str q))
+                                  (throw (java.io.IOException. (str q)))
+                                  (apply real q more)))]
+                  (try (#'render/read-asset p) nil (catch clojure.lang.ExceptionInfo e e)))]
+          (is (= (str "could not read site asset " p ": IOException") (ex-message e)))
+          (is (not (str/includes? (ex-message e) (str p ": " p)))))
+        (testing "a blank message"
+          (is (= "IOException" (render/io-failure-reason p (java.io.IOException. " ")))))
+        (testing "a java.nio.file exception names its meaning and its class"
+          (let [missing (fs/path d "missing.bin")
+                t (try (fs/read-all-bytes missing) nil (catch Throwable t t))]
+            (is (= "no such file (NoSuchFileException)" (render/io-failure-reason missing t)))))
+        (testing "any other message is kept"
+          (is (= "Permission denied" (render/io-failure-reason p (java.io.IOException. "Permission denied")))))))))

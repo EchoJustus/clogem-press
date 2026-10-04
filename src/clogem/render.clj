@@ -598,14 +598,35 @@
   []
   (assets/theme-resource-dir))
 
+(def ^:private io-failure-phrases
+  "What a java.nio.file exception whose message is only the path means. By
+  class NAME: bb cannot resolve most of these classes."
+  {"java.nio.file.AccessDeniedException" "access denied"
+   "java.nio.file.NoSuchFileException"   "no such file"
+   "java.nio.file.NotDirectoryException" "not a directory"})
+
+(defn io-failure-reason
+  "Why reading `p` failed, from `t`: its message, unless that is blank or
+  only the path (a java.nio.file exception's usual message), in which case
+  a phrase for its class and the class's simple name — \"access denied
+  (AccessDeniedException)\", not \"<p>\" again."
+  [p ^Throwable t]
+  (let [msg  (ex-message t)
+        cls  (.getName (class t))
+        simple (subs cls (inc (str/last-index-of cls ".")))]
+    (if (or (str/blank? msg) (= (str/trim msg) (str p)))
+      (if-let [phrase (io-failure-phrases cls)]
+        (str phrase " (" simple ")")
+        simple)
+      msg)))
+
 (defn- read-asset
   "The bytes of the site asset `p`, read now, while rendering: an unreadable
   file fails the build before a single output is written (D-P4-11)."
   ^bytes [p]
   (try (fs/read-all-bytes p)
        (catch Throwable t
-         (throw (ex-info (str "could not read site asset " p ": "
-                              (or (ex-message t) (.getName (class t))))
+         (throw (ex-info (str "could not read site asset " p ": " (io-failure-reason p t))
                          {:babashka/exit 1 :clogem/file (str p)}
                          t)))))
 
@@ -900,10 +921,15 @@
   directory this build still writes, or one it no longer does (a deleted
   article's `pages/<x>/`), which the pruning then removes when it is left
   empty. Only regular files whose name carries the temp marker, only inside
-  `out`, never under `<out>/pagefind/`, never through a link, and never a
-  live build's (`abandoned?`). Returns the files deleted."
+  `out`, never under `<out>/pagefind/`, never through a link below `out`,
+  and never a live build's (`abandoned?`). `out` itself may be a link
+  (`dist -> /var/www/site`): the root is resolved, once, and everything
+  below it is walked without following links. Returns the files deleted,
+  under the resolved root."
   [out]
   (let [out    (normal-abs out)
+        ;; the root link only; links below it are never followed
+        out    (if (fs/directory? out) (fs/real-path out) out)
         bundle (fs/path out search/output-subdir)
         now    (System/currentTimeMillis)]
     (when (fs/directory? out {:nofollow-links true})
@@ -923,19 +949,32 @@
 
 (defn- check-outputs!
   "Throw, before anything is swept or written, if an output would land
-  outside `out` (a `..` that slipped past analysis) or where a directory now
+  outside `out` (a `..` that slipped past analysis), where a directory now
   stands (an earlier build's `assets/docs/` where `assets/docs` is now a
-  file: a rename would move the file INTO it)."
+  file: a rename would move the file INTO it), or below a file where a
+  directory now belongs (the reverse: an earlier build's file `assets/docs`
+  where `assets/docs/readme.txt` now needs a directory — `create-dirs`
+  would throw mid-write and leave `dist/` mixed). A symlinked directory
+  inside `out` still counts as a directory. Each ancestor is checked once."
   [out outputs]
-  (doseq [{:keys [file]} outputs
-          :let [f (normal-abs file)]]
-    (when-not (inside? out f)
-      (throw (ex-info (str "refusing to write " file ": it is outside the output directory " out)
-                      {:babashka/exit 1 :clogem/file (str file)})))
-    (when (fs/directory? f {:nofollow-links true})
-      (throw (ex-info (str "cannot write " f ": a directory is in the way (left by an earlier build?). "
-                           "Remove " f " or run `bb clean`, then build again.")
-                      {:babashka/exit 1 :clogem/file (str f)})))))
+  (let [checked (volatile! #{})]
+    (doseq [{:keys [file]} outputs
+            :let [f (normal-abs file)]]
+      (when-not (inside? out f)
+        (throw (ex-info (str "refusing to write " file ": it is outside the output directory " out)
+                        {:babashka/exit 1 :clogem/file (str file)})))
+      (when (fs/directory? f {:nofollow-links true})
+        (throw (ex-info (str "cannot write " f ": a directory is in the way (left by an earlier build?). "
+                             "Remove " f " or run `bb clean`, then build again.")
+                        {:babashka/exit 1 :clogem/file (str f)})))
+      (loop [a (fs/parent f)]
+        (when (and a (inside? out a) (not (contains? @checked (str a))))
+          (when (and (fs/exists? a {:nofollow-links true}) (not (fs/directory? a)))
+            (throw (ex-info (str "cannot write " f ": " a " is a file where a directory now belongs "
+                                 "(left by an earlier build?). Remove " a " or run `bb clean`, then build again.")
+                            {:babashka/exit 1 :clogem/file (str a)})))
+          (vswap! checked conj (str a))
+          (recur (fs/parent a)))))))
 
 (defn write-outputs!
   "Write each output whose bytes differ from what is on disk, atomically,
@@ -985,10 +1024,11 @@
 
 (defn write-site!
   "Write what `render-site` produced into the output directory, then sweep
-  the `.html` files no longer produced (§11.2 item 46). Never deletes
-  anything else — `CNAME`, `.nojekyll`, a verification file the site owner
-  or a CI step put there all stay. Returns the render summary plus
-  {:written :unchanged :stale}."
+  the `.html` files no longer produced (§11.2 item 46). Besides those it
+  deletes only the temp files killed builds abandoned (`sweep-temp-files!`)
+  and the directories either sweep leaves empty — `CNAME`, `.nojekyll`, a
+  verification file the site owner or a CI step put there all stay.
+  Returns the render summary plus {:written :unchanged :stale}."
   [{:keys [outputs out] :as rendered}]
   (fs/create-dirs out)
   (let [{:keys [written unchanged files]} (write-outputs! out outputs)
