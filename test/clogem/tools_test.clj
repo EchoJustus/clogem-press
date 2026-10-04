@@ -308,6 +308,38 @@
         (let [r (with-out-str (cli/doctor {:site-dir (str dir)}))]
           (is (re-find #"0 error" r) r))))))
 
+(deftest a-half-bad-unused-tool-pin-is-reset-as-one-unit
+  ;; a custom version kept with its hashes dropped has no hash to verify
+  ;; against, so the hint's "the built-in pin is used" was false and
+  ;; `fetch-tool --tool chroma` failed
+  (doseq [[extra n-warnings] [[{:url "https://example.invalid/{{version}}/{{platform}}"} 1]
+                              [{:style "github"} 2]]]
+    (with-dir
+      (fn [dir]
+        (let [tool  tools/chroma
+              plat  (or (tools/platform tool) "linux-amd64")
+              chroma (merge {:version "2.26.0" :sha256 "abc"} extra)]
+          (spit (fs/file dir "site.edn") (pr-str {:tools {:cache-dir "cache" :chroma chroma}}))
+          (let [[cfg ds] (diag/collecting (config/load-config (str dir)))
+                ws (diag/warnings ds)]
+            (is (empty? (diag/errors ds)))
+            (is (= n-warnings (count ws)) (pr-str (map :message ws)))
+            (is (= 1 (count (filter #(re-find #"^:tools :chroma :sha256 must map" (:message %)) ws))))
+            (is (= (merge {:version "2.27.0"} extra) (get-in cfg [:tools :chroma]))
+                "the built-in version, no :sha256, every other key kept")
+            (when (tools/platform tool)
+              (testing "fetch-tool resolves the built-in pin (a preinstalled, stamped cache entry)"
+                (let [entry (tools/tool-dir tool cfg plat)
+                      bin   (fs/path entry (tools/binary-name tool plat))]
+                  (is (= "2.27.0" (str (fs/file-name (fs/parent entry)))))
+                  (fs/create-dirs entry)
+                  (spit (fs/file bin) "#!/bin/sh\necho chroma\n")
+                  (spit (fs/file entry tools/stamp-name)
+                        (pr-str {:archive-sha256 (tools/expected-sha256 tool cfg plat)
+                                 :binary-sha256  (tools/sha256-hex bin)}))
+                  (is (= (str bin "\n")
+                         (with-out-str (cli/fetch-tool {:site-dir (str dir) :tool "chroma"})))))))))))))
+
 (deftest fetch-tool-takes-a-tool
   (with-dir
     (fn [dir]

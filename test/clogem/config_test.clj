@@ -430,6 +430,26 @@
     (let [[_ ds] (with-site {:search nil :seo {:sitemap false} :theme {:fonts {:tamil :system}}})]
       (is (empty? (diag/errors ds))))))
 
+(deftest a-non-map-unused-tool-pin-warns-and-is-repaired
+  (testing "0.2.0 accepted any :tools :chroma / :fswatcher value; nothing runs
+            either yet, so a non-map is a warning, repaired to the default"
+    (doseq [[edn path] [[{:tools {:chroma "2.27.0"}} [:tools :chroma]]
+                        [{:tools {:fswatcher ["0.0.7"]}} [:tools :fswatcher]]
+                        [{:tools {:fswatcher false}} [:tools :fswatcher]]]]
+      (let [[cfg ds] (with-site edn)
+            ws (diag/warnings ds)]
+        (is (empty? (diag/errors ds)) (pr-str edn (map :message (diag/errors ds))))
+        (is (= 1 (count ws)) (pr-str edn (map :message ws)))
+        (is (re-find (re-pattern (str "^" (str/join " " path) " is .*, but it must be a map"))
+                     (str (:message (first ws))))
+            (pr-str edn))
+        (is (re-find #"so the built-in pin is used" (str (:hint (first ws)))) (pr-str (:hint (first ws))))
+        (is (= (get-in config/defaults path) (get-in cfg path)) "repaired, so later checks see a map"))))
+  (testing "Pagefind, which a build runs, stays an error"
+    (let [[_ ds] (with-site {:tools {:pagefind "1.5.2"}})]
+      (is (some #(re-find #"^:tools :pagefind is .*, but it must be a map" (:message %))
+                (diag/errors ds))))))
+
 (deftest the-output-directory-must-be-a-directory-of-its-own
   (testing "§11.2 item 46: a build deletes .html files it did not write from
             its output directory, so out may not be the site, an ancestor of

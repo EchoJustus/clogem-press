@@ -312,6 +312,14 @@
   fswatcher pod in D)."
   #{:pagefind})
 
+(defn- unused-tool-hint
+  "B2's hint for a bad pin of a tool nothing runs yet (not in
+  `fatal-tool-ids`): why it is only a warning, and what is used instead."
+  [id hint]
+  (str (when hint (str hint " "))
+       "It has no effect in " (generator-version) " (nothing runs "
+       (name id) " yet), so the built-in pin is used."))
+
 (defn- check-search!
   "D-P3-8 / D-P3-12: the search provider, the Pagefind pin, and the Tamil
   font option."
@@ -333,10 +341,7 @@
              report! (fn [msg hint]
                        (if fatal?
                          (diag/error! nil msg hint)
-                         (diag/warn! nil msg
-                                     (str (when hint (str hint " "))
-                                          "It has no effect in " (generator-version) " (nothing runs "
-                                          (name id) " yet), so the built-in pin is used."))))
+                         (diag/warn! nil msg (unused-tool-hint id hint))))
              bad-version? (not (and (string? version) (re-matches u/version-re version)))
              bad-sha256?  (and (some? sha256)
                                (not (and (map? sha256)
@@ -352,9 +357,14 @@
                          "{\"" eg-plat "\" \"" eg-hash "\"}.")
                     (str "One hash cannot cover several release assets (DESIGN.md §11.2, D-P3-8); "
                          "copy each from " source ".")))
-         (cond-> cfg
-           (and bad-version? (not fatal?)) (assoc-in [:tools id :version] (get-in defaults [:tools id :version]))
-           (and bad-sha256? (not fatal?))  (update-in [:tools id] dissoc :sha256))))
+         ;; the pin is one unit: a custom version with its hashes dropped
+         ;; has no hash to verify against, and the built-in hashes only
+         ;; cover the built-in version — so either half bad resets both,
+         ;; keeping every other key (:style, :url, :path …)
+         (if (and (or bad-version? bad-sha256?) (not fatal?))
+           (update-in cfg [:tools id] #(-> % (assoc :version (get-in defaults [:tools id :version]))
+                                           (dissoc :sha256)))
+           cfg)))
      cfg tool-pins)))
 
 (def comments-keys
@@ -805,16 +815,23 @@
   or `:theme {:fonts :self-hosted}` used to reach a later `assoc-in` and
   crash with a ClassCastException. A config error, repaired to the default
   so `doctor` can keep going. nil is allowed — deep-merge lets it un-set a
-  section, and every reader falls back to the default."
+  section, and every reader falls back to the default. A tool nothing runs
+  yet (`:tools :chroma`, not in `fatal-tool-ids`) gets a warning instead:
+  0.2.0 accepted any value there."
   [cfg]
   (reduce (fn [cfg path]
             (let [v (get-in cfg path ::absent)]
               (if (or (= ::absent v) (nil? v) (map? v) (not (map? (get-in cfg (pop path)))))
                 cfg
-                (do (diag/error! nil (str (str/join " " path) " is " (pr-str v) ", but it must be a map, e.g. "
-                                          (pr-str (get-in defaults path)) ".")
-                                 "Using the default so the rest of the report is readable, but the build will not run.")
-                    (assoc-in cfg path (get-in defaults path))))))
+                (let [msg (str (str/join " " path) " is " (pr-str v) ", but it must be a map, e.g. "
+                               (pr-str (get-in defaults path)) ".")]
+                  ;; 0.2.0 accepted any value for a tool nothing runs
+                  ;; (`:tools {:chroma "2.27.0"}`): a warning, as for a bad pin
+                  (if (and (= 2 (count path)) (= :tools (first path))
+                           (not (contains? fatal-tool-ids (second path))))
+                    (diag/warn! nil msg (unused-tool-hint (second path) nil))
+                    (diag/error! nil msg "Using the default so the rest of the report is readable, but the build will not run."))
+                  (assoc-in cfg path (get-in defaults path))))))
           cfg (map-paths defaults)))
 
 (defn load-config
