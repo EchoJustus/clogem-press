@@ -27,7 +27,7 @@
 
 (defn- load-cfg*
   "Load config under a diagnostic sink. Returns [cfg diagnostics]."
-  [{:keys [site-dir config-file out no-write base no-search]}]
+  [{:keys [site-dir config-file out no-write base no-search no-highlight]}]
   (diag/collecting
    (config/load-config site-dir config-file
                        (cond-> {}
@@ -37,7 +37,9 @@
                          ;; --no-search is a render setting, not only "skip
                          ;; the indexer": pages that link a bundle the build
                          ;; never writes 404 on every load
-                         no-search (assoc-in [:search :provider] :none)))))
+                         no-search (assoc-in [:search :provider] :none)
+                         ;; §11.3 item 10: no Chroma, no highlight.css
+                         no-highlight (assoc-in [:highlight :provider] :none)))))
 
 (defn load-cfg!
   "Load config; a config ERROR is fatal (D-P2-12).
@@ -120,15 +122,21 @@
                        :base     {:desc "Site base path, e.g. /project/." :ref "<path>"}
                        :no-write {:desc "Read-only build: never touch source files." :coerce :boolean}
                        :no-search {:desc "Build without search (no index, no search UI) even when :search :provider is set."
-                                   :coerce :boolean}})}}
+                                   :coerce :boolean}
+                       :no-highlight {:desc "Build without syntax highlighting (no Chroma) even when :highlight :provider is set."
+                                      :coerce :boolean}})}}
   build
   [opts]
   ;; `:clogem/dev?` is set by `bb dev` (never on the command line): pages
   ;; render dev's ⟦key⟧ for a missing UI string, and search is left to dev's
   ;; background indexer (§11.3 item 12) — the result says `:search :deferred`
-  ;; and carries the config the build used as `:clogem/cfg`
+  ;; and carries the config the build used as `:clogem/cfg`. `:clogem/dev-loop?`
+  ;; is set only by `bb dev` too, and makes a Chroma failure warn once and
+  ;; render code plain instead of failing the build (§11.3 item 10).
   (let [dev? (boolean (:clogem/dev? opts))
-        cfg  (cond-> (load-cfg! opts) dev? (assoc :clogem/dev? true))]
+        cfg  (cond-> (load-cfg! opts)
+               dev? (assoc :clogem/dev? true)
+               (or (:clogem/dev-loop? opts) (:clogem/dev? opts)) (assoc :clogem/dev-loop? true))]
     ;; Pass 1 — normalize front matter. Its diagnostics are discarded because
     ;; pass 2 re-derives them from the normalized tree and is the authoritative
     ;; report; but content ERRORS abort before anything is written, since
@@ -275,6 +283,9 @@
                    ;; containers, bad card-list YAML), by rendering every page
                    ;; in memory and discarding it
                    (when (seq (:articles m)) (render/check-pages! m))
+                   ;; … and unknown code languages, with a Chroma already
+                   ;; here (never downloaded), §11.3 item 10
+                   (render/check-code-languages! m)
                    ;; … and outputs of one build that would collide
                    (render/check-output-collisions! m)
                    m)))
@@ -329,6 +340,8 @@
                                   :coerce :boolean}
                        :reload-code {:desc "Also watch the theme's .clj code and reload it on change."
                                      :coerce :boolean}
+                       :no-highlight {:desc "Render code without syntax highlighting (no Chroma)."
+                                      :coerce :boolean}
                        :interval {:desc "Poll interval in ms." :default 500 :coerce :long}
                        :probe-ms {:desc "How long to wait for the watcher to prove it delivers events."
                                   :default 3000 :coerce :long}})}}

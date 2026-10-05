@@ -19,6 +19,7 @@
             [clogem.assets :as assets]
             [clogem.config :as config]
             [clogem.diag :as diag]
+            [clogem.highlight :as highlight]
             [clogem.i18n :as i18n]
             [clogem.markdown :as markdown]
             [clogem.model :as model]
@@ -361,6 +362,91 @@
                                  " is not an integer from 0 to 5; using " default "."))
                 default))))
 
+(declare jobs)
+
+(defn- prepare
+  "The model as the pages and the pre-pass read it: the site files (a model
+  built without `analyse` — a test calling model/build-model directly —
+  resolves them here), the path index for `.md` links, the UI strings, the
+  index paths and which languages have a feed. Idempotent, so `render-site`
+  can prepare once for the pre-pass and `page-map` reuse it."
+  [model]
+  (if (:clogem/prepared? model)
+    model
+    (let [cfg   (:cfg model)
+          model (cond-> model
+                  (not (contains? model :site-files)) (assoc :site-files (pages/site-files cfg)))]
+      (assoc model
+             :by-rel-path (rel-path-index model)
+             :strings (i18n/load-strings cfg)
+             :index-paths (index-paths model)
+             ;; which languages have an Atom feed, for autodiscovery (D-P3-3)
+             :feed-langs (set (seo/feed-langs model))
+             :clogem/prepared? true))))
+
+(defn pre-parse
+  "Phase 4 C (§11.3 item 10): every Markdown body a highlighted build
+  renders, parsed ONCE, up front, `n` at a time — before the Chroma session
+  exists, since whether the site has any code at all (`highlight/has-code?`
+  over these ASTs) decides whether Chroma is fetched. Returns
+
+    {:variants {source path → [ast diagnostics]}   ; article variants
+     :sources  [[source path ast] …]}              ; every body, sorted by path
+
+  `:sources` holds the article variants and the site files a page renders
+  as a body (`index*.md`, `@pages/*`, each language's OWN file). An article
+  page reuses its AST and re-emits the parse's diagnostics into its own
+  sink, so a build reports what it did when each page parsed itself; a
+  site file's are left to the page that renders it. A body whose parse
+  throws — anything, `Throwable` included — is left out: its page parses it
+  again and fails naming its URI, as it always has."
+  [model n]
+  (let [model  (prepare model)
+        attempt (fn [f] (try (f) (catch Throwable _ nil)))
+        vs     (for [[_ group] (sort-by key (:articles model))
+                     [lang v]  (sort-by key (:variants group))
+                     ;; the page reports an unknown pageComponent, once
+                     :when (not (diag/quietly (catalogue-node model group (:rel-path v))))]
+                 [lang v])
+        sfs    (->> (:site-files model)
+                    (keep (fn [[[_ lang] {:keys [path own? body]}]]
+                            (when (and path own? (not (str/blank? body))) [lang (str path) body])))
+                    distinct
+                    (sort-by second))
+        parsed (highlight/parallel-map
+                n
+                (fn [[kind lang x]]
+                  (attempt
+                   #(case kind
+                      :variant (diag/collecting
+                                (markdown/parse (:body x) (link-context model model lang (:rel-path x))))
+                      :site    (let [[path body] x]
+                                 [(diag/quietly (markdown/parse body (link-context model model lang path)))]))))
+                (concat (for [[lang v] vs] [:variant lang v])
+                        (for [[lang path body] sfs] [:site lang [path body]])))
+        [pv ps] (split-at (count vs) parsed)]
+    {:variants (into {} (keep (fn [[[_ v] [ast ds]]] (when ast [(:path v) [ast ds]])) (map vector vs pv)))
+     ;; named as a diagnostic names them: relative to content/
+     :sources  (->> (concat (keep (fn [[[_ v] [ast]]] (when ast [(str (:rel-path v)) ast])) (map vector vs pv))
+                            (keep (fn [[[_ path] [ast]]]
+                                    (when ast [(str (fs/relativize (config/content-dir (:cfg model)) path)) ast]))
+                                  (map vector sfs ps)))
+                    (sort-by first)
+                    vec)}))
+
+(defn- highlight-pre-pass!
+  "With the session `hl`: every (lexer, code) pair of every parsed body
+  highlighted in a few batched Chroma runs (`highlight/warm!`) before any
+  page renders; then, SEQUENTIALLY and in path order, a warning for each
+  unknown code language at the first file that uses it — the same file on
+  every build, however the pages are scheduled."
+  [hl {:keys [sources]}]
+  (when hl
+    (highlight/warm! hl (mapcat (fn [[_ ast]] (highlight/pairs hl ast)) sources))
+    (doseq [[path ast] sources
+            n (highlight/code-nodes ast)]
+      (highlight/warn-unknown! hl path (:lang (highlight/parse-info (:info n)))))))
+
 (defn page-map
   "{uri → (fn [] hiccup)} for every emitted document.
 
@@ -380,15 +466,10 @@
                   (not (get-in model [:cfg :clogem/asset-versions]))
                   (assoc-in [:cfg :clogem/asset-versions] (assets/versions (assets/files (:cfg model)))))
         {:keys [cfg articles]} model
-        strings (i18n/load-strings cfg)
-        ;; index*.md and @pages/ are parsed by analyse; a model built without
-        ;; it (a test calling model/build-model directly) resolves them here
-        model   (cond-> model
-                  (not (contains? model :site-files)) (assoc :site-files (pages/site-files cfg)))
-        paths   (index-paths model)
-        model   (assoc model :by-rel-path (rel-path-index model) :strings strings :index-paths paths
-                       ;; which languages have an Atom feed, for autodiscovery (D-P3-3)
-                       :feed-langs (set (seo/feed-langs model)))
+        model   (prepare model)
+        {strings :strings paths :index-paths} model
+        ;; the pre-pass's ASTs, when `render-site` ran one (highlighting on)
+        parsed  (get-in model [:clogem/parsed :variants])
         prefix-all? (get-in cfg [:i18n :prefix-default?])
         ;; D-P3-10: the search UI strings a language needs, worked out once
         ;; per language rather than once per page (it reads the site's i18n
@@ -433,9 +514,14 @@
                                            :page-component (:page-component group)))
                ;; parse ONCE: the body hiccup and the TOC come from the same
                ;; AST, so TOC ids and heading anchors agree by construction
-               (let [ast   (markdown/parse (:body variant) lc)
+               (let [[ast ds] (or (get parsed (:path variant))
+                                  [(markdown/parse (:body variant) lc)])
+                     _     (diag/emit-all! ds)
                      depth (toc-depth cfg variant)]
-                 (page/article (assoc ctx :toc (markdown/toc ast depth))
+                 (page/article (assoc ctx :toc (markdown/toc ast depth)
+                                      ;; from the AST: the copy button's script
+                                      ;; goes only where there is code
+                                      :has-code? (highlight/has-code? [ast]))
                                ;; the theme renders the title; the body's own
                                ;; `# Title` would be a second <h1>
                                (markdown/->hiccup (markdown/drop-leading-h1 ast) lc))))))
@@ -455,6 +541,13 @@
 
       ;; index pages
       (index-pages model ctx-for)))))
+
+(defn check-code-languages!
+  "`doctor`: the unknown code languages `build` would warn about, when a
+  Chroma binary is already here (`highlight/check-languages!`)."
+  [model]
+  (when (highlight/enabled? (:cfg model))
+    (highlight/check-languages! (:cfg model) (:sources (pre-parse model (highlight/jobs))))))
 
 (defn check-pages!
   "Render every page to hiccup and throw the result away — what `doctor`
@@ -733,9 +826,20 @@
       (prune-empty-dirs! out (fs/parent f)))
     stale))
 
+(defn- decode-char-ref
+  "A numeric character reference's code point → its text, or the reference
+  unchanged when it names no valid character."
+  [whole ^long cp]
+  (if (and (Character/isValidCodePoint cp) (not (<= 0xD800 cp 0xDFFF)) (pos? cp))
+    (String. (Character/toChars cp))
+    whole))
+
 (defn- strip-tags
-  "Plain text of an HTML string: aria-hidden elements dropped whole, block tags → a space, inline tags dropped, the five entities hiccup
-  escapes decoded, whitespace collapsed (a feed `summary` is type=\"text\")."
+  "Plain text of an HTML string: aria-hidden elements dropped whole, block
+  tags → a space, inline tags dropped, the five entities hiccup escapes and
+  every numeric character reference (`&#34;`, `&#x27;` — what Chroma and
+  `highlight/escape-html` emit) decoded, whitespace collapsed (a feed
+  `summary` is type=\"text\")."
   [html]
   (-> (str html)
       ;; an aria-hidden element is decoration — the heading anchor's `#` —
@@ -746,7 +850,12 @@
       (str/replace #"(?i)</?(?:p|div|li|ul|ol|h[1-6]|br|blockquote|pre|tr|td|th|table|dt|dd|hr)\b[^>]*>" " ")
       (str/replace #"<[^>]*>" "")
       (str/replace "&lt;" "<") (str/replace "&gt;" ">") (str/replace "&quot;" "\"")
-      (str/replace "&#39;" "'") (str/replace "&apos;" "'") (str/replace "&amp;" "&")
+      (str/replace "&#39;" "'") (str/replace "&apos;" "'")
+      ;; before &amp;, so an escaped `&amp;#34;` stays the text `&#34;`
+      (str/replace #"&#(?:([0-9]{1,7})|[xX]([0-9a-fA-F]{1,6}));"
+                   (fn [[whole dec hex]]
+                     (decode-char-ref whole (if dec (parse-long dec) (Long/parseLong hex 16)))))
+      (str/replace "&amp;" "&")
       (str/replace #"\s+" " ")
       str/trim))
 
@@ -1166,14 +1275,27 @@
   {:outputs [{:file :bytes}] :pages n :articles n :variants n :out dir}."
   [cfg model]
   (let [out         (config/out-dir cfg)
+        ;; §11.3 item 10: Chroma is fetched, verified and listed before a
+        ;; page renders — in `build` a failure stops here, before anything
+        ;; is written; highlight.css is one of the theme files
+        ;; CLOGEM_JOBS read (and a bad value warned about) once per build
+        n           (jobs)
+        model       (prepare model)
+        ;; whether the site has code at all is read from the parsed bodies,
+        ;; so they are parsed first; with highlighting off pages parse as
+        ;; they always did
+        parsed      (when (highlight/enabled? cfg) (pre-parse model n))
+        hl          (highlight/session cfg (highlight/has-code? (map second (:sources parsed))))
+        _           (highlight-pre-pass! hl parsed)
+        cfg         (cond-> cfg hl (assoc :clogem/highlight hl))
         theme-files (assets/files cfg)
         ;; the fingerprints every page's asset URLs carry are those of the
         ;; very bytes asset-outputs writes (D-P4-7)
         cfg         (assoc cfg :clogem/asset-versions (assets/versions theme-files))
-        model       (assoc model :cfg cfg)
+        model       (cond-> (assoc model :cfg cfg) parsed (assoc :clogem/parsed parsed))
         pages       (page-map model)
         base        (config/base-path cfg)
-        [rendered ds] (render-pages pages)
+        [rendered ds] (render-pages pages n)
         _           (diag/emit-all! ds)
         page-outs   (mapv (fn [[uri bytes]]
                             {:file (uri->file base out uri) :bytes bytes

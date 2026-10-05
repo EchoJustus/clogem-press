@@ -27,9 +27,9 @@ sources, is in [DESIGN.md](DESIGN.md); thirteen research reports back it in
 > `cardImgList`. Phase 3 adds canonical and hreflang links, per-language Atom
 > feeds and a sitemap, Pagefind search with one index per language, a
 > remembered language choice with an "also available in …" banner, and giscus
-> comments with one thread per article across its languages. Syntax
-> highlighting and the full theme are Phase 4 — see
-> [the implementation plan](DESIGN.md#8-implementation-plan).
+> comments with one thread per article across its languages. Phase 4, in
+> progress, adds colour modes and syntax highlighting so far; the rest of the
+> theme follows — see [the implementation plan](DESIGN.md#8-implementation-plan).
 
 ## Install
 
@@ -56,7 +56,7 @@ and run it against local content with no packaging step.
 
 | Task | What it does |
 |---|---|
-| `bb build` | Render the site to `dist/`. Writes missing front matter unless `--no-write`. Renders every page in memory first (in parallel; `CLOGEM_JOBS=1` for one thread) and writes only when all of it succeeded, file by file and atomically (temp file and rename; in place when the OS refuses the temp file or the rename), skipping files whose bytes are unchanged — a page that fails to render, or a site asset that cannot be read, leaves `dist/` and `permalinks.edn` as they were (an I/O error while writing, such as a full disk, or a Pagefind failure can still leave some files updated). Runs Pagefind last under `:search {:provider :pagefind}`; `--no-search` builds without search (no index, no search UI). Removes `.html` files in the output directory that the build did not write, so the output directory must be a directory of its own. |
+| `bb build` | Render the site to `dist/`. Writes missing front matter unless `--no-write`. Renders every page in memory first (in parallel; `CLOGEM_JOBS=1` for one thread) and writes only when all of it succeeded, file by file and atomically (temp file and rename; in place when the OS refuses the temp file or the rename), skipping files whose bytes are unchanged — a page that fails to render, or a site asset that cannot be read, leaves `dist/` and `permalinks.edn` as they were (an I/O error while writing, such as a full disk, or a Pagefind failure can still leave some files updated). Runs Pagefind last under `:search {:provider :pagefind}`; `--no-search` builds without search (no index, no search UI). Highlights code with Chroma unless `--no-highlight` (see Theme). Removes `.html` files in the output directory that the build did not write, so the output directory must be a directory of its own. |
 | `bb dev` | Build, serve on 127.0.0.1:1888, rebuild on change, push a reload to the browser. See [Working locally](#working-locally). |
 | `bb serve` | Serve an already-built directory at the site's `:base`, no watching. `--host`, `--port`, `--base`. |
 | `bb doctor` | Report content problems without building. Exits non-zero on errors. |
@@ -93,6 +93,7 @@ it.
 | `--base /project/` | The site's base path (default: `:site :base`). `dist/` is served there, and `/` redirects to it, so a project site's links work locally. `bb serve --base` too. |
 | `--poll`, `--interval 500` | Watch by polling instead of the fswatcher pod. Not usually needed: dev proves the pod delivers events at startup and polls on its own when it does not (`--probe-ms 3000` is that check's budget). |
 | `--no-search` | Build without search (no index, no search UI). |
+| `--no-highlight` | Render code without syntax highlighting (no Chroma). Without it, a Chroma that cannot be fetched or run is warned about once and code shows plain; `build` fails instead. |
 | `--no-write` | Never write front matter or `permalinks.edn` back to the source tree (dev writes them by default, as `build` does). |
 | `--reload-code` | When working on the generator: also reload the theme's `.clj` code on change. |
 
@@ -192,6 +193,31 @@ brands, [Simple Icons](https://simpleicons.org) (CC0) and
 the sprite; sources, versions and hashes are in
 `src/clogem/theme/resources/icons/MANIFEST.edn`.
 
+**Code highlighting is on by default.** Fenced code is highlighted at build
+time by [Chroma](https://github.com/alecthomas/chroma) (MIT), which knows 297
+languages by name, alias or file extension (` ```clojure `, ` ```clj `,
+` ```edn `). **The first build of a site with code downloads Chroma** — a
+3 MB archive (an 8.4 MB binary unpacked), once, checked against a pinned
+sha256 and cached outside the site
+(`~/.cache/clogem-press/tools`, like Pagefind); `CLOGEM_CHROMA` names one
+you installed yourself. If that download or a Chroma run fails, `build`
+fails with exit 1 (`bb dev` only warns, and shows the code plain). To turn
+highlighting off, build with `--no-highlight` or set
+`:highlight {:provider :none}`; code is then plain `<pre><code>`, as in 0.2.0.
+
+````
+```js{1,3-5}              highlight lines 1, 3, 4 and 5 (also ```js {2})
+```js:no-line-numbers     no line numbers for this block (:line-numbers sets the default)
+````
+
+Line numbers are drawn by CSS, so they are never copied and never indexed by
+search. Each block shows its language and, where the browser offers the
+clipboard API, a copy button (`:highlight :copy-button false` removes it).
+The colours come from Chroma's `github` and `github-dark` styles
+(`:highlight :style` / `:dark-style`) as `dist/clogem/css/highlight.css`;
+reading mode uses the dark one, because its code block is dark. An unknown
+language is shown as plain text, with one warning per build.
+
 **Content-Security-Policy.** Every page carries exactly one inline script,
 the colour-mode script in `<head>`, and it is byte-identical on every page,
 so one hash covers the site:
@@ -203,7 +229,9 @@ script-src 'self' 'sha256-aykGrfu05czJ6oIj+Xn+Qrjxa7JG8hF3RGl0W0liGmw='
 `:i18n {:preference :redirect}` adds a second inline script, giscus needs
 `https://giscus.app` in `script-src`, `frame-src` and `style-src`, and
 Pagefind needs `worker-src 'self'` and `'wasm-unsafe-eval'` (DESIGN.md §6.8,
-§11.2 items 42 and 49).
+§11.2 items 42 and 49). The copy button's strings are a
+`<script type="application/json">` data block, which CSP does not govern;
+`js/code.js` is a same-origin file.
 
 ## Development
 

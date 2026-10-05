@@ -267,15 +267,11 @@
 ;; Config and the CLI
 
 (deftest an-unused-tool-pin-warns-and-keeps-the-built-in-one
-  (testing "0.2.0 accepted any :tools :chroma / :fswatcher pin; nothing runs
-            chroma yet and only `bb dev` runs the pod, falling back to polling,
-            so a bad one is a warning and the config is repaired
-            (Pagefind's stay errors: search-config-is-validated)"
-    (doseq [[edn re check] [[{:tools {:chroma {:version "latest"}}} #":tools :chroma :version is \"latest\""
-                             #(= "2.27.0" (get-in % [:tools :chroma :version]))]
-                            [{:tools {:chroma {:sha256 "abc"}}} #":tools :chroma :sha256 must map each platform"
-                             #(not (contains? (get-in % [:tools :chroma]) :sha256))]
-                            [{:tools {:fswatcher {:version 7}}} #":tools :fswatcher :version is 7"
+  (testing "0.2.0 accepted any :tools :fswatcher pin; only `bb dev` runs the
+            pod, falling back to polling, so a bad one is a warning and the
+            config is repaired (Pagefind's and, since Phase 4 C, Chroma's are
+            errors)"
+    (doseq [[edn re check] [[{:tools {:fswatcher {:version 7}}} #":tools :fswatcher :version is 7"
                              #(= "0.0.7" (get-in % [:tools :fswatcher :version]))]
                             [{:tools {:fswatcher {:sha256 {"linux-amd64" "zz"}}}} #":tools :fswatcher :sha256 must map"
                              #(not (contains? (get-in % [:tools :fswatcher]) :sha256))]]]
@@ -287,61 +283,77 @@
             (is (empty? (diag/errors ds)) (pr-str edn))
             (is (= 1 (count ws)) (pr-str edn (map :message ws)))
             (is (re-find re (str (:message (first ws)))) (pr-str edn))
-            (is (re-find (if (contains? (:tools edn) :fswatcher)
-                           #"Only `bb dev` runs the fswatcher pod, and it falls back to polling when it cannot, so the built-in pin is used\."
-                           #"It has no effect in 0\.2\.0 \(nothing runs chroma yet\), so the built-in pin is used\.")
+            (is (re-find #"Only `bb dev` runs the fswatcher pod, and it falls back to polling when it cannot, so the built-in pin is used\."
                          (str (:hint (first ws))))
                 (:hint (first ws)))
             (is (check cfg) (pr-str edn (:tools cfg))))))))
-  (testing "0.2.0's own DESIGN §5.6 sketch, verbatim, no longer fails doctor"
+  (testing "0.2.0's own DESIGN §5.6 sketch, verbatim: since Phase 4 C runs
+            Chroma, its one-string :sha256 is an ERROR (CHANGELOG), and the
+            styles that sat beside it are still only warnings"
     (with-dir
       (fn [dir]
         (spit (fs/file dir "site.edn")
               "{:tools {:chroma {:version \"2.27.0\" :sha256 \"…\" :style \"github\" :dark-style \"github-dark\"}}}")
-        (let [[cfg ds] (diag/collecting (config/load-config (str dir)))
+        (let [[_ ds] (diag/collecting (config/load-config (str dir)))
               ms (map :message (diag/warnings ds))]
-          (is (empty? (diag/errors ds)))
-          (is (= 1 (count (filter #(re-find #":tools :chroma :sha256 must map" %) ms))) (pr-str ms))
+          (is (= [":tools :chroma :sha256 must map each platform to its hex sha256, e.g. {\"linux-amd64\" \"91e1…\"}."]
+                 (map :message (diag/errors ds))))
           (is (some #(str/starts-with? % ":tools :chroma :style belongs under :highlight :style") ms) (pr-str ms))
           (is (some #(str/starts-with? % ":tools :chroma :dark-style belongs under :highlight :dark-style") ms) (pr-str ms))
-          (is (= 3 (count ms)) (pr-str ms))
-          (is (= {:version "2.27.0" :style "github" :dark-style "github-dark"} (get-in cfg [:tools :chroma]))))
-        (fs/create-dirs (fs/path dir "content" "01.Guide"))
-        (spit (fs/file dir "content" "01.Guide" "01.a.md") "---\ntitle: A\npermalink: /pages/aaaaaa/\n---\n\nA.\n")
-        (let [r (with-out-str (cli/doctor {:site-dir (str dir)}))]
-          (is (re-find #"0 error" r) r))))))
+          (is (= 2 (count ms)) (pr-str ms)))))))
+
+(deftest a-bad-chroma-pin-is-an-error-now
+  (testing "Phase 4 C: the build runs Chroma, so :chroma joined
+            config/fatal-tool-ids — a bad pin is an error, like Pagefind's,
+            and the build does not run (it was a repaired warning in A/B1)"
+    (is (contains? config/fatal-tool-ids :chroma))
+    (doseq [[edn re] [[{:tools {:chroma {:version "latest"}}} #"^:tools :chroma :version is \"latest\""]
+                      [{:tools {:chroma {:sha256 "abc"}}} #"^:tools :chroma :sha256 must map each platform"]
+                      [{:tools {:chroma "2.27.0"}} #"^:tools :chroma is \"2.27.0\", but it must be a map"]]]
+      (with-dir
+        (fn [dir]
+          (spit (fs/file dir "site.edn") (pr-str edn))
+          (let [[_ ds] (diag/collecting (config/load-config (str dir)))]
+            (is (= 1 (count (diag/errors ds))) (pr-str edn (map :message ds)))
+            (is (re-find re (str (:message (first (diag/errors ds))))) (pr-str edn))
+            (let [e (try (cli/build {:site-dir (str dir)}) nil
+                         (catch clojure.lang.ExceptionInfo e e))]
+              (is (= 1 (:babashka/exit (ex-data e))) (pr-str edn))
+              (is (re-find #"config error" (str (ex-message e)))))
+            (is (not (fs/exists? (fs/path dir "dist"))))))))))
 
 (deftest a-half-bad-unused-tool-pin-is-reset-as-one-unit
   ;; a custom version kept with its hashes dropped has no hash to verify
   ;; against, so the hint's "the built-in pin is used" was false and
-  ;; `fetch-tool --tool chroma` failed
+  ;; `fetch-tool --tool chroma` failed. (Chroma's pin is an error since
+  ;; Phase 4 C; the fswatcher pod's is the one still repaired.)
   (doseq [[extra n-warnings] [[{:url "https://example.invalid/{{version}}/{{platform}}"} 1]
                               [{:style "github"} 2]]]
     (with-dir
       (fn [dir]
-        (let [tool  tools/chroma
+        (let [tool  tools/fswatcher
               plat  (or (tools/platform tool) "linux-amd64")
-              chroma (merge {:version "2.26.0" :sha256 "abc"} extra)]
-          (spit (fs/file dir "site.edn") (pr-str {:tools {:cache-dir "cache" :chroma chroma}}))
+              pin   (merge {:version "0.0.6" :sha256 "abc"} extra)]
+          (spit (fs/file dir "site.edn") (pr-str {:tools {:cache-dir "cache" :fswatcher pin}}))
           (let [[cfg ds] (diag/collecting (config/load-config (str dir)))
                 ws (diag/warnings ds)]
             (is (empty? (diag/errors ds)))
             (is (= n-warnings (count ws)) (pr-str (map :message ws)))
-            (is (= 1 (count (filter #(re-find #"^:tools :chroma :sha256 must map" (:message %)) ws))))
-            (is (= (merge {:version "2.27.0"} extra) (get-in cfg [:tools :chroma]))
+            (is (= 1 (count (filter #(re-find #"^:tools :fswatcher :sha256 must map" (:message %)) ws))))
+            (is (= (merge {:version "0.0.7"} extra) (get-in cfg [:tools :fswatcher]))
                 "the built-in version, no :sha256, every other key kept")
             (when (tools/platform tool)
               (testing "fetch-tool resolves the built-in pin (a preinstalled, stamped cache entry)"
                 (let [entry (tools/tool-dir tool cfg plat)
                       bin   (fs/path entry (tools/binary-name tool plat))]
-                  (is (= "2.27.0" (str (fs/file-name (fs/parent entry)))))
+                  (is (= "0.0.7" (str (fs/file-name (fs/parent entry)))))
                   (fs/create-dirs entry)
-                  (spit (fs/file bin) "#!/bin/sh\necho chroma\n")
+                  (spit (fs/file bin) "#!/bin/sh\necho pod\n")
                   (spit (fs/file entry tools/stamp-name)
                         (pr-str {:archive-sha256 (tools/expected-sha256 tool cfg plat)
                                  :binary-sha256  (tools/sha256-hex bin)}))
                   (is (= (str bin "\n")
-                         (with-out-str (cli/fetch-tool {:site-dir (str dir) :tool "chroma"})))))))))))))
+                         (with-out-str (cli/fetch-tool {:site-dir (str dir) :tool "fswatcher"})))))))))))))
 
 (deftest fetch-tool-takes-a-tool
   (with-dir

@@ -16,6 +16,7 @@ depends on the network.
 | `overflow.test.mjs` | At 320 and 360 px wide, every HTML page has `document.documentElement.scrollWidth <= innerWidth`. |
 | `dev.test.mjs` | `bb dev` (Phase 4 Task D) on a temp copy of the demo with `--no-search`: an edit to an article is visible within 3 s; breaking its front matter shows the build-error overlay within 3 s, naming the file and covering the viewport, with `window.clogem` intact; the fix clears it within 3 s. Skips (passes, saying why) when `bb` is not on `PATH` or `bb dev` does not come up within 90 s. |
 | `modes.test.mjs` | Colour modes (Phase 4 B1): the root background of the first animation frame for stored, OS, blocked-storage, garbage and no-JS cases; the toggle by keyboard (Tab, Enter, arrows, Escape) and its stored choice; a live OS change in auto mode; the Pagefind trigger and dialog on `--mainBg` in dark, read and light; print hides the chrome; `overrides/custom.css` applies, last. |
+| `code.test.mjs` | Code blocks (Phase 4 C): every highlighted token's computed colour, the line numbers and the language label reach 4.5:1 on the background behind them in light, dark, read and auto-under-a-dark-OS; line numbers are drawn but are not text; the copy button puts exactly the fenced source on the clipboard, shows `check` and announces "Copied", then resets, and is labelled in the page's language; no button without JS; wide code scrolls inside its box at 320 px. Needs a build that highlights (`CLOGEM_CHROMA` on CI). |
 
 ## Running locally
 

@@ -732,12 +732,23 @@
                                       (- (System/currentTimeMillis) t0))))))]
     (fn [cfg] (reset! pending cfg) (request!))))
 
+(defn build-opts
+  "The options every dev rebuild passes to `clogem.cli/build`: the CLI's
+  own (--out, --base, --no-search, --no-highlight, --no-write …) plus the
+  two flags only `bb dev` sets — `:clogem/dev?` (⟦key⟧ for a missing UI
+  string, search left to the background indexer, §11.3 item 12) and
+  `:clogem/dev-loop?` (a Chroma failure warns once and code renders plain,
+  §11.3 item 10)."
+  [opts]
+  (assoc opts :site-dir (or (:site-dir opts) ".") :clogem/dev? true :clogem/dev-loop? true))
+
 (defn dev!
   [{:keys [poll interval probe-ms reload-code]
     :or {interval 500 probe-ms default-probe-ms} :as opts}]
   (let [;; D-P2-12: a config error is fatal here too — the rebuild loop would
         ;; otherwise serve a site rendered under a repaired config for ever.
-        ;; `load-cfg!` applies --out, --base and --no-search as `build` does.
+        ;; `load-cfg!` applies --out, --base, --no-search and --no-highlight as
+        ;; `build` does.
         cfg     ((requiring-resolve 'clogem.cli/load-cfg!) opts)
         cfg     (assoc cfg :clogem/dev? true)
         cfg-ref (atom cfg)
@@ -750,7 +761,7 @@
         state   (atom {:ever-ok? false})
         build   (requiring-resolve 'clogem.cli/build)
         rebuild (make-rebuild
-                 {:build       #(build (assoc opts :site-dir (or (:site-dir opts) ".") :clogem/dev? true))
+                 {:build       #(build (build-opts opts))
                   :out         out
                   :state       state
                   :index!      (indexer)

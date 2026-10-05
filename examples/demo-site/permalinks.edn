@@ -80,6 +80,10 @@
   {:key "/03.Deep/10.Level2/20.Level3|2|three-deep",
    :langs ["en"],
    :paths ["03.Deep/10.Level2/20.Level3/02.three-deep.md"]},
+  "/pages/eed953/"
+  {:key "/02.Notes/10.Local|7|code-blocks",
+   :langs ["en"],
+   :paths ["02.Notes/10.Local/07.code-blocks.md"]},
   "/pages/mig001/"
   {:key "_posts||2026-07-20-migrated",
    :langs ["en"],

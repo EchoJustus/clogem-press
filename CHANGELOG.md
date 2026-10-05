@@ -4,8 +4,10 @@
 
 Phase 4, Task B1 — colour modes, an accessible palette, the mode toggle and
 icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
-(§11.3 items 7, 11, 16, 18), then Task D — the dev loop (§11.3 item 12). The
-version stays 0.2.0.
+(§11.3 items 7, 11, 16, 18), then Task C — code highlighting (§11.3 item
+10), then Task D — the dev loop (§11.3 item 12). The version stays 0.2.0.
+
+**Task D — the dev loop** (§11.3 item 12):
 
 ### Changed (D)
 
@@ -55,6 +57,110 @@ version stays 0.2.0.
 - **The poll loop survives an `Error`**, and so do pod callbacks.
 - **A `site.edn` change that moves `:content :dir`** is followed when
   polling (with the pod, dev says to restart).
+
+**Task C — code highlighting** (§11.3 item 10):
+
+### Breaking (C)
+
+- **A bad `:tools :chroma` pin is now an error**, like Pagefind's: the
+  build runs Chroma, so `:chroma` joined `config/fatal-tool-ids`. Task A
+  made it a warning that kept the built-in pin; a `:version` that is not a
+  version, a `:sha256` that is not a per-platform map (0.2.0's own DESIGN
+  §5.6 sketch had one string), or a `:tools :chroma` that is not a map now
+  stops `build` and `doctor` with a config error. Delete the key to use the
+  built-in pin.
+- **The first build of a site with code fetches Chroma** (a 3 MB download,
+  an 8.4 MB binary unpacked; once, sha256-verified, cached outside the site
+  like Pagefind). A failed
+  download, a hash mismatch, or a Chroma run that fails is a build error
+  (exit 1) whose hint names `--no-highlight` and
+  `:highlight {:provider :none}`; so is a `CLOGEM_CHROMA` that cannot be
+  run (no exec bit, a `noexec` mount). This is the one new way a build that
+  passed in 0.2.0 can fail. A site with no code block never fetches it:
+  "has code" is read from the parsed pages, so a fence inside a blockquote
+  counts and a nested list indented four spaces does not.
+
+### Added (C)
+
+- **Syntax highlighting, on by default**:
+  `:highlight {:provider :chroma :line-numbers true :copy-button true
+  :style "github" :dark-style "github-dark"}`. `:provider :none`, or
+  `--no-highlight` on `build` and `dev`, renders code as 0.2.0 did. Chroma
+  2.27.0 knows 297 languages, by name, alias or file extension (`clojure`,
+  `clj`, `edn`); an unknown one is shown as plain text with one warning per
+  language per build, and a block with no language is plain text with no
+  warning, naming the first file (in path order) that uses it. Every code
+  block of every article, `index*.md` and `@pages/*` page is highlighted in
+  one Chroma process per language (at most 150 blocks each) and cached in
+  memory, so a `bb dev` rebuild runs none for unchanged code. In a `dev`
+  rebuild a Chroma failure is a warning, given once, after which code
+  renders plain and Chroma is not run again until `bb dev` restarts.
+- **Fence options**: ` ```js{1,3-5} ` and ` ```js {2} ` highlight lines;
+  ` ```js:no-line-numbers ` and ` ```js:line-numbers ` override
+  `:highlight :line-numbers` for one block; extra attributes such as
+  `title="x"` are ignored.
+- **Line numbers are drawn by CSS**, never written into the page: copying
+  code never copies them, and Pagefind indexes `import`, not `1import`.
+- **Colours for every mode**: `dist/clogem/css/highlight.css` (12 KB),
+  generated at build time from the two Chroma styles as `--hl-*` variables,
+  linked right after `theme.css` and only when the build highlights. Light
+  mode uses `:style`; dark and reading mode (whose code block is dark) use
+  `:dark-style`; printing uses the light colours. Every token colour, the
+  line numbers and the language label reach 4.5:1 on the code background
+  and on a highlighted line in every mode, checked by `bb test` and in a
+  browser. An unknown style is a warning and the default is used.
+- **A copy button and a language label** on each code block. The button
+  (`js/code.js`, only when `:copy-button` is on, only on pages with code) is
+  added by JavaScript and only where the browser has the clipboard API, so
+  there is never a dead button, and nothing for search or the feeds to
+  index; it copies exactly the code, shows a check mark and announces
+  "Copied" for two seconds. The label is the fence's language, from CSS.
+  Its strings are in all five languages.
+- Wide code scrolls inside its own box; the label and the button stay put.
+- `CLOGEM_CHROMA` (or `:tools :chroma :path`) names an installed Chroma,
+  as `CLOGEM_PAGEFIND` does for Pagefind.
+- **`doctor` checks code languages** against Chroma's list, with the same
+  warning `build` gives, when a Chroma binary is already here
+  (`CLOGEM_CHROMA`, `:tools :chroma :path` or the tools cache). It never
+  downloads one: without one it says once, as info, that it skipped the
+  check. A `CLOGEM_CHROMA` that `build` could not run is a `doctor` error.
+
+### Changed (C)
+
+- The light-mode code background is `#f6f8fa` (was `#f1f3f5`), so that
+  every `github` token colour reaches 4.5:1; reading mode keeps `#282c34`,
+  on which every `github-dark` token that ships does too (the lowest is
+  `.c`, 4.55:1; `.err` is not shipped). New palette variables per mode:
+  `--codeLineNumber` and `--codeHlBg` (a highlighted line).
+- `pre.clogem-code` no longer scrolls itself: its `<code>` does, and the
+  `<pre>` carries `data-lang`. CSS that styled the `<pre>`'s padding or
+  scrolling may need to move to `pre.clogem-code > code`.
+- Chroma's lexers mark text they cannot tokenize as an error token — a
+  Tamil symbol in Clojure code is split at every vowel sign — and `github`
+  paints those white on red. Error tokens are shown in the code colour
+  instead.
+
+### Fixed (C)
+
+- **A fence's options leaked into its class**: ` ```js{1,3-5} ` rendered
+  `class="language-js{1,3-5}"` and ` ```js:no-line-numbers ` rendered
+  `class="language-js:no-line-numbers"` (0.2.0). The fence's info string
+  is now parsed for its language, and no class can contain `{`, `}` or
+  `:`, with highlighting on or off.
+
+### Needs native review (C)
+
+- `:code/copy` and `:code/copied` in **Malay** (`Salin`, `Disalin`) and
+  **Tamil** (`நகலெடு`, `நகலெடுக்கப்பட்டது`).
+
+### Documentation (C)
+
+- DESIGN.md §11.3 item 10 is marked done, with what was measured; §5.6
+  shows the `:highlight` keys; §8 marks Task C done. README: highlighting
+  is on by default, the first build fetches Chroma, and how to turn it off.
+  config.example.edn documents `:highlight`.
+
+**Task B1 — colour modes** (§11.3 items 2–6 and 8):
 
 ### Breaking (B1)
 

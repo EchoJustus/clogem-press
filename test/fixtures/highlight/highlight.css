@@ -1,0 +1,478 @@
+/* clogem-press highlight.css — generated at build time from Chroma 2.27.0 styles "github" (light) and "github-dark" (dark, read).
+ * Token colours only; the theme owns the code background, line numbers
+ * and highlighted lines (theme.css). Do not edit: set :highlight :style
+ * and :dark-style instead (DESIGN.md §11.3 item 10). */
+
+:root, .theme-mode-light {
+  --hl-bp: #6a737d;
+  --hl-c: #57606a;
+  --hl-c-fs: initial;
+  --hl-c1: #57606a;
+  --hl-c1-fs: initial;
+  --hl-ch: #57606a;
+  --hl-ch-fs: initial;
+  --hl-cm: #57606a;
+  --hl-cm-fs: initial;
+  --hl-cp: #57606a;
+  --hl-cp-fw: initial;
+  --hl-cp-fs: initial;
+  --hl-cpf: #57606a;
+  --hl-cpf-fw: initial;
+  --hl-cpf-fs: initial;
+  --hl-cs: #57606a;
+  --hl-cs-fw: initial;
+  --hl-cs-fs: initial;
+  --hl-dl: #0a3069;
+  --hl-fm: #6639ba;
+  --hl-fm-fw: initial;
+  --hl-gd: #82071e;
+  --hl-gd-bg: #ffebe9;
+  --hl-ge: #1f2328;
+  --hl-ge-fs: initial;
+  --hl-gh: initial;
+  --hl-gh-fw: initial;
+  --hl-gi: #116329;
+  --hl-gi-bg: #dafbe1;
+  --hl-gl-td: underline;
+  --hl-go: #1f2328;
+  --hl-gp: initial;
+  --hl-gr: initial;
+  --hl-gs-fw: initial;
+  --hl-gt: initial;
+  --hl-gu: initial;
+  --hl-il: #0550ae;
+  --hl-k: #cf222e;
+  --hl-kc: #cf222e;
+  --hl-kd: #cf222e;
+  --hl-kn: #cf222e;
+  --hl-kp: #cf222e;
+  --hl-kr: #cf222e;
+  --hl-kt: #cf222e;
+  --hl-l: initial;
+  --hl-ld: initial;
+  --hl-m: #0550ae;
+  --hl-mb: #0550ae;
+  --hl-mf: #0550ae;
+  --hl-mh: #0550ae;
+  --hl-mi: #0550ae;
+  --hl-mo: #0550ae;
+  --hl-na: #1f2328;
+  --hl-nb: #6639ba;
+  --hl-nc: #1f2328;
+  --hl-nc-fw: initial;
+  --hl-nd: #0550ae;
+  --hl-nd-fw: initial;
+  --hl-ne: initial;
+  --hl-ne-fw: initial;
+  --hl-nf: #6639ba;
+  --hl-nf-fw: initial;
+  --hl-ni: #6639ba;
+  --hl-nl: #990000;
+  --hl-nl-fw: bold;
+  --hl-nn: #24292e;
+  --hl-no: #0550ae;
+  --hl-no-fw: initial;
+  --hl-nt: #0550ae;
+  --hl-nv: #953800;
+  --hl-nx: #1f2328;
+  --hl-o: #0550ae;
+  --hl-o-fw: initial;
+  --hl-or: #0550ae;
+  --hl-or-fw: initial;
+  --hl-ow: #0550ae;
+  --hl-ow-fw: initial;
+  --hl-p: #1f2328;
+  --hl-py: initial;
+  --hl-s: #0a3069;
+  --hl-s1: #0a3069;
+  --hl-s2: #0a3069;
+  --hl-sa: #0a3069;
+  --hl-sb: #0a3069;
+  --hl-sc: #0a3069;
+  --hl-sd: #0a3069;
+  --hl-se: #0a3069;
+  --hl-sh: #0a3069;
+  --hl-si: #0a3069;
+  --hl-sr: #0a3069;
+  --hl-ss: #032f62;
+  --hl-sx: #0a3069;
+  --hl-vc: #953800;
+  --hl-vg: #953800;
+  --hl-vi: #953800;
+  --hl-vm: #953800;
+}
+
+.theme-mode-dark, .theme-mode-read {
+  --hl-bp: initial;
+  --hl-c: #8b949e;
+  --hl-c-fs: italic;
+  --hl-c1: #8b949e;
+  --hl-c1-fs: italic;
+  --hl-ch: #8b949e;
+  --hl-ch-fs: italic;
+  --hl-cm: #8b949e;
+  --hl-cm-fs: italic;
+  --hl-cp: #8b949e;
+  --hl-cp-fw: bold;
+  --hl-cp-fs: italic;
+  --hl-cpf: #8b949e;
+  --hl-cpf-fw: bold;
+  --hl-cpf-fs: italic;
+  --hl-cs: #8b949e;
+  --hl-cs-fw: bold;
+  --hl-cs-fs: italic;
+  --hl-dl: #79c0ff;
+  --hl-fm: #d2a8ff;
+  --hl-fm-fw: bold;
+  --hl-gd: #ffa198;
+  --hl-gd-bg: #490202;
+  --hl-ge: initial;
+  --hl-ge-fs: italic;
+  --hl-gh: #79c0ff;
+  --hl-gh-fw: bold;
+  --hl-gi: #56d364;
+  --hl-gi-bg: #0f5323;
+  --hl-gl-td: underline;
+  --hl-go: #8b949e;
+  --hl-gp: #8b949e;
+  --hl-gr: #ffa198;
+  --hl-gs-fw: bold;
+  --hl-gt: #ff7b72;
+  --hl-gu: #79c0ff;
+  --hl-il: #a5d6ff;
+  --hl-k: #ff7b72;
+  --hl-kc: #79c0ff;
+  --hl-kd: #ff7b72;
+  --hl-kn: #ff7b72;
+  --hl-kp: #79c0ff;
+  --hl-kr: #ff7b72;
+  --hl-kt: #ff7b72;
+  --hl-l: #a5d6ff;
+  --hl-ld: #79c0ff;
+  --hl-m: #a5d6ff;
+  --hl-mb: #a5d6ff;
+  --hl-mf: #a5d6ff;
+  --hl-mh: #a5d6ff;
+  --hl-mi: #a5d6ff;
+  --hl-mo: #a5d6ff;
+  --hl-na: initial;
+  --hl-nb: initial;
+  --hl-nc: #f0883e;
+  --hl-nc-fw: bold;
+  --hl-nd: #d2a8ff;
+  --hl-nd-fw: bold;
+  --hl-ne: #f0883e;
+  --hl-ne-fw: bold;
+  --hl-nf: #d2a8ff;
+  --hl-nf-fw: bold;
+  --hl-ni: #ffa657;
+  --hl-nl: #79c0ff;
+  --hl-nl-fw: bold;
+  --hl-nn: #ff7b72;
+  --hl-no: #79c0ff;
+  --hl-no-fw: bold;
+  --hl-nt: #7ee787;
+  --hl-nv: #79c0ff;
+  --hl-nx: initial;
+  --hl-o: #ff7b72;
+  --hl-o-fw: bold;
+  --hl-or: #ff7b72;
+  --hl-or-fw: bold;
+  --hl-ow: #ff7b72;
+  --hl-ow-fw: bold;
+  --hl-p: initial;
+  --hl-py: #79c0ff;
+  --hl-s: #a5d6ff;
+  --hl-s1: #a5d6ff;
+  --hl-s2: #a5d6ff;
+  --hl-sa: #79c0ff;
+  --hl-sb: #a5d6ff;
+  --hl-sc: #a5d6ff;
+  --hl-sd: #a5d6ff;
+  --hl-se: #79c0ff;
+  --hl-sh: #79c0ff;
+  --hl-si: #a5d6ff;
+  --hl-sr: #79c0ff;
+  --hl-ss: #a5d6ff;
+  --hl-sx: #a5d6ff;
+  --hl-vc: #79c0ff;
+  --hl-vg: #79c0ff;
+  --hl-vi: #79c0ff;
+  --hl-vm: #79c0ff;
+}
+
+@media (prefers-color-scheme: dark) {
+  .theme-mode-auto {
+    --hl-bp: initial;
+    --hl-c: #8b949e;
+    --hl-c-fs: italic;
+    --hl-c1: #8b949e;
+    --hl-c1-fs: italic;
+    --hl-ch: #8b949e;
+    --hl-ch-fs: italic;
+    --hl-cm: #8b949e;
+    --hl-cm-fs: italic;
+    --hl-cp: #8b949e;
+    --hl-cp-fw: bold;
+    --hl-cp-fs: italic;
+    --hl-cpf: #8b949e;
+    --hl-cpf-fw: bold;
+    --hl-cpf-fs: italic;
+    --hl-cs: #8b949e;
+    --hl-cs-fw: bold;
+    --hl-cs-fs: italic;
+    --hl-dl: #79c0ff;
+    --hl-fm: #d2a8ff;
+    --hl-fm-fw: bold;
+    --hl-gd: #ffa198;
+    --hl-gd-bg: #490202;
+    --hl-ge: initial;
+    --hl-ge-fs: italic;
+    --hl-gh: #79c0ff;
+    --hl-gh-fw: bold;
+    --hl-gi: #56d364;
+    --hl-gi-bg: #0f5323;
+    --hl-gl-td: underline;
+    --hl-go: #8b949e;
+    --hl-gp: #8b949e;
+    --hl-gr: #ffa198;
+    --hl-gs-fw: bold;
+    --hl-gt: #ff7b72;
+    --hl-gu: #79c0ff;
+    --hl-il: #a5d6ff;
+    --hl-k: #ff7b72;
+    --hl-kc: #79c0ff;
+    --hl-kd: #ff7b72;
+    --hl-kn: #ff7b72;
+    --hl-kp: #79c0ff;
+    --hl-kr: #ff7b72;
+    --hl-kt: #ff7b72;
+    --hl-l: #a5d6ff;
+    --hl-ld: #79c0ff;
+    --hl-m: #a5d6ff;
+    --hl-mb: #a5d6ff;
+    --hl-mf: #a5d6ff;
+    --hl-mh: #a5d6ff;
+    --hl-mi: #a5d6ff;
+    --hl-mo: #a5d6ff;
+    --hl-na: initial;
+    --hl-nb: initial;
+    --hl-nc: #f0883e;
+    --hl-nc-fw: bold;
+    --hl-nd: #d2a8ff;
+    --hl-nd-fw: bold;
+    --hl-ne: #f0883e;
+    --hl-ne-fw: bold;
+    --hl-nf: #d2a8ff;
+    --hl-nf-fw: bold;
+    --hl-ni: #ffa657;
+    --hl-nl: #79c0ff;
+    --hl-nl-fw: bold;
+    --hl-nn: #ff7b72;
+    --hl-no: #79c0ff;
+    --hl-no-fw: bold;
+    --hl-nt: #7ee787;
+    --hl-nv: #79c0ff;
+    --hl-nx: initial;
+    --hl-o: #ff7b72;
+    --hl-o-fw: bold;
+    --hl-or: #ff7b72;
+    --hl-or-fw: bold;
+    --hl-ow: #ff7b72;
+    --hl-ow-fw: bold;
+    --hl-p: initial;
+    --hl-py: #79c0ff;
+    --hl-s: #a5d6ff;
+    --hl-s1: #a5d6ff;
+    --hl-s2: #a5d6ff;
+    --hl-sa: #79c0ff;
+    --hl-sb: #a5d6ff;
+    --hl-sc: #a5d6ff;
+    --hl-sd: #a5d6ff;
+    --hl-se: #79c0ff;
+    --hl-sh: #79c0ff;
+    --hl-si: #a5d6ff;
+    --hl-sr: #79c0ff;
+    --hl-ss: #a5d6ff;
+    --hl-sx: #a5d6ff;
+    --hl-vc: #79c0ff;
+    --hl-vg: #79c0ff;
+    --hl-vi: #79c0ff;
+    --hl-vm: #79c0ff;
+  }
+}
+
+/* printing uses the light palette whatever the mode (theme.css) */
+@media print {
+  html[class] {
+    --hl-bp: #6a737d;
+    --hl-c: #57606a;
+    --hl-c-fs: initial;
+    --hl-c1: #57606a;
+    --hl-c1-fs: initial;
+    --hl-ch: #57606a;
+    --hl-ch-fs: initial;
+    --hl-cm: #57606a;
+    --hl-cm-fs: initial;
+    --hl-cp: #57606a;
+    --hl-cp-fw: initial;
+    --hl-cp-fs: initial;
+    --hl-cpf: #57606a;
+    --hl-cpf-fw: initial;
+    --hl-cpf-fs: initial;
+    --hl-cs: #57606a;
+    --hl-cs-fw: initial;
+    --hl-cs-fs: initial;
+    --hl-dl: #0a3069;
+    --hl-fm: #6639ba;
+    --hl-fm-fw: initial;
+    --hl-gd: #82071e;
+    --hl-gd-bg: #ffebe9;
+    --hl-ge: #1f2328;
+    --hl-ge-fs: initial;
+    --hl-gh: initial;
+    --hl-gh-fw: initial;
+    --hl-gi: #116329;
+    --hl-gi-bg: #dafbe1;
+    --hl-gl-td: underline;
+    --hl-go: #1f2328;
+    --hl-gp: initial;
+    --hl-gr: initial;
+    --hl-gs-fw: initial;
+    --hl-gt: initial;
+    --hl-gu: initial;
+    --hl-il: #0550ae;
+    --hl-k: #cf222e;
+    --hl-kc: #cf222e;
+    --hl-kd: #cf222e;
+    --hl-kn: #cf222e;
+    --hl-kp: #cf222e;
+    --hl-kr: #cf222e;
+    --hl-kt: #cf222e;
+    --hl-l: initial;
+    --hl-ld: initial;
+    --hl-m: #0550ae;
+    --hl-mb: #0550ae;
+    --hl-mf: #0550ae;
+    --hl-mh: #0550ae;
+    --hl-mi: #0550ae;
+    --hl-mo: #0550ae;
+    --hl-na: #1f2328;
+    --hl-nb: #6639ba;
+    --hl-nc: #1f2328;
+    --hl-nc-fw: initial;
+    --hl-nd: #0550ae;
+    --hl-nd-fw: initial;
+    --hl-ne: initial;
+    --hl-ne-fw: initial;
+    --hl-nf: #6639ba;
+    --hl-nf-fw: initial;
+    --hl-ni: #6639ba;
+    --hl-nl: #990000;
+    --hl-nl-fw: bold;
+    --hl-nn: #24292e;
+    --hl-no: #0550ae;
+    --hl-no-fw: initial;
+    --hl-nt: #0550ae;
+    --hl-nv: #953800;
+    --hl-nx: #1f2328;
+    --hl-o: #0550ae;
+    --hl-o-fw: initial;
+    --hl-or: #0550ae;
+    --hl-or-fw: initial;
+    --hl-ow: #0550ae;
+    --hl-ow-fw: initial;
+    --hl-p: #1f2328;
+    --hl-py: initial;
+    --hl-s: #0a3069;
+    --hl-s1: #0a3069;
+    --hl-s2: #0a3069;
+    --hl-sa: #0a3069;
+    --hl-sb: #0a3069;
+    --hl-sc: #0a3069;
+    --hl-sd: #0a3069;
+    --hl-se: #0a3069;
+    --hl-sh: #0a3069;
+    --hl-si: #0a3069;
+    --hl-sr: #0a3069;
+    --hl-ss: #032f62;
+    --hl-sx: #0a3069;
+    --hl-vc: #953800;
+    --hl-vg: #953800;
+    --hl-vi: #953800;
+    --hl-vm: #953800;
+  }
+}
+
+.chroma .bp { color: var(--hl-bp) }
+.chroma .c { color: var(--hl-c); font-style: var(--hl-c-fs) }
+.chroma .c1 { color: var(--hl-c1); font-style: var(--hl-c1-fs) }
+.chroma .ch { color: var(--hl-ch); font-style: var(--hl-ch-fs) }
+.chroma .cm { color: var(--hl-cm); font-style: var(--hl-cm-fs) }
+.chroma .cp { color: var(--hl-cp); font-weight: var(--hl-cp-fw); font-style: var(--hl-cp-fs) }
+.chroma .cpf { color: var(--hl-cpf); font-weight: var(--hl-cpf-fw); font-style: var(--hl-cpf-fs) }
+.chroma .cs { color: var(--hl-cs); font-weight: var(--hl-cs-fw); font-style: var(--hl-cs-fs) }
+.chroma .dl { color: var(--hl-dl) }
+.chroma .fm { color: var(--hl-fm); font-weight: var(--hl-fm-fw) }
+.chroma .gd { color: var(--hl-gd); background-color: var(--hl-gd-bg) }
+.chroma .ge { color: var(--hl-ge); font-style: var(--hl-ge-fs) }
+.chroma .gh { color: var(--hl-gh); font-weight: var(--hl-gh-fw) }
+.chroma .gi { color: var(--hl-gi); background-color: var(--hl-gi-bg) }
+.chroma .gl { text-decoration: var(--hl-gl-td) }
+.chroma .go { color: var(--hl-go) }
+.chroma .gp { color: var(--hl-gp) }
+.chroma .gr { color: var(--hl-gr) }
+.chroma .gs { font-weight: var(--hl-gs-fw) }
+.chroma .gt { color: var(--hl-gt) }
+.chroma .gu { color: var(--hl-gu) }
+.chroma .il { color: var(--hl-il) }
+.chroma .k { color: var(--hl-k) }
+.chroma .kc { color: var(--hl-kc) }
+.chroma .kd { color: var(--hl-kd) }
+.chroma .kn { color: var(--hl-kn) }
+.chroma .kp { color: var(--hl-kp) }
+.chroma .kr { color: var(--hl-kr) }
+.chroma .kt { color: var(--hl-kt) }
+.chroma .l { color: var(--hl-l) }
+.chroma .ld { color: var(--hl-ld) }
+.chroma .m { color: var(--hl-m) }
+.chroma .mb { color: var(--hl-mb) }
+.chroma .mf { color: var(--hl-mf) }
+.chroma .mh { color: var(--hl-mh) }
+.chroma .mi { color: var(--hl-mi) }
+.chroma .mo { color: var(--hl-mo) }
+.chroma .na { color: var(--hl-na) }
+.chroma .nb { color: var(--hl-nb) }
+.chroma .nc { color: var(--hl-nc); font-weight: var(--hl-nc-fw) }
+.chroma .nd { color: var(--hl-nd); font-weight: var(--hl-nd-fw) }
+.chroma .ne { color: var(--hl-ne); font-weight: var(--hl-ne-fw) }
+.chroma .nf { color: var(--hl-nf); font-weight: var(--hl-nf-fw) }
+.chroma .ni { color: var(--hl-ni) }
+.chroma .nl { color: var(--hl-nl); font-weight: var(--hl-nl-fw) }
+.chroma .nn { color: var(--hl-nn) }
+.chroma .no { color: var(--hl-no); font-weight: var(--hl-no-fw) }
+.chroma .nt { color: var(--hl-nt) }
+.chroma .nv { color: var(--hl-nv) }
+.chroma .nx { color: var(--hl-nx) }
+.chroma .o { color: var(--hl-o); font-weight: var(--hl-o-fw) }
+.chroma .or { color: var(--hl-or); font-weight: var(--hl-or-fw) }
+.chroma .ow { color: var(--hl-ow); font-weight: var(--hl-ow-fw) }
+.chroma .p { color: var(--hl-p) }
+.chroma .py { color: var(--hl-py) }
+.chroma .s { color: var(--hl-s) }
+.chroma .s1 { color: var(--hl-s1) }
+.chroma .s2 { color: var(--hl-s2) }
+.chroma .sa { color: var(--hl-sa) }
+.chroma .sb { color: var(--hl-sb) }
+.chroma .sc { color: var(--hl-sc) }
+.chroma .sd { color: var(--hl-sd) }
+.chroma .se { color: var(--hl-se) }
+.chroma .sh { color: var(--hl-sh) }
+.chroma .si { color: var(--hl-si) }
+.chroma .sr { color: var(--hl-sr) }
+.chroma .ss { color: var(--hl-ss) }
+.chroma .sx { color: var(--hl-sx) }
+.chroma .vc { color: var(--hl-vc) }
+.chroma .vg { color: var(--hl-vg) }
+.chroma .vi { color: var(--hl-vi) }
+.chroma .vm { color: var(--hl-vm) }

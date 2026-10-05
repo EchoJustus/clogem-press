@@ -77,4 +77,8 @@
  :mode/auto                   "Follow system"
  :mode/light                  "Light"
  :mode/dark                   "Dark"
- :mode/read                   "Reading"}
+ :mode/read                   "Reading"
+
+ ;; Code blocks (Phase 4 C): the copy button js/code.js adds.
+ :code/copy                   "Copy"
+ :code/copied                 "Copied"}
