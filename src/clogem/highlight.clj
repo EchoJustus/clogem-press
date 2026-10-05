@@ -334,37 +334,29 @@
                       "`chroma --list` prints the styles (DESIGN.md §11.3 item 10).")
           default))))
 
-(def ^:private code-re
-  "A fenced code block's opening line, or a line indented as code — on
-  purpose generous (a list's continuation lines match too): a false
-  positive costs one Chroma fetch, a false negative would render a site's
-  code plain."
-  #"(?m)^ {0,3}(?:`{3,}|~{3,})|^(?: {4}|\t)\s*\S")
-
-(defn code-in?
-  "Might any of these Markdown sources hold a code block?"
-  [sources]
-  (boolean (some #(re-find code-re (str %)) sources)))
-
-(defn sources
-  "Every Markdown body a build of `model` renders: the article variants and
-  the site files (`index*.md`, `@pages/*`)."
-  [model]
-  (concat (for [[_ g] (:articles model) [_ v] (:variants g)] (:body v))
-          (map :body (vals (:site-files model)))))
+(defn has-code?
+  "Does any of these parsed documents hold a code block — a `:code` node
+  anywhere in it, inside a blockquote, a list or a container included? Read
+  from the AST, not the source: a nested list indented four spaces is not
+  code, and a fence inside `> ` is (§11.3 item 10: a site without a code
+  block never fetches Chroma)."
+  [asts]
+  (boolean (some #(some (fn [n] (= :code (:type n))) (tree-seq (fn [n] (seq (:content n))) :content %))
+                 asts)))
 
 (declare render-stylesheet)
 
 (defn session
   "What a build highlights with, or nil when highlighting is off, the site
-  has no code (`code-in?` over `sources`: a site without a code block never
-  fetches Chroma), or, in a dev rebuild, Chroma is unavailable: the
-  binary, its sha256, the lexer table, the styles, and a per-build set of
-  the unknown languages already warned about, and the bytes of
-  highlight.css. Fetches and verifies Chroma on first use: in `build` a
-  failure raises (exit 1), in a dev rebuild it warns once and returns nil."
-  [cfg model]
-  (when (and (enabled? cfg) (code-in? (sources model)))
+  has no code (`code?` false: `has-code?` over every parsed body, so a site
+  without a code block never fetches Chroma), or, in a dev rebuild, Chroma
+  is unavailable: the binary, its sha256, the lexer table, the styles, and
+  a per-build set of the unknown languages already warned about, and the
+  bytes of highlight.css. Fetches and verifies Chroma on first use: in
+  `build` a failure raises (exit 1), in a dev rebuild it warns once and
+  returns nil."
+  [cfg code?]
+  (when (and (enabled? cfg) code?)
     (let [pin [(tools/version tools/chroma cfg) (get-in cfg [:tools :chroma]) (tools/getenv "CLOGEM_CHROMA")]]
       (when-not (and (soft? cfg) (contains? @dev-failures pin))
         (try
@@ -531,12 +523,15 @@
 
 (defn warn-unknown!
   "Warn about fence language `lang` once per build when Chroma has no lexer
-  for it."
+  for it. Atomic (`swap-vals!`): of two pages rendering in parallel, exactly
+  one warns. The build's sequential pre-pass (`clogem.render`) calls this
+  for every source in sorted order first, so the file named is the first
+  that uses the language, whatever order the pages render in."
   [session path lang]
   (when (and session lang (nil? (lexer-for session lang)))
-    (let [k (str/lower-case lang)]
-      (when (not (contains? @(:warned session) k))
-        (swap! (:warned session) conj k)
+    (let [k (str/lower-case lang)
+          [before _] (swap-vals! (:warned session) conj k)]
+      (when-not (contains? before k)
         (diag/warn! path (str "unknown code language " (pr-str lang) "; the block is shown as plain text.")
                     (str "Chroma " (:version session) " has " (:lexer-count session)
                          " lexers; `chroma --list` names them, with their aliases and file extensions."))))))

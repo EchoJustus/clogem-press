@@ -24,6 +24,7 @@
             [clogem.fake-tools :as fake]
             [clogem.highlight :as hl]
             [clogem.markdown :as markdown]
+            [clogem.render]
             [clogem.tools :as tools]
             [org.httpkit.server]))
 
@@ -35,6 +36,8 @@
 ;; Helpers
 
 (defn- reset-dev-failures! [] (reset! @#'hl/dev-failures #{}))
+
+(declare bb-exe)
 
 (defn- with-site
   "A temp site: site.edn from `site-edn` (highlighting on, the fake chroma
@@ -403,6 +406,93 @@
       (is (not (fs/exists? (fs/path out "clogem" "css" "highlight.css"))))
       (is (not (str/includes? (page out "pages" "aaaaa1") "highlight.css"))))))
 
+(deftest quoted-code-is-code
+  (testing "P4-C.1 item 2: a site whose only code is inside a blockquote is highlighted"
+    (with-site {"01.Guide/01.a.md" (article "A" "/pages/aaaaa1/" "# A\n\n> Run:\n>\n> ```bash\n> echo hi\n> ```\n")}
+      (fn [dir out bin]
+        (is (nil? (:error (build! dir out))))
+        (is (= 1 (count (fake/chroma-runs bin))))
+        (is (fs/exists? (fs/path out "clogem" "css" "highlight.css")))
+        (is (str/includes? (page out "pages" "aaaaa1") "<pre class=\"clogem-code chroma language-bash"))))))
+
+(deftest nested-lists-are-not-code
+  (testing "P4-C.1 item 7: four-space nested lists and list continuation
+            paragraphs are not code: no Chroma, no highlight.css — even when
+            no Chroma could be had at all (an offline build)"
+    (with-site {"01.Guide/01.a.md"
+                (article "A" "/pages/aaaaa1/"
+                         (str "# A\n\n- Fruit\n    - apples\n    - pears\n\n"
+                              "1. Step one\n\n    More about step one.\n\n"
+                              "2. Step two\n        deeper text\n"))}
+      (fn [dir out bin]
+        (is (nil? (:error (build! dir out))))
+        (is (= [] (fake/chroma-calls bin)))
+        (is (not (fs/exists? (fs/path out "clogem" "css" "highlight.css"))))
+        (is (not (str/includes? (page out "pages" "aaaaa1") "highlight.css")))
+        (is (not (str/includes? (page out "pages" "aaaaa1") "<pre")))
+        (binding [tools/*env* {"CLOGEM_CHROMA" (str bin "-missing")}]
+          (let [{:keys [error]} (build! dir out)]
+            (is (nil? error) "nothing to highlight, so nothing to fetch")))))))
+
+(deftest code-only-in-site-files-is-highlighted-and-warned-deterministically
+  (testing "P4-C.1 item 5: the pre-pass covers index*.md and @pages/*; an
+            unknown language is warned once, naming the first file in path
+            order, whatever order the pages render in"
+    (with-site {"index.md" "---\nhome: true\n---\n\n# Home\n\n```clojure\n(home)\n```\n\n```zzlang\nh\n```\n"
+                "@pages/archivesPage.md" (str "---\narchivesPage: true\ntitle: Archives\npermalink: /archives/\narticle: false\n---\n\n"
+                                              "```zzlang\na\n```\n")
+                "01.Guide/01.a.md" (article "A" "/pages/aaaaa1/" "# A\n\nProse.\n")}
+      (fn [dir out bin]
+        (doseq [n [1 8]]
+          (hl/clear-cache!)
+          (let [{:keys [error err]} (with-redefs [clogem.render/jobs (constantly n)] (build! dir out))
+                warned (re-seq #"warning: (\S+): unknown code language \"zzlang\"" err)]
+            (is (nil? error) (str error))
+            (is (= [["@pages/archivesPage.md"]] (map rest warned)) (str "jobs " n ": " err))
+            (is (str/includes? (page out) "<pre class=\"clogem-code chroma language-clojure"))))
+        (testing "the site file's block was highlighted in the batched pre-pass: one run per build"
+          (is (= 2 (count (filter #(str/starts-with? % "--lexer=Clojure") (fake/chroma-runs bin)))))))))
+  (testing "warn-unknown! is atomic: of many threads, one warns"
+    (let [session {:lexers {} :warned (atom #{}) :version "x" :lexer-count 0}
+          [_ ds] (diag/collecting
+                  (let [start (promise)
+                        fs    (doall (for [i (range 16)]
+                                       (future @start (hl/warn-unknown! session (str "f" i) "zzlang"))))]
+                    (deliver start true)
+                    (run! deref fs)))]
+      (is (= 1 (count ds))))))
+
+(deftest a-parser-error-names-the-page
+  (testing "P4-C.1 item 3: a StackOverflowError while parsing (an Error, not
+            an Exception) fails the build naming the page, as Task A requires"
+    (with-site {"01.Guide/01.a.md" (article "A" "/pages/aaaaa1/" "# A\n\nBOOM\n\n```clojure\n(a)\n```\n")
+                "01.Guide/02.b.md" (article "B" "/pages/bbbbb2/" "# B\n\n```clojure\n(b)\n```\n")}
+      (fn [dir out _]
+        (let [parse markdown/parse
+              {:keys [error]} (with-redefs [markdown/parse (fn [src & more]
+                                                             (if (str/includes? (str src) "BOOM")
+                                                               ;; a real one: bb cannot construct it
+                                                               ((fn deep [n] (inc (deep n))) 0)
+                                                               (apply parse src more)))]
+                                (build! dir out))]
+          (is (instance? clojure.lang.ExceptionInfo error) (str (class error)))
+          (is (re-find #"could not render /pages/aaaaa1/: java.lang.StackOverflowError" (str (ex-message error)))
+              (str (ex-message error)))
+          (is (= 1 (:babashka/exit (ex-data error))))
+          (is (not (fs/exists? out))))))))
+
+(deftest a-bad-clogem-jobs-is-warned-once
+  (testing "P4-C.1 item 4: an invalid CLOGEM_JOBS is one warning per build, highlighting on"
+    (with-site mixed-site
+      (fn [dir _ bin]
+        (let [{:keys [err exit]} (p/shell {:dir (str dir) :out :string :err :string :continue true
+                                           :extra-env {"CLOGEM_CHROMA" bin "CLOGEM_JOBS" "lots"}}
+                                          (bb-exe) "--config" (str (fs/absolutize "bb.edn"))
+                                          "build" "--no-write" "--no-search" "--out" (str (fs/path dir "dist-jobs")))]
+          (is (zero? exit) err)
+          (is (fs/exists? (fs/path dir "dist-jobs" "clogem" "css" "highlight.css")))
+          (is (= 1 (count (re-seq #"CLOGEM_JOBS is \"lots\"" err))) err))))))
+
 (deftest no-highlight-renders-0-2-0-markup-and-runs-nothing
   (doseq [[how opts site-edn] [["--no-highlight" {:no-highlight true} nil]
                                [":provider :none" nil {:highlight {:provider :none}}]]]
@@ -694,7 +784,7 @@
               htmls  (for [p (fs/glob out "**.html")] (slurp (fs/file p)))
               blocks (mapcat pres htmls)
               stats  (hl/process-stats)
-              session (binding [tools/*env* {"CLOGEM_CHROMA" real}] (hl/session (assoc cfg :clogem/dev-loop? false) model))
+              session (binding [tools/*env* {"CLOGEM_CHROMA" real}] (hl/session (assoc cfg :clogem/dev-loop? false) true))
               by-lexer (frequencies (keep #(hl/lexer-for session (:lang (hl/parse-info (:info %))))
                                           (for [[_ g] (:articles model) [_ v] (:variants g)
                                                 n (hl/code-nodes (markdown/parse (:body v) {}))] n)))
