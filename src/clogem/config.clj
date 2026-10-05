@@ -383,8 +383,11 @@
   checked when the build runs it (`clogem.highlight/session`)."
   [cfg]
   (let [hl (get cfg :highlight)
+        ;; a BAD value falls back to the shipped default, not to `defaults`
+        ;; (which a test runner may have switched off): the warning says
+        ;; what a real build does
         repair (fn [cfg k msg]
-                 (let [default (get-in defaults [:highlight k])]
+                 (let [default (get highlight-defaults k)]
                    (diag/warn! nil (str ":highlight " k " is " (pr-str (get-in cfg [:highlight k])) ", " msg
                                         "; using " (pr-str default) ".")
                                "See config.example.edn (DESIGN.md §11.3 item 10).")

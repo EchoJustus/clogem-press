@@ -130,7 +130,7 @@
   (let [cfg (cond-> (load-cfg! opts)
               ;; a `dev` rebuild (§11.3 item 10): a Chroma failure warns
               ;; once and code renders plain, instead of failing the build
-              (:clogem/dev-loop? opts) (assoc :clogem/dev-loop? true))]
+              (or (:clogem/dev-loop? opts) (:clogem/dev? opts)) (assoc :clogem/dev-loop? true))]
     ;; Pass 1 — normalize front matter. Its diagnostics are discarded because
     ;; pass 2 re-derives them from the normalized tree and is the authoritative
     ;; report; but content ERRORS abort before anything is written, since

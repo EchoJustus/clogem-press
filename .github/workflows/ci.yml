@@ -162,7 +162,7 @@ jobs:
 
       # Phase 4 C (§11.3 item 10), on the bytes that would be uploaded: the
       # highlight stylesheet ships and is linked after theme.css, Chroma's
-      # line numbers never appear as text, no class carries fence syntax
+      # line numbers never appear as text, no class or data-lang carries fence syntax
       # (0.2.0 emitted `language-js{1,3-5}`), and the code-blocks article
       # has its highlighted lines and its copy-button script.
       - name: Assert the highlighted code
@@ -179,8 +179,8 @@ jobs:
                                                    || fail "the code-blocks article does not have its 5 highlighted lines"
           grep -q 'js/code\.js?v=' "$page"        || fail "the code-blocks article does not load code.js"
           if grep -rlq 'class="ln"' dist --include='*.html'; then fail "Chroma line numbers leaked into the HTML"; fi
-          if grep -rhoE 'class="[^"]*[{}:][^"]*"' dist --include='*.html' | grep -q .; then
-            fail "a class attribute carries fence syntax"
+          if grep -rhoE '(class|data-lang)="[^"]*[{}:][^"]*"' dist --include='*.html' | grep -q .; then
+            fail "a class or data-lang attribute carries fence syntax"
           fi
           echo "highlighting OK: $(grep -rho '<pre class="clogem-code chroma' dist --include='*.html' | wc -l) highlighted blocks"
 

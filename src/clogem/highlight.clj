@@ -15,8 +15,8 @@
   `:language` (which turns `js{1,3-5}` into \"js13-5\"): `lang{1,3-5}`,
   `lang {2}`, `lang:line-numbers`, `lang:no-line-numbers`, extra attributes
   (`clojure title=\"x\" {1}`, ignored) and an empty string. The language is
-  the leading run of characters that are not whitespace, `{` or `:`, so no
-  class built from it can hold one.
+  the leading run of characters that are not whitespace, `{`, `}` or `:`,
+  so no class built from it can hold one.
 
   ## Markup
 
@@ -104,7 +104,7 @@
   `title=\"a {2}\"` highlights nothing."
   [info]
   (let [info (str/trim (str info))
-        [_ lang rest*] (re-matches #"(?s)([^\s{:]*)(.*)" info)
+        [_ lang rest*] (re-matches #"(?s)([^\s{}:]*)(.*)" info)
         rest* (str/replace (str rest*) #"\"[^\"]*\"|'[^']*'" " ")
         braces (keep (fn [[_ inner]] (when (re-matches #"[\d,\s-]*" inner) inner))
                      (re-seq #"\{([^}]*)\}" rest*))
@@ -219,24 +219,34 @@
      :styles (or styles #{})
      :count  (count entries)}))
 
-(defn- exec!
-  "Run the binary; [exit stdout-string stderr-string]. Output is decoded as
-  UTF-8 whatever the platform's default charset."
-  [bin dir args]
-  (let [{:keys [exit out err]} (apply p/shell {:dir (str dir) :out :bytes :err :string :continue true
-                                               :in ""}
-                                      bin args)]
-    [exit (String. ^bytes (or out (byte-array 0)) "UTF-8") (str err)]))
-
 (def ^:private hint
   "Build without highlighting with `--no-highlight`, or set :highlight {:provider :none} in site.edn.")
 
 (defn fail!
-  [msg & [extra-hint]]
+  [msg & [extra-hint cause]]
   (throw (ex-info (str "clogem-press: highlight: " msg
                        (when extra-hint (str "\n  hint: " extra-hint))
                        "\n  hint: " hint)
-                  {:babashka/exit 1 :clogem/tool-error :chroma})))
+                  {:babashka/exit 1 :clogem/tool-error :chroma}
+                  cause)))
+
+(defn- exec!
+  "Run the binary; [exit stdout-string stderr-string]. Output is decoded as
+  UTF-8 whatever the platform's default charset. A binary that cannot be
+  started at all — no exec bit, a noexec mount, the wrong architecture —
+  throws an `IOException` from the process API, not an exit status; that,
+  and anything else the run throws, is a Chroma failure like any other
+  (`fail!`), so `build` names `--no-highlight` and a dev rebuild warns."
+  [bin dir args]
+  (let [{:keys [exit out err]}
+        (try (apply p/shell {:dir (str dir) :out :bytes :err :string :continue true :in ""}
+                    bin args)
+             (catch Throwable t
+               (fail! (str "could not run " bin ": " (or (ex-message t) (.getName (class t))))
+                      (str "Check that the file is an executable chroma for this platform, "
+                           "on a filesystem that allows running programs (not mounted noexec).")
+                      t)))]
+    [exit (String. ^bytes (or out (byte-array 0)) "UTF-8") (str err)]))
 
 (defonce ^:private binary-shas (java.util.concurrent.ConcurrentHashMap.))
 
@@ -283,7 +293,13 @@
   ;; rebuild (a download that timed out would otherwise stall each one)
   (atom #{}))
 
-(defn- soft? [cfg] (boolean (:clogem/dev-loop? cfg)))
+(defn soft?
+  "Is this a `dev` rebuild, where a Chroma failure warns instead of failing?
+  Either flag counts: `:clogem/dev-loop?` (what `clogem.cli/build` sets
+  for a rebuild) or `:clogem/dev?` (the dev loop's own config flag), so the
+  soft path survives a dev loop that passes either one."
+  [cfg]
+  (boolean (or (:clogem/dev-loop? cfg) (:clogem/dev? cfg))))
 
 (defn- jobs
   "How many Chroma processes run at once: `CLOGEM_JOBS` when it is a
@@ -364,14 +380,22 @@
              :dark-style (check-style! styles :dark-style (get-in cfg [:highlight :dark-style]))
              :line-numbers (not (false? (get-in cfg [:highlight :line-numbers])))
              :soft? (soft? cfg)
+             :pin pin
              :broken (atom false)
              :warned (atom #{})
              :jobs (jobs)} s
               (assoc s :css (render-stylesheet s))))
-          (catch clojure.lang.ExceptionInfo e
-            (if (soft? cfg)
-              (do (dev-warn! pin e) nil)
-              (throw (with-hint e)))))))))
+          (catch Exception e
+            ;; an `IOException` hashing an unreadable binary is a Chroma
+            ;; failure too, not a stack trace
+            (let [e (if (instance? clojure.lang.ExceptionInfo e)
+                      e
+                      (ex-info (str "clogem-press: highlight: could not use Chroma: "
+                                    (or (ex-message e) (.getName (class e))))
+                               {:babashka/exit 1 :clogem/tool-error :chroma} e))]
+              (if (soft? cfg)
+                (do (dev-warn! pin e) nil)
+                (throw (with-hint e))))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Highlighting
@@ -448,11 +472,14 @@
 
 (defn- broken!
   "A failed run: raise in `build`; in a dev rebuild, warn once, mark the
-  session broken (the rest of the build renders plain) and return nil."
+  session broken (the rest of the build renders plain) and return nil. The
+  failure is recorded under the session's pin — the key `session` checks —
+  so later rebuilds do not run the failing binary again until `bb dev` is
+  restarted, as the warning says."
   [session ^Throwable e]
   (if (:soft? session)
     (do (when (compare-and-set! (:broken session) false true)
-          (dev-warn! [:run (:bin-sha session)] e))
+          (dev-warn! (:pin session) e))
         nil)
     (throw e)))
 

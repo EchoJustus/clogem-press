@@ -19,11 +19,13 @@
             [hiccup2.core :as h]
             [clogem.cli :as cli]
             [clogem.config :as config]
+            [clogem.dev]
             [clogem.diag :as diag]
             [clogem.fake-tools :as fake]
             [clogem.highlight :as hl]
             [clogem.markdown :as markdown]
-            [clogem.tools :as tools]))
+            [clogem.tools :as tools]
+            [org.httpkit.server]))
 
 (def fixtures "test/fixtures/highlight")
 (def theme-css "src/clogem/theme/resources/css/theme.css")
@@ -158,7 +160,9 @@
             \"language-js:no-line-numbers\"; with highlighting off the markup
             is otherwise 0.2.0's, plus data-lang for the CSS label"
     (doseq [[info lang] [["js{1,3-5}" "js"] ["js {2}" "js"] ["js:line-numbers" "js"]
-                         ["js:no-line-numbers" "js"] ["clojure title=\"x\" {1}" "clojure"]]]
+                         ["js:no-line-numbers" "js"] ["clojure title=\"x\" {1}" "clojure"]
+                         ;; P4-C.1 item 10: `}` ends the language too
+                         ["js}" "js"] ["js}{1}" "js"] ["js:}" "js"] ["js}:line-numbers" "js"]]]
       (let [html (render-block (str "```" info "\nx\n```\n"))]
         (is (= (str "<pre class=\"clogem-code language-" lang "\" data-lang=\"" lang "\">"
                     "<code class=\"language-" lang "\">x\n</code></pre>")
@@ -479,6 +483,43 @@
           (is (str/includes? msg "--no-highlight") msg)
           (is (not (fs/exists? out))))))))
 
+(deftest no-class-or-data-lang-carries-a-brace-or-colon
+  (testing "P4-C.1 item 10: `{`, `}` and `:` never reach an attribute, highlighted or not"
+    (with-site {"01.Guide/01.a.md" (article "A" "/pages/aaaaa1/"
+                                            "```js}\na\n```\n\n```js{1}\nb\n```\n\n```js:\nc\n```\n\n```js}:{2}\nd\n```\n")}
+      (fn [dir out _]
+        (doseq [opts [nil {:no-highlight true}]]
+          (is (nil? (:error (build! dir out opts))))
+          (let [html (page out "pages" "aaaaa1")]
+            (is (= 4 (count (pres html))) (pr-str opts))
+            (is (not-any? #(re-find #"[{}:]" %) (class-attrs html)) (pr-str opts))
+            (is (not-any? #(re-find #"[{}:]" %) (map second (re-seq #"data-lang=\"([^\"]*)\"" html))) (pr-str opts))))))))
+
+(deftest an-unusable-binary-is-a-chroma-failure-not-a-stack-trace
+  (testing "P4-C.1 item 1: a CLOGEM_CHROMA without the exec bit makes the process
+            API throw an IOException; build names --no-highlight, dev warns once"
+    (with-site {"01.Guide/01.a.md" (article "A" "/pages/aaaaa1/" "```clojure\n(a)\n```\n")}
+      (fn [dir out bin]
+        (let [noexec (fs/path dir ".fake-bin" "chroma-noexec")]
+          (fs/copy bin noexec)
+          (fs/set-posix-file-permissions noexec "rw-r--r--")
+          (binding [tools/*env* {"CLOGEM_CHROMA" (str noexec)}]
+            (let [{:keys [error]} (build! dir out)
+                  msg (str (ex-message error))]
+              (is (instance? clojure.lang.ExceptionInfo error) "not a raw IOException")
+              (is (= 1 (:babashka/exit (ex-data error))))
+              (is (re-find #"clogem-press: highlight: could not run .*chroma-noexec" msg) msg)
+              (is (str/includes? msg "--no-highlight") msg)
+              (is (not (fs/exists? out))))
+            (let [r1 (build! dir out {:clogem/dev-loop? true})
+                  r2 (build! dir out {:clogem/dev-loop? true})]
+              (is (nil? (:error r1)) (str (:error r1)))
+              (is (nil? (:error r2)) (str (:error r2)))
+              (is (= 1 (count (re-seq #"could not run" (:err r1)))) (:err r1))
+              (is (not (str/includes? (:err r2) "could not run")) "warned once")
+              (is (str/includes? (page out "pages" "aaaaa1")
+                                 "<code class=\"language-clojure\">(a)\n</code>")))))))))
+
 (deftest a-dev-rebuild-warns-once-and-renders-plain-code
   (with-site {"01.Guide/01.a.md" (article "A" "/pages/aaaaa1/" "```clojure\n(a)\n```\n")}
     (fn [dir out bin]
@@ -502,6 +543,58 @@
           (is (str/includes? (page out "pages" "aaaaa1") "<code class=\"language-clojure\">(a)\n</code>")))))
     {:fake-opts {:exit 2}}))
 
+(deftest a-failed-dev-run-is-not-retried-on-the-next-rebuild
+  (testing "P4-C.1 item 9: --list and the styles succeed, a highlighting run
+            fails; later rebuilds run nothing until `bb dev` is restarted"
+    (with-site {"01.Guide/01.a.md" (article "A" "/pages/aaaaa1/" "```clojure\n(a)\n```\n")}
+      (fn [dir out bin]
+        (let [r1    (build! dir out {:clogem/dev-loop? true})
+              calls (count (fake/chroma-calls bin))
+              runs  (count (fake/chroma-runs bin))
+              r2    (build! dir out {:clogem/dev-loop? true})
+              r3    (build! dir out {:clogem/dev-loop? true})]
+          (is (pos? runs))
+          (is (every? (comp nil? :error) [r1 r2 r3]))
+          (is (= 1 (count (re-seq #"fake chroma: boom" (str (:err r1) (:err r2) (:err r3))))))
+          (is (= runs (count (fake/chroma-runs bin))) "the failing run is not retried")
+          (is (= calls (count (fake/chroma-calls bin))) "nor is anything else")
+          (is (str/includes? (page out "pages" "aaaaa1") "<code class=\"language-clojure\">(a)\n</code>"))
+          (testing "a restart (the failure record cleared) tries again"
+            (reset-dev-failures!)
+            (build! dir out {:clogem/dev-loop? true})
+            (is (< runs (count (fake/chroma-runs bin)))))))
+      {:fake-opts {:exit 2}})))
+
+(deftest what-dev-passes-to-build-makes-a-chroma-failure-a-warning
+  (testing "P4-C.1 item 11: the options `dev!` really passes to `build` (captured,
+            then built with a missing binary) are soft; either dev flag is"
+    (with-site {"01.Guide/01.a.md" (article "A" "/pages/aaaaa1/" "```clojure\n(a)\n```\n")}
+      (fn [dir out bin]
+        (let [seen  (atom [])
+              build cli/build
+              dev!  clogem.dev/dev!]
+          (binding [tools/*env* {"CLOGEM_CHROMA" (str bin "-missing")}]
+            (with-redefs [cli/build (fn [o] (swap! seen conj o) (build o))
+                          clogem.dev/poll-watch! (fn [& _] nil)
+                          org.httpkit.server/run-server (fn [& _] (fn [& _] nil))]
+              (let [err (java.io.StringWriter.)
+                    o   (binding [*err* err]
+                          (with-out-str (dev! {:site-dir (str dir) :config-file "site.edn"
+                                               :out (str out) :poll true :port 0})))]
+                (is (= 1 (count @seen)))
+                (is (not (str/includes? o "build failed")) o)
+                (is (str/includes? o "rebuilt in") o)
+                (is (str/includes? (str err) "does not exist") (str err))))
+            (reset-dev-failures!)
+            (let [{:keys [error err]} (build! dir out (dissoc (first @seen) :site-dir :out))]
+              (is (nil? error) (str error))
+              (is (str/includes? err "Code renders without highlighting")))
+            (doseq [flag [:clogem/dev? :clogem/dev-loop?]]
+              (reset-dev-failures!)
+              (is (nil? (:error (build! dir out {flag true}))) (str flag))
+              (is (hl/soft? {flag true}) (str flag)))
+            (is (not (hl/soft? {})))))))))
+
 ;; ---------------------------------------------------------------------------
 ;; Config
 
@@ -510,7 +603,9 @@
          config/highlight-defaults)
       "on by default (the test runner turns the default off for other fixtures)")
   (doseq [[edn re path expected]
-          [[{:highlight {:provider :prism}} #":highlight :provider is :prism, but it must be :chroma or :none" [:highlight :provider] (get-in config/defaults [:highlight :provider])]
+          ;; P4-C.1 item 12: the real shipped default, not `config/defaults`,
+          ;; which the test runner switches to :none
+          [[{:highlight {:provider :prism}} #":highlight :provider is :prism, but it must be :chroma or :none; using :chroma\." [:highlight :provider] :chroma]
            [{:highlight {:line-numbers "yes"}} #":highlight :line-numbers is \"yes\", but it must be true or false" [:highlight :line-numbers] true]
            [{:highlight {:copy-button 1}} #":highlight :copy-button is 1" [:highlight :copy-button] true]
            [{:highlight {:style "../evil.xml"}} #":highlight :style is \"../evil.xml\", which is not a Chroma style name" [:highlight :style] "github"]
