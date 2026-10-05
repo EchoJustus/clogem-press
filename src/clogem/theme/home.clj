@@ -112,19 +112,22 @@
   :page, :total, :page-url, :excerpt (fn [group lang] → hiccup)."
   [{:keys [cfg home-fm body ids page total page-url] :as ctx}]
   (let [mode (post-list-mode home-fm)
-        hide-right? (true? (:hideRightBar home-fm))]
+        hide-right? (true? (:hideRightBar home-fm))
+        main [:main.clogem-main
+              ;; a home without a body of its own still has a heading — the
+              ;; body's `# Title` is the h1 when there is one
+              [:div.clogem-content
+               (or body
+                   (list [:h1 (i18n/resolve-str ctx (get-in cfg [:site :title]))]
+                         [:p (i18n/resolve-str ctx (get-in cfg [:site :description]))]))]
+              (features ctx home-fm)
+              (post-list ctx mode home-fm ids page total page-url)]]
     (layout/document
-     (assoc ctx :title (i18n/resolve-str ctx (get-in cfg [:site :title])))
+     (assoc ctx :title (i18n/resolve-str ctx (get-in cfg [:site :title]))
+                ;; the body and the excerpts: the main column only
+                :has-code? (layout/has-code? main))
      (layout/navbar ctx)
      (into [:div.clogem-shell {:class (if hide-right? "clogem-shell--single" "clogem-shell--home")}
-            [:main.clogem-main
-             ;; a home without a body of its own still has a heading — the
-             ;; body's `# Title` is the h1 when there is one
-             [:div.clogem-content
-              (or body
-                  (list [:h1 (i18n/resolve-str ctx (get-in cfg [:site :title]))]
-                        [:p (i18n/resolve-str ctx (get-in cfg [:site :description]))]))]
-             (features ctx home-fm)
-             (post-list ctx mode home-fm ids page total page-url)]]
+            main]
            (when-not hide-right? [(right-bar ctx)]))
      (layout/footer ctx))))

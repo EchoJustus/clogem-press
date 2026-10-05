@@ -511,6 +511,32 @@
     (is (= "\"a' ' é 😀 &#34; &#0; &#xD800;"
            (#'clogem.render/strip-tags "<code>&#34;a&#39; &#x27; &#233; &#x1F600; &amp;#34; &#0; &#xD800;</code>")))))
 
+(deftest the-copy-button-flag-never-walks-the-sidebar
+  (testing "P4-C.1 item 8: whether a page has code comes from its own content
+            (an article's AST, an index page's main column), never from a
+            walk of the whole page and its sidebar; the script still lands on
+            exactly the pages with code"
+    (with-site (merge mixed-site
+                      {"01.Guide/03.quoted.md" (article "Q" "/pages/c0de03/" "# Q\n\n> ```js\n> q()\n> ```\n")
+                       "@pages/archivesPage.md" (str "---\narchivesPage: true\ntitle: Archives\npermalink: /archives/\narticle: false\n---\n\n"
+                                                     "```js\narchived()\n```\n")})
+      (fn [dir out _]
+        (let [seen (atom [])
+              has-code? @#'clogem.theme.layout/has-code?
+              sidebar? (fn [x] (some #(and (vector? %) (str/starts-with? (str (first %)) ":aside.clogem-sidebar"))
+                                     (tree-seq sequential? seq x)))]
+          (with-redefs [clogem.theme.layout/has-code? (fn [x] (swap! seen conj (boolean (sidebar? x))) (has-code? x))]
+            (doseq [opts [nil {:no-highlight true}]]
+              (reset! seen [])
+              (is (nil? (:error (build! dir out opts))))
+              (is (seq @seen))
+              (is (not-any? true? @seen) (str (pr-str opts) ": a whole page with its sidebar was walked"))
+              (doseq [[parts code?] [[["pages" "c0de01"] true] [["zh-Hans" "pages" "c0de01"] true]
+                                     [["pages" "c0de02"] false] [["pages" "c0de03"] true]
+                                     [["archives"] true] [["tags"] false] [[] false]]]
+                (is (= code? (str/includes? (apply page out parts) "js/code.js"))
+                    (str (pr-str opts) " " parts))))))))))
+
 (deftest no-highlight-renders-0-2-0-markup-and-runs-nothing
   (doseq [[how opts site-edn] [["--no-highlight" {:no-highlight true} nil]
                                [":provider :none" nil {:highlight {:provider :none}}]]]

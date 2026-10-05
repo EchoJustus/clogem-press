@@ -518,7 +518,10 @@
                                   [(markdown/parse (:body variant) lc)])
                      _     (diag/emit-all! ds)
                      depth (toc-depth cfg variant)]
-                 (page/article (assoc ctx :toc (markdown/toc ast depth))
+                 (page/article (assoc ctx :toc (markdown/toc ast depth)
+                                      ;; from the AST: the copy button's script
+                                      ;; goes only where there is code
+                                      :has-code? (highlight/has-code? [ast]))
                                ;; the theme renders the title; the body's own
                                ;; `# Title` would be a second <h1>
                                (markdown/->hiccup (markdown/drop-leading-h1 ast) lc))))))

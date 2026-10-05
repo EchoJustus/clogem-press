@@ -568,23 +568,27 @@
       (str/replace " " "\\u2028")
       (str/replace " " "\\u2029")))
 
-(defn- has-code?
-  "Does `body` (page hiccup) hold a code block? The copy button's script
-  and strings go only on such a page, like toc.js on a page with a TOC."
-  [body]
+(defn has-code?
+  "Does `content` hold a code block? Hiccup of a page's OWN content — a
+  rendered body, an excerpt, the main column of a page with no sidebar —
+  never the whole page: walking every page's sidebar made rendering a
+  1000-article site a quarter slower. An article page reads the flag from
+  its AST instead (`clogem.render`)."
+  [content]
   (boolean (some #(and (vector? %) (= :pre (first %))
                        (str/includes? (str (:class (second %))) "clogem-code"))
-                 (tree-seq sequential? seq body))))
+                 (tree-seq sequential? seq content))))
 
 (defn code-head
   "§11.3 item 10: js/code.js and what it needs — the button's strings in
   the page's language and the sprite's `copy` and `check` icons — on a page
-  with a code block, unless :highlight :copy-button is false. The button
+  with a code block (`:has-code?` in `ctx`, set by whoever built the
+  page's content), unless :highlight :copy-button is false. The button
   itself is created by the script, and only where the clipboard API
   exists, so a page without JS has no dead button, and neither Pagefind
   nor a feed has anything to index."
-  [{:keys [cfg] :as ctx} body]
-  (when (and (highlight/copy-button? cfg) (has-code? body))
+  [{:keys [cfg] :as ctx}]
+  (when (and (highlight/copy-button? cfg) (:has-code? ctx))
     (list
      [:script {:type "application/json" :id "clogem-code-data"}
       (h/raw (script-json {:copy   (i18n/tr ctx :code/copy)
@@ -886,7 +890,7 @@
       ;; and only on a page that renders a TOC for it to spy on
       (when (seq (:toc ctx))
         [:script {:src (asset-href ctx "js/toc.js") :defer true}])
-      (code-head ctx body)]
+      (code-head ctx)]
      (into [:body {:class (str "lang-" (name lang)
                                (when-let [k (:page-kind ctx)] (str " page-" (name k))))}
             (search-config ctx)]
@@ -896,7 +900,7 @@
   "A page with no sidebar tree — home, index, catalogue and paginated pages
   show none (D-P2-1): navbar, a single-column shell, footer."
   [ctx & main]
-  (document ctx
+  (document (assoc ctx :has-code? (has-code? main))
             (navbar ctx)
             [:div.clogem-shell.clogem-shell--single
              (into [:main.clogem-main] main)]
