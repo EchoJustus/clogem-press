@@ -542,6 +542,13 @@
       ;; index pages
       (index-pages model ctx-for)))))
 
+(defn check-code-languages!
+  "`doctor`: the unknown code languages `build` would warn about, when a
+  Chroma binary is already here (`highlight/check-languages!`)."
+  [model]
+  (when (highlight/enabled? (:cfg model))
+    (highlight/check-languages! (:cfg model) (:sources (pre-parse model (highlight/jobs))))))
+
 (defn check-pages!
   "Render every page to hiccup and throw the result away — what `doctor`
   runs so that render-time findings (dead links, unresolved catalogue paths,

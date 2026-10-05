@@ -537,6 +537,57 @@
                 (is (= code? (str/includes? (apply page out parts) "js/code.js"))
                     (str (pr-str opts) " " parts))))))))))
 
+(defn- doctor!
+  "`bb doctor` in-process: {:result :error :err}."
+  [dir]
+  (let [err (java.io.StringWriter.)
+        r   (binding [*err* err]
+              (try (let [o (atom nil)]
+                     (with-out-str (reset! o (cli/doctor {:site-dir (str dir) :config-file "site.edn"})))
+                     {:result @o})
+                   (catch clojure.lang.ExceptionInfo e {:error e})))]
+    (assoc r :err (str err))))
+
+(deftest doctor-checks-code-languages-with-a-chroma-it-already-has
+  (testing "P4-C.1 item 16"
+    (with-site mixed-site
+      (fn [dir _ bin]
+        (testing "with a binary: the unknown languages build warns about, at the same file, once each"
+          (let [{:keys [result err]} (doctor! dir)
+                unknown (filter #(str/includes? (:message %) "unknown code language") (:warnings result))]
+            (is (= [["01.Guide/01.code.md" "unknown code language \"nosuchlang\"; the block is shown as plain text."]]
+                   (map (juxt :path :message) unknown))
+                err)
+            (is (not (str/includes? err "not checked")))))
+        (testing "no binary anywhere: said once, as info, and nothing is downloaded"
+          (let [cache (fs/create-temp-dir {:prefix "clogem-empty-cache"})]
+            (try
+              (spit (fs/file dir "site.edn")
+                    (pr-str (assoc-in (read-string (slurp (fs/file dir "site.edn")))
+                                      [:tools :chroma :url] "http://127.0.0.1:9/{{version}}/{{platform}}")))
+              (binding [tools/*env* {"CLOGEM_TOOLS_DIR" (str cache)}]
+                (let [{:keys [result error err]} (doctor! dir)]
+                  (is (nil? error) (str error))
+                  (is (= 1 (count (re-seq #"info: code languages not checked" err))) err)
+                  (is (not-any? #(str/includes? (:message %) "code language") (:warnings result)))
+                  (is (not (str/includes? err "fetching")) err)
+                  (is (empty? (fs/list-dir cache)) "nothing fetched into the cache")))
+              (finally (fs/delete-tree cache)))))
+        (testing "an unusable CLOGEM_CHROMA is the error build fails with"
+          (let [noexec (fs/path dir ".fake-bin" "chroma-noexec")]
+            (fs/copy bin noexec)
+            ;; a binary of its own: the listing is cached per sha256
+            (spit (fs/file noexec) "\n# noexec\n" :append true)
+            (fs/set-posix-file-permissions noexec "rw-r--r--")
+            (binding [tools/*env* {"CLOGEM_CHROMA" (str noexec)}]
+              (let [{:keys [error err]} (doctor! dir)]
+                (is (= 1 (:babashka/exit (ex-data error))))
+                (is (re-find #"error: highlight: could not run .*chroma-noexec" err) err)))
+            (binding [tools/*env* {"CLOGEM_CHROMA" (str bin "-missing")}]
+              (let [{:keys [error err]} (doctor! dir)]
+                (is (some? error))
+                (is (re-find #"error: highlight: Chroma binary .* does not exist" err) err)))))))))
+
 (deftest no-highlight-renders-0-2-0-markup-and-runs-nothing
   (doseq [[how opts site-edn] [["--no-highlight" {:no-highlight true} nil]
                                [":provider :none" nil {:highlight {:provider :none}}]]]

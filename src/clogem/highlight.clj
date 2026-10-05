@@ -301,7 +301,7 @@
   [cfg]
   (boolean (or (:clogem/dev-loop? cfg) (:clogem/dev? cfg))))
 
-(defn- jobs
+(defn jobs
   "How many Chroma processes run at once: `CLOGEM_JOBS` when it is a
   positive integer, else the number of processors — the render pool's
   bound (`clogem.render/jobs`, which warns about a bad value)."
@@ -553,6 +553,46 @@
           (let [lexer (lexer-for session (:lang (parse-info (:info node))))]
             (when lexer [lexer (node-text node)])))
         (code-nodes ast)))
+
+;; ---------------------------------------------------------------------------
+;; doctor
+
+(defn check-languages!
+  "`doctor`'s view of highlighting, given every parsed body as [[path ast] …]
+  in path order: with highlighting on and code in the site, each fence
+  language Chroma has no lexer for is the warning `build` gives, at the
+  same file. Only a Chroma this machine already has is used
+  (`tools/available-binary`: CLOGEM_CHROMA, `:tools :chroma :path` or the
+  cache) — `doctor` never downloads; without one the check is skipped, and
+  said so once. A CLOGEM_CHROMA or path `build` could not run is the error
+  `build` would fail with."
+  [cfg sources]
+  (when (and (enabled? cfg) (has-code? (map second sources)))
+    (let [problem (fn [^Throwable e]
+                    (diag/error! nil (str/replace (str (ex-message e)) #"^clogem-press: " "")
+                                 "`bb build` fails on this too; `bb build --no-highlight` builds without Chroma.")
+                    nil)
+          bin     (try (tools/available-binary tools/chroma cfg)
+                       (catch clojure.lang.ExceptionInfo e (problem e) ::unusable))]
+      (cond
+        (= ::unusable bin) nil
+
+        (nil? bin)
+        (diag/info! nil (str "code languages not checked: no Chroma binary here (CLOGEM_CHROMA, "
+                             ":tools :chroma :path or the tools cache), and doctor does not download one.")
+                    "`bb fetch-tool --tool chroma` fetches it; `bb build` warns about unknown languages either way.")
+
+        :else
+        (when-let [{:keys [lexers] n :count}
+                   (try (listing bin (binary-sha bin))
+                        (catch Exception e
+                          (problem (if (instance? clojure.lang.ExceptionInfo e)
+                                     e
+                                     (ex-info (str "highlight: could not use Chroma: " (ex-message e)) {})))))]
+          (let [s {:lexers lexers :lexer-count n :warned (atom #{}) :version (tools/version tools/chroma cfg)}]
+            (doseq [[path ast] sources
+                    node (code-nodes ast)]
+              (warn-unknown! s path (:lang (parse-info (:info node)))))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Rendering one block (the `:code` renderer of clogem.markdown)

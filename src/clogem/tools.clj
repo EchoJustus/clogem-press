@@ -575,6 +575,19 @@
           (fail! tool (str (:name tool) " binary " f " (" from ") is not a regular file.") hint))
         (str f)))))
 
+(defn available-binary
+  "The binary of `tool` this machine already has — the environment
+  variable, `:tools <id> :path`, or a verified cache entry for the pin in
+  effect — or nil. NEVER fetches (`doctor` uses it). Raises, as
+  `ensure-binary!` would, when the variable or the path names something
+  unusable."
+  [tool cfg]
+  (or (preinstalled-binary tool cfg)
+      (when-let [plat (platform tool)]
+        (let [dir (tool-dir tool cfg plat)]
+          (when-let [want (expected-sha256 tool cfg plat)]
+            (some-> (cached-binary dir (fs/path dir (binary-name tool plat)) want) str))))))
+
 (defn ensure-binary!
   "The binary of `tool` to run, fetching and verifying it on first use.
   Returns its path as a string; raises (exit 1) when it cannot have one.

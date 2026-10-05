@@ -257,6 +257,9 @@
                   ;; containers, bad card-list YAML), by rendering every page
                   ;; in memory and discarding it
                   (when (seq (:articles m)) (render/check-pages! m))
+                  ;; … and unknown code languages, with a Chroma already
+                  ;; here (never downloaded), §11.3 item 10
+                  (render/check-code-languages! m)
                   ;; … and outputs of one build that would collide
                   (render/check-output-collisions! m)
                   m))
