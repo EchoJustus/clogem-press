@@ -6,7 +6,10 @@
 //   - every highlighted token's COMPUTED colour reaches 4.5:1 on the
 //     background actually behind it (a highlighted line's, else the code
 //     block's), as do the line numbers and the language label — in light,
-//     dark, read and auto-under-a-dark-OS;
+//     dark, read and auto-under-a-dark-OS — and highlighting really applied:
+//     some token's colour differs from the block's own (a page whose
+//     highlight.css never took effect would pass the contrast check with
+//     every token in --codeColor);
 //   - the copy button puts exactly the fenced source on the clipboard (no
 //     line numbers), shows `check` and "Copied", and returns after ~2 s;
 //   - without JS there is no button at all;
@@ -79,6 +82,20 @@ function measure() {
   return out;
 }
 
+// Runs in the page: how many tokens' computed colour differs from their
+// code block's own (--codeColor).
+function coloured() {
+  let n = 0;
+  for (const pre of document.querySelectorAll('pre.clogem-code.chroma')) {
+    const base = getComputedStyle(pre.querySelector('code')).color;
+    for (const span of pre.querySelectorAll('code span')) {
+      if (!span.textContent.trim() || span.children.length) continue;
+      if (getComputedStyle(span).color !== base) n++;
+    }
+  }
+  return n;
+}
+
 export default async function code(t) {
   // ---- contrast, per mode
   for (const [label, mode, os] of [['light', 'light'], ['dark', 'dark'], ['read', 'read'],
@@ -93,7 +110,17 @@ export default async function code(t) {
       t.check(r >= 4.5, `${label}: ${what} is ${r.toFixed(2)}:1`);
     }
     console.log(`  code contrast minimum, ${label}: ${min[0].toFixed(2)} (${min[1]})`);
+    const n = await page.evaluate(coloured);
+    t.check(n > 0, `${label}: highlight.css applied (${n} tokens differ from --codeColor)`);
     t.check(await page.locator('pre .line.hl').count() === 5, `${label}: five highlighted lines`);
+  }
+
+  // ---- the check above can fail: without highlight.css no token differs
+  {
+    const page = await inMode(t, 'dark', 'dark');
+    await page.route('**/highlight.css*', (route) => route.abort());
+    await page.goto(t.url(article), { waitUntil: 'load' });
+    t.check(await page.evaluate(coloured) === 0, 'with highlight.css blocked, every token is in --codeColor');
   }
 
   // ---- line numbers are drawn, not text

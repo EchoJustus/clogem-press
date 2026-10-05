@@ -161,8 +161,9 @@ the sprite; sources, versions and hashes are in
 **Code highlighting is on by default.** Fenced code is highlighted at build
 time by [Chroma](https://github.com/alecthomas/chroma) (MIT), which knows 297
 languages by name, alias or file extension (` ```clojure `, ` ```clj `,
-` ```edn `). **The first build of a site with code downloads Chroma** — about
-8 MB, once, checked against a pinned sha256 and cached outside the site
+` ```edn `). **The first build of a site with code downloads Chroma** — a
+3 MB archive (an 8.4 MB binary unpacked), once, checked against a pinned
+sha256 and cached outside the site
 (`~/.cache/clogem-press/tools`, like Pagefind); `CLOGEM_CHROMA` names one
 you installed yourself. If that download or a Chroma run fails, `build`
 fails with exit 1 (`bb dev` only warns, and shows the code plain). To turn

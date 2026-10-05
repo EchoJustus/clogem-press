@@ -37,13 +37,14 @@
   allow-list: a fence language is looked up among the lexers' names,
   aliases and `*.ext` filename patterns, and only the lexer's own name or a
   plain alias — never anything path-like, which Chroma would load as an XML
-  lexer file — is passed to `--lexer`. The page map parses every article
-  variant once (`clogem.render`), and `warm!` highlights every distinct
+  lexer file — is passed to `--lexer`. `clogem.render/render-site` parses
+  every body once (`pre-parse`) — whether any has a `:code` node decides
+  whether Chroma is needed at all — and `warm!` highlights every distinct
   (lexer, code) pair in one Chroma process per lexer and per `batch-size`
   files (`chroma --lexer=L --html --html-only f1 f2 …`, in a fresh temp
   directory holding only those files), splitting the output at
   `<pre class=\"chroma\">`. The renderer reads the cache; a miss (an excerpt
-  cut mid-block, a home page body) costs one single-file run.
+  cut mid-block) costs one single-file run.
 
   ## Cache
 

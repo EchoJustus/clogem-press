@@ -2814,30 +2814,43 @@ their own findings. Item 19 onward are corrections.
     found:
     - *Config.* `:highlight {:provider :line-numbers :copy-button :style :dark-style}`; every bad
       value — a non-map included, since 0.2.0 accepted any `:highlight` — is a warning repaired to
-      the default. `:chroma` joined `config/fatal-tool-ids`, so a bad Chroma pin is now an error. A
-      `dev` rebuild passes `:clogem/dev-loop?` to `cli/build` (one line in `dev.clj`): there a
-      fetch, verification or run failure warns once per process and is not retried, and code
-      renders plain; in `build` it exits 1 with a hint naming `--no-highlight` and
-      `:highlight {:provider :none}`. **A site with no code block never fetches Chroma** (a
-      generous source scan for a fence or an indented line), so the one new failure cannot reach it.
+      the default (the shipped default, even where a test runner switched `config/defaults` off).
+      `:chroma` joined `config/fatal-tool-ids`, so a bad Chroma pin is now an error. A `dev`
+      rebuild passes `:clogem/dev-loop?` to `cli/build` (one line in `dev.clj`); `highlight/soft?`
+      honours that or `:clogem/dev?`, so the soft path survives a dev loop that passes either, and a
+      test captures what `dev!` really passes. There a fetch, verification, start or run failure —
+      a binary the process API cannot start (no exec bit, a `noexec` mount) throws an
+      `IOException`, wrapped like the rest — warns once per process, is recorded under the pin the
+      session checks so it is not retried, and code renders plain; in `build` it exits 1 with a hint
+      naming `--no-highlight` and `:highlight {:provider :none}`. **A site with no code block never
+      fetches Chroma**: "has code" is any `:code` node in the parsed bodies (P4-C.1 replaced a
+      source regex that missed `> ```bash` and took a four-space nested list for code), so the one
+      new failure cannot reach it. `doctor` checks fence languages with a Chroma already here
+      (`tools/available-binary`; it never downloads, and says once when it skipped the check).
     - *Fence info.* Parsed from the raw `:info`: nextjournal's own `:language` for `js{1,3-5}` is
       `"js13-5"`, and 0.2.0's first-word split emitted `class="language-js{1,3-5}"`. The language is
-      the leading run that is not whitespace, `{` or `:`; quoted attribute values are dropped before
+      the leading run that is not whitespace, `{`, `}` or `:`; quoted attribute values are dropped before
       `{…}` and `:line-numbers` / `:no-line-numbers` are read; a brace group that is not a range
       list is ignored, and a range is clipped at 100 000 lines. `data-lang` on the `<pre>` feeds a
       CSS `::before` label, so the language is not text either.
     - *Processes.* `chroma --list` (297 lexers in 2.27.0) runs once per binary and is the
       allow-list: names, aliases and simple `*.ext` patterns, in that precedence. Only a lexer's own
       name, or its first alias when the name is path-like (`Django/Jinja`, `PL/pgSQL`, `VB.net`,
-      `Gemfile.lock`), is ever passed — Chroma loads a path-like `--lexer` as an XML file. The page
-      map parses every article variant ONCE, in parallel, and re-emits each parse's diagnostics in
-      that page's own sink, so a build's report is unchanged; `warm!` then runs one process per
+      `Gemfile.lock`), is ever passed — Chroma loads a path-like `--lexer` as an XML file.
+      `render-site` parses every article variant and every own `index*.md` / `@pages/*` body ONCE,
+      in parallel, before the session (whether there is code decides whether Chroma is fetched);
+      an article page reuses its AST and re-emits the parse's diagnostics in its own sink, so a
+      build's report is unchanged, and a parse that throws anything is left to its page, which
+      fails naming its URI. Unknown languages are then warned in one sequential pass in path order
+      (the same file every build; `warn-unknown!` is a `swap-vals!`), and `warm!` runs one process per
       lexer per 150 files, the files named `0000.txt …` relative to a fresh temp directory that is
       also the working directory, and checks the output splits into exactly as many
       `<pre class="chroma">` parts. Measured: the demo (9 blocks, 5 lexers) is 5 processes; a
       synthetic 500-block site (5 lexers) is 5 processes, about 0.15–0.2 s over a `--no-highlight`
-      build, and a warm rebuild runs none. Excerpts and site-page bodies use the cache and, on a
-      miss, one single-file run.
+      build, and a warm rebuild runs none. An excerpt cut mid-block uses the cache and, on a miss,
+      one single-file run. Whether a page loads `js/code.js` comes from its own content (an
+      article's AST, an index page's or home's main column), never a walk of the whole page:
+      walking every sidebar made rendering a 1000-article site about a third slower.
     - *Cache.* A `defonce` `ConcurrentHashMap` keyed by sha256 of `[format-version chroma-version
       binary-sha256 lexer code]` (the binary's hash memoised on path, size and mtime), so it
       survives `dev` rebuilds and a different binary never serves another's fragments.
@@ -2855,12 +2868,13 @@ their own findings. Item 19 onward are corrections.
       is `initial`. Dropped: the structural rules (`.bg`, `.chroma`, `.line`, `.ln`, `.hl` …), `w`,
       and **`err`** — the Clojure lexer splits a Tamil symbol at every vowel sign into error tokens,
       which `github` paints white on red. *Contrast:* `github` on the old light `--codeBg`
-      `#f1f3f5` gives `.bp` 4.33:1, and `github-dark` on read's `#282c34` gives `.err` 4.18:1, so
-      light `--codeBg` is now `#f6f8fa` and read's `#252526`. New per-mode variables:
+      `#f1f3f5` gives `.bp` 4.33:1, so light `--codeBg` is now `#f6f8fa`; read keeps B1's
+      `#282c34` — `github-dark`'s only token under 4.5:1 there is `.err` (4.18:1), which is not
+      shipped (P4-C.1 item 14 reverted an earlier `#252526`). New per-mode variables:
       `--codeLineNumber` (`#5f6873` / `#9aa3ad`) and `--codeHlBg` (`#fffbdd`, dark `#1a2620`, read
       `#1e2620`, each chosen so every token still reaches 4.5:1 on it). Minimums from the golden
-      file: light 4.52 (`.bp`), dark and read 4.78 (`.gi` on its own background); computed in
-      Chromium on the demo: light 5.03, dark 5.13, read 4.98.
+      file: light 4.52 (`.bp`), dark 4.78 (`.gi` on its own background), read 4.55 (`.c`); computed in
+      Chromium on the demo: light 5.03, dark 5.13, read 4.55.
     - *Copy button.* `js/code.js` (only with `:copy-button`, only on a page with a code block)
       reads its strings and the sprite's `copy`/`check` URLs from a `<script
       type="application/json">` written with `layout/script-json`, and adds a button only where

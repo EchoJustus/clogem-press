@@ -155,8 +155,9 @@
 
  ;; ----------------------------------------------------------- highlight ----
  ;; §11.3 item 10: code blocks are highlighted by Chroma at build time — ON BY
- ;; DEFAULT. The first build of a site with a code block fetches Chroma (about
- ;; 8 MB, sha256-verified, cached outside the site under :tools below); a
+ ;; DEFAULT. The first build of a site with a code block fetches Chroma (a 3 MB
+ ;; download, 8.4 MB unpacked; sha256-verified, cached outside the site under
+ ;; :tools below); a
  ;; failed fetch or a failed Chroma run fails `build` (exit 1) and only warns
  ;; in `bb dev`. `--no-highlight` (build, dev) or :provider :none renders code
  ;; as plain <pre><code>. Every bad value here is a warning, and the default

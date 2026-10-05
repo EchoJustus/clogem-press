@@ -18,12 +18,16 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   §5.6 sketch had one string), or a `:tools :chroma` that is not a map now
   stops `build` and `doctor` with a config error. Delete the key to use the
   built-in pin.
-- **The first build of a site with code fetches Chroma** (about 8 MB, once,
-  sha256-verified, cached outside the site like Pagefind). A failed
+- **The first build of a site with code fetches Chroma** (a 3 MB download,
+  an 8.4 MB binary unpacked; once, sha256-verified, cached outside the site
+  like Pagefind). A failed
   download, a hash mismatch, or a Chroma run that fails is a build error
   (exit 1) whose hint names `--no-highlight` and
-  `:highlight {:provider :none}`. This is the one new way a build that
-  passed in 0.2.0 can fail. A site with no code block never fetches it.
+  `:highlight {:provider :none}`; so is a `CLOGEM_CHROMA` that cannot be
+  run (no exec bit, a `noexec` mount). This is the one new way a build that
+  passed in 0.2.0 can fail. A site with no code block never fetches it:
+  "has code" is read from the parsed pages, so a fence inside a blockquote
+  counts and a nested list indented four spaces does not.
 
 ### Added (C)
 
@@ -34,10 +38,12 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   2.27.0 knows 297 languages, by name, alias or file extension (`clojure`,
   `clj`, `edn`); an unknown one is shown as plain text with one warning per
   language per build, and a block with no language is plain text with no
-  warning. Every code block of every article is highlighted in one Chroma
-  process per language (at most 150 blocks each) and cached in memory, so a
-  `bb dev` rebuild runs none for unchanged code. In a `dev` rebuild a
-  Chroma failure is a warning, given once, and code renders plain.
+  warning, naming the first file (in path order) that uses it. Every code
+  block of every article, `index*.md` and `@pages/*` page is highlighted in
+  one Chroma process per language (at most 150 blocks each) and cached in
+  memory, so a `bb dev` rebuild runs none for unchanged code. In a `dev`
+  rebuild a Chroma failure is a warning, given once, after which code
+  renders plain and Chroma is not run again until `bb dev` restarts.
 - **Fence options**: ` ```js{1,3-5} ` and ` ```js {2} ` highlight lines;
   ` ```js:no-line-numbers ` and ` ```js:line-numbers ` override
   `:highlight :line-numbers` for one block; extra attributes such as
@@ -62,12 +68,18 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
 - Wide code scrolls inside its own box; the label and the button stay put.
 - `CLOGEM_CHROMA` (or `:tools :chroma :path`) names an installed Chroma,
   as `CLOGEM_PAGEFIND` does for Pagefind.
+- **`doctor` checks code languages** against Chroma's list, with the same
+  warning `build` gives, when a Chroma binary is already here
+  (`CLOGEM_CHROMA`, `:tools :chroma :path` or the tools cache). It never
+  downloads one: without one it says once, as info, that it skipped the
+  check. A `CLOGEM_CHROMA` that `build` could not run is a `doctor` error.
 
 ### Changed (C)
 
-- The light-mode code background is `#f6f8fa` (was `#f1f3f5`) and reading
-  mode's is `#252526` (was `#282c34`), so that every `github` and
-  `github-dark` token colour reaches 4.5:1. New palette variables per mode:
+- The light-mode code background is `#f6f8fa` (was `#f1f3f5`), so that
+  every `github` token colour reaches 4.5:1; reading mode keeps `#282c34`,
+  on which every `github-dark` token that ships does too (the lowest is
+  `.c`, 4.55:1; `.err` is not shipped). New palette variables per mode:
   `--codeLineNumber` and `--codeHlBg` (a highlighted line).
 - `pre.clogem-code` no longer scrolls itself: its `<code>` does, and the
   `<pre>` carries `data-lang`. CSS that styled the `<pre>`'s padding or

@@ -199,7 +199,10 @@ console.log(JSON.stringify([
       (is (= ["#f4f5f7" "#ffffff" "#5f6873" "#1a7350"] (map (:light bs) ["--bodyBg" "--mainBg" "--textColorSubtle" "--accent"])))
       (is (= ["#ece6d6" "#f5f2e9" "#5f5a50" "#1a7350"] (map (:read bs) ["--bodyBg" "--mainBg" "--textColorSubtle" "--accent"])))
       (is (= ["#9aa3ad" "#3eaf7c"] (map (:dark bs) ["--textColorSubtle" "--accent"])))
-      (is (< (luminance (get-in bs [:read "--codeBg"])) 0.05) "read mode's code block is dark (vdoing parity)"))))
+      (is (< (luminance (get-in bs [:read "--codeBg"])) 0.05) "read mode's code block is dark (vdoing parity)")
+      ;; P4-C.1 item 14: B1's documented value; every token Chroma's
+      ;; github-dark ships reaches 4.5:1 on it (`err` is not shipped)
+      (is (= "#282c34" (get-in bs [:read "--codeBg"])) "read mode's code background is vdoing's"))))
 
 (def surfaces ["--bodyBg" "--mainBg" "--sidebarBg" "--customBlockBg"])
 
