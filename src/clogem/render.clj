@@ -826,20 +826,37 @@
       (prune-empty-dirs! out (fs/parent f)))
     stale))
 
-(defn- decode-char-ref
-  "A numeric character reference's code point → its text, or the reference
-  unchanged when it names no valid character."
-  [whole ^long cp]
-  (if (and (Character/isValidCodePoint cp) (not (<= 0xD800 cp 0xDFFF)) (pos? cp))
-    (String. (Character/toChars cp))
-    whole))
+(defn- xml-char?
+  "Is `cp` a character XML 1.0 allows in text? Tab, LF, CR, and
+  U+0020–U+D7FF, U+E000–U+FFFD, U+10000–U+10FFFF: no other C0 control,
+  no surrogate, not U+FFFE or U+FFFF."
+  [^long cp]
+  (or (= cp 0x9) (= cp 0xA) (= cp 0xD)
+      (<= 0x20 cp 0xD7FF) (<= 0xE000 cp 0xFFFD) (<= 0x10000 cp 0x10FFFF)))
+
+(def ^:private named-refs
+  {"lt" "<" "gt" ">" "quot" "\"" "apos" "'" "amp" "&"})
+
+(defn- decode-ref
+  "One character reference → its text, or the reference unchanged when it
+  names no character an XML document may contain: clojure.data.xml writes
+  text as it is, so a raw ESC or U+FFFE makes `feed.xml` not well-formed
+  (`&#0;` and surrogates stay literal for the same reason)."
+  [[whole named dec hex]]
+  (if named
+    (named-refs named)
+    (let [cp (if dec (parse-long dec) (Long/parseLong hex 16))]
+      (if (xml-char? cp) (String. (Character/toChars cp)) whole))))
 
 (defn- strip-tags
   "Plain text of an HTML string: aria-hidden elements dropped whole, block
   tags → a space, inline tags dropped, the five entities hiccup escapes and
   every numeric character reference (`&#34;`, `&#x27;` — what Chroma and
   `highlight/escape-html` emit) decoded, whitespace collapsed (a feed
-  `summary` is type=\"text\")."
+  `summary` is type=\"text\"). References are decoded in ONE pass, so
+  `&#38;amp;` is the text `&amp;` and `&amp;#34;` the text `&#34;` — each
+  is decoded once — and one that names a character XML forbids stays as
+  written (`decode-ref`); such a character already raw is dropped."
   [html]
   (-> (str html)
       ;; an aria-hidden element is decoration — the heading anchor's `#` —
@@ -849,13 +866,11 @@
       ;; inside a CJK sentence must not split it with a space
       (str/replace #"(?i)</?(?:p|div|li|ul|ol|h[1-6]|br|blockquote|pre|tr|td|th|table|dt|dd|hr)\b[^>]*>" " ")
       (str/replace #"<[^>]*>" "")
-      (str/replace "&lt;" "<") (str/replace "&gt;" ">") (str/replace "&quot;" "\"")
-      (str/replace "&#39;" "'") (str/replace "&apos;" "'")
-      ;; before &amp;, so an escaped `&amp;#34;` stays the text `&#34;`
-      (str/replace #"&#(?:([0-9]{1,7})|[xX]([0-9a-fA-F]{1,6}));"
-                   (fn [[whole dec hex]]
-                     (decode-char-ref whole (if dec (parse-long dec) (Long/parseLong hex 16)))))
-      (str/replace "&amp;" "&")
+      ;; a raw character XML forbids — the markdown parser decodes `&#27;`
+      ;; in prose to a raw ESC — is dropped: emitting it failed the build
+      ;; (0.2.0 too) rather than writing a feed no reader could parse
+      (str/replace #"[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]" "")
+      (str/replace #"&(?:(lt|gt|quot|apos|amp)|#([0-9]{1,7})|#[xX]([0-9a-fA-F]{1,6}));" decode-ref)
       (str/replace #"\s+" " ")
       str/trim))
 

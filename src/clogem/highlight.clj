@@ -573,8 +573,16 @@
                     (diag/error! nil (str/replace (str (ex-message e)) #"^clogem-press: " "")
                                  "`bb build` fails on this too; `bb build --no-highlight` builds without Chroma.")
                     nil)
+          ;; an `IOException` hashing an unreadable cached binary is that
+          ;; error too, as in `session`, never a stack trace
           bin     (try (tools/available-binary tools/chroma cfg)
-                       (catch clojure.lang.ExceptionInfo e (problem e) ::unusable))]
+                       (catch Exception e
+                         (problem (if (instance? clojure.lang.ExceptionInfo e)
+                                    e
+                                    (ex-info (str "highlight: could not use Chroma: "
+                                                  (or (ex-message e) (.getName (class e))))
+                                             {})))
+                         ::unusable))]
       (cond
         (= ::unusable bin) nil
 

@@ -572,8 +572,8 @@
   "Does `content` hold a code block? Hiccup of a page's OWN content — a
   rendered body, an excerpt, the main column of a page with no sidebar —
   never the whole page: walking every page's sidebar made rendering a
-  1000-article site a quarter slower. An article page reads the flag from
-  its AST instead (`clogem.render`)."
+  1000-article site about a third slower (2260 → 3070 ms). An article page
+  reads the flag from its AST instead (`clogem.render`)."
   [content]
   (boolean (some #(and (vector? %) (= :pre (first %))
                        (str/includes? (str (:class (second %))) "clogem-code"))
