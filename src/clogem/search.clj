@@ -48,6 +48,13 @@
   "Where the bundle lands inside `dist/`; the theme's asset URLs assume it."
   "pagefind")
 
+(def previous-subdir
+  "Where `run-staged!` keeps the bundle it replaced, until its next swap: a
+  page that loaded the old `pagefind-entry.json` still fetches that bundle's
+  content-hashed files, and dev's server answers a `pagefind/` file the live
+  bundle no longer has from here (DESIGN.md §5.4). `bb build` removes it."
+  ".pagefind-prev")
+
 (def ^:dynamic *env*
   "The environment variables this namespace reads, as a map, or nil for the
   process's own. Tests bind it so CI's `CLOGEM_PAGEFIND` cannot leak into a
@@ -192,19 +199,33 @@
 
 (defn enabled? [cfg] (= :pagefind (get-in cfg [:search :provider])))
 
+(declare sweep-staging!)
+
+(defn- delete-path!
+  "Delete `p` — a directory tree, or a file or link — never through a link."
+  [p]
+  (when (fs/exists? p {:nofollow-links true})
+    (try
+      (if (fs/directory? p {:nofollow-links true}) (fs/delete-tree p) (fs/delete p))
+      ;; gone already: dev's shutdown sweep and a stopped run's own cleanup
+      ;; can race for the same staging directory
+      (catch java.nio.file.NoSuchFileException _ nil))))
+
 (defn run!
   "Index the built site: `<binary> --site <out> --output-subdir pagefind`,
-  into a fresh `<out>/pagefind/`.
+  into a fresh `<out>/pagefind/`. Leftovers of dev's staged indexing —
+  `.pagefind-staging-*` and `.pagefind-old-*` of a `bb dev` no longer
+  running, and the previous bundle — go first (`sweep-staging!`).
   A non-zero exit is a build error carrying Pagefind's own output. Returns
   {:binary :output}."
   [cfg]
   (let [bin (ensure-binary! cfg)
         out (config/out-dir cfg)
+        _   (sweep-staging! out)
+        _   (delete-path! (fs/path out previous-subdir))
         ;; a bundle left by an earlier build into the same out dir would keep
         ;; every fragment of every page since deleted, and grow per rebuild
-        _   (let [old (fs/path out output-subdir)]
-              (when (fs/exists? old {:nofollow-links true})
-                (if (fs/directory? old {:nofollow-links true}) (fs/delete-tree old) (fs/delete old))))
+        _   (delete-path! (fs/path out output-subdir))
         {:keys [exit] :as r}
         (try (p/shell {:out :string :err :string :continue true}
                       bin "--site" (str out) "--output-subdir" output-subdir)
@@ -236,43 +257,67 @@
              :when (and pid
                         (let [pid (parse-long pid)]
                           (or (= me pid) (not (.isPresent (java.lang.ProcessHandle/of pid))))))]
-         (do (if (fs/directory? p {:nofollow-links true}) (fs/delete-tree p) (fs/delete-if-exists p))
+         (do (delete-path! p)
              p))))))
+
+(def ^:private indexing
+  "The Pagefind processes `run-staged!` has running, for `stop-indexing!`."
+  (atom #{}))
+
+(defn stop-indexing!
+  "Stop every Pagefind `run-staged!` is waiting for — `bb dev` shutting
+  down. Each such run then fails with `:clogem/pagefind-exit` set, and
+  removes its staging directory."
+  []
+  (doseq [proc @indexing]
+    (try (p/destroy-tree proc)
+         (.waitFor ^Process (:proc proc) 2 java.util.concurrent.TimeUnit/SECONDS)
+         (catch Throwable _ nil))))
 
 (defn run-staged!
   "`bb dev`'s indexer (DESIGN.md §5.4, §11.3 item 12): index into a fresh
   `<out>/.pagefind-staging-…/` (`--output-path`), then swap it in for
-  `<out>/pagefind/` with two renames — so the page a reload has just loaded
-  keeps searching the previous bundle until the new one is complete, rather
-  than 404ing while `run!` deletes it and Pagefind rebuilds it. The staging
-  directory holds no HTML, so neither Pagefind nor the stale-HTML sweep
-  sees it. `bb build` keeps `run!`. Returns {:binary :output}."
+  `<out>/pagefind/`, keeping the bundle it replaces as `previous-subdir`
+  until the next swap — so a page that loaded the previous bundle keeps
+  searching it, through dev's server, rather than 404ing on a fragment the
+  new one renamed. The swap is renames only: the generation before the
+  previous one moves aside (and is deleted), the live bundle becomes the
+  previous one, the staged one goes live. While `pagefind/` is briefly
+  missing between the last two, the server answers from the previous one.
+  The staging directory holds no HTML, so neither Pagefind nor the
+  stale-HTML sweep sees it. `bb build` keeps `run!`. Returns
+  {:binary :output}; a failure is an ex-info whose data carries
+  `:clogem/pagefind-exit` when Pagefind ran and exited non-zero."
   [cfg]
   (let [bin     (ensure-binary! cfg)
         out     (config/out-dir cfg)
         tag     (str (.pid (java.lang.ProcessHandle/current)) "-" (System/nanoTime))
         staging (fs/path out (str ".pagefind-staging-" tag))
         retired (fs/path out (str ".pagefind-old-" tag))
+        prev    (fs/path out previous-subdir)
         live    (fs/path out output-subdir)]
     (sweep-staging! out)
     (try
-      (let [{:keys [exit] :as r}
-            (try (p/shell {:out :string :err :string :continue true}
-                          bin "--site" (str out) "--output-path" (str staging))
-                 (catch Exception e
-                   (fail! (str "could not run " bin ": " (ex-message e)))))
+      (let [proc (try (p/process {:out :string :err :string}
+                                 bin "--site" (str out) "--output-path" (str staging))
+                      (catch Exception e
+                        (fail! (str "could not run " bin ": " (ex-message e)))))
+            _    (swap! indexing conj proc)
+            {:keys [exit] :as r} (try @proc (finally (swap! indexing disj proc)))
             output (str (:out r) (:err r))]
         (when-not (zero? exit)
-          (fail! (str "Pagefind exited " exit ":\n" (str/trimr output))
-                 "The previous search index is still in place."))
+          (try (fail! (str "Pagefind exited " exit ":\n" (str/trimr output))
+                      "The previous search index is still in place.")
+               (catch clojure.lang.ExceptionInfo e
+                 (throw (ex-info (ex-message e) (assoc (ex-data e) :clogem/pagefind-exit exit))))))
+        (when (fs/exists? prev {:nofollow-links true})
+          (fs/move prev retired {:atomic-move true}))
         (when (fs/exists? live {:nofollow-links true})
-          (fs/move live retired {:atomic-move true}))
+          (fs/move live prev {:atomic-move true}))
         (fs/move staging live {:atomic-move true})
         {:binary bin :output output})
       (finally
-        (doseq [d [staging retired]
-                :when (fs/exists? d {:nofollow-links true})]
-          (if (fs/directory? d {:nofollow-links true}) (fs/delete-tree d) (fs/delete d)))))))
+        (doseq [d [staging retired]] (delete-path! d))))))
 
 (defn index!
   "`run!`, then read back what Pagefind wrote: {:languages n :pages n}, from

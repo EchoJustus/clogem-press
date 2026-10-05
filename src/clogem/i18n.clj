@@ -65,11 +65,25 @@
               (str "Add it to " (string-file cfg lang) ". Pages show ⟦" k "⟧ in `bb dev` and `" (name k)
                    "` in a build; :i18n {:missing-key :silent} turns this warning off.")))
 
+(def ^:dynamic *session-keys*
+  "nil, or an atom of the [key lang] pairs the previous build of a `bb dev`
+  session found missing, bound by dev around each rebuild: a rebuild warns
+  only about pairs that were not missing last time, so one missing key is
+  not the same warnings again on every save — and is warned about again if
+  it is defined and then goes missing once more."
+  nil)
+
 (defn report-missing-keys!
-  "One warning per [key lang] in `missing`, sorted, naming the string file."
+  "One warning per [key lang] in `missing`, sorted, naming the string file —
+  under `*session-keys*`, only the pairs the previous build did not miss."
   [cfg missing]
-  (doseq [[k lang] (sort-by (fn [[k l]] [(name l) (str k)]) missing)]
-    (missing-key-warning! cfg lang k)))
+  (let [fresh (if-let [prev *session-keys*]
+                (let [before @prev]
+                  (reset! prev (set missing))
+                  (remove before missing))
+                missing)]
+    (doseq [[k lang] (sort-by (fn [[k l]] [(name l) (str k)]) fresh)]
+      (missing-key-warning! cfg lang k))))
 
 (defmacro reporting-missing-keys
   "Run body collecting the keys `tr` misses, then warn once per (key,

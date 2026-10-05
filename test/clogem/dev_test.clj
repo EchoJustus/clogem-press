@@ -244,7 +244,7 @@
           opts (atom nil)]
       (try
         (dev/probe-watch! (cfg-for dir) (fn [_] nil)
-                          {:watch   (fn [_p _cb o] (reset! opts o) {:id 1})
+                          {:watch   (fn [p _cb o] (when (str/ends-with? p "content") (reset! opts o)) {:id 1})
                            :unwatch (fn [w] w)
                            :timeout-ms 400})
         (is (some? (:delay-ms @opts)) "the option is passed at all")

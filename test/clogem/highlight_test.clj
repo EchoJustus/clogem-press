@@ -751,35 +751,38 @@
       {:fake-opts {:exit 2}})))
 
 (deftest what-dev-passes-to-build-makes-a-chroma-failure-a-warning
-  (testing "P4-C.1 item 11: the options `dev!` really passes to `build` (captured,
-            then built with a missing binary) are `dev/build-opts`'s, both dev
-            flags included, and soft"
+  (testing "P4-C.1 item 11: the options `dev!`'s wiring really passes to `build`
+            (captured, then built with a missing binary) are `dev/build-opts`'s,
+            both dev flags included, and soft"
     (with-site {"01.Guide/01.a.md" (article "A" "/pages/aaaaa1/" "```clojure\n(a)\n```\n")}
       (fn [dir out bin]
-        (let [seen    (atom [])
-              drained (promise)
-              build   cli/build
-              opts    {:site-dir (str dir) :config-file "site.edn"
-                       :out (str out) :poll true :port 0}]
+        (let [seen  (atom [])
+              build cli/build
+              opts  {:site-dir (str dir) :config-file "site.edn"
+                     :out (str out) :poll true :port 0}]
           (binding [tools/*env* {"CLOGEM_CHROMA" (str bin "-missing")}]
-            (with-redefs [cli/build (fn [o] (swap! seen conj o) (build o))
-                          dev/poll-watch! (fn [& _] nil)
-                          ;; the rebuild queue's drainer: run, and end at once,
-                          ;; so the test leaves no thread blocked on its queue
-                          dev/drain-loop! (fn [_] (deliver drained true))
-                          dev/run-server! (fn [& _] (fn [& _] nil))]
-              (let [err (java.io.StringWriter.)
-                    o   (binding [*err* err]
-                          (with-out-str (dev/dev! opts)))]
-                (is (deref drained 5000 false) "the drain loop was started (and has ended)")
-                (is (= 1 (count @seen)))
-                (is (= (dev/build-opts opts) (first @seen)))
-                (is (true? (:clogem/dev? (first @seen))))
-                (is (true? (:clogem/dev-loop? (first @seen))))
-                (is (not (str/includes? o "build failed")) o)
-                (is (str/includes? o "rebuilt in") o)
-                (is (str/includes? (str err) "does not exist") (str err))))
-            (reset-dev-failures!)
+            ;; `start-dev!` is what `dev!` runs; no port, no watcher, and its
+            ;; drain loop ends with `stop!`
+            (let [err (java.io.StringWriter.)
+                  h   (atom nil)
+                  o   (binding [*err* err]
+                        (with-out-str
+                          (reset! h (dev/start-dev!
+                                     opts
+                                     {:build        (fn [o] (swap! seen conj o) (build o))
+                                      :run-server!  (fn [& _] (fn [& _] nil))
+                                      :poll-watch!  (fn [& _] nil)
+                                      :notify!      (fn [_])}))))]
+              ((:stop! @h))
+              (is (= 1 (count @seen)))
+              (is (= (dev/build-opts opts) (first @seen)))
+              (is (true? (:clogem/dev? (first @seen))))
+              (is (true? (:clogem/dev-loop? (first @seen))))
+              (is (not (str/includes? o "build failed")) o)
+              (is (str/includes? o "rebuilt in") o)
+              (is (str/includes? (str err) "does not exist") (str err))))
+          (reset-dev-failures!)
+          (binding [tools/*env* {"CLOGEM_CHROMA" (str bin "-missing")}]
             (let [{:keys [error err]} (build! dir out (dissoc (first @seen) :site-dir :out))]
               (is (nil? error) (str error))
               (is (str/includes? err "Code renders without highlighting")))

@@ -531,15 +531,18 @@
           (is (fs/exists? (fs/path out "pagefind" "pagefind-entry.json")))
           (is (not (fs/exists? (fs/path out "pagefind" "stale.pf_fragment"))))
           (is (some #{"--output-path"} (fake/args-of bin)))
-          (is (empty? (filter #(str/starts-with? (str (fs/file-name %)) ".pagefind-") (fs/list-dir out)))
-              "no staging directory left behind"))
+          (is (= [search/previous-subdir]
+                 (map (comp str fs/file-name) (filter #(str/starts-with? (str (fs/file-name %)) ".pagefind-") (fs/list-dir out))))
+              "no staging directory left behind; the bundle it replaced is kept until the next swap")
+          (is (fs/exists? (fs/path out search/previous-subdir "stale.pf_fragment"))))
         (testing "a failed index leaves the previous bundle in place"
           (let [bad (fake/fake-pagefind! (fs/path dir "bad") :exit 3)]
             (is (thrown? clojure.lang.ExceptionInfo
                          (search/run-staged! (cfg-for dir {:build {:out (str out)}
                                                            :tools {:pagefind {:path bad}}}))))
             (is (fs/exists? (fs/path out "pagefind" "pagefind-entry.json")))
-            (is (empty? (filter #(str/starts-with? (str (fs/file-name %)) ".pagefind-") (fs/list-dir out))))))
+            (is (= [search/previous-subdir]
+                   (map (comp str fs/file-name) (filter #(str/starts-with? (str (fs/file-name %)) ".pagefind-") (fs/list-dir out)))))))
         (testing "`bb build` still indexes in place"
           (let [[r] (build! dir out)]
             (is (map? (:search r)))

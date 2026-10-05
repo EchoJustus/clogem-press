@@ -39,6 +39,7 @@
             [clogem.assets :as assets]
             [clogem.config :as config]
             [clogem.diag :as diag]
+            [clogem.i18n :as i18n]
             [clogem.search :as search]
             [clogem.tools :as tools]
             [org.httpkit.server :as http])
@@ -78,31 +79,52 @@
   (or (= p base)
       (str/starts-with? p (str base File/separator))))
 
+(defn decode-path
+  "The request path of `uri` (its query dropped), percent-decoded exactly
+  once — `%2520` is the three characters `%20` — or nil when it is not
+  valid percent-encoding. A `+` is a plus: this is a path, not a form."
+  [uri]
+  (try
+    (URLDecoder/decode (str/replace (str/replace (str uri) #"\?.*$" "") "+" "%2B") "UTF-8")
+    (catch IllegalArgumentException _ nil)))
+
+(defn resolve-path
+  "Map an already-decoded request path to a file under `root`, refusing
+  anything that escapes it (`under?`): a decoded `..`, `/` or NUL included."
+  [root decoded]
+  (try
+    (let [rel    (str/replace (str decoded) #"^/+" "")
+          base   (str (fs/canonicalize root))
+          target (fs/path base rel)]
+      (when (and (not (str/includes? rel "\u0000"))
+                 (fs/exists? target)
+                 (under? base (str (fs/canonicalize target))))
+        (cond
+          (fs/directory? target)    (let [idx (fs/path target "index.html")]
+                                      (when (fs/regular-file? idx) idx))
+          (fs/regular-file? target) target
+          :else nil)))
+    ;; an InvalidPathException, or a file renamed away mid-check
+    (catch Exception _ nil)))
+
 (defn resolve-file
   "Map a request URI to a file under `root`, refusing anything that escapes it."
   [root uri]
-  (let [decoded (URLDecoder/decode (str/replace (str uri) #"\?.*$" "") "UTF-8")
-        rel     (str/replace decoded #"^/" "")
-        base    (str (fs/canonicalize root))
-        target  (fs/path base rel)]
-    (when (and (fs/exists? target)
-               (under? base (str (fs/canonicalize target))))
-      (cond
-        (fs/directory? target)    (let [idx (fs/path target "index.html")]
-                                    (when (fs/regular-file? idx) idx))
-        (fs/regular-file? target) target
-        :else nil))))
+  (some->> (decode-path uri) (resolve-path root)))
 
 (defn strip-base
-  "`uri` with the site base `base` taken off its front, as `/…`, or nil when
-  `uri` is not under `base`. `dist/` is the deploy root and a project site is
-  served at `https://host/<base>/` (`render/uri->file`), so the server mounts
-  `dist/` at the base for its links to resolve (§11.3 item 12)."
-  [base uri]
-  (let [uri (str uri)]
+  "`path` — a DECODED request path — with the site base `base` taken off its
+  front, as `/…`, or nil when it is not under `base`. `dist/` is the deploy
+  root and a project site is served at `https://host/<base>/`
+  (`render/uri->file`), so the server mounts `dist/` at the base for its
+  links to resolve (§11.3 item 12). The base is compared decoded, as the
+  config spells it: a browser asks for `/%E6%96%87%E6%A1%A3/` when the base
+  is `/文档/`."
+  [base path]
+  (let [path (str path)]
     (cond
-      (= "/" base)                 uri
-      (str/starts-with? uri base)  (subs uri (dec (count base)))
+      (= "/" base)                 path
+      (str/starts-with? path base) (subs path (dec (count base)))
       :else                        nil)))
 
 ;; ---------------------------------------------------------------------------
@@ -203,43 +225,86 @@
        "<p>No build has succeeded since <code>bb dev</code> started. Fix it and save: this page reloads when a build succeeds.</p>"
        reload-script "</body></html>"))
 
+(defn- not-found
+  [base path]
+  {:status 404
+   :headers {"Content-Type" "text/html; charset=utf-8"}
+   :body (str "<!doctype html><meta charset=utf-8><h1>404</h1><p>Not found."
+              (when (and (not= "/" base) (nil? (strip-base base path)))
+                (str " This site is served at <a href=\"" (escape-html base) "\">" (escape-html base) "</a>."))
+              "</p>")})
+
+(def ^:private server-error
+  "What any failure inside the handler answers: never the exception, whose
+  message can carry a filesystem path."
+  {:status 500
+   :headers {"Content-Type" "text/plain; charset=utf-8"}
+   :body "500 Internal Server Error\n"})
+
+(defn- pagefind-fallback
+  "For a request under `pagefind/` the live bundle cannot answer, the same
+  file in the previous generation (`search/previous-subdir`): a page that
+  loaded the old `pagefind-entry.json` before dev's background index swapped
+  in a new one still fetches the old bundle's content-hashed files, until
+  its next reload (§5.4)."
+  [root rel]
+  (when (str/starts-with? rel "/pagefind/")
+    (resolve-path root (str "/" search/previous-subdir (subs rel (count "/pagefind"))))))
+
+(defn- file-response
+  "Serve `f`, opened here, once: a file renamed or deleted since it was
+  resolved is nil (the caller tries elsewhere), never a 500 naming its path."
+  [f inject-reload?]
+  (try
+    (let [html? (= "html" (u-ext f))
+          body  (if (and html? inject-reload?)
+                  (str/replace (slurp (fs/file f)) "</body>" (str reload-script "</body>"))
+                  (java.io.FileInputStream. (fs/file f)))]
+      {:status 200
+       :headers (cond-> {"Content-Type" (content-type f)}
+                  inject-reload? (assoc "Cache-Control" "no-cache"))
+       :body body})
+    (catch java.io.IOException _ nil)))
+
+(defn- value [x] (if (fn? x) (x) x))
+
 (defn make-handler
   "The static handler over `root`, mounted at `:base` (default `/`): `/`
-  redirects to the base, and nothing outside it is served. With
-  `:inject-reload?` (dev), `/__reload` is the SSE channel, HTML gets the
-  reload script, and — when `:state` says no build has succeeded yet — a
-  page request gets `error-page`."
+  redirects to the base, and nothing outside it is served. `root` and
+  `:base` may be functions, read on every request — dev's follow `site.edn`.
+  With `:inject-reload?` (dev), `/__reload` is the SSE channel, HTML gets
+  the reload script, and — when `:state` says no build has succeeded yet —
+  a page request gets `error-page`. A `pagefind/` file the live bundle no
+  longer has is served from the previous one (`pagefind-fallback`)."
   [root {:keys [inject-reload? base state] :or {base "/"}}]
   (fn [{:keys [uri] :as req}]
-    (let [uri (str uri)]
-      (cond
-        (and inject-reload? (= uri "/__reload"))
-        (sse-handler req state)
+    (try
+      (let [uri  (str uri)
+            base (value base)
+            root (value root)
+            path (decode-path uri)]
+        (cond
+          (and inject-reload? (= uri "/__reload"))
+          (sse-handler req state)
 
-        (and (not= "/" base) (or (= uri "/") (= (str uri "/") base)))
-        {:status 302 :headers {"Location" base} :body ""}
+          (nil? path)
+          {:status 400 :headers {"Content-Type" "text/plain; charset=utf-8"} :body "400 Bad Request\n"}
 
-        (and inject-reload? state (not (:ever-ok? @state)) (:error @state) (html-request? uri))
-        {:status 500
-         :headers {"Content-Type" "text/html; charset=utf-8" "Cache-Control" "no-cache"}
-         :body (error-page (:error @state))}
+          (and (not= "/" base) (or (= path "/") (= (str path "/") base)))
+          {:status 302 :headers {"Location" (.toASCIIString (java.net.URI. nil nil base nil))} :body ""}
 
-        :else
-        (if-let [f (some->> (strip-base base uri) (resolve-file root))]
-          (let [html? (= "html" (u-ext f))
-                body  (if (and html? inject-reload?)
-                        (str/replace (slurp (fs/file f)) "</body>" (str reload-script "</body>"))
-                        (fs/file f))]
-            {:status 200
-             :headers (cond-> {"Content-Type" (content-type f)}
-                        inject-reload? (assoc "Cache-Control" "no-cache"))
-             :body body})
-          {:status 404
-           :headers {"Content-Type" "text/html; charset=utf-8"}
-           :body (str "<!doctype html><meta charset=utf-8><h1>404</h1><p>Not found."
-                      (when (and (not= "/" base) (nil? (strip-base base uri)))
-                        (str " This site is served at <a href=\"" base "\">" base "</a>."))
-                      "</p>")})))))
+          (and inject-reload? state (not (:ever-ok? @state)) (:error @state) (html-request? uri))
+          {:status 500
+           :headers {"Content-Type" "text/html; charset=utf-8" "Cache-Control" "no-cache"}
+           :body (error-page (:error @state))}
+
+          :else
+          (let [rel (strip-base base path)]
+            (or (when rel
+                  (or (some-> (resolve-path root rel) (file-response inject-reload?))
+                      (some-> (pagefind-fallback root rel) (file-response inject-reload?))))
+                (not-found base path)))))
+      (catch Throwable _ server-error))))
 
 ;; ---------------------------------------------------------------------------
 ;; Servers
@@ -256,25 +321,68 @@
   {:ip (or (some-> host str str/trim not-empty) default-host)
    :port (or port 1888)})
 
-(defn run-server!
-  "`http/run-server`, as a var the tests can redefine."
-  [handler opts]
-  (http/run-server handler opts))
+(defn- listen-error
+  "The `ex-info` for a server that could not listen on `ip`:`port`."
+  [{:keys [ip port]} ^Throwable e]
+  (let [why (cond
+              (= "java.nio.channels.UnresolvedAddressException" (.getName (class e)))
+              (str "the host " (pr-str ip) " does not resolve")
+              (re-find #"(?i)in use" (str (ex-message e)))
+              (str "port " port " is already in use")
+              (re-find #"(?i)not available|assign" (str (ex-message e)))
+              (str ip " is not an address of this machine")
+              :else (or (ex-message e) (.getName (class e))))]
+    (ex-info (str "clogem-press: cannot listen on " (if (str/includes? (str ip) ":") (str "[" ip "]") ip) ":" port
+                  " — " why ".\n  hint: Choose another port with `--port`, or listen on loopback with `--host 127.0.0.1`.")
+             {:babashka/exit 1})))
 
-(defn- url-for [{:keys [ip port]} base]
-  (str "http://" (if (str/includes? ip ":") (str "[" ip "]") ip) ":" port base))
+(defn run-server!
+  "`http/run-server`, as a var the tests can redefine. A host that does not
+  resolve, is not this machine's, or a port in use is an `ex-info` (exit 1)
+  naming the host and port, not a stack trace."
+  [handler opts]
+  (try
+    (http/run-server handler opts)
+    ;; UnresolvedAddressException is not an IOException (nor a class
+    ;; babashka exposes): matched by name
+    (catch Exception e
+      (if (or (instance? java.io.IOException e)
+              (= "java.nio.channels.UnresolvedAddressException" (.getName (class e))))
+        (throw (listen-error opts e))
+        (throw e)))))
+
+(defn url-for
+  "The URL to print for a server listening with `sopts`, at `base`. On the
+  default loopback address it is `http://localhost:PORT<base>`, as 0.2.0
+  printed: an origin that is `localhost` is what tools allow-list — giscus's
+  `originsRegex` of `http://localhost:[0-9]+` refuses `http://127.0.0.1:…`."
+  [{:keys [ip port]} base]
+  (str "http://"
+       (cond (= ip default-host)        "localhost"
+             (str/includes? ip ":")     (str "[" ip "]")
+             :else                      ip)
+       ":" port
+       (.toASCIIString (java.net.URI. nil nil (str base) nil))))
 
 (defn- clean-base [b] (config/base-path {:site {:base b}}))
 
 (defn serve-base
   "`serve`'s base: `--base`, else the site's `:base` when `--site-dir` holds
-  its config file, else `/`."
+  its config file, else `/`. A config file that cannot be read is one
+  warning and `/`: `serve` only needs the base, and 0.2.0 served regardless."
   [{:keys [base site-dir config-file]}]
   (if base
     (clean-base base)
     (let [f (fs/path (or site-dir ".") (or config-file "site.edn"))]
       (if (fs/regular-file? f)
-        (config/base-path (first (diag/collecting (config/load-config (str (or site-dir ".")) config-file nil))))
+        (try
+          (config/base-path (first (diag/collecting (config/load-config (str (or site-dir ".")) config-file nil))))
+          (catch Exception e
+            (binding [*out* *err*]
+              (println (str "warning: " f ": could not read it (" (first (str/split-lines (str (ex-message e))))
+                            "), so the site is served at /."))
+              (println "  hint: Fix it, or give the base with `--base`."))
+            "/"))
         "/"))))
 
 (defn start-serve!
@@ -401,6 +509,39 @@
        (filter fs/exists?)
        vec))
 
+(defn- norm [p] (str (fs/normalize (fs/absolutize (str p)))))
+
+(defn watch-specs
+  "Every path `bb dev` watches with the fswatcher pod, whether it exists yet
+  or not, as {:path :recursive? :only}: the content, assets, i18n and
+  overrides directories and the theme's (recursively), and the config
+  file's DIRECTORY, not recursively, `:only` for that file. A watch on the
+  file itself stays on its inode, so a save that replaces it by rename —
+  `sed -i`, vim, emacs, any atomic-save editor — left every later edit
+  unseen; a watch on its directory sees the rename. Only the config file's
+  own events count (`watched-event?`): `permalinks.edn` and `dist/` beside
+  it are not changes."
+  [cfg & [{:keys [reload-code?]}]]
+  (let [cf (some-> (:clogem/config-file cfg) norm)]
+    (vec (concat
+          (for [p [(config/content-dir cfg) (config/assets-dir cfg) (config/strings-dir cfg)
+                   (fs/path (config/site-dir cfg) "overrides")]]
+            {:path (norm p) :recursive? true})
+          (when cf [{:path (norm (fs/parent cf)) :recursive? false :only cf}])
+          (when-let [t (theme-dir reload-code?)] [{:path (norm t) :recursive? true}])))))
+
+(defn watched-event?
+  "Is `p`, a path the pod reported, a change `specs` watch for: inside a
+  recursive spec's directory, or a spec's `:only` file?"
+  [specs p]
+  (let [p (norm p)]
+    (boolean
+     (some (fn [{:keys [path only]}]
+             (if only
+               (= p only)
+               (or (= p path) (str/starts-with? p (str path File/separator)))))
+           specs))))
+
 (defn- snapshot
   [paths]
   (into {}
@@ -423,22 +564,23 @@
   `:content :dir` is followed without a restart. A `Throwable` in one pass
   is reported and the loop goes on: an `Error` used to end the polling
   thread silently, and with it every rebuild."
-  [paths-fn interval on-change]
+  [paths-fn interval on-change & [{:keys [stop?] :or {stop? (constantly false)}}]]
   (loop [prev (snapshot (paths-fn))]
     (Thread/sleep (long interval))
-    (let [now (try (snapshot (paths-fn))
-                   (catch Throwable t
-                     (println "clogem-press: polling failed —" (or (ex-message t) (str t)))
-                     prev))]
-      (when (not= prev now)
-        (let [changed (->> (concat (keys now) (keys prev))
-                           distinct
-                           (remove #(= (get prev %) (get now %)))
-                           sort vec)]
-          (try (on-change changed)
-               (catch Throwable t
-                 (println "clogem-press: polling failed —" (or (ex-message t) (str t)))))))
-      (recur now))))
+    (when-not (stop?)
+      (let [now (try (snapshot (paths-fn))
+                     (catch Throwable t
+                       (println "clogem-press: polling failed —" (or (ex-message t) (str t)))
+                       prev))]
+        (when (not= prev now)
+          (let [changed (->> (concat (keys now) (keys prev))
+                             distinct
+                             (remove #(= (get prev %) (get now %)))
+                             sort vec)]
+            (try (on-change changed)
+                 (catch Throwable t
+                   (println "clogem-press: polling failed —" (or (ex-message t) (str t)))))))
+        (recur now)))))
 
 (def watch-delay-ms
   "The fswatcher pod's event-coalescing window, in ms.
@@ -504,29 +646,40 @@
 
   `watch`/`unwatch` (and `sleep`, for the gap) are injected so every outcome
   is testable without the pod — and so the zero-event case, which by
-  definition cannot be reproduced where events do fire, is covered anyway."
-  [cfg on-change {:keys [watch unwatch timeout-ms gap-ms sleep paths]
+  definition cannot be reproduced where events do fire, is covered anyway.
+
+  `specs` (default: the `watch-specs` of `cfg` that exist) are registered,
+  each `:recursive?` or not; an event reaches `on-change` only when
+  `accept?` (default: every path) says so. On success, `on-ready` is called
+  with a `register!` of one more spec on the same callback — what dev's
+  follower uses for a directory created later (§5.4)."
+  [cfg on-change {:keys [watch unwatch timeout-ms gap-ms sleep specs accept? on-ready]
                   :or   {timeout-ms default-probe-ms
                          gap-ms     registration-gap-ms
-                         sleep      #(Thread/sleep (long %))}}]
-  (let [paths (or paths (watched-paths cfg))
-        dirs  (filterv fs/directory? paths)]
+                         sleep      #(Thread/sleep (long %))
+                         accept?    (constantly true)}}]
+  (let [specs (or specs (filterv #(fs/exists? (:path %)) (watch-specs cfg)))
+        dirs  (filterv #(and (:recursive? %) (fs/directory? (:path %))) specs)]
     (if (empty? dirs)
       (do (println "clogem-press: no watchable directory to probe; using polling")
           false)
-      (let [probe     (fs/path (first dirs) (str ".clogem-watch-probe-" (System/nanoTime)))
-            probe-s   (str probe)
+      (let [probe     (fs/path (:path (first dirs)) (str ".clogem-watch-probe-" (System/nanoTime)))
+            probe-s   (norm probe)
             seen      (promise)
             abandoned? (atom false)
             callback  (fn [ev]
                         (let [p (str (:path ev))]
                           (cond
-                            (= p probe-s)  (deliver seen true)
-                            @abandoned?    nil
+                            (= (norm p) probe-s) (deliver seen true)
+                            @abandoned?          nil
+                            (not (accept? p))    nil
                             :else          (try (on-change [p])
                                                 (catch Throwable t
                                                   (println "clogem-press: watcher callback failed —"
                                                            (or (ex-message t) (str t))))))))
+            watch-1   (fn [{:keys [path recursive?]}]
+                        (watch (str path) callback {:recursive (boolean recursive?)
+                                                    :delay-ms watch-delay-ms}))
             reg       (promise)
             ;; One deadline shared by registration and delivery. Giving each its
             ;; own `timeout-ms` made the advertised window the *half* of a worst
@@ -535,12 +688,10 @@
             remaining #(max 0 (- deadline (System/currentTimeMillis)))]
         (future
           (deliver reg (try {:watchers (vec (map-indexed
-                                             (fn [i p]
+                                             (fn [i spec]
                                                (when (pos? i) (sleep gap-ms))
-                                               (watch (str p) callback
-                                                      {:recursive true
-                                                       :delay-ms watch-delay-ms}))
-                                             paths))}
+                                               (watch-1 spec))
+                                             specs))}
                             (catch Throwable e {:error (or (ex-message e) (str e))}))))
         (let [{:keys [watchers error] :as r} (deref reg (remaining) ::timeout)]
           (cond
@@ -563,6 +714,19 @@
                 (if (deref seen (remaining) false)
                   (do (println (format "clogem-press: fswatcher delivered a probe event in %d ms"
                                        (- (System/currentTimeMillis) t0)))
+                      (when on-ready
+                        (on-ready
+                         ;; the same spacing, and a hung call is given up
+                         ;; on after the probe budget rather than blocking
+                         ;; its caller for ever
+                         (fn register! [spec]
+                           (sleep gap-ms)
+                           (let [r (deref (future (try (watch-1 spec) (catch Throwable e e)))
+                                          timeout-ms ::timeout)]
+                             (cond
+                               (= ::timeout r)        (throw (ex-info "the fswatcher pod did not answer" {}))
+                               (instance? Throwable r) (throw r)
+                               :else                  r)))))
                       true)
                   (do (reset! abandoned? true)
                       (println
@@ -575,6 +739,40 @@
                       false)))
               (finally
                 (try (fs/delete-if-exists probe) (catch Throwable _ nil))))))))))
+
+(defn follow-new-paths!
+  "One pass of dev's follower, with the pod (§5.4): register every spec of
+  `specs` that exists now and is not in `registered` (an atom of paths) —
+  `overrides/` created while `bb dev` runs, or the directory a `site.edn`
+  edit moved `:content :dir` to — and return the paths it registered, for
+  a rebuild. A spec the pod will not take is reported once, with the
+  restart that fixes it, and not tried again."
+  [specs registered register!]
+  ;; a watched directory deleted and created again is a new inode to watch
+  (swap! registered (fn [r] (into #{} (filter fs/exists?) r)))
+  (vec (keep (fn [{:keys [path] :as spec}]
+               (when (and (not (contains? @registered path)) (fs/exists? path))
+                 (swap! registered conj path)
+                 (try (register! spec)
+                      path
+                      (catch Throwable e
+                        (println (str "clogem-press: cannot watch " path " ("
+                                      (or (ex-message e) (str e))
+                                      "); restart `bb dev` to watch it, or run it with `--poll`."))
+                        nil))))
+             specs)))
+
+(defn one-line
+  "An error message as one line for dev's terminal: without the
+  `clogem-press: <area>: ` prefix the line already carries, and with a
+  `hint:` line kept, after a semicolon."
+  [msg]
+  (->> (str/split-lines (str msg))
+       (map str/trim)
+       (remove str/blank?)
+       (map #(str/replace % #"^clogem-press: (?:[a-z]+: )?" ""))
+       (map #(str/replace % #"^hint: " ""))
+       (str/join "; ")))
 
 (defn load-pod!
   "Fetch the fswatcher pod through `clogem.tools` — the pinned, per-platform
@@ -600,19 +798,17 @@
       {:watch   (requiring-resolve 'pod.babashka.fswatcher/watch)
        :unwatch (requiring-resolve 'pod.babashka.fswatcher/unwatch)})
     (catch Throwable e
-      (println (str "clogem-press: the fswatcher pod is unavailable, so dev watches by polling — "
-                    (first (str/split-lines (str (or (ex-message e) e))))))
+      (println (str "clogem-press: the fswatcher pod is unavailable, so dev watches by polling: "
+                    (one-line (or (ex-message e) (str e)))))
       nil)))
 
 (defn try-pod-watch!
   "Load the fswatcher pod and probe it. Returns true only if it registered *and*
   delivered an event within the probe window."
-  [cfg on-change & [{:keys [timeout-ms paths]}]]
+  [cfg on-change & [opts]]
   (if-let [fns (load-pod! cfg)]
     (try
-      (probe-watch! cfg on-change (cond-> fns
-                                    timeout-ms (assoc :timeout-ms timeout-ms)
-                                    paths      (assoc :paths paths)))
+      (probe-watch! cfg on-change (merge fns (into {} (remove (comp nil? val)) opts)))
       (catch Throwable e
         (println "clogem-press: fswatcher pod unavailable —" (ex-message e))
         false))
@@ -674,7 +870,8 @@
   "The dev loop's one rebuild, as a function of the changed paths.
 
   - `build` — `clogem.cli/build`, already given dev's options;
-  - `out` — the output directory, for the stylesheet comparison;
+  - `out` — the output directory (or a function returning it), for the
+    stylesheet comparison;
   - `state` — an atom {:ever-ok? :error :last-ok?} the handler reads;
   - `index!` — asks for a background search index (`background-runner`);
   - `reload-code` — the theme directory whose changed `.clj` to reload;
@@ -687,14 +884,14 @@
     :or {notify! notify-clients! notify-error! notify-error!}}]
   (fn rebuild! [changed]
     (let [t0     (System/currentTimeMillis)
-          before (linked-stylesheets out)]
+          before (linked-stylesheets (value out))]
       (try
         (when reload-code
           (doseq [ns-sym (theme-namespaces reload-code changed)]
             (require ns-sym :reload)
             (println "clogem-press: reloaded" ns-sym)))
         (let [result  (build)
-              after   (linked-stylesheets out)
+              after   (linked-stylesheets (value out))
               last-ok? (:last-ok? @state true)
               kind    (reload-kind changed before after last-ok?)]
           (swap! state assoc :ever-ok? true :last-ok? true :error nil)
@@ -719,17 +916,31 @@
             (notify-error! err)
             nil))))))
 
+(def ^:private signal-exits
+  "Pagefind's exit codes when a signal stopped it — Ctrl-C reaches the whole
+  process group — or `search/stop-indexing!` did: not a failure to report."
+  #{130 137 143})
+
 (defn- indexer
   "dev's search indexing: `search/run-staged!` on a `background-runner`,
-  over the config of the build that asked last."
-  []
+  over the config of the build that asked last. A run stopped by a signal,
+  or while dev shuts down (`stopping?`), prints nothing. `spawn` is the
+  runner's (a test's runs synchronously)."
+  [stopping? & [spawn]]
   (let [pending  (atom nil)
         request! (background-runner
                  (fn []
                    (let [cfg @pending t0 (System/currentTimeMillis)]
-                     (search/run-staged! cfg)
-                     (println (format "clogem-press: search index updated in %d ms"
-                                      (- (System/currentTimeMillis) t0))))))]
+                     (try
+                       (search/run-staged! cfg)
+                       (println (format "clogem-press: search index updated in %d ms"
+                                        (- (System/currentTimeMillis) t0)))
+                       (catch Throwable t
+                         (when-not (or (stopping?)
+                                       (signal-exits (:clogem/pagefind-exit (ex-data t))))
+                           (println "clogem-press: search index failed —"
+                                    (one-line (or (ex-message t) (str t)))))))))
+                 (or spawn future-call))]
     (fn [cfg] (reset! pending cfg) (request!))))
 
 (defn build-opts
@@ -742,49 +953,124 @@
   [opts]
   (assoc opts :site-dir (or (:site-dir opts) ".") :clogem/dev? true :clogem/dev-loop? true))
 
-(defn dev!
+(defn- config-moves
+  "The lines to print when a rebuild's config moved what dev serves: the
+  base is mounted, and the output directory served, from the new config
+  at once — this only says so."
+  [before after url]
+  (let [b0 (config/base-path before) b1 (config/base-path after)
+        o0 (str (config/out-dir before)) o1 (str (config/out-dir after))]
+    (cond-> []
+      (not= b0 b1) (conj (str "clogem-press: the site base changed from " b0 " to " b1
+                              "; dev now serves it at " (url b1)))
+      (not= o0 o1) (conj (str "clogem-press: the output directory changed from " o0 " to " o1
+                              "; dev now serves " o1)))))
+
+(defn start-dev!
+  "Wire `bb dev` together and start it; returns
+  {:stop! :state :cfg-ref :submit! :server :pod? :url}.
+
+  In order: the config (a config error is fatal, D-P2-12); the server,
+  bound BEFORE the first build, so a host or port it cannot have writes
+  nothing to `dist/`; the first build; the queue's drain loop; then the
+  fswatcher pod — with its follower, which registers a watched directory
+  created later — or polling. The handler reads the base and the output
+  directory from the config of the last build, so a `site.edn` edit that
+  changes `:site :base` or `:build :out` is simply served.
+
+  Everything that reaches outside is injectable through `env` — `:build`,
+  `:load-cfg!`, `:run-server!`, `:try-pod-watch!`, `:poll-watch!`, `:index!`,
+  `:notify!`, `:notify-error!`, `:spawn` (run a function on its own thread;
+  default `future-call`) and `:follow-ms` — so the wiring is tested without
+  a port, a pod or a clock (dev_loop_test)."
   [{:keys [poll interval probe-ms reload-code]
-    :or {interval 500 probe-ms default-probe-ms} :as opts}]
-  (let [;; D-P2-12: a config error is fatal here too — the rebuild loop would
-        ;; otherwise serve a site rendered under a repaired config for ever.
-        ;; `load-cfg!` applies --out, --base, --no-search and --no-highlight as
-        ;; `build` does.
-        cfg     ((requiring-resolve 'clogem.cli/load-cfg!) opts)
-        cfg     (assoc cfg :clogem/dev? true)
-        cfg-ref (atom cfg)
-        out     (config/out-dir cfg)
-        base    (config/base-path cfg)
-        theme   (theme-dir reload-code)
-        paths   #(watched-paths @cfg-ref {:reload-code? reload-code})
-        watched (atom (paths))
-        pod?    (atom false)
-        state   (atom {:ever-ok? false})
-        build   (requiring-resolve 'clogem.cli/build)
-        rebuild (make-rebuild
-                 {:build       #(build (build-opts opts))
-                  :out         out
-                  :state       state
-                  :index!      (indexer)
-                  :reload-code (when reload-code theme)
-                  :on-config   (fn [c]
-                                 (reset! cfg-ref c)
-                                 (let [now (paths)]
-                                   (when (and @pod? (not= now @watched))
-                                     (println (str "clogem-press: the watched directories changed ("
-                                                   (str/join ", " (map str now))
-                                                   "); restart `bb dev` to watch them — the fswatcher pod "
-                                                   "keeps the directories it registered at startup.")))
-                                   (reset! watched now)))})
-        queue   (LinkedBlockingQueue.)
-        submit! (submitter queue)
-        sopts   (server-options opts)]
+    :or {interval 500 probe-ms default-probe-ms} :as opts}
+   & [env]]
+  (let [build*    (or (:build env) (requiring-resolve 'clogem.cli/build))
+        serve*    (or (:run-server! env) run-server!)
+        pod*      (or (:try-pod-watch! env) try-pod-watch!)
+        poll*     (or (:poll-watch! env) poll-watch!)
+        spawn     (or (:spawn env) future-call)
+        follow-ms (or (:follow-ms env) 1000)
+        stopping  (atom false)
+        index*    (or (:index! env) (indexer #(deref stopping)))
+        ;; `load-cfg!` applies --out, --base, --no-search and --no-highlight
+        ;; as `build` does
+        cfg       (assoc ((or (:load-cfg! env) (requiring-resolve 'clogem.cli/load-cfg!)) opts)
+                         :clogem/dev? true)
+        cfg-ref   (atom cfg)
+        theme     (theme-dir reload-code)
+        paths     #(watched-paths @cfg-ref {:reload-code? reload-code})
+        specs     (atom (watch-specs cfg {:reload-code? reload-code}))
+        state     (atom {:ever-ok? false})
+        session   (atom #{})
+        sopts     (server-options opts)
+        out-fn    #(fs/absolutize (config/out-dir @cfg-ref))
+        base-fn   #(config/base-path @cfg-ref)
+        url       #(url-for sopts %)
+        server    (serve* (make-handler out-fn {:inject-reload? true :base base-fn :state state}) sopts)
+        rebuild   (make-rebuild
+                   {:build         #(binding [i18n/*session-keys* session]
+                                      (build* (build-opts opts)))
+                    :out           out-fn
+                    :state         state
+                    :index!        (fn [c] (when-not @stopping (index* c)))
+                    :reload-code   (when reload-code theme)
+                    :notify!       (or (:notify! env) notify-clients!)
+                    :notify-error! (or (:notify-error! env) notify-error!)
+                    :on-config     (fn [c]
+                                     (let [before @cfg-ref]
+                                       (reset! cfg-ref c)
+                                       (reset! specs (watch-specs c {:reload-code? reload-code}))
+                                       (run! println (config-moves before c url))))})
+        queue     (LinkedBlockingQueue.)
+        submit!   (submitter queue)
+        register  (atom nil)
+        registered (atom #{})
+        stop!     (fn stop! []
+                    (when (compare-and-set! stopping false true)
+                      (try (when (fn? server) (server)) (catch Throwable _ nil))
+                      (.put queue ::stop)
+                      (search/stop-indexing!)
+                      (try (search/sweep-staging! (out-fn)) (catch Throwable _ nil))
+                      nil))]
     (rebuild [])
-    (run-server! (make-handler (fs/absolutize out) {:inject-reload? true :base base :state state}) sopts)
-    (println (format "clogem-press: dev server at %s" (url-for sopts base)))
-    (future (drain-loop! {:take! (queue-take queue) :on-batch rebuild}))
-    (if (or poll (not (try-pod-watch! cfg submit! {:timeout-ms probe-ms :paths @watched})))
-      (do (println (format "clogem-press: watching by polling every %d ms" interval))
-          (poll-watch! paths interval submit!))
-      (do (reset! pod? true)
-          (println "clogem-press: watching via fswatcher")
-          @(promise)))))
+    (println (format "clogem-press: dev server at %s" (url (base-fn))))
+    (spawn #(drain-loop! {:take! (queue-take queue) :on-batch rebuild}))
+    (let [existing (filterv #(fs/exists? (:path %)) @specs)
+          pod?     (and (not poll)
+                        (pod* @cfg-ref submit! {:timeout-ms probe-ms
+                                                :specs     existing
+                                                :accept?   #(watched-event? @specs %)
+                                                :on-ready  #(reset! register %)}))]
+      (if pod?
+        (do (reset! registered (set (map :path existing)))
+            (println "clogem-press: watching via fswatcher")
+            (when @register
+              (spawn (fn []
+                       (loop []
+                         (Thread/sleep (long follow-ms))
+                         (when-not @stopping
+                           (try (when-let [new (seq (follow-new-paths! @specs registered @register))]
+                                  (submit! new))
+                                (catch Throwable t
+                                  (println "clogem-press: watching failed —" (or (ex-message t) (str t)))))
+                           (recur)))))))
+        (do (println (format "clogem-press: watching by polling every %d ms" interval))
+            (spawn #(poll* paths interval submit! {:stop? (fn [] @stopping)}))))
+      {:stop!   stop!
+       :state   state
+       :cfg-ref cfg-ref
+       :submit! submit!
+       :server  server
+       :pod?    (boolean pod?)
+       :url     (url (base-fn))})))
+
+(defn dev!
+  [opts]
+  (let [{:keys [stop!]} (start-dev! opts)]
+    ;; Ctrl-C: stop the server, the loop and any Pagefind run, remove its
+    ;; staging directory, and say so once
+    (.addShutdownHook (Runtime/getRuntime)
+                      (Thread. (fn [] (stop!) (println "clogem-press: stopped"))))
+    @(promise)))
