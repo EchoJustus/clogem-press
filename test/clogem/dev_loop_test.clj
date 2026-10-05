@@ -249,10 +249,7 @@
         (doseq [[what redefs cfg]
                 [["offline" {} {:tools {:fswatcher {:version "0.0.7"
                                                     :url "http://127.0.0.1:9/no/{{platform}}.zip"}}}]
-                 ["no asset" {#'tools/platform (fn [& _] nil)} {:tools {:fswatcher {:version "0.0.7"}}}]
-                 ["bad hash" {} {:tools {:fswatcher {:version "0.0.7"
-                                                     :sha256 {(tools/platform tools/fswatcher) (apply str (repeat 64 "0"))}
-                                                     :url "http://127.0.0.1:9/no/{{platform}}.zip"}}}]]]
+                 ["no asset" {#'tools/platform (fn [& _] nil)} {:tools {:fswatcher {:version "0.0.7"}}}]]]
           (with-redefs-fn (merge {#'tools/getenv (fn [k] (when (= k "CLOGEM_TOOLS_DIR") (str tmp)))
                                   #'pods/load-pod (fn [& _] (reset! loaded true))}
                                  redefs)
@@ -263,7 +260,40 @@
                             (is (nil? (dev/load-pod! (assoc cfg :clogem/site-dir (str tmp)))) what)))]
                 (is (= 1 (count (str/split-lines (str/trim out)))) (str what ": " out))
                 (is (str/includes? out "watches by polling") what)
+                (is (not (str/includes? out "polling: clogem-press:")) (str what ": one prefix"))
                 (is (false? @loaded) (str what ": nothing unverified is loaded"))))))
+        (finally (fs/delete-tree tmp))))))
+
+(deftest a-pod-download-that-fails-its-hash-is-never-loaded
+  (testing "P4-D.1 item 11: a downloaded zip whose sha256 is not the pin's
+            reaches the verification and stops there — this case used the
+            offline case's unreachable URL, so it never got that far"
+    (let [loaded (atom false)
+          fetched (atom nil)
+          tmp    (fs/create-temp-dir {:prefix "clogem-tools"})]
+      (try
+        (with-redefs-fn {#'tools/getenv    (fn [k] (when (= k "CLOGEM_TOOLS_DIR") (str tmp)))
+                         #'tools/download! (fn [_tool url dest _dir]
+                                             (reset! fetched url)
+                                             (spit (fs/file dest) "PK\u0003\u0004 not the pod"))
+                         #'pods/load-pod   (fn [& _] (reset! loaded true))}
+          (fn []
+            (let [err (java.io.StringWriter.)
+                  out (binding [*err* err]
+                        (with-out-str
+                          (is (nil? (dev/load-pod! {:tools {:fswatcher {:version "0.0.7"}}
+                                                    :clogem/site-dir (str tmp)})))))
+                  lines (remove str/blank? (str/split-lines (str err "\n" out)))]
+              (is (some? @fetched) "the download ran")
+              (is (= 2 (count lines)) (str/join "\n" lines))
+              (is (re-find #"^clogem-press: fetching fswatcher pod 0\.0\.7 " (first lines)) (first lines))
+              (is (re-find #"^clogem-press: the fswatcher pod is unavailable, so dev watches by polling: sha256 mismatch for "
+                           (second lines))
+                  (second lines))
+              (is (str/includes? (second lines) "never run an unverified binary") "the hint is kept")
+              (is (false? @loaded) "nothing unverified is loaded")
+              (is (empty? (filter #(str/includes? (str %) "pod-babashka-fswatcher") (map str (fs/glob tmp "**"))))
+                  "and nothing of it is cached"))))
         (finally (fs/delete-tree tmp))))))
 
 ;; ---------------------------------------------------------------------------

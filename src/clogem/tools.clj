@@ -195,8 +195,9 @@
   "The babashka filesystem-watcher pod, org.babashka/fswatcher. Each release
   asset is a zip whose single member is the pod binary. Upstream publishes
   no checksums: these were computed from the release zips on 2026-10-02
-  (trust on first use, DESIGN.md §11.3). Phase 4 Task A adds the descriptor
-  only; `dev` does not use it yet (Task D)."
+  (trust on first use, DESIGN.md §11.3). `bb dev` fetches it through
+  `ensure-binary!` and loads it from the verified path (`dev/load-pod!`,
+  Task D); `bb fetch-tool --tool fswatcher` fills the cache, as CI does."
   {:id           :fswatcher
    :name         "fswatcher pod"
    :error-prefix "dev"

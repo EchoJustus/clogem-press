@@ -546,3 +546,36 @@
             (is (= "" (with-out-str (dev/follow-new-paths! [{:path b}] reg (fn [_] (throw (ex-info "nope" {})))))))))
         (is (= 2 @calls)))
       (finally (fs/delete-tree dir)))))
+
+(deftest the-real-pod-sees-site-edn-replaced-by-rename-twice
+  (testing "with the real fswatcher pod (CLOGEM_FSWATCHER): two `sed -i`
+            edits of site.edn, each a rename over the file, are two changes"
+    (if-not (System/getenv "CLOGEM_FSWATCHER")
+      (println "the-real-pod-sees-site-edn-replaced-by-rename-twice: CLOGEM_FSWATCHER is not set; skipped")
+      (with-site url-site
+        (fn [dir _]
+          (let [cfg     (first (diag/collecting (config/load-config (str dir))))
+                specs   (dev/watch-specs cfg)
+                seen    (atom [])
+                fns     (binding [*out* (java.io.StringWriter.)] (dev/load-pod! cfg))
+                cf      (str (fs/normalize (fs/absolutize (fs/path dir "site.edn"))))
+                replace! (fn [text]
+                           (let [tmp (fs/path dir (str "sed" (rand-int 100000)))]
+                             (spit (fs/file tmp) text)
+                             (fs/move tmp (fs/path dir "site.edn") {:replace-existing true :atomic-move true})))
+                n-site  #(count (filter (fn [p] (= cf (str (fs/normalize (fs/absolutize p))))) @seen))]
+            (is (some? fns) "the pod loads")
+            (when fns
+              (is (true? (binding [*out* (java.io.StringWriter.)]
+                           (dev/probe-watch! cfg #(swap! seen into %)
+                                             (assoc fns :specs (filterv #(fs/exists? (:path %)) specs)
+                                                        :accept? #(dev/watched-event? specs %))))))
+              (replace! (pr-str (assoc-in url-site [:site :title] "A")))
+              (is (wait-until #(pos? (n-site)) 3000) "the first rename")
+              (Thread/sleep 300)
+              (reset! seen [])
+              (replace! (pr-str (assoc-in url-site [:site :title] "B")))
+              (is (wait-until #(pos? (n-site)) 3000) "the second rename: the watch did not stay on the old inode")
+              (spit (fs/file dir "permalinks.edn") "{}")
+              (Thread/sleep 400)
+              (is (not-any? #(str/ends-with? (str %) "permalinks.edn") @seen) "other files beside it are not changes"))))))))

@@ -9,9 +9,10 @@
 // Unlike the other tests this one does not use the served `dist/`: it copies
 // examples/demo-site to a temp directory (the checked-in tree is never
 // edited), starts `bb dev --no-search` there on its own port, and drives
-// that. When `bb dev` cannot start — no `bb` on PATH, or the server does not
-// come up within 90 s — it says so and skips rather than failing; anything
-// after a successful start is a real failure.
+// that. When `bb` is not on PATH, or `bb dev` is still starting after 90 s,
+// it says so and skips rather than failing. A `bb dev` that EXITS before it
+// is ready — a crash at startup — is a failure that prints its output, and
+// so is anything after a successful start.
 
 import { spawn } from 'node:child_process';
 import { cp, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -37,14 +38,18 @@ async function findSource(dir, link) {
   return null;
 }
 
-// Resolve once `pred(line)` holds for a line of the child's output, or with
-// null after `ms`.
-function waitForLine(lines, pred, ms) {
+// Resolve once `pred(line)` holds for a line of the child's output; with
+// {exited: code} as soon as the child has exited without it; or with null
+// after `ms`.
+function waitForLine(lines, pred, ms, child) {
   return new Promise((resolve) => {
     const t0 = Date.now();
     const tick = () => {
       const hit = lines.find(pred);
       if (hit) return resolve(hit);
+      if (child && (child.exitCode !== null || child.signalCode !== null)) {
+        return resolve({ exited: child.exitCode ?? child.signalCode });
+      }
       if (Date.now() - t0 > ms) return resolve(null);
       setTimeout(tick, 50);
     };
@@ -98,12 +103,25 @@ export default async function (t) {
         lines.push(...parts);
       });
     }
+    let spawnFailed = false;
     const ready = await Promise.race([
-      waitForLine(lines, (l) => /clogem-press: watching (via|by)/.test(l), 90000),
-      spawnError.then((e) => { console.log(`  skip: cannot run bb (${e.message})`); return null; }),
+      waitForLine(lines, (l) => /clogem-press: watching (via|by)/.test(l), 90000, child),
+      spawnError.then((e) => { spawnFailed = true; console.log(`  skip: cannot run bb (${e.message})`); return null; }),
     ]);
+    if (spawnFailed) return;
+    // a spawn that failed (ENOENT: no bb on PATH) reports a negative errno
+    if (ready && typeof ready === 'object' && typeof ready.exited === 'number' && ready.exited < 0) {
+      console.log(`  skip: cannot run bb (exit ${ready.exited})`);
+      return;
+    }
+    if (ready && typeof ready === 'object') {
+      // let the pipes drain, then report everything it printed
+      await new Promise((r) => setTimeout(r, 200));
+      t.check(false, `bb dev exited (${ready.exited}) before it was ready:\n${lines.map((l) => `    | ${l}`).join('\n')}`);
+      return;
+    }
     if (!ready) {
-      if (child.exitCode === null && !child.killed) console.log('  skip: bb dev did not come up within 90 s');
+      console.log('  skip: bb dev did not come up within 90 s');
       console.log(lines.slice(-10).map((l) => `    | ${l}`).join('\n'));
       return;
     }

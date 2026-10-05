@@ -765,14 +765,18 @@
 (defn one-line
   "An error message as one line for dev's terminal: without the
   `clogem-press: <area>: ` prefix the line already carries, and with a
-  `hint:` line kept, after a semicolon."
+  `hint:` line kept: after a semicolon, or a space after a full stop."
   [msg]
   (->> (str/split-lines (str msg))
        (map str/trim)
        (remove str/blank?)
        (map #(str/replace % #"^clogem-press: (?:[a-z]+: )?" ""))
        (map #(str/replace % #"^hint: " ""))
-       (str/join "; ")))
+       (reduce (fn [acc line]
+                 (cond (empty? acc)                   line
+                       (re-find #"[.!?]$" acc)        (str acc " " line)
+                       :else                          (str acc "; " line)))
+               "")))
 
 (defn load-pod!
   "Fetch the fswatcher pod through `clogem.tools` — the pinned, per-platform

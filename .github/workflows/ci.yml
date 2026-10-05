@@ -37,7 +37,8 @@ jobs:
       # `v2` entries carry the verification stamp of §11.2 item 46, and an
       # unstamped entry restored under the old key would be re-fetched on
       # every run without ever being saved again. Phase 4 C (§11.3 item 10)
-      # adds Chroma's pin to the same key: the build highlights by default.
+      # adds Chroma's pin to the same key: the build highlights by default;
+      # Phase 4 D (P4-D.1 item 12) the fswatcher pod's, which `bb dev` runs.
       - name: Tool pins
         id: pins
         run: |
@@ -45,9 +46,12 @@ jobs:
                  (let [v  (get-in clogem.config/defaults [:tools :pagefind :version])
                        p  (clogem.search/platform)
                        cv (get-in clogem.config/defaults [:tools :chroma :version])
-                       cp (clogem.tools/platform clogem.tools/chroma)]
+                       cp (clogem.tools/platform clogem.tools/chroma)
+                       fv (get-in clogem.config/defaults [:tools :fswatcher :version])
+                       fp (clogem.tools/platform clogem.tools/fswatcher)]
                    (println (str \"key=tools-v2-pagefind-\" v \"-\" p \"-\" (get-in clogem.search/known-sha256 [v p])
-                                 \"-chroma-\" cv \"-\" cp \"-\" (get-in clogem.tools/chroma [:known-sha256 cv cp]))))" \
+                                 \"-chroma-\" cv \"-\" cp \"-\" (get-in clogem.tools/chroma [:known-sha256 cv cp])
+                                 \"-fswatcher-\" fv \"-\" fp \"-\" (get-in clogem.tools/fswatcher [:known-sha256 fv fp]))))" \
             >> "$GITHUB_OUTPUT"
           cat "$GITHUB_OUTPUT"
 
@@ -80,6 +84,18 @@ jobs:
           test -x "$bin"
           "$bin" --version
           echo "CLOGEM_CHROMA=$bin" >> "$GITHUB_ENV"
+
+      # P4-D.1 item 12: the fswatcher pod the same way, from the cache the
+      # key above now covers, so `bb dev`'s pod path (the dev and search-swap
+      # browser tests, `bb test`'s real-pod test) never depends on GitHub
+      # being reachable from the runner.
+      - name: Fetch the fswatcher pod and export CLOGEM_FSWATCHER
+        working-directory: examples/demo-site
+        run: |
+          set -euo pipefail
+          bin=$(bb --config ../../bb.edn fetch-tool --tool fswatcher | tail -n 1)
+          test -x "$bin"
+          echo "CLOGEM_FSWATCHER=$bin" >> "$GITHUB_ENV"
 
       - name: Run tests
         run: bb test
@@ -343,9 +359,12 @@ jobs:
                  (let [v  (get-in clogem.config/defaults [:tools :pagefind :version])
                        p  (clogem.search/platform)
                        cv (get-in clogem.config/defaults [:tools :chroma :version])
-                       cp (clogem.tools/platform clogem.tools/chroma)]
+                       cp (clogem.tools/platform clogem.tools/chroma)
+                       fv (get-in clogem.config/defaults [:tools :fswatcher :version])
+                       fp (clogem.tools/platform clogem.tools/fswatcher)]
                    (println (str \"key=tools-v2-pagefind-\" v \"-\" p \"-\" (get-in clogem.search/known-sha256 [v p])
-                                 \"-chroma-\" cv \"-\" cp \"-\" (get-in clogem.tools/chroma [:known-sha256 cv cp]))))" \
+                                 \"-chroma-\" cv \"-\" cp \"-\" (get-in clogem.tools/chroma [:known-sha256 cv cp])
+                                 \"-fswatcher-\" fv \"-\" fp \"-\" (get-in clogem.tools/fswatcher [:known-sha256 fv fp]))))" \
             >> "$GITHUB_OUTPUT"
           cat "$GITHUB_OUTPUT"
 
@@ -375,6 +394,18 @@ jobs:
           test -x "$bin"
           "$bin" --version
           echo "CLOGEM_CHROMA=$bin" >> "$GITHUB_ENV"
+
+      # P4-D.1 item 12: the fswatcher pod the same way, from the cache the
+      # key above now covers, so `bb dev`'s pod path (the dev and search-swap
+      # browser tests, `bb test`'s real-pod test) never depends on GitHub
+      # being reachable from the runner.
+      - name: Fetch the fswatcher pod and export CLOGEM_FSWATCHER
+        working-directory: examples/demo-site
+        run: |
+          set -euo pipefail
+          bin=$(bb --config ../../bb.edn fetch-tool --tool fswatcher | tail -n 1)
+          test -x "$bin"
+          echo "CLOGEM_FSWATCHER=$bin" >> "$GITHUB_ENV"
 
       - name: Build demo site
         working-directory: examples/demo-site
