@@ -493,6 +493,24 @@
           (is (fs/exists? (fs/path dir "dist-jobs" "clogem" "css" "highlight.css")))
           (is (= 1 (count (re-seq #"CLOGEM_JOBS is \"lots\"" err))) err))))))
 
+(deftest feed-summaries-decode-what-chroma-escapes
+  (testing "P4-C.1 item 6: an excerpt whose code holds \" and ' gives the Atom
+            summary main gives, highlighted or not"
+    (with-site {"01.Guide/01.a.md"
+                (article "A" "/pages/aaaaa1/"
+                         "# A\n\nIntro.\n\n```js\nconst msg = \"hi\";\nconst c = 'x';\n```\n\n<!-- more -->\n\nRest.\n")}
+      (fn [dir out _]
+        (let [summary (fn [opts]
+                        (is (nil? (:error (build! dir out opts))))
+                        (re-find #"<summary[^>]*>[^<]*</summary>" (slurp (fs/file out "feed.xml"))))
+              ;; main (4d795e8) emits exactly this
+              main "<summary type=\"text\">Intro. const msg = \"hi\"; const c = 'x';</summary>"]
+          (is (= main (summary nil)) "highlighted")
+          (is (= main (summary {:no-highlight true})) "--no-highlight")))))
+  (testing "numeric character references decode; an escaped one stays text"
+    (is (= "\"a' ' é 😀 &#34; &#0; &#xD800;"
+           (#'clogem.render/strip-tags "<code>&#34;a&#39; &#x27; &#233; &#x1F600; &amp;#34; &#0; &#xD800;</code>")))))
+
 (deftest no-highlight-renders-0-2-0-markup-and-runs-nothing
   (doseq [[how opts site-edn] [["--no-highlight" {:no-highlight true} nil]
                                [":provider :none" nil {:highlight {:provider :none}}]]]

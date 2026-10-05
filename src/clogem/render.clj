@@ -802,9 +802,20 @@
       (prune-empty-dirs! out (fs/parent f)))
     stale))
 
+(defn- decode-char-ref
+  "A numeric character reference's code point → its text, or the reference
+  unchanged when it names no valid character."
+  [whole ^long cp]
+  (if (and (Character/isValidCodePoint cp) (not (<= 0xD800 cp 0xDFFF)) (pos? cp))
+    (String. (Character/toChars cp))
+    whole))
+
 (defn- strip-tags
-  "Plain text of an HTML string: aria-hidden elements dropped whole, block tags → a space, inline tags dropped, the five entities hiccup
-  escapes decoded, whitespace collapsed (a feed `summary` is type=\"text\")."
+  "Plain text of an HTML string: aria-hidden elements dropped whole, block
+  tags → a space, inline tags dropped, the five entities hiccup escapes and
+  every numeric character reference (`&#34;`, `&#x27;` — what Chroma and
+  `highlight/escape-html` emit) decoded, whitespace collapsed (a feed
+  `summary` is type=\"text\")."
   [html]
   (-> (str html)
       ;; an aria-hidden element is decoration — the heading anchor's `#` —
@@ -815,7 +826,12 @@
       (str/replace #"(?i)</?(?:p|div|li|ul|ol|h[1-6]|br|blockquote|pre|tr|td|th|table|dt|dd|hr)\b[^>]*>" " ")
       (str/replace #"<[^>]*>" "")
       (str/replace "&lt;" "<") (str/replace "&gt;" ">") (str/replace "&quot;" "\"")
-      (str/replace "&#39;" "'") (str/replace "&apos;" "'") (str/replace "&amp;" "&")
+      (str/replace "&#39;" "'") (str/replace "&apos;" "'")
+      ;; before &amp;, so an escaped `&amp;#34;` stays the text `&#34;`
+      (str/replace #"&#(?:([0-9]{1,7})|[xX]([0-9a-fA-F]{1,6}));"
+                   (fn [[whole dec hex]]
+                     (decode-char-ref whole (if dec (parse-long dec) (Long/parseLong hex 16)))))
+      (str/replace "&amp;" "&")
       (str/replace #"\s+" " ")
       str/trim))
 
