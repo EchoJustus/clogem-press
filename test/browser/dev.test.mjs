@@ -12,120 +12,23 @@
 // that. When `bb` is not on PATH, or `bb dev` is still starting after 90 s,
 // it says so and skips rather than failing. A `bb dev` that EXITS before it
 // is ready — a crash at startup — is a failure that prints its output, and
-// so is anything after a successful start.
+// so is anything after a successful start (dev-harness.mjs).
 
-import { spawn } from 'node:child_process';
-import { cp, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
-import os from 'node:os';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { findSource, startDev, waitForLine, within } from './dev-harness.mjs';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const repo = path.resolve(here, '..', '..');
 const permalink = '/pages/643259/';   // an English article with a sidebar and TOC
 
-async function findSource(dir, link) {
-  for (const e of await readdir(dir, { withFileTypes: true })) {
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) {
-      const hit = await findSource(p, link);
-      if (hit) return hit;
-    } else if (e.name.endsWith('.md')) {
-      const text = await readFile(p, 'utf8');
-      if (new RegExp(`^permalink:\\s*${link.replace(/\//g, '\\/')}\\s*$`, 'm').test(text)) return p;
-    }
-  }
-  return null;
-}
-
-// Resolve once `pred(line)` holds for a line of the child's output; with
-// {exited: code} as soon as the child has exited without it; or with null
-// after `ms`.
-function waitForLine(lines, pred, ms, child) {
-  return new Promise((resolve) => {
-    const t0 = Date.now();
-    const tick = () => {
-      const hit = lines.find(pred);
-      if (hit) return resolve(hit);
-      if (child && (child.exitCode !== null || child.signalCode !== null)) {
-        return resolve({ exited: child.exitCode ?? child.signalCode });
-      }
-      if (Date.now() - t0 > ms) return resolve(null);
-      setTimeout(tick, 50);
-    };
-    tick();
-  });
-}
-
-// Poll `fn` in the page (surviving the reloads in between) until it returns
-// a truthy value; returns the elapsed ms, or null after `ms`.
-async function within(page, fn, arg, ms) {
-  const t0 = Date.now();
-  while (Date.now() - t0 <= ms) {
-    try {
-      if (await page.evaluate(fn, arg)) return Date.now() - t0;
-    } catch (e) { /* the page is reloading */ }
-    await new Promise((r) => setTimeout(r, 25));
-  }
-  return null;
-}
-
 export default async function (t) {
-  const site = await mkdtemp(path.join(os.tmpdir(), 'clogem-dev-browser-'));
-  const port = 18900 + Math.floor(Math.random() * 90);
-  const lines = [];
-  let child = null;
+  const dev = await startDev(t, ['--no-search']);
   try {
-    await cp(path.join(repo, 'examples', 'demo-site'), site, {
-      recursive: true,
-      filter: (src) => !/[\\/]dist(-[^\\/]*)?([\\/]|$)/.test(path.relative(repo, src)),
-    });
+    if (!dev.ready) return;
+    const { site, port, lines, child } = dev;
     const source = await findSource(path.join(site, 'content'), permalink);
     t.check(source, `no source file with permalink ${permalink}`);
     if (!source) return;
     const original = await readFile(source, 'utf8');
-
-    try {
-      child = spawn('bb', ['--config', path.join(repo, 'bb.edn'), 'dev', '--no-search', '--port', String(port)],
-                    { cwd: site, stdio: ['ignore', 'pipe', 'pipe'] });
-    } catch (e) {
-      console.log(`  skip: cannot run bb (${e.message})`);
-      return;
-    }
-    const spawnError = new Promise((resolve) => child.on('error', resolve));
-    for (const s of [child.stdout, child.stderr]) {
-      s.setEncoding('utf8');
-      let buf = '';
-      s.on('data', (d) => {
-        buf += d;
-        const parts = buf.split('\n');
-        buf = parts.pop();
-        lines.push(...parts);
-      });
-    }
-    let spawnFailed = false;
-    const ready = await Promise.race([
-      waitForLine(lines, (l) => /clogem-press: watching (via|by)/.test(l), 90000, child),
-      spawnError.then((e) => { spawnFailed = true; console.log(`  skip: cannot run bb (${e.message})`); return null; }),
-    ]);
-    if (spawnFailed) return;
-    // a spawn that failed (ENOENT: no bb on PATH) reports a negative errno
-    if (ready && typeof ready === 'object' && typeof ready.exited === 'number' && ready.exited < 0) {
-      console.log(`  skip: cannot run bb (exit ${ready.exited})`);
-      return;
-    }
-    if (ready && typeof ready === 'object') {
-      // let the pipes drain, then report everything it printed
-      await new Promise((r) => setTimeout(r, 200));
-      t.check(false, `bb dev exited (${ready.exited}) before it was ready:\n${lines.map((l) => `    | ${l}`).join('\n')}`);
-      return;
-    }
-    if (!ready) {
-      console.log('  skip: bb dev did not come up within 90 s');
-      console.log(lines.slice(-10).map((l) => `    | ${l}`).join('\n'));
-      return;
-    }
-    console.log(`  ${ready.trim()}`);
 
     const base = `http://127.0.0.1:${port}`;
     const ctx = await t.browser.newContext();
@@ -137,10 +40,15 @@ export default async function (t) {
 
       // 1. an edit appears
       const marker = `dev-marker-${Date.now()}`;
+      const from = lines.length;
       await writeFile(source, `${original.trimEnd()}\n\n${marker}\n`);
       const shown = await within(page, (m) => document.body && document.body.innerText.includes(m), marker, 3000);
       t.check(shown !== null, 'the edit did not appear within 3 s');
-      if (shown !== null) console.log(`  edit → visible in ${shown} ms`);
+      const rebuilt = await waitForLine(lines, (l) => /rebuilt in \d+ ms/.test(l), 3000, child, from);
+      if (shown !== null) {
+        console.log(`  edit → visible in ${shown} ms` +
+                    (typeof rebuilt === 'string' ? ` (${rebuilt.trim().replace(/^clogem-press: /, '')})` : ''));
+      }
 
       // 2. a broken file shows the overlay, naming it
       await writeFile(source, original.replace(/^title:.*$/m, 'title: [unclosed'));
@@ -169,10 +77,6 @@ export default async function (t) {
       await ctx.close();
     }
   } finally {
-    if (child && child.exitCode === null) {
-      child.kill('SIGTERM');
-      await new Promise((r) => { child.on('exit', r); setTimeout(r, 3000); });
-    }
-    await rm(site, { recursive: true, force: true });
+    await dev.stop();
   }
 }
