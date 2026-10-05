@@ -77,4 +77,8 @@
  :mode/auto                   "கணினியைப் பின்பற்று"
  :mode/light                  "வெளிர்"
  :mode/dark                   "இருள்"
- :mode/read                   "வாசிப்பு"}
+ :mode/read                   "வாசிப்பு"
+
+ ;; Code blocks (Phase 4 C), the copy button. Awaiting native review (CHANGELOG, Unreleased).
+ :code/copy                   "நகலெடு"
+ :code/copied                 "நகலெடுக்கப்பட்டது"}

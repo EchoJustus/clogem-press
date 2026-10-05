@@ -16,6 +16,7 @@
             [hiccup2.core :as h]
             [clogem.assets :as assets]
             [clogem.config :as config]
+            [clogem.highlight :as highlight]
             [clogem.i18n :as i18n]
             [clogem.model :as model]
             [clogem.search :as search]
@@ -567,6 +568,34 @@
       (str/replace " " "\\u2028")
       (str/replace " " "\\u2029")))
 
+(defn has-code?
+  "Does `content` hold a code block? Hiccup of a page's OWN content — a
+  rendered body, an excerpt, the main column of a page with no sidebar —
+  never the whole page: walking every page's sidebar made rendering a
+  1000-article site a quarter slower. An article page reads the flag from
+  its AST instead (`clogem.render`)."
+  [content]
+  (boolean (some #(and (vector? %) (= :pre (first %))
+                       (str/includes? (str (:class (second %))) "clogem-code"))
+                 (tree-seq sequential? seq content))))
+
+(defn code-head
+  "§11.3 item 10: js/code.js and what it needs — the button's strings in
+  the page's language and the sprite's `copy` and `check` icons — on a page
+  with a code block (`:has-code?` in `ctx`, set by whoever built the
+  page's content), unless :highlight :copy-button is false. The button
+  itself is created by the script, and only where the clipboard API
+  exists, so a page without JS has no dead button, and neither Pagefind
+  nor a feed has anything to index."
+  [{:keys [cfg] :as ctx}]
+  (when (and (highlight/copy-button? cfg) (:has-code? ctx))
+    (list
+     [:script {:type "application/json" :id "clogem-code-data"}
+      (h/raw (script-json {:copy   (i18n/tr ctx :code/copy)
+                           :copied (i18n/tr ctx :code/copied)
+                           :icons  {:copy (icons/href ctx :copy) :check (icons/href ctx :check)}}))]
+     [:script {:src (asset-href ctx "js/code.js") :defer true}])))
+
 (defn lang-data
   "What js/lang.js (the banner) and the `:redirect` head script need, or nil
   when the page can show neither (D-P3-14). Only on a page served at its BARE
@@ -830,6 +859,10 @@
       ;; the stylesheets, which the inline redirect would otherwise wait for
       (lang-head ctx)
       [:link {:rel "stylesheet" :href (asset-href ctx "css/theme.css")}]
+      ;; §11.3 item 10: the token colours, right after the palette they
+      ;; sit on; only when the build highlights
+      (when (assets/version cfg assets/highlight-css)
+        [:link {:rel "stylesheet" :href (asset-href ctx assets/highlight-css)}])
       ;; D-P3-12: the @font-face rules live beside the font files, so a
       ;; :system site links no font CSS and ships no font bytes
       (when (= :self-hosted (get-in cfg [:theme :fonts :tamil]))
@@ -856,7 +889,8 @@
       ;; vendored vanilla scroll-spy (D-P2-9); no CDN, no deps — deferred,
       ;; and only on a page that renders a TOC for it to spy on
       (when (seq (:toc ctx))
-        [:script {:src (asset-href ctx "js/toc.js") :defer true}])]
+        [:script {:src (asset-href ctx "js/toc.js") :defer true}])
+      (code-head ctx)]
      (into [:body {:class (str "lang-" (name lang)
                                (when-let [k (:page-kind ctx)] (str " page-" (name k))))}
             (search-config ctx)]
@@ -866,7 +900,7 @@
   "A page with no sidebar tree — home, index, catalogue and paginated pages
   show none (D-P2-1): navbar, a single-column shell, footer."
   [ctx & main]
-  (document ctx
+  (document (assoc ctx :has-code? (has-code? main))
             (navbar ctx)
             [:div.clogem-shell.clogem-shell--single
              (into [:main.clogem-main] main)]

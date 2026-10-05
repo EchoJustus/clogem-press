@@ -20,11 +20,13 @@
   `icons.svg`, the sprite `clogem.sprite` builds from the vendored icon
   sources (which never ship themselves), and `overrides/custom.css`, the
   site's own `overrides/custom.css` when it has one (D-P4-8), copied as it
-  is."
+  is. Phase 4 Task C adds a third, `css/highlight.css`, generated from the
+  Chroma styles when the build highlights (§11.3 item 10)."
   (:require [babashka.fs :as fs]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clogem.config :as config]
+            [clogem.highlight :as highlight]
             [clogem.sprite :as sprite]))
 
 (defn theme-resource-dir
@@ -93,6 +95,8 @@
     "js/search.js"   (not= :pagefind (get-in cfg [:search :provider]))
     "js/lang.js"     (<= (count (config/lang-keys cfg)) 1)
     "js/comments.js" (not= :giscus (get-in cfg [:comments :provider]))
+    ;; §11.3 item 10: the copy button, unless :highlight :copy-button false
+    "js/code.js"     (not (highlight/copy-button? cfg))
     false))
 
 (def custom-css
@@ -106,13 +110,20 @@
     (let [f (fs/path dir "overrides" "custom.css")]
       (when (fs/regular-file? f) f))))
 
+(def highlight-css
+  "§11.3 item 10: the token colours, generated from the Chroma styles."
+  "css/highlight.css")
+
 (defn- generated
-  "The files built rather than copied: the icon sprite, and the site's
-  custom stylesheet when it has one (its bytes as they are — its `url(…)`s
-  are the site's, relative to `overrides/`)."
+  "The files built rather than copied: the icon sprite, the site's custom
+  stylesheet when it has one (its bytes as they are — its `url(…)`s are the
+  site's, relative to `overrides/`), and `css/highlight.css` when the build
+  highlights (a Chroma session in `:clogem/highlight`, set by
+  `clogem.render/render-site`)."
   [cfg]
   (cond-> {"icons.svg" (.getBytes ^String (sprite/sprite (sprite/brands-in-use cfg)) "UTF-8")}
-    (custom-css-source cfg) (assoc custom-css (raw-bytes (custom-css-source cfg)))))
+    (custom-css-source cfg) (assoc custom-css (raw-bytes (custom-css-source cfg)))
+    (:clogem/highlight cfg) (assoc highlight-css (highlight/stylesheet (:clogem/highlight cfg)))))
 
 (defn files
   "{rel-path → bytes} for every theme file this site ships under

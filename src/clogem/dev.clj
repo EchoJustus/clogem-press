@@ -335,7 +335,8 @@ var u=new URL(l.href);u.searchParams.set('t',Date.now());l.href=u.toString();});
                   (let [t0 (System/currentTimeMillis)]
                     (try
                       ((requiring-resolve 'clogem.cli/build)
-                       (assoc opts :site-dir (or (:site-dir opts) ".")))
+                       ;; :clogem/dev-loop?: a Chroma failure warns, §11.3 item 10
+                       (assoc opts :site-dir (or (:site-dir opts) ".") :clogem/dev-loop? true))
                       (println (format "clogem-press: rebuilt in %d ms (%s)"
                                        (- (System/currentTimeMillis) t0)
                                        (if (seq changed)

@@ -660,7 +660,9 @@ any more). Note what arrived: `:generator`, `:langs`, `:i18n`, `:analytics`, `:s
          :indexnow {:enabled false :key nil}}
  :tools {:pagefind {:version "1.5.2" :sha256 {"x86_64-unknown-linux-musl" "…"}} ; per platform (§11.2 item 40)
          :chroma   {:version "2.27.0" :sha256 {"linux-amd64" "…"}}}    ; per platform too (§11.3 item 10)
- :highlight {:provider :chroma :style "github" :dark-style "github-dark"}} ; styles live here, not under :tools
+ :highlight {:provider :chroma         ; :chroma (default) | :none — or `--no-highlight` (§11.3 item 10)
+             :line-numbers true :copy-button true
+             :style "github" :dark-style "github-dark"}}  ; styles live here, not under :tools
 ```
 
 Any string-valued config key may be either a plain string (same in all languages) or a map keyed by
@@ -670,7 +672,8 @@ learn.
 *Corrected in Phase 4 (§11.3 item 10):* v2 sketched `:tools :chroma` with one `:sha256` string and
 the highlighting styles beside it. One hash cannot cover Chroma's eight release assets — it needs the
 same per-platform map as Pagefind — and the styles are a rendering choice, not a property of the
-binary, so they belong under `:highlight`.
+binary, so they belong under `:highlight`. Task C added `:line-numbers` and `:copy-button` beside
+them; since the build runs Chroma, a bad `:tools :chroma` pin is an error, as Pagefind's is.
 
 ---
 
@@ -1701,7 +1704,7 @@ order; each builds on A:
   palette (WCAG AA), the toggle, icons (§11.3 items 2–6, 8). *Done; it also took B2's `:where(:lang())`
   font fix, which C depends on (§11.3 item 9).*
 - **C — Chroma highlighting** (2.5 d): on by default, line numbers as CSS counters, a per-language
-  process and hash cache, dual-theme variables, a copy button (§11.3 item 10).
+  process and hash cache, dual-theme variables, a copy button (§11.3 item 10). *Done.*
 - **D — Dev loop** (1.75 d): debounce, the verified pod fetch, an error overlay, `:base` in dev,
   Pagefind in the background (§11.3 item 12).
 - **B2 — Page styles and mobile layout** (2 d): card/line, a one-row navbar with a drawer, focus
@@ -1899,7 +1902,7 @@ the document). D-9 through D-15 are new, surfaced by v2's design work.
 | fswatcher/inotify unreliable in containers/NFS | **Confirmed real** (reproduced in this session) | `--poll` fallback via `babashka.fs/modified-since` is designed in from the start, not bolted on. |
 | Incremental-build cache bugs (quickblog's "this is hard") | Medium | Sidestepped: production = always full rebuild; dev incrementality is in-memory only; disk caching deferred until build times demand it. |
 | Front-matter write-back corrupts user files | Medium | Surgical insertion (never reserialize), collision-checked permalinks, `--no-write` mode, golden-file tests. vdoing's known json2yaml mangling is the anti-pattern to avoid. |
-| Chroma flag interactions | Low | *Corrected in Phase 4 (§11.3 item 10):* the "quirk" v2 recorded here — `--html-styles` ignoring `--html-prefix` — is not a bug. `--html-styles` honours `--html-prefix` only when `--html` is passed too: with Chroma 2.27.0, `chroma --style=github --html-styles --html-prefix=hl-` prints `.chroma .err {…}`, and adding `--html` prints `.hl-chroma .hl-err {…}`. Pass all three; no string transform is needed. Generated CSS stays reviewable in diffs. |
+| Chroma flag interactions | Low | *Corrected in Phase 4 (§11.3 item 10):* the "quirk" v2 recorded here — `--html-styles` ignoring `--html-prefix` — is not a bug. `--html-styles` honours `--html-prefix` only when `--html` is passed too: with Chroma 2.27.0, `chroma --style=github --html-styles --html-prefix=hl-` prints `.chroma .err {…}`, and adding `--html` prints `.hl-chroma .hl-err {…}`. Pass all three; no string transform is needed. Generated CSS stays reviewable in diffs. *As built (C):* no prefix is used — the output keeps Chroma's `.chroma .k` classes, and each style's token rules are turned into per-mode `--hl-*` variables (§11.3 item 10), golden-tested. |
 | Pagefind/Chroma binary supply chain | Low | Pinned versions + sha256 in config; both have 4-platform coverage; each replaceable behind a one-function seam. |
 | GitHub Pages CDN cache (10 min, not configurable) | Low | Fingerprinted assets so HTML/CSS can't pair mismatched — *done in Phase 4 (§11.3 item 7):* every theme asset URL carries `?v=<sha256 prefix of the bytes written>`, Pagefind's UI `?v=<its version>`. |
 | **CJK + Tamil edge cases** (heading slugs, search, line wrapping) | **Low-medium (downgraded — slugs now measured)** | **Heading slugs: settled in Phase 1, and the news is good.** nextjournal/markdown preserves CJK and Tamil **verbatim** in heading ids — `你好世界` → `你好世界`, `வணக்கம் உலகம்` → `வணக்கம்-உலகம்`, with Tamil grapheme clusters intact. What the measurement *did* overturn is the description: the slugger is **not** GitHub-style — it lower-cases and hyphenates whitespace but does **not** strip punctuation (`Hello, World!` → `hello,-world!`, `100% Done` → `100%-done`), and a tab inside a heading survives into the id, which is invalid HTML. Handled by one uniform repair (whitespace → `-`) applied to both heading ids and the TOC, plus percent-encoding on the href side; recorded as characterization tests so a babashka bump that changes the bundled parser breaks a test instead of silently rewriting every anchor. Pagefind's zh routing is verified from source (§6.7), but **zh-Hant is not word-segmented** (corrected in Phase 3, §11.2 item 37): charabia's jieba uses a Simplified dictionary, so Traditional text indexes mostly as single characters — pages are found, matching is loose, and quoted phrases fail. Phase 3 part B accepted this as is (§11.2 item 41); the five-language index build is now asserted in CI on every push (§11.2 items 40–41). Line wrapping is still a Phase 3 typography pass. |
@@ -2793,7 +2796,7 @@ their own findings. Item 19 onward are corrections.
 9. **Mobile layout (B2).** A one-row navbar with a drawer at ≤ 50 rem; `--navbarHeight` and
    `scroll-margin-top`; a `:where(:lang())` fix so code stays monospace on ta/zh pages;
    `focus-visible` rings. (The `:where(:lang())` fix landed in B1, because C depends on it.)
-10. **Highlighting on by default (C).** `:highlight {:provider :chroma}`; `:none` or `--no-highlight`
+10. **Highlighting on by default (C) — done.** `:highlight {:provider :chroma}`; `:none` or `--no-highlight`
     turns it off. A fetch failure is an error in `build` and a warning in `dev`. Line numbers are CSS
     counters, never text — Chroma's own numbers pollute the Pagefind index. One Chroma process per
     language plus an in-memory hash cache (thread-safe: pages render in parallel, item 11).
@@ -2807,6 +2810,82 @@ their own findings. Item 19 onward are corrections.
     `CLOGEM_CHROMA` work like Pagefind's; the styles belong under `:highlight` (§5.6 corrected). The
     "`--html-prefix` quirk" of §10 and research/08 is not a bug: `--html-styles` honours
     `--html-prefix` only when `--html` is also passed (verified with the 2.27.0 binary).
+    *Done (C).* `clogem.highlight`, behind the `:code` renderer's seam. What landed, and what was
+    found:
+    - *Config.* `:highlight {:provider :line-numbers :copy-button :style :dark-style}`; every bad
+      value — a non-map included, since 0.2.0 accepted any `:highlight` — is a warning repaired to
+      the default (the shipped default, even where a test runner switched `config/defaults` off).
+      `:chroma` joined `config/fatal-tool-ids`, so a bad Chroma pin is now an error. A `dev`
+      rebuild passes `:clogem/dev-loop?` to `cli/build` (one line in `dev.clj`); `highlight/soft?`
+      honours that or `:clogem/dev?`, so the soft path survives a dev loop that passes either, and a
+      test captures what `dev!` really passes. There a fetch, verification, start or run failure —
+      a binary the process API cannot start (no exec bit, a `noexec` mount) throws an
+      `IOException`, wrapped like the rest — warns once per process, is recorded under the pin the
+      session checks so it is not retried, and code renders plain; in `build` it exits 1 with a hint
+      naming `--no-highlight` and `:highlight {:provider :none}`. **A site with no code block never
+      fetches Chroma**: "has code" is any `:code` node in the parsed bodies (P4-C.1 replaced a
+      source regex that missed `> ```bash` and took a four-space nested list for code), so the one
+      new failure cannot reach it. `doctor` checks fence languages with a Chroma already here
+      (`tools/available-binary`; it never downloads, and says once when it skipped the check).
+    - *Fence info.* Parsed from the raw `:info`: nextjournal's own `:language` for `js{1,3-5}` is
+      `"js13-5"`, and 0.2.0's first-word split emitted `class="language-js{1,3-5}"`. The language is
+      the leading run that is not whitespace, `{`, `}` or `:`; quoted attribute values are dropped before
+      `{…}` and `:line-numbers` / `:no-line-numbers` are read; a brace group that is not a range
+      list is ignored, and a range is clipped at 100 000 lines. `data-lang` on the `<pre>` feeds a
+      CSS `::before` label, so the language is not text either.
+    - *Processes.* `chroma --list` (297 lexers in 2.27.0) runs once per binary and is the
+      allow-list: names, aliases and simple `*.ext` patterns, in that precedence. Only a lexer's own
+      name, or its first alias when the name is path-like (`Django/Jinja`, `PL/pgSQL`, `VB.net`,
+      `Gemfile.lock`), is ever passed — Chroma loads a path-like `--lexer` as an XML file.
+      `render-site` parses every article variant and every own `index*.md` / `@pages/*` body ONCE,
+      in parallel, before the session (whether there is code decides whether Chroma is fetched);
+      an article page reuses its AST and re-emits the parse's diagnostics in its own sink, so a
+      build's report is unchanged, and a parse that throws anything is left to its page, which
+      fails naming its URI. Unknown languages are then warned in one sequential pass in path order
+      (the same file every build; `warn-unknown!` is a `swap-vals!`), and `warm!` runs one process per
+      lexer per 150 files, the files named `0000.txt …` relative to a fresh temp directory that is
+      also the working directory, and checks the output splits into exactly as many
+      `<pre class="chroma">` parts. Measured: the demo (9 blocks, 5 lexers) is 5 processes; a
+      synthetic 500-block site (5 lexers) is 5 processes, about 0.15–0.2 s over a `--no-highlight`
+      build, and a warm rebuild runs none. An excerpt cut mid-block uses the cache and, on a miss,
+      one single-file run. Whether a page loads `js/code.js` comes from its own content (an
+      article's AST, an index page's or home's main column), never a walk of the whole page:
+      walking every sidebar made rendering a 1000-article site about a third slower.
+    - *Cache.* A `defonce` `ConcurrentHashMap` keyed by sha256 of `[format-version chroma-version
+      binary-sha256 lexer code]` (the binary's hash memoised on path, size and mtime), so it
+      survives `dev` rebuilds and a different binary never serves another's fragments.
+    - *Markup.* Chroma's `<span class="line"><span class="cl">…\n</span></span>`, inside our own
+      `<pre class="clogem-code chroma language-x [line-numbers ln-wN]" data-lang="x"><code>`, with
+      `hl` added to a highlighted line. Line numbers are a CSS counter on `.line::before` (`ln-wN`
+      fixes the column width), never text: no `class="ln"` exists in the output. An unknown or
+      missing language, plaintext and an empty block get the same structure built in bb, escaping
+      `& < > " '`, with no process. CRLF is normalized to LF, as Chroma does.
+    - *Colours.* `css/highlight.css` (12 KB) is generated per build from `chroma --html
+      --html-styles --style=S` for both styles: each token rule's colour, background, weight, style
+      and decoration become `--hl-<cls>[-bg|-fw|-fs|-td]` on `:root, .theme-mode-light`, on
+      `.theme-mode-dark, .theme-mode-read`, in the dark media query for `.theme-mode-auto`, and in
+      a print block with the light values; the token rules read them. A property one style lacks
+      is `initial`. Dropped: the structural rules (`.bg`, `.chroma`, `.line`, `.ln`, `.hl` …), `w`,
+      and **`err`** — the Clojure lexer splits a Tamil symbol at every vowel sign into error tokens,
+      which `github` paints white on red. *Contrast:* `github` on the old light `--codeBg`
+      `#f1f3f5` gives `.bp` 4.33:1, so light `--codeBg` is now `#f6f8fa`; read keeps B1's
+      `#282c34` — `github-dark`'s only token under 4.5:1 there is `.err` (4.18:1), which is not
+      shipped (P4-C.1 item 14 reverted an earlier `#252526`). New per-mode variables:
+      `--codeLineNumber` (`#5f6873` / `#9aa3ad`) and `--codeHlBg` (`#fffbdd`, dark `#1a2620`, read
+      `#1e2620`, each chosen so every token still reaches 4.5:1 on it). Minimums from the golden
+      file: light 4.52 (`.bp`), dark 4.78 (`.gi` on its own background), read 4.55 (`.c`); computed in
+      Chromium on the demo: light 5.03, dark 5.13, read 4.55.
+    - *Copy button.* `js/code.js` (only with `:copy-button`, only on a page with a code block)
+      reads its strings and the sprite's `copy`/`check` URLs from a `<script
+      type="application/json">` written with `layout/script-json`, and adds a button only where
+      `navigator.clipboard.writeText` exists. The `<code>` is the scroll box, so the button and the
+      label stay in the corner while wide code scrolls.
+    - *Tests.* A fake `chroma` serving the real 2.27.0 `--list` and style output
+      (`test/fixtures/highlight/`), so `bb test` needs no network; the runner makes `:none` the
+      default for every other fixture. With `CLOGEM_CHROMA` (CI), the real binary highlights the
+      demo: every block's text is its fence's source, Clojure blocks carry `class="k…"`, one
+      process per lexer, and the generated stylesheet equals the golden file. A browser test checks
+      the computed contrast, the clipboard and the no-JS case.
 11. **Build robustness and speed (A, D-P4-11) — done.**
     *Robustness.* `render/render-site` renders every page, the theme assets, the feeds, the sitemap
     and robots.txt into memory, and **reads** every site asset there too (the demo is 13–24 MB), and
