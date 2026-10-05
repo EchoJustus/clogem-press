@@ -12,12 +12,16 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
 ### Changed (D)
 
 - **`bb dev` and `bb serve` listen on 127.0.0.1** instead of every
-  interface. `--host 0.0.0.0` restores the old behaviour.
+  interface. `--host 0.0.0.0` restores the old behaviour. The URL they
+  print is still `http://localhost:PORT/` — giscus's `originsRegex`
+  (`http://localhost:[0-9]+`) does not accept `127.0.0.1`.
 - **A missing UI string key warns once per key and language, in `build`
   too**, naming the string file to add it to (`i18n/ta.edn`). It used to
   warn only in dev — where it never fired, because the rebuild dropped the
   dev flag — and once per call. `build` still renders the key's name;
-  `bb dev` renders `⟦key⟧`. `:i18n {:missing-key :silent}` turns it off.
+  `bb dev` renders `⟦key⟧`, and warns once per `bb dev` session (again
+  only if the key is defined and then goes missing once more).
+  `:i18n {:missing-key :silent}` turns it off.
 - **`dist/clogem/` is the generator's own directory**: a build deletes any
   file there it did not write, so a deleted `overrides/custom.css` no
   longer lingers as `dist/clogem/overrides/custom.css`. Everything else a
@@ -39,6 +43,11 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   **`--reload-code`** (reload the theme's `.clj` code) on `dev`.
 - **Theme hot reload.** `bb dev` watches the generator's theme resources;
   a theme CSS change swaps in place.
+- **`bb dev` follows `site.edn`.** A changed `:site :base` or `:build :out`
+  is served at once (one line says where), and a watched directory that
+  appears later — `overrides/`, `assets/`, `i18n/`, or a `:content :dir`
+  moved in `site.edn` — is watched and rebuilt for, with the pod as with
+  `--poll`.
 
 ### Fixed (D)
 
@@ -50,13 +59,39 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   polling after its 3 s probe.
 - **Search no longer 404s during a dev rebuild.** The index is rebuilt in
   the background after the reload, into a staging directory swapped in
-  whole; it was deleted first and rebuilt before the reload was sent.
+  whole; it was deleted first and rebuilt before the reload was sent. The
+  bundle it replaces is kept as `dist/.pagefind-prev/` until the next
+  swap, and dev serves a `pagefind/` file the new bundle lacks from it, so
+  a page that loaded the old index keeps searching it until its next
+  reload. `bb build` removes it, and the staging directories a stopped
+  `bb dev` left.
+- **A file renamed while dev served it** is a 404, never a 500 whose body
+  named its absolute path (reachable with `--host 0.0.0.0`).
+- **With the pod, `site.edn` saved by rename** (`sed -i`, vim, emacs,
+  atomic-save editors) is still watched afterwards.
+- **A busy port, or a `--host` that does not resolve or is not this
+  machine's,** is one error naming the host and port (exit 1), not a stack
+  trace; `bb dev` binds before its first build, so it writes nothing then.
+- **A `:base` with non-ASCII characters or a space** (`/文档/`, `/my docs/`)
+  is mounted by `dev` and `serve`; it 404'd.
+- **`bb serve` with an unreadable `site.edn`** warns and serves at `/`, as
+  0.2.0 did (`--base` needs no config); it exited 1.
+- **Messages:** the pod fallback line has one `clogem-press:` prefix and
+  keeps its hint; Ctrl-C while the index runs prints `stopped`, not
+  "Pagefind exited 130".
+- **`doctor`'s code-language check** reports an unreadable cached Chroma
+  as `build` does, not as a stack trace (follow-up to Task C).
+- **Feed summaries are well-formed XML.** A character reference to a
+  control character, U+FFFE or U+FFFF stays as written, references are
+  decoded once (`&#38;amp;` is `&amp;`), and a raw control character —
+  the markdown parser turns `&#27;` in prose into one — is dropped; it
+  failed the build, in 0.2.0 too.
 - **A new or deleted `overrides/custom.css` reloads the page** instead of
   waiting for a manual reload (the CSS swap only re-fetches stylesheets the
   page already links).
 - **The poll loop survives an `Error`**, and so do pod callbacks.
-- **A `site.edn` change that moves `:content :dir`** is followed when
-  polling (with the pod, dev says to restart).
+- **A `site.edn` change that moves `:content :dir`** is followed, polling
+  or with the pod.
 
 **Task C — code highlighting** (§11.3 item 10):
 

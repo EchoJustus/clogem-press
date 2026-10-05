@@ -57,7 +57,7 @@ and run it against local content with no packaging step.
 | Task | What it does |
 |---|---|
 | `bb build` | Render the site to `dist/`. Writes missing front matter unless `--no-write`. Renders every page in memory first (in parallel; `CLOGEM_JOBS=1` for one thread) and writes only when all of it succeeded, file by file and atomically (temp file and rename; in place when the OS refuses the temp file or the rename), skipping files whose bytes are unchanged — a page that fails to render, or a site asset that cannot be read, leaves `dist/` and `permalinks.edn` as they were (an I/O error while writing, such as a full disk, or a Pagefind failure can still leave some files updated). Runs Pagefind last under `:search {:provider :pagefind}`; `--no-search` builds without search (no index, no search UI). Highlights code with Chroma unless `--no-highlight` (see Theme). Removes `.html` files in the output directory that the build did not write, so the output directory must be a directory of its own. |
-| `bb dev` | Build, serve on 127.0.0.1:1888, rebuild on change, push a reload to the browser. See [Working locally](#working-locally). |
+| `bb dev` | Build, serve on 127.0.0.1:1888 (printed as `http://localhost:1888/`), rebuild on change, push a reload to the browser. See [Working locally](#working-locally). |
 | `bb serve` | Serve an already-built directory at the site's `:base`, no watching. `--host`, `--port`, `--base`. |
 | `bb doctor` | Report content problems without building. Exits non-zero on errors. |
 | `bb fm-fix` | Front-matter normalization only — what CI runs before the build. `--dry-run` to preview. |
@@ -71,17 +71,26 @@ Every task takes `--help`.
 
 ```bash
 cd my-site
-bb --config ../clogem-press/bb.edn dev            # http://127.0.0.1:1888/
+bb --config ../clogem-press/bb.edn dev            # http://localhost:1888/
 ```
 
 `bb dev` builds, serves `dist/` and rebuilds on every change to `content/`,
 `assets/`, `i18n/`, `overrides/`, `site.edn` and the generator's own theme
-resources. Saves are collected until 100 ms pass quietly, so a burst of writes
-is one rebuild, and editor temp files (`.#x`, `x~`, `4913`, `*.swp`, `*.tmp`)
-are ignored. A rebuild of the demo takes about 0.3 s; the page reloads about
-half a second after a save, and a stylesheet-only change swaps the CSS in
-place. Search is re-indexed in the background after the reload; the previous
-index keeps working meanwhile.
+resources — including a directory created while it runs (an `overrides/` the
+site did not have) and a `site.edn` saved by an editor that replaces the file.
+Saves are collected until 100 ms pass quietly, so a burst of writes is one
+rebuild, and editor temp files (`.#x`, `x~`, `4913`, `*.swp`, `*.tmp`) are
+ignored. A rebuild of the demo takes about 0.3 s; the page reloads about 0.6 s
+after a save, and a stylesheet-only change swaps the CSS in place. Search is
+re-indexed in the background after the reload; a page that loaded the previous
+index keeps searching it until its next reload. A `site.edn` edit that changes
+`:site :base` or `:build :out` is served at once.
+
+It listens on 127.0.0.1 but prints `http://localhost:1888/`: an embed that
+allow-lists origins — giscus's `giscus.json`, with `"originsRegex":
+["http://localhost:[0-9]+"]` — accepts `localhost` and refuses `127.0.0.1`, so
+open the URL as printed. A port in use, or a `--host` that is not this
+machine's, is one error saying which; `--port` or `--host 127.0.0.1`.
 
 When a rebuild fails, the terminal says why and the open page shows the error
 in an overlay over the last good build; saving a fix clears it. Escape hides
@@ -99,8 +108,8 @@ it.
 
 The fswatcher pod is fetched on first use like Pagefind — pinned, sha256-verified
 and cached (`bb fetch-tool --tool fswatcher`); offline, or on a platform it has
-no build for (Windows on ARM), dev polls. With the pod, a `site.edn` change that
-moves `:content :dir` needs a restart; with `--poll` it does not.
+no build for (Windows on ARM), dev polls. Ctrl-C stops it, its background
+index included, and prints `stopped`.
 
 ## Conventions in one screen
 

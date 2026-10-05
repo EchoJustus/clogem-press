@@ -597,6 +597,38 @@ renames — the old bundle is served until the new one is complete. The pod is f
 `require … :reload`s a changed namespace before rebuilding. Both servers mount `dist/` at `:base` and
 listen on 127.0.0.1 unless given `--host`.
 
+*Amended in P4-D.1 (§11.3 item 12):*
+
+- **A page keeps the search bundle it loaded.** The swap keeps the bundle it replaces as
+  `dist/.pagefind-prev/` until the next swap (the one before it moves aside and is deleted), and the
+  dev server answers a `pagefind/` file the live bundle does not have from there — including during
+  the instant between the swap's two renames, when `pagefind/` does not exist. Pagefind's index
+  chunks, fragments and `.pf_meta` are content-hashed, so a page that reloaded and initialised search
+  before the swap holds the old `pagefind-entry.json`; it now keeps searching **the previous index,
+  until its next reload**. One swap later those files are gone, so a page that sits through two
+  background indexes without reloading can still miss; a reload always sees the current index. The
+  handler opens each file itself and serves the stream: a file renamed away after it was found is a
+  404 (or the previous bundle's copy), and any failure is a bare 500 — never http-kit's, which named
+  the absolute path. `bb build` removes `.pagefind-prev/` and the staging directories of a `bb dev`
+  that is no longer running; dev removes its own on a normal exit (Ctrl-C prints `stopped`).
+- **Watching follows what appears.** With the pod, `site.edn` is watched through its directory (not
+  recursively, its own events only): a watch on the file stayed on its inode, so after an editor's
+  atomic save (`sed -i`, vim, emacs) later edits went unseen. A watched directory that does not exist
+  at startup — `overrides/`, `assets/`, `i18n/`, or the one a `site.edn` edit moves `:content :dir`
+  to — is checked for once a second and, when it appears, registered and rebuilt for; only a
+  registration the pod refuses asks for a restart. Polling already followed both.
+- **The URL is `http://localhost:PORT<base>`** on the default host, as 0.2.0 printed, though the
+  server listens on 127.0.0.1: an origin of `localhost` is what tools allow-list — giscus accepts an
+  origin only if it equals an `origins` entry or matches an `originsRegex`, and a site's
+  `giscus.json` has `"originsRegex": ["http://localhost:[0-9]+"]`, which `http://127.0.0.1:…` does not
+  match. Another `--host` prints that host.
+- **A changed `:site :base` or `:build :out` is served at once.** The handler reads both from the
+  config of the last successful build; dev prints one line saying where the site now is.
+- The server is bound **before** the first build, so a busy port, a `--host` that does not resolve or
+  is not this machine's is one error (exit 1) naming host and port, with nothing written to `dist/`.
+- `dev!` is a thin wrapper over `dev/start-dev!`, whose server, watcher, build, indexer, notifications
+  and threads are injectable; dev_wiring_test drives it without a port or a pod.
+
 ### 5.5 Caching strategy
 
 quickblog's changelog ("Fix caching (this is hard)") is the cautionary tale, and a KB has *more*
@@ -615,6 +647,12 @@ cross-page artifacts (sidebar, indexes, backlinks, now hreflang groups) than a b
   *Amended in Phase 4 Task D (§11.3 item 12):* dev's one stateful piece is outside the build: the
   search index is rebuilt in the background after the reload, into a staging directory swapped in
   whole, never deleted first. `bb build` still deletes and re-indexes in place.
+  *Amended in P4-D.1:* the swap keeps one previous generation (`dist/.pagefind-prev/`), which dev's
+  server falls back to for `pagefind/` files, so a page that loaded the old bundle searches it until
+  its next reload (§5.4); `bb build` deletes it. The rest of dev's state — the base and output
+  directory it serves, the directories it watches, the missing UI keys it has already warned about
+  (once per key and language per `bb dev` session, again only after the key was defined and went
+  missing once more) — follows the config of the last good build.
 - Content-hash disk caching for production is a *later* optimization, only if build times ever warrant
   it. Note that i18n does **not** multiply build cost by the number of languages: cost is per
   *variant file that exists*, and most articles will have exactly one.
@@ -1726,7 +1764,7 @@ order; each builds on A:
 - **C — Chroma highlighting** (2.5 d): on by default, line numbers as CSS counters, a per-language
   process and hash cache, dual-theme variables, a copy button (§11.3 item 10). *Done.*
 - **D — Dev loop** (1.75 d): debounce, the verified pod fetch, an error overlay, `:base` in dev,
-  Pagefind in the background (§11.3 item 12).
+  Pagefind in the background (§11.3 item 12). *Done (with its fix round, P4-D.1).*
 - **B2 — Page styles and mobile layout** (2 d): card/line, a one-row navbar with a drawer, focus
   rings, monospace code on ta/zh pages (§11.3 item 9).
 - **F — Analytics, verification, static root** (1 d) (§11.3 items 14, 15).
@@ -2836,9 +2874,10 @@ their own findings. Item 19 onward are corrections.
       value — a non-map included, since 0.2.0 accepted any `:highlight` — is a warning repaired to
       the default (the shipped default, even where a test runner switched `config/defaults` off).
       `:chroma` joined `config/fatal-tool-ids`, so a bad Chroma pin is now an error. A `dev`
-      rebuild passes `:clogem/dev-loop?` to `cli/build` (one line in `dev.clj`); `highlight/soft?`
-      honours that or `:clogem/dev?`, so the soft path survives a dev loop that passes either, and a
-      test captures what `dev!` really passes. There a fetch, verification, start or run failure —
+      rebuild passes `:clogem/dev-loop?` to `cli/build` — with `:clogem/dev?`, through
+      `dev/build-opts`, which every dev rebuild calls (P4-D.1); `highlight/soft?` honours either
+      flag, so the soft path survives a dev loop that passes either, and tests capture what dev's
+      wiring really passes and require it to equal `dev/build-opts`, both flags set. There a fetch, verification, start or run failure —
       a binary the process API cannot start (no exec bit, a `noexec` mount) throws an
       `IOException`, wrapped like the rest — warns once per process, is recorded under the pin the
       session checks so it is not retried, and code renders plain; in `build` it exits 1 with a hint
@@ -3061,12 +3100,37 @@ their own findings. Item 19 onward are corrections.
       recomputes the watched paths on every pass (a moved `:content :dir` is followed), while the
       pod keeps what it registered at startup and dev says to restart. The output directory and
       `:base` are fixed at startup. `bb dev --no-write` never writes front matter or
-      `permalinks.edn` (dev writes both by default, as `build` does).
+      `permalinks.edn` (dev writes both by default, as `build` does). *Superseded by P4-D.1
+      below:* the pod follows new and moved directories too, and the base and output directory
+      follow `site.edn`.
     - *Measured edit-to-reload* (write → `data: reload` on the SSE stream, demo, 227 pages): pod
       0.49 s (≈100 ms pod coalescing + 100 ms quiet + a 0.27–0.34 s build); polling every 500 ms
       0.66–0.72 s. In Chromium (`test/browser/dev.test.mjs`): edit visible after 0.60 s, overlay
       0.23 s after breaking the front matter (a parse error fails before rendering), page back
       0.54 s after the fix.
+    - *Fix round P4-D.1* (§5.4 and §5.5 amended). After merging Task C: `dev/build-opts` is the one
+      place the two dev flags are set. Then, each reproduced first and pinned by a test that failed
+      before its fix: the background swap keeps the previous Pagefind bundle and dev serves
+      `pagefind/` files from it (a page that loaded the old entry searched 0 results and 404'd on
+      an index chunk; `test/browser/search-swap.test.mjs`), files are served from a stream the
+      handler opened (a rename between check and open was http-kit's 500 with the absolute path);
+      the pod watches `site.edn` through its directory (after a `sed -i` the file watch stayed on
+      the old inode) and a follower registers watched directories created later; a bind failure is
+      one error naming host and port, and the server is bound before the first build; `bb build`
+      sweeps a dead dev's staging directories; the base is compared with the path decoded once
+      (`/文档/`, `/my docs/` were never mounted); `serve` with an unreadable `site.edn` warns and
+      serves at `/`; the URL printed is `localhost`, which giscus's `originsRegex` accepts; a
+      changed `:base` or `:out` is served at once; missing-key warnings are once per dev session;
+      one prefix and the hint on the pod fallback line, and a Ctrl-C during indexing prints
+      `stopped`, not "Pagefind exited 130". `dev!` is `dev/start-dev!` plus a shutdown hook, with
+      everything outside injectable; seven mutants of the old wiring that passed all 508 tests
+      (dropping the dev flag, bypassing the queue, `0.0.0.0`, dropping `:base`, not following
+      `site.edn`, notifying after indexing, sampling stylesheets after the build) each fail a test
+      in `dev_wiring_test` now.
+      Measured (pod mode, 4 cores, bb 1.13.225, 3 runs each; save → the `rebuilt in` line / save →
+      the edit visible in Chromium): the demo (242 pages) 473–526 ms / 555–594 ms, with builds of
+      271–324 ms; the live site (27 pages) 260–287 ms / 315–344 ms, builds of 57–85 ms. The fixed
+      ~200 ms is the pod's 100 ms coalescing plus the queue's 100 ms quiet.
 13. **Blog identity and htmlModules (E1).** Kebab-case keys; 7 slots plus 2 show-modes (§1.2
     corrected); wrappers get `data-pagefind-ignore` and overflow-safe CSS; per-language values use the
     fallback chain only, and `""` suppresses; `{{base}}` is interpolated; raw HTML from the owner is
