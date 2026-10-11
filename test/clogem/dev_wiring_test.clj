@@ -381,7 +381,8 @@
               c    (java.net.Socket. "localhost" (int port))]
           (is (.isConnected c))
           (.close c))
-        (finally (org.httpkit.server/server-stop! srv))))))
+        (finally (org.httpkit.server/server-stop! srv)
+                 (fs/delete-tree root))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Finding 13: missing keys, once per session
