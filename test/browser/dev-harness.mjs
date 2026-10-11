@@ -7,6 +7,8 @@
 //
 //   - `bb` not on PATH: skip, saying so;
 //   - still starting after 90 s: skip, saying so (a slow machine);
+//   - watching by polling while CLOGEM_FSWATCHER is set (and no --poll):
+//     a failure, since pod mode is what CI means to test;
 //   - EXITED before it was ready — a crash at startup: a FAILURE that prints
 //     everything it wrote. Waiting out the 90 s and returning used to report
 //     `ok` for a `bb dev` that had crashed (P4-D.1 item 10).
@@ -130,5 +132,12 @@ export async function startDev(t, args) {
     return { ...state, ready: false };
   }
   console.log(`  ${ready.trim()}`);
+  // P4-D.2 item 18: with the pod available (CI sets CLOGEM_FSWATCHER), a
+  // silent fallback to polling would pass every check and test nothing of
+  // pod mode.
+  if (process.env.CLOGEM_FSWATCHER && !args.includes('--poll') && !/watching via fswatcher/.test(ready)) {
+    t.check(false, `CLOGEM_FSWATCHER is set but bb dev fell back to polling:\n${lines.map((l) => `    | ${l}`).join('\n')}`);
+    return { ...state, ready: false };
+  }
   return { ...state, ready: true };
 }
