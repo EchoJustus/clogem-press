@@ -852,3 +852,42 @@
             (is (= "/%E6%96%87/" (get-in ((first @servers) {:uri "/"}) [:headers "Location"])))
             (is (= 200 (:status ((first @servers) {:uri "/%E6%96%87/pages/t00001/"}))))
             (finally (quiet (:stop! h)))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 23: a rename-style save of a stylesheet
+
+(deftest a-rename-style-stylesheet-save-swaps-the-css
+  (testing "item 23: `sed -i` (and editors whose temp names the submit
+            filter does not know) left a temp path in the changed set"
+    (with-root
+      (fn [root]
+        (let [css (str (fs/path root "custom.css"))]
+          (spit css "a{}")
+          (doseq [tmp ["sedAb12Cd" "custom.css___jb_tmp___" "custom.css___jb_old___" ".goutputstream-XYZ12"]]
+            (is (= "css" (dev/reload-kind [css (str (fs/path root tmp))] #{"x.css"} #{"x.css"} true)) tmp))
+          (testing "but never a deleted page, or a temp name that still exists"
+            (is (= "reload" (dev/reload-kind [css (str (fs/path root "gone.md"))] #{} #{} true)))
+            (spit (fs/file root "LICENSE") "x")
+            (is (= "reload" (dev/reload-kind [css (str (fs/path root "LICENSE"))] #{} #{} true)))
+            (is (= "reload" (dev/reload-kind [(str (fs/path root "sedAb12Cd"))] #{} #{} true)) "nothing left: a reload")))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 27: a tool's multi-line failure
+
+(deftest a-tool-failure-keeps-its-lines
+  (testing "item 27: one-line made Pagefind's report `exited 3:; Running …`"
+    (let [msg (str "clogem-press: search: Pagefind exited 3:\nRunning Pagefind v1.5.2 (Extended)\n"
+                   "Running from: /s\nError: Failed to read the HTML files\n"
+                   "  hint: The previous search index is still in place.")]
+      (is (= (str "Pagefind exited 3:\n    Running Pagefind v1.5.2 (Extended)\n    Running from: /s\n"
+                  "    Error: Failed to read the HTML files\n  hint: The previous search index is still in place.")
+             ((late tool-output) msg)))
+      (is (not (str/includes? (dev/one-line msg) ":;")) (dev/one-line msg)))
+    (with-site (assoc url-site :search {:provider :pagefind})
+      (fn [dir out]
+        (fs/create-dirs out)
+        (let [bin (fake/fake-pagefind! (fs/path dir "bin") :exit 3 :output "line one")
+              cfg (first (diag/collecting (config/load-config (str dir) nil {:build {:out (str out)}
+                                                                              :tools {:pagefind {:path bin}}})))
+              o   (with-out-str ((#'dev/indexer (constantly false) (fn [g] (g))) cfg))]
+          (is (re-find #"(?m)^clogem-press: search index failed — Pagefind exited 3:\n    line one\n    boom\n  hint: " o) o))))))

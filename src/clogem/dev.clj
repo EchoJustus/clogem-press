@@ -996,18 +996,33 @@
 (defn one-line
   "An error message as one line for dev's terminal: without the
   `clogem-press: <area>: ` prefix the line already carries, and with a
-  `hint:` line kept: after a semicolon, or a space after a full stop."
+  `hint:` line kept: after a semicolon, or a space after a full stop or a
+  colon."
   [msg]
   (->> (str/split-lines (str msg))
        (map str/trim)
        (remove str/blank?)
        (map #(str/replace % #"^clogem-press: (?:[a-z]+: )?" ""))
        (map #(str/replace % #"^hint: " ""))
+       (map #(str/replace % #"\s{2,}" " "))
        (reduce (fn [acc line]
                  (cond (empty? acc)                   line
-                       (re-find #"[.!?]$" acc)        (str acc " " line)
+                       (re-find #"[.!?:]$" acc)       (str acc " " line)
                        :else                          (str acc "; " line)))
                "")))
+
+(defn tool-output
+  "A tool's failure for dev's terminal (P4-D.2 item 27): its first line
+  without the `clogem-press: <area>: ` prefix, the tool's own output
+  below it, indented, then the hint — not `one-line`'s run-on line, which
+  turned Pagefind's report into `exited 3:; Running Pagefind …; …`."
+  [msg]
+  (let [[head & more] (->> (str/split-lines (str msg)) (map str/trimr) (remove str/blank?))
+        hint?          #(re-find #"^\s*hint: " %)]
+    (str/join "\n"
+              (concat [(str/replace (str head) #"^clogem-press: (?:[a-z]+: )?" "")]
+                      (map #(str "    " (str/trim %)) (remove hint? more))
+                      (map #(str "  " (str/trim %)) (filter hint? more))))))
 
 (defn load-pod!
   "Fetch the fswatcher pod through `clogem.tools` — the pinned, per-platform
@@ -1087,16 +1102,33 @@
             (fs/glob d "**.css"))
       (sorted-set))))
 
+(defn gone-temp?
+  "Is `p`, a changed path, the temp file of a rename-style save — gone by
+  now, and named as editors and tools name them: an `editor-temp?` name, a
+  name with no extension (`sed -i`'s `sedAb12Cd`), or JetBrains' and
+  GNOME's (`x___jb_tmp___`, `.goutputstream-…`)? A deleted page has an
+  extension and is never one."
+  [p]
+  (let [n (str (fs/file-name (str p)))]
+    (boolean
+     (and (not (fs/exists? (str p) {:nofollow-links true}))
+          (or (editor-temp? p)
+              (nil? (u-ext p))
+              (re-find #"___jb_(?:tmp|old)___$|^\.goutputstream-" n))))))
+
 (defn reload-kind
   "`css` when every changed file is a stylesheet, the set of stylesheets is
-  what it was, and the last build succeeded; else `reload`."
+  what it was, and the last build succeeded; else `reload`. The temp file
+  of a rename-style save is not a change (`gone-temp?`): `sed -i` on
+  custom.css reloaded the page instead of swapping it (P4-D.2 item 23)."
   [changed sheets-before sheets-after last-ok?]
-  (if (and (seq changed)
-           last-ok?
-           (= sheets-before sheets-after)
-           (every? #(str/ends-with? (str/lower-case (str %)) ".css") changed))
-    "css"
-    "reload"))
+  (let [changed (remove gone-temp? changed)]
+    (if (and (seq changed)
+             last-ok?
+             (= sheets-before sheets-after)
+             (every? #(str/ends-with? (str/lower-case (str %)) ".css") changed))
+      "css"
+      "reload")))
 
 (defn theme-namespaces
   "The theme namespaces the changed `.clj` files under `dir` (the theme
@@ -1208,7 +1240,7 @@
                              (println "clogem-press: search index failed —"
                                       (if-let [why (exit-reason exit)]
                                         (str why "; the previous search index is still in place.")
-                                        (one-line (or (ex-message t) (str t)))))))))))
+                                        (tool-output (or (ex-message t) (str t)))))))))))
                  (or spawn future-call)
                  stopping?)]
     (with-meta (fn [cfg] (reset! pending cfg) (request!))

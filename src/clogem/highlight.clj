@@ -317,6 +317,19 @@
     e
     (ex-info (str (ex-message e) "\n  hint: " hint) (merge (ex-data e) {:babashka/exit 1}) e)))
 
+(defn chroma-failure
+  "Any failure to use Chroma as the ex-info `build` raises: an
+  `IOException` hashing an unreadable binary included, never a stack
+  trace, and always with the hint naming `--no-highlight` (`with-hint`).
+  `doctor` reports the same message and hint (P4-D.2 item 26)."
+  [^Throwable e]
+  (with-hint
+    (if (instance? clojure.lang.ExceptionInfo e)
+      e
+      (ex-info (str "clogem-press: highlight: could not use Chroma: "
+                    (or (ex-message e) (.getName (class e))))
+               {:babashka/exit 1 :clogem/tool-error :chroma} e))))
+
 (defn- dev-warn!
   [k ^Throwable e]
   (when-not (contains? @dev-failures k)
@@ -381,14 +394,10 @@
           (catch Exception e
             ;; an `IOException` hashing an unreadable binary is a Chroma
             ;; failure too, not a stack trace
-            (let [e (if (instance? clojure.lang.ExceptionInfo e)
-                      e
-                      (ex-info (str "clogem-press: highlight: could not use Chroma: "
-                                    (or (ex-message e) (.getName (class e))))
-                               {:babashka/exit 1 :clogem/tool-error :chroma} e))]
+            (let [e (chroma-failure e)]
               (if (soft? cfg)
                 (do (dev-warn! pin e) nil)
-                (throw (with-hint e))))))))))
+                (throw e)))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Highlighting
@@ -570,19 +579,14 @@
   [cfg sources]
   (when (and (enabled? cfg) (has-code? (map second sources)))
     (let [problem (fn [^Throwable e]
-                    (diag/error! nil (str/replace (str (ex-message e)) #"^clogem-press: " "")
-                                 "`bb build` fails on this too; `bb build --no-highlight` builds without Chroma.")
+                    ;; build's message and build's hint, as build gives them
+                    (let [[msg & hints] (str/split (str (ex-message (chroma-failure e))) #"\n\s*hint: ")]
+                      (diag/error! nil (str/replace msg #"^clogem-press: " "") (str/join " " hints)))
                     nil)
           ;; an `IOException` hashing an unreadable cached binary is that
           ;; error too, as in `session`, never a stack trace
           bin     (try (tools/available-binary tools/chroma cfg)
-                       (catch Exception e
-                         (problem (if (instance? clojure.lang.ExceptionInfo e)
-                                    e
-                                    (ex-info (str "highlight: could not use Chroma: "
-                                                  (or (ex-message e) (.getName (class e))))
-                                             {})))
-                         ::unusable))]
+                       (catch Exception e (problem e) ::unusable))]
       (cond
         (= ::unusable bin) nil
 
@@ -594,10 +598,7 @@
         :else
         (when-let [{:keys [lexers] n :count}
                    (try (listing bin (binary-sha bin))
-                        (catch Exception e
-                          (problem (if (instance? clojure.lang.ExceptionInfo e)
-                                     e
-                                     (ex-info (str "highlight: could not use Chroma: " (ex-message e)) {})))))]
+                        (catch Exception e (problem e)))]
           (let [s {:lexers lexers :lexer-count n :warned (atom #{}) :version (tools/version tools/chroma cfg)}]
             (doseq [[path ast] sources
                     node (code-nodes ast)]

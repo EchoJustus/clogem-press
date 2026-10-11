@@ -1010,3 +1010,58 @@
               (is (str/includes? xml "esc &amp;#27;[31m one &amp;#1; nonchar &amp;#xFFFE; Prose the parser decodes: x y.") xml)))))))
   (testing "one pass: `&#38;amp;` is decoded once, to the text `&amp;`"
     (is (= "&amp;" (#'clogem.render/strip-tags "<div>&#38;amp;</div>")))))
+
+;; ---------------------------------------------------------------------------
+;; P4-D.2 items 9 (n10b) and 26: doctor's Chroma failures
+
+(defn- fresh-copy!
+  "A copy of `bin` no one has hashed yet: `binary-sha` memoises per binary."
+  [bin dir]
+  (let [b (fs/path dir (str "chroma-" (random-uuid)))]
+    (fs/copy bin b)
+    (spit (fs/file b) (str "\n# " (random-uuid) "\n") :append true)
+    (fs/set-posix-file-permissions b "rwxr-xr-x")
+    (str b)))
+
+(deftest doctor-reports-an-unreadable-chroma-from-the-env-or-path-cleanly
+  (testing "n10b: with the listing's catch narrowed to ExceptionInfo, an
+            IOException reading a CLOGEM_CHROMA or :path binary (mode 0111,
+            not root) was a raw FileNotFoundException trace"
+    (with-site mixed-site
+      (fn [dir _ bin]
+        (let [edn (read-string (slurp (fs/file dir "site.edn")))]
+          (doseq [[how setup] [["CLOGEM_CHROMA" (fn [b] {"CLOGEM_CHROMA" b})]
+                               [":tools :chroma :path" (fn [b]
+                                                         (spit (fs/file dir "site.edn")
+                                                               (pr-str (assoc-in edn [:tools :chroma :path] b)))
+                                                         {})]]]
+            (let [b (fresh-copy! bin dir)]
+              (binding [tools/*env* (setup b)]
+                (with-redefs [tools/sha256-hex (fn [_] (throw (java.io.FileNotFoundException. (str b " (Permission denied)"))))]
+                  (let [{:keys [error err]} (doctor! dir)]
+                    (is (instance? clojure.lang.ExceptionInfo error) (str how ": " error))
+                    (is (= 1 (:babashka/exit (ex-data error))) how)
+                    (is (re-find #"error: highlight: could not use Chroma: .*Permission denied" err) (str how ": " err))))))
+            (spit (fs/file dir "site.edn") (pr-str edn))))))))
+
+(deftest doctor-gives-build-s-hint-for-a-chroma-failure
+  (testing "item 26: doctor's hint was its own text, not build's"
+    (with-site mixed-site
+      (fn [dir out bin]
+        (doseq [[how env redefs]
+                [["a missing CLOGEM_CHROMA" {"CLOGEM_CHROMA" (str bin "-missing")} {}]
+                 ["an unreadable binary" {"CLOGEM_CHROMA" (fresh-copy! bin dir)}
+                  {#'tools/sha256-hex (fn [_] (throw (java.io.IOException. "Permission denied")))}]]]
+          (binding [tools/*env* env]
+            (with-redefs-fn redefs
+              (fn []
+                (let [b      (build! dir out)
+                      d      (doctor! dir)
+                      hint-of (fn [s] (some->> (re-seq #"(?m)^\s*hint: (.*)$" s) (map second) (str/join " ")))
+                      b-msg  (ex-message (:error b))]
+                  (is (some? (:error b)) how)
+                  (is (some? (:error d)) how)
+                  (is (seq (hint-of b-msg)) how)
+                  (is (str/includes? (:err d) (hint-of b-msg)) (str how ":\n" b-msg "\n---\n" (:err d)))
+                  (is (str/includes? (:err d) (str/replace (first (str/split-lines b-msg)) #"^clogem-press: " ""))
+                      (str how ": the same message")))))))))))

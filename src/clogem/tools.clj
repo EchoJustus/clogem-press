@@ -219,8 +219,10 @@
                   :no-sha       (fn [plat]
                                   (str "Pin the zip's sha256 yourself: :tools {:fswatcher {:sha256 {\""
                                        plat "\" \"<hex>\"}}}."))
-                  :preinstalled "CLOGEM_FSWATCHER and :tools :fswatcher :path name an installed pod-babashka-fswatcher."
-                  :unpack       "Point CLOGEM_FSWATCHER at an installed pod-babashka-fswatcher."}})
+                  :preinstalled (str "Point CLOGEM_FSWATCHER (or :tools :fswatcher :path) at an installed "
+                                     "pod-babashka-fswatcher, or unset it to fetch the pinned one; "
+                                     "`bb dev --poll` watches without the pod.")
+                  :unpack       "Run `bb dev --poll`, or point CLOGEM_FSWATCHER at an installed pod-babashka-fswatcher."}})
 
 (def descriptors
   "Every tool `bb fetch-tool --tool` can fetch, by id."
@@ -459,7 +461,10 @@
 (defn with-cache-lock
   "Run `f` holding an exclusive lock on `lock-file`, across threads and
   processes, so two cold-cache builds fetch once rather than racing to
-  install the same directory."
+  install the same directory. When `f` throws — a failed fetch — the lock
+  file goes, and the version directory with it when that leaves it empty:
+  a fetch that installed nothing leaves nothing in the cache (P4-D.2
+  item 25)."
   [lock-file f]
   (fs/create-dirs (fs/parent lock-file))
   (let [k (str (fs/normalize (fs/absolutize lock-file)))
@@ -473,7 +478,14 @@
                                    java.nio.file.StandardOpenOption/WRITE]))]
         ;; closing the channel releases the lock
         (.lock ch)
-        (f)))))
+        (try (f)
+             (catch Throwable t
+               (try (fs/delete-if-exists lock-file)
+                    (let [parent (fs/parent lock-file)]
+                      (when (and (fs/directory? parent) (empty? (fs/list-dir parent)))
+                        (fs/delete parent)))
+                    (catch Exception _ nil))
+               (throw t)))))))
 
 (defn sweep-stale-downloads!
   "Remove `<plat>.download-*` and `<plat>.partial-*` siblings a killed run

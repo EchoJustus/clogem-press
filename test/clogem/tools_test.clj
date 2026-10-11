@@ -152,8 +152,11 @@
                       (is (str/starts-with? (ex-message e) (str "clogem-press: " (:error-prefix tool) ": ")))
                       (is (= 1 (:babashka/exit (ex-data e))))
                       (is (not (fs/exists? (tools/tool-dir tool cfg plat))) "nothing installed")
-                      (is (empty? (filter #(re-find #"\.download-" (str (fs/file-name %)))
-                                          (fs/list-dir (fs/parent (tools/tool-dir tool cfg plat)))))
+                      ;; the version directory goes too once nothing is
+                      ;; left in it (P4-D.2 item 25)
+                      (is (let [d (fs/parent (tools/tool-dir tool cfg plat))]
+                            (or (not (fs/exists? d))
+                                (empty? (filter #(re-find #"\.download-" (str (fs/file-name %))) (fs/list-dir d)))))
                           "the download was deleted"))))))))))
 
 (deftest a-tampered-or-unstamped-entry-is-fetched-again
@@ -370,3 +373,34 @@
           (is (= 1 (:babashka/exit (ex-data e)))))
         (is (= "pagefind" (get-in (meta #'cli/fetch-tool) [:org.babashka/cli :spec :tool :default]))
             "pagefind stays the default, so CI's `bb fetch-tool` is unchanged")))))
+
+;; ---------------------------------------------------------------------------
+;; P4-D.2 item 25: the pod's fallback messages
+
+(deftest a-failed-fetch-leaves-no-lock-behind
+  (testing "a download that fails left `<plat>.lock` in the cache"
+    (for-each-tool
+     (fn [tool]
+       (with-dir
+         (fn [dir]
+           (let [plat (tools/platform tool)
+                 ;; nothing listens on port 1
+                 cfg  (cfg-for dir tool "http://127.0.0.1:1/x" (apply str (repeat 64 "0")))
+                 e    (try (binding [*err* (java.io.StringWriter.)] (tools/ensure-binary! tool cfg)) nil
+                           (catch clojure.lang.ExceptionInfo e e))]
+             (is (some? e) (:name tool))
+             (is (not (fs/exists? (fs/path (fs/parent (tools/tool-dir tool cfg plat)) (str plat ".lock"))))
+                 (str (:name tool) ": no lock file"))
+             (is (not (fs/exists? (fs/parent (tools/tool-dir tool cfg plat))))
+                 (str (:name tool) ": nor an empty version directory")))))))))
+
+(deftest a-missing-env-path-for-the-pod-names-poll
+  (testing "CLOGEM_FSWATCHER naming nothing: the hint did not mention --poll"
+    (with-dir
+      (fn [dir]
+        (let [e (binding [tools/*env* {"CLOGEM_FSWATCHER" (str (fs/path dir "nope"))}]
+                  (try (tools/ensure-binary! tools/fswatcher (first (diag/collecting (config/load-config (str dir))))) nil
+                       (catch clojure.lang.ExceptionInfo e e)))]
+          (is (some? e))
+          (is (str/includes? (ex-message e) "does not exist") (ex-message e))
+          (is (str/includes? (ex-message e) "`bb dev --poll`") (ex-message e)))))))
