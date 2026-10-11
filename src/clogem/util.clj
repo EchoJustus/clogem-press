@@ -187,6 +187,13 @@
 (defn ensure-leading-slash [s] (if (str/starts-with? s "/") s (str "/" s)))
 (defn ensure-trailing-slash [s] (if (str/ends-with? s "/") s (str s "/")))
 
+(defn percent-decode
+  "`s` with its percent-escapes decoded as UTF-8, once — a `+` stays a plus
+  — or `s` itself when they are not valid."
+  [s]
+  (try (java.net.URLDecoder/decode (str/replace (str s) "+" "%2B") "UTF-8")
+       (catch IllegalArgumentException _ (str s))))
+
 (defn clean-url
   "Normalize a site-relative URL to /a/b/ form: leading and trailing slash, no
   doubled separators."

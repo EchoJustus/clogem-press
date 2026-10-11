@@ -218,7 +218,7 @@
 (defn- base-path*
   "`base-path`, usable before it is defined."
   [cfg]
-  (u/clean-url (or (get-in cfg [:site :base]) "/")))
+  (u/clean-url (u/percent-decode (or (get-in cfg [:site :base]) "/"))))
 
 (defn- check-fallback!
   "D-P3-7: `:i18n :fallback` is a vector of configured language keywords or
@@ -983,6 +983,10 @@
 
 (defn base-path
   "Site base path, e.g. \"/\" for a user site or \"/clogem-press/\" for a project
-  site. Prefixed onto every emitted URL."
+  site. Prefixed onto every emitted URL, which encodes it.
+
+  Decoded here, once (P4-D.2 item 10): `\"/%E6%96%87/\"` and `\"/文/\"`
+  are one base. Written percent-encoded, it used to be encoded again in
+  every link, the dev redirect and the printed URL."
   [cfg]
-  (u/clean-url (or (get-in cfg [:site :base]) "/")))
+  (u/clean-url (u/percent-decode (or (get-in cfg [:site :base]) "/"))))

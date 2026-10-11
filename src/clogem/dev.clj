@@ -410,45 +410,78 @@
 (defn- listen-error
   "The `ex-info` for a server that could not listen on `ip`:`port`."
   [{:keys [ip port]} ^Throwable e]
-  (let [why (cond
-              (= "java.nio.channels.UnresolvedAddressException" (.getName (class e)))
+  (let [cls (.getName (class e))
+        why (cond
+              (= "java.nio.channels.UnresolvedAddressException" cls)
               (str "the host " (pr-str ip) " does not resolve")
+              (= "java.nio.channels.UnsupportedAddressTypeException" cls)
+              (str "this machine cannot listen on an "
+                   (if (str/includes? (str ip) ":") "IPv6" "IPv4") " address")
+              (not (<= 0 (long (or port 0)) 65535))
+              (str "a port is a number from 0 to 65535")
               (re-find #"(?i)in use" (str (ex-message e)))
               (str "port " port " is already in use")
               (re-find #"(?i)not available|assign" (str (ex-message e)))
               (str ip " is not an address of this machine")
-              :else (or (ex-message e) (.getName (class e))))]
+              (re-find #"(?i)protocol family|address family" (str (ex-message e)))
+              (str "this machine cannot listen on " ip)
+              :else (or (ex-message e) cls))]
     (ex-info (str "clogem-press: cannot listen on " (if (str/includes? (str ip) ":") (str "[" ip "]") ip) ":" port
                   " — " why ".\n  hint: Choose another port with `--port`, or listen on loopback with `--host 127.0.0.1`.")
              {:babashka/exit 1})))
 
+(def ^:private listen-failures
+  "The exceptions a bind can fail with, by class name: babashka exposes
+  neither nio class."
+  #{"java.nio.channels.UnresolvedAddressException"
+    "java.nio.channels.UnsupportedAddressTypeException"})
+
 (defn run-server!
   "`http/run-server`, as a var the tests can redefine. A host that does not
-  resolve, is not this machine's, or a port in use is an `ex-info` (exit 1)
-  naming the host and port, not a stack trace."
-  [handler opts]
+  resolve, is not this machine's or has no address family here (`::1` on
+  an IPv4-only host), a port out of range or in use: each is an `ex-info`
+  (exit 1) naming the host and port, not a stack trace."
+  [handler {:keys [port] :as opts}]
+  (when-not (and (integer? port) (<= 0 port 65535))
+    (throw (listen-error opts (IllegalArgumentException. "port out of range"))))
   (try
     (http/run-server handler opts)
-    ;; UnresolvedAddressException is not an IOException (nor a class
-    ;; babashka exposes): matched by name
     (catch Exception e
       (if (or (instance? java.io.IOException e)
-              (= "java.nio.channels.UnresolvedAddressException" (.getName (class e))))
+              (instance? IllegalArgumentException e)
+              (listen-failures (.getName (class e))))
         (throw (listen-error opts e))
         (throw e)))))
 
+(def ^:private wildcard-ips #{"0.0.0.0" "::" "0:0:0:0:0:0:0:0" "[::]"})
+
+(defn bound-port
+  "The port the server `run-server!` returned listens on — `--port 0`
+  asks the system for one — else `port`."
+  [server port]
+  (or (:local-port (meta server))
+      (try (http/server-port server) (catch Throwable _ nil))
+      port))
+
 (defn url-for
-  "The URL to print for a server listening with `sopts`, at `base`. On the
-  default loopback address it is `http://localhost:PORT<base>`, as 0.2.0
-  printed: an origin that is `localhost` is what tools allow-list — giscus's
-  `originsRegex` of `http://localhost:[0-9]+` refuses `http://127.0.0.1:…`."
+  "The URL to print for a server listening with `sopts`, at `base`. On a
+  loopback or every-interface address it is `http://localhost:PORT<base>`,
+  as 0.2.0 printed: an origin that is `localhost` is what tools allow-list
+  — giscus's `originsRegex` of `http://localhost:[0-9]+` refuses
+  `http://127.0.0.1:…`, and `http://0.0.0.0:…` too (P4-D.2 item 21)."
   [{:keys [ip port]} base]
   (str "http://"
-       (cond (= ip default-host)        "localhost"
+       (cond (or (= ip default-host) (= ip "localhost") (wildcard-ips ip)) "localhost"
              (str/includes? ip ":")     (str "[" ip "]")
              :else                      ip)
        ":" port
        (.toASCIIString (java.net.URI. nil nil (str base) nil))))
+
+(defn- listening-note
+  "The line after the URL when the server listens on every interface."
+  [{:keys [ip]}]
+  (when (wildcard-ips ip)
+    (str "clogem-press: listening on every interface (--host " ip "): other machines on the network can reach it")))
 
 (defn- clean-base [b] (config/base-path {:site {:base b}}))
 
@@ -480,9 +513,11 @@
     (when-not (fs/directory? root)
       (throw (ex-info (str "nothing to serve: " root " does not exist (run `bb build` first)")
                       {:babashka/exit 1})))
-    (let [srv (run-server! (make-handler root {:inject-reload? false :base base
-                                                         :check-host? (loopback-ip? (:ip sopts))}) sopts)]
+    (let [srv   (run-server! (make-handler root {:inject-reload? false :base base
+                                                   :check-host? (loopback-ip? (:ip sopts))}) sopts)
+          sopts (assoc sopts :port (bound-port srv (:port sopts)))]
       (println (format "clogem-press: serving %s at %s" root (url-for sopts base)))
+      (some-> (listening-note sopts) println)
       srv)))
 
 (defn serve!
@@ -1273,9 +1308,10 @@
         sopts     (server-options opts)
         out-fn    #(fs/absolutize (config/out-dir @cfg-ref))
         base-fn   #(config/base-path @cfg-ref)
-        url       #(url-for sopts %)
         server    (serve* (make-handler out-fn {:inject-reload? true :base base-fn :state state
-                                                         :check-host? (loopback-ip? (:ip sopts))}) sopts)
+                                                :check-host? (loopback-ip? (:ip sopts))}) sopts)
+        sopts     (assoc sopts :port (bound-port server (:port sopts)))
+        url       #(url-for sopts %)
         writes    (atom {})
         rebuild   (make-rebuild
                    {:build         #(let [w (atom {})]
@@ -1343,6 +1379,7 @@
     (when-let [f (:on-stop! env)] (f stop!))
     (rebuild! [])
     (println (format "clogem-press: dev server at %s" (url (base-fn))))
+    (some-> (listening-note sopts) println)
     (spawn #(drain-loop! {:take! (queue-take queue) :on-batch rebuild!}))
     (let [existing (filterv #(fs/exists? (:path %)) @specs)
           ;; pod events: a directory the pod must be told about goes to

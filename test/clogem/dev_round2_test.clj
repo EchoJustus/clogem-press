@@ -691,3 +691,164 @@
                 (is (wait-until #(some #{(str (fs/path dir "notes"))} (map str ((:paths (first @polls))))))
                     "the poll loop's paths follow it")
                 (finally (quiet (:stop! h)))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Items 1, 4, 18: the real pod (CLOGEM_FSWATCHER, as CI sets it)
+
+(defn- real-pod-dev
+  "`start-dev!` over `dir` with the real fswatcher pod and a fake server;
+  calls (f out builds), then stops it — the pod with it."
+  [dir f]
+  (let [out    (java.io.StringWriter.)
+        builds (atom 0)
+        build  cli/build
+        h      (binding [*out* out *err* out]
+                 (dev/start-dev! {:site-dir (str dir) :port 1888 :no-write true}
+                                 {:run-server! (fn [& _] (fn [& _] nil))
+                                  :notify! (fn [_]) :notify-error! (fn [_])
+                                  :build (fn [o] (try (build o) (finally (swap! builds inc))))}))]
+    (try
+      (is (str/includes? (str out) "watching via fswatcher")
+          (str "CLOGEM_FSWATCHER is set, so a fallback to polling is a failure: " out))
+      (f out builds)
+      (finally (binding [*out* out *err* out] ((:stop! h)))))))
+
+(defmacro ^:private with-real-pod [test-name & body]
+  `(if-not (System/getenv "CLOGEM_FSWATCHER")
+     (println ~(str test-name ": CLOGEM_FSWATCHER is not set; skipped"))
+     (do ~@body)))
+
+(deftest the-real-pod-sees-a-file-in-a-directory-created-later
+  (testing "item 1, with the real pod: content/07.Topic/01.new.md created
+            after start, then edited, is two rebuilds"
+    (with-real-pod "the-real-pod-sees-a-file-in-a-directory-created-later"
+      (with-site url-site
+        (fn [dir _]
+          (real-pod-dev
+           dir
+           (fn [out builds]
+             (let [topic (fs/path dir "content" "07.Topic")
+                   f     (fs/file topic "01.new.md")
+                   seen  #(count (filter (fn [[_ c]] (str/includes? c "01.new.md")) (rebuilt-lines out)))]
+               (fs/create-dirs topic)
+               (Thread/sleep 300)
+               (spit f (art "t00002"))
+               (is (wait-until #(pos? (seen)) 5000) (str "the new file is a rebuild: " out))
+               (let [n0 (seen)]
+                 (Thread/sleep 300)
+                 (spit f (str (art "t00002") "\nedited\n"))
+                 (is (wait-until #(> (seen) n0) 5000) (str "and so is its edit: " out)))
+               (testing "and a directory replaced: an edit inside it after is seen"
+                 (let [ov (fs/path dir "overrides")]
+                   (fs/create-dirs ov)
+                   (spit (fs/file ov "custom.css") "a{}")
+                   (is (wait-until #(str/includes? (str out) "custom.css") 5000))
+                   (Thread/sleep 300)
+                   (fs/delete-tree ov)
+                   (fs/create-dirs ov)
+                   (spit (fs/file ov "custom.css") "b{}")
+                   (Thread/sleep 1500)
+                   (let [b0 @builds]
+                     (spit (fs/file ov "custom.css") "c{}")
+                     (is (wait-until #(> @builds b0) 5000) (str "the edit after the replace: " out)))))))))))))
+
+(deftest the-real-pod-sees-a-symlinked-site-edn-s-target-edited
+  (testing "item 4, with the real pod: `sed -i` on the target of a
+            symlinked site.edn is a rebuild"
+    (with-real-pod "the-real-pod-sees-a-symlinked-site-edn-s-target-edited"
+      (with-site url-site
+        (fn [dir _]
+          (let [shared (fs/path dir "shared")
+                target (fs/path shared "site.edn")]
+            (fs/create-dirs shared)
+            (fs/move (fs/path dir "site.edn") target)
+            (fs/create-sym-link (fs/path dir "site.edn") target)
+            (real-pod-dev
+             dir
+             (fn [out builds]
+               (doseq [title ["A" "B"]]
+                 (let [b0 @builds]
+                   ;; what `sed -i` does: a temp file renamed over the target
+                   (let [tmp (fs/path shared (str "sed" (rand-int 100000)))]
+                     (spit (fs/file tmp) (pr-str (assoc-in url-site [:site :title] title)))
+                     (fs/move tmp target {:replace-existing true :atomic-move true}))
+                   (is (wait-until #(> @builds b0) 5000) (str "edit " title ": " out))
+                   (Thread/sleep 300)))
+               (testing "an in-place append too"
+                 (let [b0 @builds]
+                   (spit (fs/file target) "\n" :append true)
+                   (is (wait-until #(> @builds b0) 5000) (str out))))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Items 19, 21: listen failures and the printed URL
+
+(deftest every-listen-failure-is-one-clear-error
+  (testing "item 19: a port out of range, and an address family this host
+            lacks, were raw stack traces"
+    (with-root
+      (fn [root]
+        (doseq [[opts why] [[{:ip "127.0.0.1" :port 70000} "a port is a number from 0 to 65535"]
+                            [{:ip "127.0.0.1" :port -1} "a port is a number from 0 to 65535"]]]
+          (let [e (try (dev/run-server! (dev/make-handler root {}) opts) nil
+                       (catch clojure.lang.ExceptionInfo e e))]
+            (is (some? e) (pr-str opts))
+            (is (= 1 (:babashka/exit (ex-data e))))
+            (is (str/includes? (str (ex-message e)) why) (str (ex-message e)))))
+        (testing "::1 — on a host without IPv6 (this container), a clean error"
+          (let [r (try (dev/run-server! (dev/make-handler root {}) {:ip "::1" :port 0 :legacy-return-value? false})
+                       (catch clojure.lang.ExceptionInfo e e))]
+            (if (instance? clojure.lang.ExceptionInfo r)
+              (is (re-find #"cannot listen on \[::1\]:0 — (this machine cannot listen on an IPv6 address|::1 is not an address)"
+                           (str (ex-message r)))
+                  (str (ex-message r)))
+              (do (println "every-listen-failure-is-one-clear-error: this host has IPv6; ::1 listened")
+                  (org.httpkit.server/server-stop! r)))))))))
+
+(deftest the-printed-url-has-the-real-port-and-a-name-giscus-allows
+  (testing "item 21: --host 0.0.0.0 printed http://0.0.0.0:…, --port 0 printed :0"
+    (with-root
+      (fn [root]
+        (spit (fs/file root "index.html") "x")
+        (let [o (java.io.StringWriter.)
+              srv (binding [*out* o] (dev/start-serve! {:dir (str root) :port 0 :host "0.0.0.0"}))]
+          (try
+            (let [port (:local-port (meta srv))]
+              (is (pos? port))
+              (is (str/includes? (str o) (str "at http://localhost:" port "/")) (str o))
+              (is (str/includes? (str o) "listening on every interface") (str o)))
+            (finally (srv :timeout 100))))
+        (with-site url-site
+          (fn [dir _]
+            (let [o (java.io.StringWriter.)
+                  h (binding [*out* o]
+                      (dev/start-dev! {:site-dir (str dir) :poll true :no-write true :port 0}
+                                      {:poll-watch! (fn [& _] nil) :notify! (fn [_]) :notify-error! (fn [_])}))]
+              (try
+                (is (re-find #"dev server at http://localhost:[1-9]\d*/" (str o)) (str o))
+                (is (not (str/includes? (str o) ":0/")))
+                (finally (quiet (:stop! h)))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 10: a percent-encoded base
+
+(deftest a-percent-encoded-base-is-the-same-base
+  (testing "item 10: \"/%E6%96%87/\" was encoded again — the redirect, the
+            printed URL and every link"
+    (doseq [b ["/文/" "/%E6%96%87/" "/%e6%96%87"]]
+      (is (= "/文/" (config/base-path {:site {:base b}})) b))
+    (is (= "/a+b/" (config/base-path {:site {:base "/a+b/"}})) "a plus stays a plus")
+    (is (= "/%zz/" (config/base-path {:site {:base "/%zz/"}})) "not valid encoding: as written")
+    (with-site (assoc-in url-site [:site :base] "/%E6%96%87/")
+      (fn [dir out]
+        (quiet #(cli/build {:site-dir (str dir) :no-write true}))
+        (is (str/includes? (slurp (fs/file out "index.html")) "href=\"/%E6%96%87/pages/t00001/\""))
+        (let [servers (atom []) o (java.io.StringWriter.)
+              h (binding [*out* o]
+                  (dev/start-dev! {:site-dir (str dir) :poll true :no-write true}
+                                  {:run-server! (fn [handler _] (swap! servers conj handler) (fn [& _] nil))
+                                   :poll-watch! (fn [& _] nil) :notify! (fn [_]) :notify-error! (fn [_])}))]
+          (try
+            (is (str/includes? (str o) "http://localhost:1888/%E6%96%87/") (str o))
+            (is (= "/%E6%96%87/" (get-in ((first @servers) {:uri "/"}) [:headers "Location"])))
+            (is (= 200 (:status ((first @servers) {:uri "/%E6%96%87/pages/t00001/"}))))
+            (finally (quiet (:stop! h)))))))))

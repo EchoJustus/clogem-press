@@ -368,11 +368,14 @@
     (is (= "http://localhost:1888/" (dev/url-for (dev/server-options {:port 1888}) "/")))
     (is (= "http://localhost:1888/project/" (dev/url-for (dev/server-options {:port 1888}) "/project/")))
     (is (= "http://localhost:1888/%E6%96%87%E6%A1%A3/" (dev/url-for (dev/server-options {:port 1888}) "/文档/")))
-    (is (= "http://0.0.0.0:9/" (dev/url-for (dev/server-options {:host "0.0.0.0" :port 9}) "/")))
+    (is (= "http://localhost:9/" (dev/url-for (dev/server-options {:host "0.0.0.0" :port 9}) "/"))
+        "every interface: still an origin giscus allows (P4-D.2 item 21)")
+    (is (= "http://192.0.2.7:9/" (dev/url-for (dev/server-options {:host "192.0.2.7" :port 9}) "/")))
     (is (= "http://[::1]:9/" (dev/url-for (dev/server-options {:host "::1" :port 9}) "/"))))
   (testing "and `localhost` reaches the server dev binds"
-    (let [srv (dev/run-server! (dev/make-handler (str (fs/create-temp-dir)) {}) {:ip "127.0.0.1" :port 0
-                                                                                :legacy-return-value? false})]
+    (let [root (fs/create-temp-dir {:prefix "clogem-url"})
+          srv  (dev/run-server! (dev/make-handler (str root) {}) {:ip "127.0.0.1" :port 0
+                                                                   :legacy-return-value? false})]
       (try
         (let [port (org.httpkit.server/server-port srv)
               c    (java.net.Socket. "localhost" (int port))]
@@ -579,16 +582,26 @@
                 n-site  #(count (filter (fn [p] (= cf (str (fs/normalize (fs/absolutize p))))) @seen))]
             (is (some? fns) "the pod loads")
             (when fns
-              (is (true? (binding [*out* (java.io.StringWriter.)]
-                           (dev/probe-watch! cfg #(swap! seen into %)
-                                             (assoc fns :specs (filterv #(fs/exists? (:path %)) specs)
-                                                        :accept? #(dev/watched-event? specs %))))))
-              (replace! (pr-str (assoc-in url-site [:site :title] "A")))
-              (is (wait-until #(pos? (n-site)) 3000) "the first rename")
-              (Thread/sleep 300)
-              (reset! seen [])
-              (replace! (pr-str (assoc-in url-site [:site :title] "B")))
-              (is (wait-until #(pos? (n-site)) 3000) "the second rename: the watch did not stay on the old inode")
-              (spit (fs/file dir "permalinks.edn") "{}")
-              (Thread/sleep 400)
-              (is (not-any? #(str/ends-with? (str %) "permalinks.edn") @seen) "other files beside it are not changes"))))))))
+              ;; P4-D.2 item 15: its watches and its process go when the
+              ;; test does, not at the end of the run
+              (let [ready (atom nil)]
+                (try
+                  (is (true? (binding [*out* (java.io.StringWriter.)]
+                               (dev/probe-watch! cfg #(swap! seen into %)
+                                                 (assoc (dissoc fns :pod-id)
+                                                        :specs (filterv #(fs/exists? (:path %)) specs)
+                                                        :accept? #(dev/watched-event? specs %)
+                                                        :on-ready (fn [_ m] (reset! ready m)))))))
+                  (replace! (pr-str (assoc-in url-site [:site :title] "A")))
+                  (is (wait-until #(pos? (n-site)) 3000) "the first rename")
+                  (Thread/sleep 300)
+                  (reset! seen [])
+                  (replace! (pr-str (assoc-in url-site [:site :title] "B")))
+                  (is (wait-until #(pos? (n-site)) 3000) "the second rename: the watch did not stay on the old inode")
+                  (spit (fs/file dir "permalinks.edn") "{}")
+                  (Thread/sleep 400)
+                  (is (not-any? #(str/ends-with? (str %) "permalinks.edn") @seen) "other files beside it are not changes")
+                  (finally
+                    (doseq [w (vals (:watchers @ready))]
+                      (try ((:unwatch fns) w) (catch Throwable _ nil)))
+                    (dev/unload-pod! (:pod-id fns))))))))))))
