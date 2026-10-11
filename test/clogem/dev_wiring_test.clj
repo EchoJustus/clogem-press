@@ -413,7 +413,10 @@
     (fn [dir _]
       (let [sessions (atom [])
             build    cli/build]
-        (wired dir {} {:build (fn [o] (swap! sessions conj i18n/*session-keys*) (build o))}
+        ;; recorded once the build has returned: wait-until must not let
+        ;; with-site delete the tree under a build still writing (P4-D.2 item 2)
+        (wired dir {} {:build (fn [o] (let [s i18n/*session-keys*]
+                                        (try (build o) (finally (swap! sessions conj s)))))}
                (fn [{:keys [on-change]}]
                  (on-change [(str (fs/path dir "content" "01.Guide" "01.t.md"))])
                  (is (wait-until #(= 2 (count @sessions))))
@@ -424,18 +427,28 @@
 ;; Finding 14: messages
 
 (deftest a-signal-stopped-index-prints-nothing
-  (with-site (assoc url-site :search {:provider :pagefind})
-    (fn [dir out]
-      (fs/create-dirs out)
-      (doseq [[exit expect] [[130 nil] [143 nil] [3 #"^clogem-press: search index failed — Pagefind exited 3:"]]]
-        (let [bin (fake/fake-pagefind! (fs/path dir (str "bin" exit)) :exit exit)
-              cfg (first (diag/collecting (config/load-config (str dir) nil {:build {:out (str out)}
-                                                                              :tools {:pagefind {:path bin}}})))
-              o   (with-out-str ((#'dev/indexer (constantly false) (fn [g] (g))) cfg))]
-          (if expect
-            (do (is (re-find expect o) o)
-                (is (not (str/includes? o "— clogem-press:")) "no doubled prefix"))
-            (is (= "" o) (str "exit " exit))))))))
+  (testing "SIGINT (Ctrl-C reaches the process group) is silent; any exit
+            while dev stops is silent; a kill from outside — the OOM
+            killer — is a failure (P4-D.2 item 11)"
+    (with-site (assoc url-site :search {:provider :pagefind})
+      (fn [dir out]
+        (fs/create-dirs out)
+        (doseq [[exit stopping? expect]
+                [[130 false nil]
+                 [143 true nil]
+                 [137 true nil]
+                 [3 true nil]
+                 [143 false #"^clogem-press: search index failed — Pagefind was terminated \(SIGTERM\); the previous search index is still in place"]
+                 [137 false #"^clogem-press: search index failed — Pagefind was killed \(SIGKILL"]
+                 [3 false #"^clogem-press: search index failed — Pagefind exited 3:"]]]
+          (let [bin (fake/fake-pagefind! (fs/path dir (str "bin" exit)) :exit exit)
+                cfg (first (diag/collecting (config/load-config (str dir) nil {:build {:out (str out)}
+                                                                                :tools {:pagefind {:path bin}}})))
+                o   (with-out-str ((#'dev/indexer (constantly stopping?) (fn [g] (g))) cfg))]
+            (if expect
+              (do (is (re-find expect o) o)
+                  (is (not (str/includes? o "— clogem-press:")) "no doubled prefix"))
+              (is (= "" o) (str "exit " exit (when stopping? ", stopping"))))))))))
 
 (deftest the-pod-fallback-line-has-one-prefix-and-keeps-the-hint
   (is (= "could not download fswatcher pod from http://x/: refused; Run `bb dev --poll`, or point CLOGEM_FSWATCHER at it."

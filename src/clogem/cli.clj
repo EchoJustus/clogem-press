@@ -209,6 +209,9 @@
       ;; a build error (exit 1) even though dist/ is already written — the
       ;; known limitation of §11.2, left for Phase 5: CI stops before
       ;; deploying it.
+      ;; P4-D.2 item 20: what a `bb dev` no longer running left — staging
+      ;; directories and previous bundles — goes with `--no-search` too
+      (when-not dev? (search/sweep-staging! (config/out-dir cfg)))
       (cond
         (and dev? (search/enabled? cfg))
         (assoc result :search :deferred :clogem/cfg cfg)

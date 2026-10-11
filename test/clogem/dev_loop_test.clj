@@ -561,31 +561,50 @@
           (is (fs/exists? (fs/path out "pagefind" "pagefind-entry.json")))
           (is (not (fs/exists? (fs/path out "pagefind" "stale.pf_fragment"))))
           (is (some #{"--output-path"} (fake/args-of bin)))
-          (is (= [search/previous-subdir]
-                 (map (comp str fs/file-name) (filter #(str/starts-with? (str (fs/file-name %)) ".pagefind-") (fs/list-dir out))))
+          (is (= 1 (count (search/previous-dirs out))))
+          (is (= (map str (search/previous-dirs out))
+                 (map str (filter #(str/starts-with? (str (fs/file-name %)) ".pagefind-") (fs/list-dir out))))
               "no staging directory left behind; the bundle it replaced is kept until the next swap")
-          (is (fs/exists? (fs/path out search/previous-subdir "stale.pf_fragment"))))
+          (is (fs/exists? (fs/path (first (search/previous-dirs out)) "stale.pf_fragment"))))
         (testing "a failed index leaves the previous bundle in place"
           (let [bad (fake/fake-pagefind! (fs/path dir "bad") :exit 3)]
             (is (thrown? clojure.lang.ExceptionInfo
                          (search/run-staged! (cfg-for dir {:build {:out (str out)}
                                                            :tools {:pagefind {:path bad}}}))))
             (is (fs/exists? (fs/path out "pagefind" "pagefind-entry.json")))
-            (is (= [search/previous-subdir]
-                   (map (comp str fs/file-name) (filter #(str/starts-with? (str (fs/file-name %)) ".pagefind-") (fs/list-dir out)))))))
+            (is (= (map str (search/previous-dirs out))
+                   (map str (filter #(str/starts-with? (str (fs/file-name %)) ".pagefind-") (fs/list-dir out)))))
+            (is (= 1 (count (search/previous-dirs out))))))
         (testing "`bb build` still indexes in place"
           (let [[r] (build! dir out)]
             (is (map? (:search r)))
             (is (some #{"--output-subdir"} (fake/args-of bin)))))))))
 
 (deftest a-killed-index-leaves-nothing-the-next-one-keeps
-  (let [out (fs/create-temp-dir {:prefix "clogem-staging"})]
+  (let [out   (fs/create-temp-dir {:prefix "clogem-staging"})
+        me    (java.lang.ProcessHandle/current)
+        start (.toEpochMilli ^java.time.Instant (.get (.startInstant (.info me))))
+        ;; a process that is running and is not this one: pid 1, with its
+        ;; own start time
+        init  (java.lang.ProcessHandle/of 1)
+        i-st  (some-> init (.orElse nil) .info .startInstant (.orElse nil) .toEpochMilli)]
     (try
-      (fs/create-dirs (fs/path out ".pagefind-staging-999999999-1"))
-      (fs/create-dirs (fs/path out (str ".pagefind-old-" (.pid (java.lang.ProcessHandle/current)) "-2")))
-      (fs/create-dirs (fs/path out ".pagefind-staging-1-3"))   ; pid 1 is alive: another process's
+      (fs/create-dirs (fs/path out ".pagefind-staging-999999999-1-1"))     ; no such process
+      (fs/create-dirs (fs/path out (str ".pagefind-old-" (.pid me) "-" start "-2")))  ; this one's
+      (fs/create-dirs (fs/path out (str ".pagefind-prev-" (.pid me) "-" start "-3"))) ; in use: kept
+      (fs/create-dirs (fs/path out (str ".pagefind-staging-" (.pid me) "-" (- start 100000) "-4"))) ; this pid, another start: dead
+      (fs/create-dirs (fs/path out ".pagefind-staging-1-3"))     ; the old naming: no start time, swept
+      (fs/create-dirs (fs/path out ".pagefind-old-7"))           ; P4-D.2 item 22: no nanos part
+      (fs/create-dirs (fs/path out ".pagefind-prev"))            ; D.1's single previous bundle
+      (when i-st (fs/create-dirs (fs/path out (str ".pagefind-staging-1-" i-st "-5"))))
       (search/sweep-staging! out)
-      (is (= #{".pagefind-staging-1-3"} (set (map #(str (fs/file-name %)) (fs/list-dir out)))))
+      (is (= (cond-> #{(str ".pagefind-prev-" (.pid me) "-" start "-3")}
+               i-st (conj (str ".pagefind-staging-1-" i-st "-5")))
+             (set (map #(str (fs/file-name %)) (fs/list-dir out)))))
+      (testing "dev stopping takes its own previous bundles too"
+        (search/sweep-staging! out {:own-previous? true})
+        (is (= (if i-st #{(str ".pagefind-staging-1-" i-st "-5")} #{})
+               (set (map #(str (fs/file-name %)) (fs/list-dir out))))))
       (finally (fs/delete-tree out)))))
 
 ;; ---------------------------------------------------------------------------

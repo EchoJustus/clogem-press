@@ -268,13 +268,14 @@
 
 (defn- pagefind-fallback
   "For a request under `pagefind/` the live bundle cannot answer, the same
-  file in the previous generation (`search/previous-subdir`): a page that
-  loaded the old `pagefind-entry.json` before dev's background index swapped
-  in a new one still fetches the old bundle's content-hashed files, until
-  its next reload (§5.4)."
+  file in a previous generation (`search/previous-dirs`, newest first): a
+  page that loaded an older `pagefind-entry.json` before dev's background
+  index swapped in a new one still fetches the old bundle's content-hashed
+  files, until its next reload (§5.4)."
   [root rel]
   (when (str/starts-with? rel "/pagefind/")
-    (resolve-path root (str "/" search/previous-subdir (subs rel (count "/pagefind"))))))
+    (some #(resolve-path root (str "/" (fs/file-name %) (subs rel (count "/pagefind"))))
+          (search/previous-dirs root))))
 
 (def stream-threshold
   "Files at least this big are served memory-mapped, smaller ones read
@@ -551,25 +552,39 @@
   "A function that asks for `f` to run on its own thread: one run at a time,
   and any number of requests during a run coalesce into one more run after
   it. `spawn` starts a thread (default `future-call`). A `Throwable` from `f`
-  is reported and does not stop later runs."
+  is reported and does not stop later runs. Once `cancelled?` says so, no
+  run starts — a request queued behind the running one included (P4-D.2
+  item 2). The function's metadata carries `:await`, `(await ms)`: wait up
+  to `ms` for the running run to end; true when none is running."
   ([f] (background-runner f future-call))
-  ([f spawn]
+  ([f spawn] (background-runner f spawn (constantly false)))
+  ([f spawn cancelled?]
    (let [st (atom {:running? false :again? false})]
-     (fn request! []
-       (let [[old _] (swap-vals! st (fn [s] (if (:running? s)
-                                             (assoc s :again? true)
-                                             (assoc s :running? true :again? false))))]
-         (when-not (:running? old)
-           (spawn (fn []
-                    (loop []
-                      (try (f)
-                           (catch Throwable t
-                             (println "clogem-press: search index failed —" (or (ex-message t) (str t)))))
-                      (let [[o _] (swap-vals! st (fn [s] (if (:again? s)
-                                                           (assoc s :again? false)
-                                                           (assoc s :running? false))))]
-                        (when (:again? o) (recur))))))))
-         nil))))
+     (with-meta
+       (fn request! []
+         (when-not (cancelled?)
+           (let [[old _] (swap-vals! st (fn [s] (if (:running? s)
+                                                 (assoc s :again? true)
+                                                 (assoc s :running? true :again? false))))]
+             (when-not (:running? old)
+               (spawn (fn []
+                        (loop []
+                          (when-not (cancelled?)
+                            (try (f)
+                                 (catch Throwable t
+                                   (println "clogem-press: search index failed —" (or (ex-message t) (str t))))))
+                          (let [stop? (cancelled?)
+                                [o _] (swap-vals! st (fn [s] (if (and (:again? s) (not stop?))
+                                                               (assoc s :again? false)
+                                                               (assoc s :running? false :again? false))))]
+                            (when (and (:again? o) (not stop?)) (recur)))))))))
+         nil)
+       {:await (fn [ms]
+                 (let [deadline (+ (System/currentTimeMillis) ms)]
+                   (loop []
+                     (cond (not (:running? @st))                     true
+                           (> (System/currentTimeMillis) deadline)  false
+                           :else (do (Thread/sleep 10) (recur))))))}))))
 
 ;; ---------------------------------------------------------------------------
 ;; Watching
@@ -964,12 +979,13 @@
   - `state` — an atom {:ever-ok? :error :last-ok?} the handler reads;
   - `index!` — asks for a background search index (`background-runner`);
   - `reload-code` — the theme directory whose changed `.clj` to reload;
-  - `on-config` — called with the config each successful build used.
+  - `on-config` — called with the config each successful build used;
+  - `on-reload` — called just before a `reload` is sent.
 
   On success: one line, then `reload` or `css` to every client, then the
   index request — so the page is back before Pagefind starts. On failure,
   `Throwable` included: one line, and `build-error` to every client."
-  [{:keys [build out state index! reload-code on-config notify! notify-error!]
+  [{:keys [build out state index! reload-code on-config notify! notify-error! on-reload]
     :or {notify! notify-clients! notify-error! notify-error!}}]
   (fn rebuild! [changed]
     (let [t0     (System/currentTimeMillis)
@@ -990,6 +1006,9 @@
                              (empty? changed)      "initial"
                              (<= (count changed) 3) (str/join ", " (map #(str (fs/file-name %)) changed))
                              :else                 (str (count changed) " files changed"))))
+          ;; before the reload is sent: from here on, pages load the
+          ;; bundle live now (`indexer`'s keep-since)
+          (when (and on-reload (= "reload" kind)) (on-reload))
           (notify! kind)
           (when-let [cfg (:clogem/cfg result)]
             (when on-config (on-config cfg)))
@@ -1005,32 +1024,51 @@
             (notify-error! err)
             nil))))))
 
-(def ^:private signal-exits
-  "Pagefind's exit codes when a signal stopped it — Ctrl-C reaches the whole
-  process group — or `search/stop-indexing!` did: not a failure to report."
-  #{130 137 143})
+(def ^:private sigint-exit
+  "Pagefind's exit code when SIGINT stopped it: Ctrl-C reaches the whole
+  process group, Pagefind included, before dev's shutdown has begun, so
+  this one is never reported."
+  130)
+
+(defn- exit-reason
+  "How a Pagefind exit code reads in dev's terminal: a signal by name
+  (128 + n), else the code."
+  [exit]
+  (case exit
+    137 "Pagefind was killed (SIGKILL — the out-of-memory killer, or `kill -9`)"
+    143 "Pagefind was terminated (SIGTERM)"
+    nil))
 
 (defn- indexer
   "dev's search indexing: `search/run-staged!` on a `background-runner`,
-  over the config of the build that asked last. A run stopped by a signal,
-  or while dev shuts down (`stopping?`), prints nothing. `spawn` is the
-  runner's (a test's runs synchronously)."
-  [stopping? & [spawn]]
+  over the config of the build that asked last, keeping every previous
+  bundle live since `(keep-since)` — the last page reload (P4-D.2 item
+  14). While dev stops (`stopping?`) no run starts and a failure prints
+  nothing; otherwise only a SIGINT exit is silent: a Pagefind killed by
+  anything else — the OOM killer — is an index failure (item 11). `spawn`
+  is the runner's (a test's runs synchronously). The function's metadata
+  carries the runner's `:await`."
+  [stopping? & [spawn keep-since]]
   (let [pending  (atom nil)
         request! (background-runner
                  (fn []
                    (let [cfg @pending t0 (System/currentTimeMillis)]
                      (try
-                       (search/run-staged! cfg)
+                       (search/run-staged! cfg {:cancelled? stopping?
+                                                :keep-since (when keep-since (keep-since))})
                        (println (format "clogem-press: search index updated in %d ms"
                                         (- (System/currentTimeMillis) t0)))
                        (catch Throwable t
-                         (when-not (or (stopping?)
-                                       (signal-exits (:clogem/pagefind-exit (ex-data t))))
-                           (println "clogem-press: search index failed —"
-                                    (one-line (or (ex-message t) (str t)))))))))
-                 (or spawn future-call))]
-    (fn [cfg] (reset! pending cfg) (request!))))
+                         (let [exit (:clogem/pagefind-exit (ex-data t))]
+                           (when-not (or (stopping?) (= sigint-exit exit))
+                             (println "clogem-press: search index failed —"
+                                      (if-let [why (exit-reason exit)]
+                                        (str why "; the previous search index is still in place.")
+                                        (one-line (or (ex-message t) (str t)))))))))))
+                 (or spawn future-call)
+                 stopping?)]
+    (with-meta (fn [cfg] (reset! pending cfg) (request!))
+      (meta request!))))
 
 (defn build-opts
   "The options every dev rebuild passes to `clogem.cli/build`: the CLI's
@@ -1054,6 +1092,11 @@
                               "; dev now serves it at " (url b1)))
       (not= o0 o1) (conj (str "clogem-press: the output directory changed from " o0 " to " o1
                               "; dev now serves " o1)))))
+
+(def stop-wait-ms
+  "How long `stop!` waits for the build running, and then for the index
+  run, to end (P4-D.2 item 2)."
+  10000)
 
 (defn start-dev!
   "Wire `bb dev` together and start it; returns
@@ -1082,7 +1125,8 @@
         spawn     (or (:spawn env) future-call)
         follow-ms (or (:follow-ms env) 1000)
         stopping  (atom false)
-        index*    (or (:index! env) (indexer #(deref stopping)))
+        reloaded  (atom 0)
+        index*    (or (:index! env) (indexer #(deref stopping) nil #(deref reloaded)))
         ;; `load-cfg!` applies --out, --base, --no-search and --no-highlight
         ;; as `build` does
         cfg       (assoc ((or (:load-cfg! env) (requiring-resolve 'clogem.cli/load-cfg!)) opts)
@@ -1108,6 +1152,7 @@
                     :reload-code   (when reload-code theme)
                     :notify!       (or (:notify! env) notify-clients!)
                     :notify-error! (or (:notify-error! env) notify-error!)
+                    :on-reload     #(reset! reloaded (System/currentTimeMillis))
                     :on-config     (fn [c]
                                      (let [before @cfg-ref]
                                        (reset! cfg-ref c)
@@ -1117,16 +1162,29 @@
         submit!   (submitter queue)
         register  (atom nil)
         registered (atom #{})
+        ;; every build holds it, the first one included, so `stop!` can
+        ;; wait for the one running and none starts after it
+        build-lock (java.util.concurrent.locks.ReentrantLock.)
+        rebuild!  (fn [changed]
+                    (.lock build-lock)
+                    (try (when-not @stopping (rebuild changed))
+                         (finally (.unlock build-lock))))
         stop!     (fn stop! []
                     (when (compare-and-set! stopping false true)
                       (try (when (fn? server) (server)) (catch Throwable _ nil))
                       (.put queue ::stop)
+                      ;; queued index requests are cancelled by `stopping`;
+                      ;; the running Pagefind is killed and waited for
                       (search/stop-indexing!)
-                      (try (search/sweep-staging! (out-fn)) (catch Throwable _ nil))
+                      (when (.tryLock build-lock stop-wait-ms TimeUnit/MILLISECONDS)
+                        (.unlock build-lock))
+                      (when-let [await! (:await (meta index*))] (await! stop-wait-ms))
+                      (try (search/sweep-staging! (out-fn) {:own-previous? true}) (catch Throwable _ nil))
                       nil))]
-    (rebuild [])
+    (when-let [f (:on-stop! env)] (f stop!))
+    (rebuild! [])
     (println (format "clogem-press: dev server at %s" (url (base-fn))))
-    (spawn #(drain-loop! {:take! (queue-take queue) :on-batch rebuild}))
+    (spawn #(drain-loop! {:take! (queue-take queue) :on-batch rebuild!}))
     (let [existing (filterv #(fs/exists? (:path %)) @specs)
           pod?     (and (not poll)
                         (pod* @cfg-ref submit! {:timeout-ms probe-ms
@@ -1156,11 +1214,20 @@
        :pod?    (boolean pod?)
        :url     (url (base-fn))})))
 
+(defn add-shutdown-hook!
+  "Run `f` when the JVM shuts down — Ctrl-C. A var, for the tests."
+  [f]
+  (.addShutdownHook (Runtime/getRuntime) (Thread. ^Runnable f)))
+
 (defn dev!
   [opts]
-  (let [{:keys [stop!]} (start-dev! opts)]
-    ;; Ctrl-C: stop the server, the loop and any Pagefind run, remove its
-    ;; staging directory, and say so once
-    (.addShutdownHook (Runtime/getRuntime)
-                      (Thread. (fn [] (stop!) (println "clogem-press: stopped"))))
+  ;; Ctrl-C: stop the server, the loop and any Pagefind run, wait for the
+  ;; build running, remove the staging and previous bundles, and say so
+  ;; once. Installed first (P4-D.2 item 12): Ctrl-C during the first build
+  ;; or the pod's probe used to skip all of it.
+  (let [stop (atom nil)]
+    (add-shutdown-hook! (fn []
+                          (when-let [f @stop] (f))
+                          (println "clogem-press: stopped")))
+    (start-dev! opts {:on-stop! #(reset! stop %)})
     @(promise)))
