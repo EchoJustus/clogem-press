@@ -76,21 +76,31 @@ bb --config ../clogem-press/bb.edn dev            # http://localhost:1888/
 
 `bb dev` builds, serves `dist/` and rebuilds on every change to `content/`,
 `assets/`, `i18n/`, `overrides/`, `site.edn` and the generator's own theme
-resources — including a directory created while it runs (an `overrides/` the
-site did not have) and a `site.edn` saved by an editor that replaces the file.
-Saves are collected until 100 ms pass quietly, so a burst of writes is one
-rebuild, and editor temp files (`.#x`, `x~`, `4913`, `*.swp`, `*.tmp`) are
-ignored. A rebuild of the demo takes about 0.3 s; the page reloads about 0.6 s
+resources — including a directory created while it runs (a new
+`content/07.Topic/` and the pages in it, an `overrides/` the site did not
+have, a tree copied in with `cp -r`), a watched directory deleted and made
+again, and a `site.edn` saved by an editor that replaces the file, or that is
+a symbolic link to one elsewhere. Saves are collected until 100 ms pass
+quietly, so a burst of writes is one rebuild, and editor temp files (`.#x`,
+`x~`, `4913`, `*.swp`, `*.tmp`) are ignored; so are dev's own writes — the
+front matter and `permalinks.edn` a build fills in never trigger another. A rebuild of the demo takes about 0.3 s; the page reloads about 0.6 s
 after a save, and a stylesheet-only change swaps the CSS in place. Search is
 re-indexed in the background after the reload; a page that loaded the previous
 index keeps searching it until its next reload. A `site.edn` edit that changes
-`:site :base` or `:build :out` is served at once.
+`:site :base` or `:build :out` is served at once. Ctrl-C waits for a rebuild
+in progress (up to 10 s), stops a running index and removes its working
+directories before it prints `stopped`.
 
 It listens on 127.0.0.1 but prints `http://localhost:1888/`: an embed that
 allow-lists origins — giscus's `giscus.json`, with `"originsRegex":
 ["http://localhost:[0-9]+"]` — accepts `localhost` and refuses `127.0.0.1`, so
-open the URL as printed. A port in use, or a `--host` that is not this
-machine's, is one error saying which; `--port` or `--host 127.0.0.1`.
+open the URL as printed (with `--host 0.0.0.0` too, which also says it listens
+on every interface). On loopback it answers only requests addressed to
+`localhost`, `127.0.0.1` or `[::1]`: any other `Host` is a 403, so a web page
+cannot reach it through a DNS-rebinding name of its own; with any other
+`--host` there is no such check. A port in use or out of range, or a `--host`
+that is not this machine's, is one error saying which; `--port` or `--host
+127.0.0.1`. `--port 0` takes any free port and prints it.
 
 When a rebuild fails, the terminal says why and the open page shows the error
 in an overlay over the last good build; saving a fix clears it. Escape hides

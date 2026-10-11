@@ -629,6 +629,50 @@ listen on 127.0.0.1 unless given `--host`.
 - `dev!` is a thin wrapper over `dev/start-dev!`, whose server, watcher, build, indexer, notifications
   and threads are injectable; dev_wiring_test drives it without a port or a pod.
 
+*Amended in P4-D.2 (§11.3 item 12):*
+
+- **The pod is told about every directory that appears.** fswatcher 0.0.7's `{:recursive true}`
+  watches the subdirectories that exist when `watch` is called, and for one made later delivers only
+  its own `:create`. So an accepted event that names a directory at or under a recursive root is
+  handed to the follower thread (pod calls never run on the pod's callback thread), which registers
+  it, recursively and 20 ms after the previous call, and submits it with every file under it — the
+  files written between the `mkdir` and the registration were seen by no watch. `mkdir -p a/b/c`
+  registers `a`; `cp -r` of a tree is one rebuild. Registrations are tracked by path and file key
+  (device and inode): an event naming a registered directory, or a key that changed between two
+  follower passes, registers it again and unwatches the old registration. The event is what
+  catches `rm -rf overrides && mkdir overrides` — ext4 hands the new directory the old inode at once
+  — and it comes from the parent's watch, or from the dying watch of the directory itself. The new
+  watch is made before the old one is dropped, so nothing falls between them.
+- **A symlinked config file is watched at its target as well**: that directory, not recursively,
+  `:only` the target, recomputed from every build's config, so a link pointed elsewhere is followed.
+  After a failed build the config alone is read again, quietly, so what is watched follows a
+  `:content :dir` that does not exist yet.
+- **The build's own writes never rebuild.** Every write into the source tree — front matter,
+  `permalinks.edn` (now written only when it changes), `@pages/` — goes through
+  `util/write-source!`, which records it when `util/*source-writes*` is bound; dev binds it around
+  each build and drops, from the next batch, a path that within 3 s still holds exactly what the
+  build wrote. Without it, a missing event filter was an endless loop.
+- **`stop!` waits.** Every build holds one lock, the first included; `stop!` stops the server,
+  cancels queued index runs, kills a running Pagefind (one registered after that is killed at once),
+  waits up to 10 s for the build and the index run, unloads the pod, and removes the staging
+  directories and dev's previous bundles. `dev!` installs its shutdown hook before it starts.
+- **Every bundle a page could hold stays servable.** A swap retires the live bundle as
+  `.pagefind-prev-<pid>-<start>-<retired ms>`; a retired bundle is deleted at a later swap only once
+  it was retired before the last page reload (dev records the time just before it sends `reload`),
+  keeping the newest always and at most 8. Two saves within one index run no longer lose the bundle
+  the second reload loaded. Working directories carry the process's start time beside its pid, and
+  a sweep counts a directory as live only when both match — a container's `bb dev` is often pid 1.
+- **The handler checks before it touches the disk**: the decoded path lexically (no backslash, `:`,
+  NUL or `..` past the root), then the canonical path of the file served, a directory's
+  `index.html` included. Files of 1 MB or more are served as a read-only mapping, smaller ones read
+  whole, both from one open. On a loopback bind, a request whose `Host` is not `localhost`,
+  `127.0.0.1` or `[::1]` is a 403 (DNS rebinding). `--host 0.0.0.0` prints `localhost` and says it
+  listens on every interface; `--port 0` prints the port it got; a port out of range or an address
+  family the host lacks is the same clean error as a busy port.
+- `:build :out` from `site.edn` is honoured: `--out` has no spec default any more, so the precedence
+  is `--out`, then `:build :out`, then `"dist"`. `:site :base` is decoded once in
+  `config/base-path`, so a base written percent-encoded is the same base.
+
 ### 5.5 Caching strategy
 
 quickblog's changelog ("Fix caching (this is hard)") is the cautionary tale, and a KB has *more*
@@ -649,7 +693,9 @@ cross-page artifacts (sidebar, indexes, backlinks, now hreflang groups) than a b
   whole, never deleted first. `bb build` still deletes and re-indexes in place.
   *Amended in P4-D.1:* the swap keeps one previous generation (`dist/.pagefind-prev/`), which dev's
   server falls back to for `pagefind/` files, so a page that loaded the old bundle searches it until
-  its next reload (§5.4); `bb build` deletes it. The rest of dev's state — the base and output
+  its next reload (§5.4); `bb build` deletes it. *Amended in P4-D.2:* it keeps every generation live
+  since the last page reload (at most 8), as `dist/.pagefind-prev-<pid>-<start>-<n>/`; `bb dev`
+  deletes its own when it stops, and every non-dev `bb build` those of a dev no longer running. The rest of dev's state — the base and output
   directory it serves, the directories it watches, the missing UI keys it has already warned about
   (once per key and language per `bb dev` session, again only after the key was defined and went
   missing once more) — follows the config of the last good build.
@@ -3131,6 +3177,26 @@ their own findings. Item 19 onward are corrections.
       the edit visible in Chromium): the demo (242 pages) 473–526 ms / 555–594 ms, with builds of
       271–324 ms; the live site (27 pages) 260–287 ms / 315–344 ms, builds of 57–85 ms. The fixed
       ~200 ms is the pod's 100 ms coalescing plus the queue's 100 ms quiet.
+    - *Fix round P4-D.2* (§5.4 and §5.5 amended). Each item reproduced first and pinned by a test
+      that failed before its fix (`dev_round2_test`, plus `tools_test` and `highlight_test`): with
+      the pod, a directory created later — `content/07.Topic/` — is registered and rescanned (one
+      rebuild for the `mkdir`, then nothing, before); a replaced watched directory is registered
+      again and its old watch released; a symlinked `site.edn` is watched at its target; `stop!`
+      waits for the build and the index, cancels a queued index and kills Pagefind; `:build :out`
+      in `site.edn` is honoured (`--out`'s spec default overrode it); every file is no longer read
+      into the heap before its first byte; a directory's `index.html` link cannot escape the root,
+      and a request path is checked lexically before any filesystem call; a percent-encoded `:base`
+      is decoded once; a Pagefind killed from outside is reported; the shutdown hook comes first;
+      creating `overrides/` is one rebuild; every bundle a page could hold since its last reload
+      stays servable; the real-pod test stops its pod; the 404 escapes the base as an attribute;
+      loopback servers refuse other `Host` names; test hygiene (temp directories, a silent fallback
+      to polling in the browser tests is a failure); every listen failure is one clean error;
+      `.pagefind-prev-*` is removed by `stop!` and swept by `bb build`; printed URLs; the staging
+      sweep's liveness is pid plus start time; a `sed -i` stylesheet save swaps the CSS; a
+      `:content :dir` that does not exist yet is followed; the pod's fallback messages; doctor's
+      Chroma hint is build's; Pagefind's output is printed on indented lines. The build's own writes
+      never rebuild. Four mutants of D.1's wiring that survived (n4e, n5c, n4f, n10b) each fail a
+      test now.
 13. **Blog identity and htmlModules (E1).** Kebab-case keys; 7 slots plus 2 show-modes (§1.2
     corrected); wrappers get `data-pagefind-ignore` and overflow-safe CSS; per-language values use the
     fallback chain only, and `""` suppresses; `{{base}}` is interpolated; raw HTML from the owner is
@@ -3219,9 +3285,13 @@ their own findings. Item 19 onward are corrections.
   `<out>/pagefind/` and rebuilds it, so two builds with search on can collide there. Give one
   `--no-search`, or a separate `--out`. (`bb dev` itself now swaps a staged bundle in, Task D, but
   a concurrent `bb build` still deletes it.)
-- **The pod keeps its startup directories** (Task D). With the fswatcher pod, a `site.edn` change
-  that moves `:content :dir`, `:assets-dir` or `:i18n :strings-dir` is not watched until `bb dev`
-  restarts (it says so); `--poll` follows it. `:build :out` and `:site :base` are read at startup.
+- **One inotify instance per directory created while `bb dev` runs** (Task D, P4-D.2). fswatcher
+  0.0.7 makes a new watcher for every `watch` call, and dev registers each directory made after
+  startup (the top one of a `mkdir -p` or a `cp -r`) and each one replaced. Linux allows 128
+  instances per user by default (`fs.inotify.max_user_instances`); a session that makes more new
+  top-level folders than that gets one "cannot watch …; restart `bb dev`" line per folder past the
+  limit. A replaced directory's old instance is released; a deleted one's, at the next follower
+  pass.
 - **The stale-HTML sweep skips a symlinked output directory** (pre-existing, 0.2.0).
   `sweep-stale-html!` checks the out directory with `:nofollow-links`, so with `dist ->
   /var/www/site` the `.html` of deleted articles is never removed there. The temp sweep resolves

@@ -14,7 +14,14 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
 - **`bb dev` and `bb serve` listen on 127.0.0.1** instead of every
   interface. `--host 0.0.0.0` restores the old behaviour. The URL they
   print is still `http://localhost:PORT/` — giscus's `originsRegex`
-  (`http://localhost:[0-9]+`) does not accept `127.0.0.1`.
+  (`http://localhost:[0-9]+`) does not accept `127.0.0.1` — with
+  `--host 0.0.0.0` too, plus a line saying it listens on every interface.
+- **On loopback, both servers answer only for `localhost`, `127.0.0.1`
+  and `[::1]`** (any port): a request with another `Host` is a 403, so a
+  DNS-rebinding page cannot read the site or a build error through a name
+  of its own. With any other `--host` there is no check.
+- **`permalinks.edn` is written only when it changes.** It was rewritten,
+  byte for byte the same, on every build.
 - **A missing UI string key warns once per key and language, in `build`
   too**, naming the string file to add it to (`i18n/ta.edn`). It used to
   warn only in dev — where it never fired, because the rebuild dropped the
@@ -59,28 +66,76 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   polling after its 3 s probe.
 - **Search no longer 404s during a dev rebuild.** The index is rebuilt in
   the background after the reload, into a staging directory swapped in
-  whole; it was deleted first and rebuilt before the reload was sent. The
-  bundle it replaces is kept as `dist/.pagefind-prev/` until the next
-  swap, and dev serves a `pagefind/` file the new bundle lacks from it, so
-  a page that loaded the old index keeps searching it until its next
-  reload. `bb build` removes it, and the staging directories a stopped
-  `bb dev` left.
+  whole; it was deleted first and rebuilt before the reload was sent.
+  Every bundle it replaces that a page could have loaded since the last
+  reload is kept (at most 8) as `dist/.pagefind-prev-<pid>-<start>-<n>/`,
+  and dev serves a `pagefind/` file the live bundle lacks from them,
+  newest first — so a page that loaded an older index keeps searching it
+  until its next reload, two saves within one index run included. `bb dev`
+  removes them when it stops; any `bb build`, `--no-search` too, removes
+  those and the staging directories of a `bb dev` no longer running —
+  by process id and start time, so a reused pid (dev is often pid 1 in a
+  container) is not mistaken for it.
 - **A file renamed while dev served it** is a 404, never a 500 whose body
-  named its absolute path (reachable with `--host 0.0.0.0`).
+  named its absolute path (reachable with `--host 0.0.0.0`). Files of
+  1 MB or more are served memory-mapped, the rest read whole, both from
+  one open: a 200 MB file waited a second for its first byte and took
+  450 MB of heap per client.
+- **Neither server serves outside its directory through a link**: a
+  directory's `index.html` linked outside it was served (`GET /dir/`). A
+  request path with a backslash, a `:`, a NUL or a `..` past the root is
+  refused before the filesystem is touched (on Windows, `\\host\share`
+  would have been a network stat).
 - **With the pod, `site.edn` saved by rename** (`sed -i`, vim, emacs,
-  atomic-save editors) is still watched afterwards.
-- **A busy port, or a `--host` that does not resolve or is not this
-  machine's,** is one error naming the host and port (exit 1), not a stack
-  trace; `bb dev` binds before its first build, so it writes nothing then.
+  atomic-save editors) is still watched afterwards, and a `site.edn` that
+  is a symbolic link is watched at its target too.
+- **With the pod, a directory created while `bb dev` runs is watched**:
+  `mkdir content/07.Topic` and a page in it, `mkdir -p a/b/c`, `cp -r` of
+  a tree. The pod watches only the subdirectories that exist when it is
+  told about a directory, so the page 404'd until something else changed.
+  Files made before the new directory is registered are rescanned. A
+  watched directory replaced (`rm -rf overrides && mkdir overrides`, an
+  `mv` swap) is watched again — its old watch died with it, silently —
+  and the old registration is released. Creating `overrides/` is one
+  rebuild, not two.
+- **A `:content :dir` that does not exist yet** is followed once it is
+  created; the failed build in between left dev watching the old one.
+- **The build's own writes never trigger a rebuild**: front matter it
+  fills in, `permalinks.edn` and `@pages/` files each caused a second
+  build, and with the pod's filter gone an endless loop.
+- **Ctrl-C waits for the build running** (up to 10 s), stops Pagefind and
+  any index run queued behind it, and removes the staging directories, so
+  nothing is written after `stopped` and no Pagefind outlives `bb dev`.
+  Ctrl-C during the first build or the pod's probe now does the same; it
+  printed nothing and skipped it all.
+- **A busy port, a port out of range, or a `--host` that does not
+  resolve, is not this machine's or has no address family here (`::1` on
+  an IPv4-only host)** is one error naming the host and port (exit 1), not
+  a stack trace; `bb dev` binds before its first build, so it writes
+  nothing then. `--port 0` prints the port it got.
 - **A `:base` with non-ASCII characters or a space** (`/文档/`, `/my docs/`)
-  is mounted by `dev` and `serve`; it 404'd.
+  is mounted by `dev` and `serve`; it 404'd. A base written
+  percent-encoded (`"/%E6%96%87/"`) is the same base as `"/文/"`; it was
+  encoded again in every link, by `build` too.
+- **`:build :out` in `site.edn` is honoured** by `build`, `dev` and
+  `clean`: the CLI's `--out` defaulted to `dist` and overrode it every
+  time. `--out` still wins. A site whose CI passes `--out` (the live
+  site's passes `--out ../dist`) is unaffected.
 - **`bb serve` with an unreadable `site.edn`** warns and serves at `/`, as
   0.2.0 did (`--base` needs no config); it exited 1.
 - **Messages:** the pod fallback line has one `clogem-press:` prefix and
-  keeps its hint; Ctrl-C while the index runs prints `stopped`, not
-  "Pagefind exited 130".
-- **`doctor`'s code-language check** reports an unreadable cached Chroma
-  as `build` does, not as a stack trace (follow-up to Task C).
+  keeps its hint, which names `bb dev --poll` for a `CLOGEM_FSWATCHER`
+  that names nothing; a failed pod download leaves no `.lock` in the
+  cache; Ctrl-C while the index runs prints `stopped`, not "Pagefind
+  exited 130", while a Pagefind killed from outside (the OOM killer) is
+  reported as an index failure; a Pagefind failure shows its output on
+  indented lines, not run together with `;`.
+- **`doctor`'s code-language check** reports an unreadable Chroma — cached,
+  `CLOGEM_CHROMA` or `:tools :chroma :path` — with `build`'s own message
+  and hint, not as a stack trace (follow-up to Task C).
+- **A stylesheet saved by rename** (`sed -i`, JetBrains, GNOME editors) is
+  swapped in place; the temp file's name made it a full reload.
+- **The 404 page escapes the base it links to** as an attribute.
 - **Feed summaries are well-formed XML.** A character reference to a
   control character, U+FFFE or U+FFFF stays as written, references are
   decoded once (`&#38;amp;` is `&amp;`), and a raw control character —
