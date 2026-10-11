@@ -25,6 +25,12 @@
   {:site-dir    {:desc "Directory holding site.edn and content/." :default "." :alias :d :ref "<dir>"}
    :config-file {:desc "Config filename inside --site-dir." :default "site.edn" :ref "<file>"}})
 
+;; No `:default` on purpose (P4-D.2 item 5): a spec default is indistinguishable
+;; from `--out dist` once parsed, and overrode `:build :out` in site.edn on
+;; every run. The precedence is `--out`, then site.edn's `:build :out`, then
+;; config's default, "dist".
+(def ^:private out-desc "Output directory (default: site.edn's :build :out, else dist).")
+
 (defn- load-cfg*
   "Load config under a diagnostic sink. Returns [cfg diagnostics]."
   [{:keys [site-dir config-file out no-write base no-search no-highlight]}]
@@ -118,7 +124,7 @@
 
 (defn ^{:org.babashka/cli
         {:spec (merge common-spec
-                      {:out      {:desc "Output directory." :default "dist" :alias :o :ref "<dir>"}
+                      {:out      {:desc out-desc :alias :o :ref "<dir>"}
                        :base     {:desc "Site base path, e.g. /project/." :ref "<path>"}
                        :no-write {:desc "Read-only build: never touch source files." :coerce :boolean}
                        :no-search {:desc "Build without search (no index, no search UI) even when :search :provider is set."
@@ -306,7 +312,7 @@
     {:warnings warns :errors errs}))
 
 (defn ^{:org.babashka/cli {:spec (assoc common-spec
-                                        :out {:desc "Output directory." :default "dist" :alias :o})}}
+                                        :out {:desc out-desc :alias :o :ref "<dir>"})}}
   clean
   [opts]
   (let [cfg (load-cfg! opts)
@@ -330,7 +336,7 @@
 
 (defn ^{:org.babashka/cli
         {:spec (merge common-spec server-spec
-                      {:out      {:desc "Output directory." :default "dist" :alias :o}
+                      {:out      {:desc out-desc :alias :o :ref "<dir>"}
                        :base     {:desc "Site base path, e.g. /project/; the site is served there." :ref "<path>"}
                        :poll     {:desc "Poll the filesystem instead of using inotify."
                                   :coerce :boolean}
