@@ -277,8 +277,8 @@
             (let [r (h {:uri "/pagefind/a.pf_fragment"})]
               (is (= 500 (:status r)))
               (is (not (str/includes? (str (:body r)) (str root))) (:body r)))))
-        (testing "a file is served from a stream opened once, not a File http-kit reopens"
-          (is (instance? java.io.InputStream (:body (h {:uri "/pagefind/a.pf_fragment"}))))))
+        (testing "a file is served from one open here, not a File http-kit reopens"
+          (is (bytes? (:body (h {:uri "/pagefind/a.pf_fragment"}))))))
       (finally (fs/delete-tree root)))))
 
 ;; ---------------------------------------------------------------------------

@@ -88,21 +88,42 @@
     (URLDecoder/decode (str/replace (str/replace (str uri) #"\?.*$" "") "+" "%2B") "UTF-8")
     (catch IllegalArgumentException _ nil)))
 
+(defn- lexical-segments
+  "The decoded request path as its plain segments — `.` and empty ones
+  dropped, `..` applied — or nil when it is not a path under the root on
+  every platform: a backslash (a Windows separator; `\\\\host\\share` is an
+  SMB path), a `:` (a drive letter, an NTFS stream), a NUL, or a `..` past
+  the root. Purely lexical (P4-D.2 item 8): a refused path never reaches
+  the filesystem, so a page cannot make dev stat a network share."
+  [decoded]
+  (let [s (str decoded)]
+    (when-not (re-find #"[\\:\x00]" s)
+      (reduce (fn [acc seg]
+                (case seg
+                  ("" ".") acc
+                  ".."     (if (seq acc) (pop acc) (reduced nil))
+                  (conj acc seg)))
+              [] (str/split s #"/")))))
+
 (defn resolve-path
   "Map an already-decoded request path to a file under `root`, refusing
-  anything that escapes it (`under?`): a decoded `..`, `/` or NUL included."
+  anything that escapes it: lexically first (`lexical-segments`), before
+  any filesystem call, then by the canonical path of the FILE served —
+  a directory's `index.html` included, which a link can point outside
+  the root as well as the directory can (P4-D.2 item 7). Returns the
+  canonical path, so what is opened is what was checked."
   [root decoded]
   (try
-    (let [rel    (str/replace (str decoded) #"^/+" "")
-          base   (str (fs/canonicalize root))
-          target (fs/path base rel)]
-      (when (and (not (str/includes? rel "\u0000"))
-                 (fs/exists? target)
-                 (under? base (str (fs/canonicalize target))))
+    (when-let [segs (lexical-segments decoded)]
+      (let [base      (fs/canonicalize root)
+            base-s    (str base)
+            target    (apply fs/path base segs)
+            contained (fn [p]
+                        (let [c (fs/canonicalize p)]
+                          (when (and (under? base-s (str c)) (fs/regular-file? c)) c)))]
         (cond
-          (fs/directory? target)    (let [idx (fs/path target "index.html")]
-                                      (when (fs/regular-file? idx) idx))
-          (fs/regular-file? target) target
+          (fs/directory? target)    (contained (fs/path target "index.html"))
+          (fs/regular-file? target) (contained target)
           :else nil)))
     ;; an InvalidPathException, or a file renamed away mid-check
     (catch Exception _ nil)))
@@ -211,8 +232,12 @@
         (str/ends-with? (str/lower-case (str uri)) ".html")
         (not (str/includes? (str last-seg) ".")))))
 
-(defn- escape-html [s]
-  (-> (str s) (str/replace "&" "&amp;") (str/replace "<" "&lt;") (str/replace ">" "&gt;")))
+(defn- escape-html
+  "Text and attribute escaping both: `\"` and `'` too, since `not-found`
+  puts the base inside an `href=\"…\"` (P4-D.2 item 16)."
+  [s]
+  (-> (str s) (str/replace "&" "&amp;") (str/replace "<" "&lt;") (str/replace ">" "&gt;")
+      (str/replace "\"" "&quot;") (str/replace "'" "&#39;")))
 
 (defn error-page
   "What dev serves for a page while no build has succeeded yet: the error,
@@ -251,6 +276,31 @@
   (when (str/starts-with? rel "/pagefind/")
     (resolve-path root (str "/" search/previous-subdir (subs rel (count "/pagefind"))))))
 
+(def stream-threshold
+  "Files at least this big are served memory-mapped, smaller ones read
+  whole (P4-D.2 item 6). Reading every file into the heap — what an
+  `InputStream` body made http-kit do — cost a 200 MB file a second before
+  its first byte and 450 MB of heap per client. 1 MB covers every Pagefind
+  file, which are what change under a running dev."
+  (* 1024 1024))
+
+(defn file-body
+  "The bytes of `f` as a response body, from ONE open: a `byte[]` under
+  `stream-threshold`, else a read-only mapping (a `ByteBuffer`, which
+  http-kit writes as it is — off-heap, and its first byte at once). Never
+  a `File`, which http-kit would reopen later — and a file gone by then
+  was a 500 naming its path (finding 1)."
+  [f]
+  (with-open [ch (java.nio.channels.FileChannel/open
+                  (fs/path f) (into-array java.nio.file.StandardOpenOption
+                                          [java.nio.file.StandardOpenOption/READ]))]
+    (let [n (.size ch)]
+      (if (< n stream-threshold)
+        (let [buf (java.nio.ByteBuffer/allocate (int n))]
+          (while (and (.hasRemaining buf) (pos? (.read ch buf))))
+          (java.util.Arrays/copyOf (.array buf) (.position buf)))
+        (.map ch java.nio.channels.FileChannel$MapMode/READ_ONLY 0 n)))))
+
 (defn- file-response
   "Serve `f`, opened here, once: a file renamed or deleted since it was
   resolved is nil (the caller tries elsewhere), never a 500 naming its path."
@@ -259,7 +309,7 @@
     (let [html? (= "html" (u-ext f))
           body  (if (and html? inject-reload?)
                   (str/replace (slurp (fs/file f)) "</body>" (str reload-script "</body>"))
-                  (java.io.FileInputStream. (fs/file f)))]
+                  (file-body f))]
       {:status 200
        :headers (cond-> {"Content-Type" (content-type f)}
                   inject-reload? (assoc "Cache-Control" "no-cache"))
@@ -268,6 +318,33 @@
 
 (defn- value [x] (if (fn? x) (x) x))
 
+(defn loopback-ip?
+  "Does `ip` (`--host`) bind loopback only?"
+  [ip]
+  (let [ip (str/lower-case (str ip))]
+    (boolean (or (#{"localhost" "::1" "0:0:0:0:0:0:0:1" "[::1]"} ip)
+                 (re-matches #"127(?:\.\d{1,3}){3}" ip)))))
+
+(defn local-host-header?
+  "Is `host`, a request's `Host` header, `localhost`, `127.0.0.1` or
+  `[::1]`, with any port or none? A request with no `Host` (HTTP/1.0) is
+  let through: a browser always sends one, and DNS rebinding needs it to
+  be the attacker's name."
+  [host]
+  (if (nil? host)
+    true
+    (let [h    (str/lower-case (str/trim (str host)))
+          name (if (str/starts-with? h "[")
+                 (subs h 0 (inc (or (str/index-of h "]") (dec (count h)))))
+                 (str/replace h #":\d*$" ""))]
+      (contains? #{"localhost" "127.0.0.1" "[::1]"} name))))
+
+(def ^:private wrong-host
+  {:status 403
+   :headers {"Content-Type" "text/plain; charset=utf-8"}
+   :body (str "403 Forbidden: this server listens on loopback and answers only for "
+              "localhost, 127.0.0.1 and [::1].\n")})
+
 (defn make-handler
   "The static handler over `root`, mounted at `:base` (default `/`): `/`
   redirects to the base, and nothing outside it is served. `root` and
@@ -275,15 +352,22 @@
   With `:inject-reload?` (dev), `/__reload` is the SSE channel, HTML gets
   the reload script, and — when `:state` says no build has succeeded yet —
   a page request gets `error-page`. A `pagefind/` file the live bundle no
-  longer has is served from the previous one (`pagefind-fallback`)."
-  [root {:keys [inject-reload? base state] :or {base "/"}}]
-  (fn [{:keys [uri] :as req}]
+  longer has is served from the previous one (`pagefind-fallback`). With
+  `:check-host?` (a loopback bind), a request whose `Host` is not a
+  loopback name is a 403 (`local-host-header?`): a DNS-rebinding page
+  cannot read the site, or the build errors, through a name of its own
+  (P4-D.2 item 17)."
+  [root {:keys [inject-reload? base state check-host?] :or {base "/"}}]
+  (fn [{:keys [uri headers] :as req}]
     (try
       (let [uri  (str uri)
             base (value base)
             root (value root)
             path (decode-path uri)]
         (cond
+          (and check-host? (not (local-host-header? (get headers "host"))))
+          wrong-host
+
           (and inject-reload? (= uri "/__reload"))
           (sse-handler req state)
 
@@ -394,7 +478,8 @@
     (when-not (fs/directory? root)
       (throw (ex-info (str "nothing to serve: " root " does not exist (run `bb build` first)")
                       {:babashka/exit 1})))
-    (let [srv (run-server! (make-handler root {:inject-reload? false :base base}) sopts)]
+    (let [srv (run-server! (make-handler root {:inject-reload? false :base base
+                                                         :check-host? (loopback-ip? (:ip sopts))}) sopts)]
       (println (format "clogem-press: serving %s at %s" root (url-for sopts base)))
       srv)))
 
@@ -1012,7 +1097,8 @@
         out-fn    #(fs/absolutize (config/out-dir @cfg-ref))
         base-fn   #(config/base-path @cfg-ref)
         url       #(url-for sopts %)
-        server    (serve* (make-handler out-fn {:inject-reload? true :base base-fn :state state}) sopts)
+        server    (serve* (make-handler out-fn {:inject-reload? true :base base-fn :state state
+                                                         :check-host? (loopback-ip? (:ip sopts))}) sopts)
         rebuild   (make-rebuild
                    {:build         #(binding [i18n/*session-keys* session]
                                       (build* (build-opts opts)))
