@@ -42,6 +42,7 @@
             [clogem.i18n :as i18n]
             [clogem.search :as search]
             [clogem.tools :as tools]
+            [clogem.util :as u]
             [org.httpkit.server :as http])
   (:import [java.io File]
            [java.net URLDecoder]
@@ -611,36 +612,73 @@
 
 (defn- norm [p] (str (fs/normalize (fs/absolutize (str p)))))
 
+(defn- merge-specs
+  "One spec per path: recursive if any is, and then no `:only`; else the
+  union of the `:only` sets."
+  [specs]
+  (->> (group-by :path specs)
+       vals
+       (map (fn [ss]
+              (if (some :recursive? ss)
+                {:path (:path (first ss)) :recursive? true}
+                {:path (:path (first ss)) :recursive? false :only (into #{} (mapcat :only) ss)})))
+       (sort-by :path)
+       vec))
+
 (defn watch-specs
   "Every path `bb dev` watches with the fswatcher pod, whether it exists yet
   or not, as {:path :recursive? :only}: the content, assets, i18n and
   overrides directories and the theme's (recursively), and the config
-  file's DIRECTORY, not recursively, `:only` for that file. A watch on the
+  file's DIRECTORY, not recursively, `:only` that file. A watch on the
   file itself stays on its inode, so a save that replaces it by rename —
   `sed -i`, vim, emacs, any atomic-save editor — left every later edit
   unseen; a watch on its directory sees the rename. Only the config file's
   own events count (`watched-event?`): `permalinks.edn` and `dist/` beside
-  it are not changes."
+  it are not changes. A config file that is a symbolic link is watched at
+  its target too — that directory, `:only` the target — since an edit of
+  the target never touches the link's directory (P4-D.2 item 4); the
+  specs are recomputed from every build's config, so a link pointed
+  elsewhere is followed."
   [cfg & [{:keys [reload-code?]}]]
-  (let [cf (some-> (:clogem/config-file cfg) norm)]
-    (vec (concat
-          (for [p [(config/content-dir cfg) (config/assets-dir cfg) (config/strings-dir cfg)
-                   (fs/path (config/site-dir cfg) "overrides")]]
-            {:path (norm p) :recursive? true})
-          (when cf [{:path (norm (fs/parent cf)) :recursive? false :only cf}])
-          (when-let [t (theme-dir reload-code?)] [{:path (norm t) :recursive? true}])))))
+  (let [cf     (some-> (:clogem/config-file cfg) norm)
+        target (when (and cf (fs/sym-link? cf))
+                 (try (norm (fs/real-path cf)) (catch Exception _ nil)))]
+    (merge-specs
+     (concat
+      (for [p [(config/content-dir cfg) (config/assets-dir cfg) (config/strings-dir cfg)
+               (fs/path (config/site-dir cfg) "overrides")]]
+        {:path (norm p) :recursive? true})
+      (when cf [{:path (norm (fs/parent cf)) :recursive? false :only #{cf}}])
+      (when target [{:path (norm (fs/parent target)) :recursive? false :only #{target}}])
+      (when-let [t (theme-dir reload-code?)] [{:path (norm t) :recursive? true}])))))
+
+(defn- in-dir? [dir p]
+  (or (= p dir) (str/starts-with? p (str dir File/separator))))
 
 (defn watched-event?
   "Is `p`, a path the pod reported, a change `specs` watch for: inside a
-  recursive spec's directory, or a spec's `:only` file?"
+  recursive spec's directory, or one of a spec's `:only` files?"
   [specs p]
   (let [p (norm p)]
     (boolean
-     (some (fn [{:keys [path only]}]
-             (if only
-               (= p only)
-               (or (= p path) (str/starts-with? p (str path File/separator)))))
+     (some (fn [{:keys [path only recursive?]}]
+             (or (contains? only p)
+                 (and recursive? (in-dir? path p))
+                 ;; the watched directory itself, seen from its parent's watch
+                 (= p path)))
            specs))))
+
+(defn dir-to-watch?
+  "Does `p` — an accepted event's path — name a directory the pod must be
+  told about: one that exists now, at or under a recursive spec's
+  directory? The pod's recursive watch covers only the subdirectories
+  that existed when it was registered (P4-D.2 item 1), and a watched
+  directory replaced is a new inode its old watch never sees (item 3)."
+  [specs p]
+  (let [p (norm p)]
+    (boolean
+     (and (some #(and (:recursive? %) (in-dir? (:path %) p)) specs)
+          (fs/directory? p {:nofollow-links true})))))
 
 (defn- snapshot
   [paths]
@@ -752,7 +790,9 @@
   each `:recursive?` or not; an event reaches `on-change` only when
   `accept?` (default: every path) says so. On success, `on-ready` is called
   with a `register!` of one more spec on the same callback — what dev's
-  follower uses for a directory created later (§5.4)."
+  follower uses for a directory created later (§5.4) — and a map of
+  `:unwatch!` (the same spacing) and `:watchers`, the startup
+  registrations by path, so a replaced directory's old watch can go."
   [cfg on-change {:keys [watch unwatch timeout-ms gap-ms sleep specs accept? on-ready]
                   :or   {timeout-ms default-probe-ms
                          gap-ms     registration-gap-ms
@@ -820,13 +860,16 @@
                          ;; on after the probe budget rather than blocking
                          ;; its caller for ever
                          (fn register! [spec]
-                           (sleep gap-ms)
-                           (let [r (deref (future (try (watch-1 spec) (catch Throwable e e)))
-                                          timeout-ms ::timeout)]
-                             (cond
-                               (= ::timeout r)        (throw (ex-info "the fswatcher pod did not answer" {}))
-                               (instance? Throwable r) (throw r)
-                               :else                  r)))))
+                           (locking watch-1
+                             (sleep gap-ms)
+                             (let [r (deref (future (try (watch-1 spec) (catch Throwable e e)))
+                                            timeout-ms ::timeout)]
+                               (cond
+                                 (= ::timeout r)        (throw (ex-info "the fswatcher pod did not answer" {}))
+                                 (instance? Throwable r) (throw r)
+                                 :else                  r))))
+                         {:unwatch!  (fn [w] (locking watch-1 (sleep gap-ms) (unwatch w)))
+                          :watchers  (zipmap (map :path specs) watchers)}))
                       true)
                   (do (reset! abandoned? true)
                       (println
@@ -840,27 +883,80 @@
               (finally
                 (try (fs/delete-if-exists probe) (catch Throwable _ nil))))))))))
 
+(defn file-key
+  "The identity of the file at `p` — device and inode on POSIX — as a
+  string, or nil (gone, or a filesystem without one). A directory deleted
+  and created again is the same path and another key."
+  [p]
+  (try (some-> (java.nio.file.Files/readAttributes
+                (fs/path p) java.nio.file.attribute.BasicFileAttributes
+                ^"[Ljava.nio.file.LinkOption;" (make-array java.nio.file.LinkOption 0))
+               .fileKey str)
+       (catch Exception _ nil)))
+
+(defn register-dir!
+  "Register `spec` with the pod now, on behalf of `registered` — an atom of
+  path → {:key :watcher :spec} — unwatching the registration it replaces
+  (P4-D.2 item 3: each re-registration used to leak one). A spec the pod
+  will not take is reported once, with the restart that fixes it, and
+  recorded, so it is not retried until its directory changes. True when
+  registered."
+  [registered {:keys [path] :as spec} register! unwatch!]
+  (let [k   (file-key path)
+        old (get @registered path)]
+    (try
+      (swap! registered assoc path {:key k :watcher (register! spec) :spec spec})
+      ;; the new watch first: nothing is missed between the two
+      (when-let [w (:watcher old)]
+        (try (unwatch! w) (catch Throwable _ nil)))
+      true
+      (catch Throwable e
+        (when-let [w (:watcher old)]
+          (try (unwatch! w) (catch Throwable _ nil)))
+        (swap! registered assoc path {:key k :failed? true :spec spec})
+        (println (str "clogem-press: cannot watch " path " ("
+                      (or (ex-message e) (str e))
+                      "); restart `bb dev` to watch it, or run it with `--poll`."))
+        false))))
+
 (defn follow-new-paths!
-  "One pass of dev's follower, with the pod (§5.4): register every spec of
-  `specs` that exists now and is not in `registered` (an atom of paths) —
-  `overrides/` created while `bb dev` runs, or the directory a `site.edn`
-  edit moved `:content :dir` to — and return the paths it registered, for
-  a rebuild. A spec the pod will not take is reported once, with the
-  restart that fixes it, and not tried again."
-  [specs registered register!]
-  ;; a watched directory deleted and created again is a new inode to watch
-  (swap! registered (fn [r] (into #{} (filter fs/exists?) r)))
-  (vec (keep (fn [{:keys [path] :as spec}]
-               (when (and (not (contains? @registered path)) (fs/exists? path))
-                 (swap! registered conj path)
-                 (try (register! spec)
-                      path
-                      (catch Throwable e
-                        (println (str "clogem-press: cannot watch " path " ("
-                                      (or (ex-message e) (str e))
-                                      "); restart `bb dev` to watch it, or run it with `--poll`."))
-                        nil))))
-             specs)))
+  "One pass of dev's follower, with the pod (§5.4), over `registered` (an
+  atom of path → {:key :watcher :spec}, `register-dir!`): forget — and
+  unwatch — every registration whose directory is gone; register every
+  spec of `specs`, and every registration already made, whose directory
+  exists and is not registered, or is registered under another file key —
+  `overrides/` created while `bb dev` runs, the directory a `site.edn` edit
+  moved `:content :dir` to, or a watched directory replaced between two
+  passes, whose old watch died with its inode (P4-D.2 item 3). The key is
+  a backstop: ext4 hands a directory deleted and made again the same inode
+  at once, so the event naming the new directory — from its parent's
+  watch, or its own dying one — is what re-registers it (`dir-to-watch?`).
+  Returns the paths it registered, for a rebuild."
+  [specs registered register! & [unwatch!]]
+  (let [unwatch! (or unwatch! (fn [_]))]
+    (doseq [[p {:keys [watcher]}] @registered
+            :when (not (fs/exists? p))]
+      (when watcher (try (unwatch! watcher) (catch Throwable _ nil)))
+      (swap! registered dissoc p))
+    (let [todo (vals (into {} (map (juxt :path identity))
+                           (concat (keep :spec (vals @registered)) specs)))]
+      (vec (keep (fn [{:keys [path] :as spec}]
+                   (when (fs/exists? path)
+                     (let [old (get @registered path)
+                           k   (file-key path)]
+                       (when (and (or (nil? old) (and k (not= k (:key old))))
+                                  (register-dir! registered spec register! unwatch!))
+                         path))))
+                 (sort-by :path todo))))))
+
+(defn new-dir-batch
+  "What a directory `register-dir!` has just registered changes: itself and
+  every file under it now. Files created between the directory and its
+  registration were seen by no watch, so they are rescanned."
+  [dir]
+  (into [(str dir)]
+        (comp (filter #(fs/regular-file? % {:nofollow-links true})) (map str))
+        (try (fs/glob dir "**") (catch Exception _ nil))))
 
 (defn one-line
   "An error message as one line for dev's terminal: without the
@@ -882,7 +978,8 @@
   "Fetch the fswatcher pod through `clogem.tools` — the pinned, per-platform
   sha256, cached under XDG, or `CLOGEM_FSWATCHER` / `:tools :fswatcher
   :path` — and load it from that path. Never through the pod registry, which
-  runs whatever it downloads unverified. Returns {:watch :unwatch}, or nil
+  runs whatever it downloads unverified. Returns {:watch :unwatch :pod-id}
+  (`unload-pod!` takes the id), or nil
   after one line saying why (offline on the first run, no asset for this
   platform, a hash that does not match): the caller polls."
   [cfg]
@@ -898,24 +995,36 @@
       ;;
       ;; `pod.babashka.fswatcher` still has to be resolved late: it does not exist
       ;; until load-pod has run.
-      (pods/load-pod (str bin))
-      {:watch   (requiring-resolve 'pod.babashka.fswatcher/watch)
-       :unwatch (requiring-resolve 'pod.babashka.fswatcher/unwatch)})
+      (let [{:pod/keys [id]} (pods/load-pod (str bin))]
+        {:watch   (requiring-resolve 'pod.babashka.fswatcher/watch)
+         :unwatch (requiring-resolve 'pod.babashka.fswatcher/unwatch)
+         :pod-id  id}))
     (catch Throwable e
       (println (str "clogem-press: the fswatcher pod is unavailable, so dev watches by polling: "
                     (one-line (or (ex-message e) (str e)))))
       nil)))
 
+(defn unload-pod!
+  "Stop the pod process `id` names, giving up after a second: at Ctrl-C it
+  has had the SIGINT too, and may be gone."
+  [id]
+  (when id
+    (deref (future (try (pods/unload-pod id) (catch Throwable _ nil))) 1000 nil)))
+
 (defn try-pod-watch!
-  "Load the fswatcher pod and probe it. Returns true only if it registered *and*
-  delivered an event within the probe window."
+  "Load the fswatcher pod and probe it. Returns {:pod-id} only if it
+  registered *and* delivered an event within the probe window; otherwise
+  false, with the pod unloaded."
   [cfg on-change & [opts]]
   (if-let [fns (load-pod! cfg)]
-    (try
-      (probe-watch! cfg on-change (merge fns (into {} (remove (comp nil? val)) opts)))
-      (catch Throwable e
-        (println "clogem-press: fswatcher pod unavailable —" (ex-message e))
-        false))
+    (let [ok? (try
+                (probe-watch! cfg on-change (merge (dissoc fns :pod-id) (into {} (remove (comp nil? val)) opts)))
+                (catch Throwable e
+                  (println "clogem-press: fswatcher pod unavailable —" (ex-message e))
+                  false))]
+      (if ok?
+        {:pod-id (:pod-id fns)}
+        (do (unload-pod! (:pod-id fns)) false)))
     false))
 
 ;; ---------------------------------------------------------------------------
@@ -1093,6 +1202,26 @@
       (not= o0 o1) (conj (str "clogem-press: the output directory changed from " o0 " to " o1
                               "; dev now serves " o1)))))
 
+(def own-write-ms
+  "For this long after a build, an event for a source file the build wrote
+  that still holds exactly what it wrote is the build's own write."
+  3000)
+
+(defn own-writes
+  "The paths of `changed` that are a build's own source writes (`writes`:
+  canonical path → {:content :at}, from `u/*source-writes*`): written less
+  than `own-write-ms` ago and still holding exactly that content. Those
+  never rebuild (P4-D.2 item 9): front-matter auto-fill and
+  `permalinks.edn` used to trigger a second build, and with any filter
+  missing, an endless loop."
+  [writes changed now]
+  (set (filter (fn [p]
+                 (let [c (try (str (fs/canonicalize p)) (catch Exception _ (str p)))]
+                   (when-let [{:keys [content at]} (get writes c)]
+                     (and (< (- now at) own-write-ms)
+                          (= content (try (slurp (fs/file c)) (catch Exception _ ::gone)))))))
+               changed)))
+
 (def stop-wait-ms
   "How long `stop!` waits for the build running, and then for the index
   run, to end (P4-D.2 item 2)."
@@ -1132,8 +1261,12 @@
         cfg       (assoc ((or (:load-cfg! env) (requiring-resolve 'clogem.cli/load-cfg!)) opts)
                          :clogem/dev? true)
         cfg-ref   (atom cfg)
+        ;; what is watched follows the config even when its build fails:
+        ;; a `:content :dir` moved to a directory not created yet fails
+        ;; the build, and must still be followed (P4-D.2 item 24)
+        watch-cfg (atom cfg)
         theme     (theme-dir reload-code)
-        paths     #(watched-paths @cfg-ref {:reload-code? reload-code})
+        paths     #(watched-paths @watch-cfg {:reload-code? reload-code})
         specs     (atom (watch-specs cfg {:reload-code? reload-code}))
         state     (atom {:ever-ok? false})
         session   (atom #{})
@@ -1143,9 +1276,15 @@
         url       #(url-for sopts %)
         server    (serve* (make-handler out-fn {:inject-reload? true :base base-fn :state state
                                                          :check-host? (loopback-ip? (:ip sopts))}) sopts)
+        writes    (atom {})
         rebuild   (make-rebuild
-                   {:build         #(binding [i18n/*session-keys* session]
-                                      (build* (build-opts opts)))
+                   {:build         #(let [w (atom {})]
+                                      (try (binding [i18n/*session-keys* session
+                                                     u/*source-writes*   w]
+                                             (build* (build-opts opts)))
+                                           (finally
+                                             (let [now (System/currentTimeMillis)]
+                                               (swap! writes into (for [[p c] @w] [p {:content c :at now}]))))))
                     :out           out-fn
                     :state         state
                     :index!        (fn [c] (when-not @stopping (index* c)))
@@ -1156,18 +1295,36 @@
                     :on-config     (fn [c]
                                      (let [before @cfg-ref]
                                        (reset! cfg-ref c)
+                                       (reset! watch-cfg c)
                                        (reset! specs (watch-specs c {:reload-code? reload-code}))
                                        (run! println (config-moves before c url))))})
+        ;; after a failed build: the config alone, quietly — a config
+        ;; error keeps watching what was watched
+        follow-cfg! (fn []
+                      (try
+                        (let [c (binding [*out* (java.io.StringWriter.) *err* (java.io.StringWriter.)]
+                                  ((or (:load-cfg! env) (requiring-resolve 'clogem.cli/load-cfg!)) opts))]
+                          (reset! watch-cfg c)
+                          (reset! specs (watch-specs c {:reload-code? reload-code})))
+                        (catch Throwable _ nil)))
         queue     (LinkedBlockingQueue.)
         submit!   (submitter queue)
         register  (atom nil)
-        registered (atom #{})
+        registered (atom {})
+        dirq      (LinkedBlockingQueue.)
+        pod-id    (atom nil)
         ;; every build holds it, the first one included, so `stop!` can
         ;; wait for the one running and none starts after it
         build-lock (java.util.concurrent.locks.ReentrantLock.)
         rebuild!  (fn [changed]
                     (.lock build-lock)
-                    (try (when-not @stopping (rebuild changed))
+                    (try (when-not @stopping
+                           (let [own     (own-writes @writes changed (System/currentTimeMillis))
+                                 changed (vec (remove own changed))]
+                             ;; a batch of nothing but the last build's own
+                             ;; writes is no change at all
+                             (when (or (empty? own) (seq changed))
+                               (or (rebuild changed) (follow-cfg!)))))
                          (finally (.unlock build-lock))))
         stop!     (fn stop! []
                     (when (compare-and-set! stopping false true)
@@ -1179,6 +1336,8 @@
                       (when (.tryLock build-lock stop-wait-ms TimeUnit/MILLISECONDS)
                         (.unlock build-lock))
                       (when-let [await! (:await (meta index*))] (await! stop-wait-ms))
+                      ;; the pod process and its watches go with dev (P4-D.2 item 15)
+                      (unload-pod! @pod-id)
                       (try (search/sweep-staging! (out-fn) {:own-previous? true}) (catch Throwable _ nil))
                       nil))]
     (when-let [f (:on-stop! env)] (f stop!))
@@ -1186,26 +1345,49 @@
     (println (format "clogem-press: dev server at %s" (url (base-fn))))
     (spawn #(drain-loop! {:take! (queue-take queue) :on-batch rebuild!}))
     (let [existing (filterv #(fs/exists? (:path %)) @specs)
+          ;; pod events: a directory the pod must be told about goes to
+          ;; the follower (pod calls never run on the pod's callback
+          ;; thread), which registers it and submits it with its files
+          on-pod   (fn [ps]
+                     (let [dirs (filterv #(dir-to-watch? @specs %) ps)]
+                       (when-let [rest (seq (remove (set dirs) ps))] (submit! rest))
+                       (doseq [d dirs] (.put dirq (norm d)))))
           pod?     (and (not poll)
-                        (pod* @cfg-ref submit! {:timeout-ms probe-ms
-                                                :specs     existing
-                                                :accept?   #(watched-event? @specs %)
-                                                :on-ready  #(reset! register %)}))]
+                        (not @stopping)
+                        (pod* @cfg-ref on-pod {:timeout-ms probe-ms
+                                               :specs     existing
+                                               :accept?   #(watched-event? @specs %)
+                                               :on-ready  (fn [reg & [{:keys [unwatch! watchers]}]]
+                                                            (reset! register {:register! reg
+                                                                              :unwatch!  (or unwatch! (fn [_]))
+                                                                              :watchers  watchers}))}))]
+      (when (map? pod?) (reset! pod-id (:pod-id pod?)))
       (if pod?
-        (do (reset! registered (set (map :path existing)))
+        (do (reset! registered (into {} (for [{:keys [path] :as spec} existing]
+                                          [path {:key (file-key path) :spec spec
+                                                 :watcher (get-in @register [:watchers path])}])))
             (println "clogem-press: watching via fswatcher")
             (when @register
               (spawn (fn []
-                       (loop []
-                         (Thread/sleep (long follow-ms))
-                         (when-not @stopping
-                           (try (when-let [new (seq (follow-new-paths! @specs registered @register))]
-                                  (submit! new))
-                                (catch Throwable t
-                                  (println "clogem-press: watching failed —" (or (ex-message t) (str t)))))
-                           (recur)))))))
-        (do (println (format "clogem-press: watching by polling every %d ms" interval))
-            (spawn #(poll* paths interval submit! {:stop? (fn [] @stopping)}))))
+                       (let [{:keys [register! unwatch!]} @register]
+                         (loop []
+                           (let [d (.poll dirq (long follow-ms) TimeUnit/MILLISECONDS)]
+                             (when-not @stopping
+                               (try
+                                 (let [new (if d
+                                             (let [ds (distinct (cons d (repeatedly (.size dirq) #(.poll dirq))))]
+                                               (filterv #(and % (fs/directory? %)
+                                                              (register-dir! registered {:path % :recursive? true}
+                                                                             register! unwatch!))
+                                                        ds))
+                                             (follow-new-paths! @specs registered register! unwatch!))]
+                                   (when (seq new) (submit! (vec (mapcat new-dir-batch new)))))
+                                 (catch Throwable t
+                                   (println "clogem-press: watching failed —" (or (ex-message t) (str t)))))
+                               (recur)))))))))
+        (when-not @stopping
+          (println (format "clogem-press: watching by polling every %d ms" interval))
+          (spawn #(poll* paths interval submit! {:stop? (fn [] @stopping)}))))
       {:stop!   stop!
        :state   state
        :cfg-ref cfg-ref

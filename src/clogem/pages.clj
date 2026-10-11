@@ -77,7 +77,7 @@
              :let [f (fs/path dir (str flag ".md"))]
              :when (not (fs/exists? f))]
          (do (fs/create-dirs dir)
-             (spit (fs/file f) (generated-content cfg strings kind))
+             (u/write-source! f (generated-content cfg strings kind))
              (str "@pages/" flag ".md")))))))
 
 ;; ---------------------------------------------------------------------------

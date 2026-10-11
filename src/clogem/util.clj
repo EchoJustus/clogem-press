@@ -2,9 +2,29 @@
 (ns clogem.util
   "Small pure helpers shared across the pipeline. Nothing here knows about
   content, config, or HTML."
-  (:require [clojure.string :as str])
+  (:require [clojure.java.io :as io]
+            [clojure.string :as str])
   (:import [java.security MessageDigest]
            [java.util Locale]))
+
+;; ---------------------------------------------------------------------------
+;; Source writes
+
+(def ^:dynamic *source-writes*
+  "When bound to an atom (by `bb dev`, around each build), every file this
+  program writes into the SOURCE tree — front matter, `permalinks.edn`,
+  `@pages/` — is recorded in it as path → the content written
+  (`write-source!`), so dev can tell its own writes from the author's: a
+  build's write must never trigger another build (P4-D.2 item 9)."
+  nil)
+
+(defn write-source!
+  "`spit` `content` to the source file `f`, recorded in `*source-writes*`."
+  [f content]
+  (spit (io/file (str f)) content)
+  (when-let [a *source-writes*]
+    (swap! a assoc (str (.getCanonicalPath (io/file (str f)))) content))
+  nil)
 
 ;; ---------------------------------------------------------------------------
 ;; Maps

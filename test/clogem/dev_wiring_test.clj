@@ -486,7 +486,7 @@
               specs (dev/watch-specs cfg)
               cf    (str (fs/normalize (fs/absolutize (fs/path dir "site.edn"))))
               spec  (first (filter :only specs))]
-          (is (= {:path (str (fs/normalize (fs/absolutize dir))) :recursive? false :only cf} spec))
+          (is (= {:path (str (fs/normalize (fs/absolutize dir))) :recursive? false :only #{cf}} spec))
           (is (not-any? #(= cf (:path %)) specs) "never the file itself")
           (is (dev/watched-event? specs cf))
           (is (dev/watched-event? specs (str (fs/path dir "content" "01.Guide" "01.t.md"))))
@@ -539,7 +539,7 @@
     (try
       (let [a     (str (fs/path dir "a"))
             specs [{:path a :recursive? true}]
-            reg   (atom #{})
+            reg   (atom {})
             calls (atom 0)]
         (is (= [] (dev/follow-new-paths! specs reg (fn [_] (swap! calls inc)))))
         (fs/create-dirs a)

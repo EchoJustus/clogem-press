@@ -405,3 +405,289 @@
         (quiet #(cli/build {:site-dir (str dir) :no-write true :no-search true}))
         (is (empty? (filter #(str/starts-with? (str (fs/file-name %)) ".pagefind-") (fs/list-dir out)))
             "bb build --no-search sweeps a dead dev's")))))
+
+;; ---------------------------------------------------------------------------
+;; Items 1, 3, 4, 9, 13, 24: pod mode
+
+(defn- n [p] (str (fs/normalize (fs/absolutize (str p)))))
+
+(defn- art [id] (str/replace article "t00001" id))
+
+(defn- mtimes
+  "path → modified time of every file under `dir` but `dist/`."
+  [dir]
+  (into {} (for [f (fs/glob dir "**")
+                 :when (and (fs/regular-file? f)
+                            (not (str/starts-with? (str f) (str (fs/path dir "dist")))))]
+             [(str f) (fs/file-time->millis (fs/last-modified-time f))])))
+
+(defn- pod-dev
+  "`start-dev!` over `dir` in pod mode with a fake pod: each registration
+  and unwatch is logged, and `(event! path)` delivers an event as the pod
+  would (through `accept?` first, as `probe-watch!`'s callback does).
+  Calls (f ctx), then stops it. With `:accept-all?`, the filter is
+  skipped — the n5c mutant; with `:inotify?`, every file a build writes
+  in the site (`dist/` aside) is reported as an event, as the real pod
+  reports it."
+  [dir opts env f & [{:keys [accept-all? inotify?]}]]
+  (let [regs (atom []) unwatched (atom []) builds (atom []) out (java.io.StringWriter.)
+        cb (atom nil) k (atom 0)
+        register! (fn [spec] (swap! regs conj spec) {:w (swap! k inc) :path (:path spec)})
+        pod (fn [_cfg on-change {:keys [specs accept? on-ready]}]
+              (reset! cb {:on-change on-change :accept? accept?})
+              (let [ws (mapv register! specs)]
+                (on-ready register! {:unwatch! #(swap! unwatched conj %)
+                                     :watchers (zipmap (map :path specs) ws)}))
+              true)
+        event! (fn [p] (when-let [{:keys [on-change accept?]} @cb]
+                         (when (or accept-all? (accept? (str p))) (on-change [(str p)]))))
+        build cli/build
+        h (binding [*out* out *err* out]
+            (dev/start-dev! (merge {:site-dir (str dir) :port 1888 :no-write true} opts)
+                            (merge {:run-server! (fn [& _] (fn [& _] nil))
+                                    :try-pod-watch! pod
+                                    :follow-ms 20
+                                    :notify! (fn [_]) :notify-error! (fn [_])
+                                    :build (fn [o]
+                                             (let [before (when inotify? (mtimes dir))]
+                                               (try (build o)
+                                                    (finally
+                                                      (swap! builds conj o)
+                                                      (when inotify?
+                                                        (let [after (mtimes dir)]
+                                                          (future
+                                                            (Thread/sleep 50)
+                                                            (doseq [[p t] after :when (not= t (get before p))]
+                                                              (event! p)))))))))}
+                                   env)))]
+    (try
+      (f {:h h :regs regs :unwatched unwatched :builds builds :out out :event! event!
+          :accept? (:accept? @cb)
+          :regs-of (fn [p] (filterv #(= (n p) (:path %)) @regs))})
+      (finally (binding [*out* out *err* out] ((:stop! h)))))))
+
+(defn- rebuilt-lines [out]
+  (re-seq #"rebuilt in \d+ ms \(([^)]*)\)" (str out)))
+
+(deftest a-directory-created-later-is-registered-and-rescanned
+  (testing "item 1: the pod's recursive watch covers only the directories
+            that existed at `watch`; a new NN.Topic/ got one rebuild for
+            the mkdir and nothing for anything inside it"
+    (with-site url-site
+      (fn [dir _]
+        (pod-dev dir {} {}
+                 (fn [{:keys [builds event! regs-of out]}]
+                   (let [topic (fs/path dir "content" "07.Topic")]
+                     (fs/create-dirs topic)
+                     ;; written before the pod hears of the directory: no
+                     ;; watch sees it, so only a rescan can
+                     (spit (fs/file topic "01.new.md") (art "t00002"))
+                     (event! topic)
+                     (is (wait-until #(= [{:path (n topic) :recursive? true}] (regs-of topic))) "registered, recursively")
+                     (is (wait-until #(= 2 (count @builds))))
+                     (is (some #(str/includes? (second %) "01.new.md") (rebuilt-lines out)) (str out))
+                     (testing "and an edit inside it is a rebuild"
+                       (spit (fs/file topic "01.new.md") (str (art "t00002") "\nmore\n"))
+                       (event! (fs/path topic "01.new.md"))
+                       (is (wait-until #(= 3 (count @builds))))))
+                   (testing "`mkdir -p a/b/c`: the top one is registered, the rest rescanned"
+                     (let [a (fs/path dir "content" "08.A")
+                           c (fs/path a "09.B" "10.C")]
+                       (fs/create-dirs c)
+                       (spit (fs/file c "01.d.md") (art "t00003"))
+                       (event! a)
+                       (is (wait-until #(= 1 (count (regs-of a)))))
+                       (is (wait-until #(= 4 (count @builds))))
+                       (is (str/includes? (str out) "01.d.md"))))
+                   (testing "`cp -r` of a tree: one rebuild for all of it"
+                     (let [t (fs/path dir "content" "11.Copy")]
+                       (fs/create-dirs (fs/path t "x"))
+                       (doseq [i (range 5)]
+                         (spit (fs/file t "x" (str "0" i ".c.md")) (art (str "cp000" i))))
+                       (event! t)
+                       (is (wait-until #(= 5 (count @builds))))
+                       (Thread/sleep 300)
+                       (is (= 5 (count @builds)) "one rebuild")
+                       (is (str/includes? (str out) "6 files changed") (str "the directory and its 5 files: " out))))
+                   (testing "a file is not a directory to register"
+                     (let [before (count (regs-of (fs/path dir "content" "01.Guide" "01.t.md")))]
+                       (event! (fs/path dir "content" "01.Guide" "01.t.md"))
+                       (Thread/sleep 200)
+                       (is (= before (count (regs-of (fs/path dir "content" "01.Guide" "01.t.md")))))))))))))
+
+(deftest a-replaced-watched-directory-is-registered-again
+  (testing "item 3: a directory deleted and made again kept its dead watch"
+    (with-site url-site
+      (fn [dir _]
+        (fs/create-dirs (fs/path dir "overrides"))
+        (spit (fs/file dir "overrides" "custom.css") "a{}")
+        (pod-dev dir {} {}
+                 (fn [{:keys [unwatched event! regs-of builds]}]
+                   (let [ov  (fs/path dir "overrides")
+                         w0  {:w 1 :path (n ov)}
+                         _   (is (= 1 (count (regs-of ov))) "at startup")
+                         w0  (some #(when (= (n ov) (:path %)) %) @unwatched)]
+                     (is (nil? w0) "nothing unwatched yet")
+                     (testing "rm -rf and mkdir: the event naming it re-registers it"
+                       (fs/delete-tree ov)
+                       (fs/create-dirs ov)
+                       (spit (fs/file ov "custom.css") "b{}")
+                       (event! ov)
+                       (is (wait-until #(= 2 (count (regs-of ov)))))
+                       (is (wait-until #(= 1 (count (filter (fn [w] (= (n ov) (:path w))) @unwatched))))
+                           "and its old watch is unwatched, not leaked")
+                       (is (wait-until #(= 2 (count @builds)))))
+                     (testing "replaced with no event between two passes: its file key changed"
+                       (fs/move ov (fs/path dir "overrides.old"))
+                       (fs/create-dirs ov)
+                       (is (wait-until #(= 3 (count (regs-of ov)))))
+                       (is (wait-until #(= 2 (count (filter (fn [w] (= (n ov) (:path w))) @unwatched)))))))))))))
+
+(deftest a-symlinked-site-edn-is-watched-at-its-target
+  (testing "item 4: only events for the link's own path counted, and an
+            edit of the target happens in another directory"
+    (with-site url-site
+      (fn [dir _]
+        (let [shared (fs/path dir "shared")
+              target (fs/path shared "site.edn")
+              link   (fs/path dir "site.edn")]
+          (fs/create-dirs shared)
+          (fs/move link target)
+          (fs/create-sym-link link target)
+          (let [cfg   (first (diag/collecting (config/load-config (str dir))))
+                specs (dev/watch-specs cfg)]
+            (is (some #{{:path (n shared) :recursive? false :only #{(n target)}}} specs) (pr-str specs))
+            (is (some #{{:path (n dir) :recursive? false :only #{(n link)}}} specs) "the link's own directory too")
+            (is (dev/watched-event? specs (str target)))
+            (is (not (dev/watched-event? specs (str (fs/path shared "other.edn"))))))
+          (pod-dev dir {} {}
+                   (fn [{:keys [regs-of event! builds]}]
+                     (is (= 1 (count (regs-of shared))) "the target's directory is registered")
+                     (spit (fs/file target) (pr-str (assoc-in url-site [:site :title] "B")))
+                     (event! target)
+                     (is (wait-until #(= 2 (count @builds))))
+                     (testing "the link pointed elsewhere: followed"
+                       (let [other (fs/path dir "elsewhere")]
+                         (fs/create-dirs other)
+                         (spit (fs/file other "site.edn") (pr-str url-site))
+                         (fs/delete link)
+                         (fs/create-sym-link link (fs/path other "site.edn"))
+                         (event! link)
+                         (is (wait-until #(= 3 (count @builds))))
+                         (is (wait-until #(= 1 (count (regs-of other))))))))))))))
+
+(deftest a-content-dir-moved-in-site-edn-is-watched-in-pod-mode
+  (testing "n4e: without (reset! specs …) in on-config, pod-mode dev never
+            followed a moved :content :dir"
+    (with-site url-site
+      (fn [dir _]
+        (fs/create-dirs (fs/path dir "notes" "01.Guide"))
+        (spit (fs/file dir "notes" "01.Guide" "01.t.md") article)
+        (pod-dev dir {} {}
+                 (fn [{:keys [regs-of event! builds accept?]}]
+                   (is (not (accept? (str (fs/path dir "notes" "01.Guide" "01.t.md")))) "not yet")
+                   (spit (fs/file dir "site.edn") (pr-str (assoc url-site :content {:dir "notes" :write-front-matter false})))
+                   (event! (fs/path dir "site.edn"))
+                   (is (wait-until #(= 2 (count @builds))))
+                   (is (wait-until #(= 1 (count (regs-of (fs/path dir "notes"))))) "notes/ is registered")
+                   (is (accept? (str (fs/path dir "notes" "01.Guide" "01.t.md"))) "and its events accepted")
+                   (event! (fs/path dir "notes" "01.Guide" "01.t.md"))
+                   (is (wait-until #(= 3 (count @builds))))))))))
+
+(deftest the-pod-s-events-are-filtered
+  (testing "n5c: without :accept?, a file beside site.edn was a change"
+    (with-site url-site
+      (fn [dir _]
+        (pod-dev dir {} {}
+                 (fn [{:keys [accept?]}]
+                   (is (some? accept?))
+                   (is (accept? (str (fs/path dir "site.edn"))))
+                   (is (accept? (str (fs/path dir "content" "01.Guide" "01.t.md"))))
+                   (doseq [f ["notes.txt" "permalinks.edn" "dist/index.html"]]
+                     (is (not (accept? (str (fs/path dir f)))) f))))))))
+
+(deftest the-build-s-own-writes-never-rebuild
+  (testing "n5c's loop: with the filter gone, permalinks.edn (rewritten by
+            every build) and front-matter write-back each triggered another
+            build, for ever"
+    (with-site (assoc-in url-site [:content :write-front-matter] true)
+      (fn [dir _]
+        (let [a (fs/path dir "content" "01.Guide" "02.new.md")]
+          (spit (fs/file a) "---\ntitle: New\ndate: \"2026-02-01 00:00:00\"\n---\n\nBody\n")
+          (pod-dev dir {:no-write false} {}
+                   (fn [{:keys [builds event!]}]
+                     (is (str/includes? (slurp (fs/file a)) "permalink:") "auto-filled")
+                     (is (fs/exists? (fs/path dir "permalinks.edn")))
+                     (Thread/sleep 700)
+                     (is (= 1 (count @builds)) "the first build's own writes rebuild nothing")
+                     (event! (fs/path dir "notes.txt"))
+                     (is (wait-until #(= 2 (count @builds))) "notes.txt, unfiltered, is one rebuild")
+                     (Thread/sleep 700)
+                     (is (= 2 (count @builds)) "and then nothing: no loop")
+                     (testing "an edit of a file the build wrote is still a change"
+                       (spit (fs/file a) (str (slurp (fs/file a)) "\nedited\n"))
+                       (event! a)
+                       (is (wait-until #(= 3 (count @builds))))
+                       (Thread/sleep 700)
+                       (is (= 3 (count @builds)))))
+                   {:accept-all? true :inotify? true}))))))
+
+(deftest each-startup-path-is-registered-once
+  (testing "n4f: without (reset! registered …) every startup path was
+            registered again by the follower, with a spurious rebuild"
+    (with-site url-site
+      (fn [dir _]
+        (pod-dev dir {} {}
+                 (fn [{:keys [regs builds]}]
+                   (Thread/sleep 600)
+                   (is (= (count @regs) (count (distinct (map :path @regs)))) (pr-str @regs))
+                   (is (= 1 (count @builds)))))))))
+
+(deftest creating-a-watched-top-level-directory-is-one-rebuild
+  (testing "item 13: the site-dir watch's event and the follower each
+            rebuilt — two rebuilds, two reloads"
+    (with-site url-site
+      (fn [dir _]
+        ;; a follower pass well after the debounce, as dev's 1 s is
+        (pod-dev dir {} {:follow-ms 400}
+                 (fn [{:keys [builds event! regs-of out]}]
+                   (let [ov (fs/path dir "overrides")]
+                     (fs/create-dirs ov)
+                     (spit (fs/file ov "custom.css") "body{}")
+                     (event! ov)
+                     (is (wait-until #(= 2 (count @builds))))
+                     (Thread/sleep 900)
+                     (is (= 2 (count @builds)) (str out))
+                     (is (= 1 (count (regs-of ov)))))))))))
+
+(deftest a-content-dir-that-does-not-exist-yet-is-followed
+  (testing "item 24: the build failed, so the config was never adopted,
+            and the directory was never watched once created"
+    (with-site url-site
+      (fn [dir _]
+        (let [moved (pr-str (assoc url-site :content {:dir "notes" :write-front-matter false}))]
+          (testing "with the pod"
+            (pod-dev dir {} {}
+                     (fn [{:keys [regs-of event! builds out]}]
+                       (spit (fs/file dir "site.edn") moved)
+                       (event! (fs/path dir "site.edn"))
+                       (is (wait-until #(str/includes? (str out) "build failed")))
+                       (fs/create-dirs (fs/path dir "notes" "01.Guide"))
+                       (spit (fs/file dir "notes" "01.Guide" "01.t.md") article)
+                       (is (wait-until #(= 1 (count (regs-of (fs/path dir "notes"))))) "registered once it exists")
+                       (is (wait-until #(str/includes? (str out) "rebuilt in")))
+                       (is (wait-until #(= 3 (count @builds)))))))
+          (fs/delete-tree (fs/path dir "notes"))
+          (spit (fs/file dir "site.edn") (pr-str url-site))
+          (testing "polling"
+            (let [polls (atom [])
+                  h (fake-dev dir {} {:poll-watch! (fn [paths _ on-change _]
+                                                     (swap! polls conj {:paths paths :on-change on-change}))})]
+              (try
+                (is (wait-until #(seq @polls)))
+                (spit (fs/file dir "site.edn") moved)
+                (quiet #((:on-change (first @polls)) [(str (fs/path dir "site.edn"))]))
+                (fs/create-dirs (fs/path dir "notes"))
+                (is (wait-until #(some #{(str (fs/path dir "notes"))} (map str ((:paths (first @polls))))))
+                    "the poll loop's paths follow it")
+                (finally (quiet (:stop! h)))))))))))
