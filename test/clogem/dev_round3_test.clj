@@ -698,3 +698,24 @@
                                    {:uri "/pages/t00001/" :headers {"host" printed}})))
                   "serve too"))))
         (is (not-any? dev/loopback-ip? ["0.0.0.0" "::" "192.0.2.1" "no-such-host.invalid"]))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 20: listen-error cosmetics
+
+(deftest a-bad-option-or-a-bracketed-host-is-one-clean-line
+  (testing "item 20: `--port abc` dumped babashka.cli's whole spec"
+    (doseq [v [#'cli/dev #'cli/serve]]
+      (let [e (try (bcli/parse-opts ["--port" "abc"] (:org.babashka/cli (meta v)))
+                   nil
+                   (catch clojure.lang.ExceptionInfo e e))]
+        (is (some? e) (str v))
+        (is (= 1 (:babashka/exit (ex-data e))) (str v))
+        (is (re-matches #"clogem-press: Invalid value for option --port: [^\n]*" (str (ex-message e)))
+            (ex-message e))
+        (is (nil? (:spec (ex-data e))) "no spec to dump"))))
+  (testing "item 20: `--host [::1]` printed `cannot listen on [[::1]]:PORT`"
+    (let [e (try (dev/run-server! (fn [_]) {:ip "[::1]" :port 70000}) nil
+                 (catch clojure.lang.ExceptionInfo e e))]
+      (is (str/includes? (str (ex-message e)) "cannot listen on [::1]:70000") (ex-message e)))
+    (is (= "http://[::1]:1888/" (dev/url-for {:ip "[::1]" :port 1888} "/")))
+    (is (= "http://[::1]:1888/" (dev/url-for {:ip "::1" :port 1888} "/")))))

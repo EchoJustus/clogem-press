@@ -122,8 +122,17 @@
 ;; ---------------------------------------------------------------------------
 ;; Tasks
 
+(defn option-error
+  "babashka.cli's `:error-fn` for every task: a bad option — `--port abc`
+  — is one line and exit 1, not babashka's dump of the whole spec
+  (P4-D.3 item 20)."
+  [{:keys [msg]}]
+  (throw (ex-info (str "clogem-press: " msg " (`--help` lists the options).")
+                  {:babashka/exit 1})))
+
 (defn ^{:org.babashka/cli
-        {:spec (merge common-spec
+        {:error-fn option-error
+         :spec (merge common-spec
                       {:out      {:desc out-desc :alias :o :ref "<dir>"}
                        :base     {:desc "Site base path, e.g. /project/." :ref "<path>"}
                        :no-write {:desc "Read-only build: never touch source files." :coerce :boolean}
@@ -232,7 +241,8 @@
         result))))
 
 (defn ^{:org.babashka/cli
-        {:spec (assoc common-spec
+        {:error-fn option-error
+         :spec (assoc common-spec
                       :tool {:desc "The tool to fetch: pagefind, chroma or fswatcher."
                              :default "pagefind" :ref "<name>"})}}
   fetch-tool
@@ -253,7 +263,7 @@
     (println bin)
     bin))
 
-(defn ^{:org.babashka/cli {:spec (assoc common-spec
+(defn ^{:org.babashka/cli {:error-fn option-error :spec (assoc common-spec
                                         :dry-run {:desc "Report what would be written, write nothing."
                                                   :coerce :boolean})}}
   fm-fix
@@ -274,7 +284,7 @@
         (println (format "clogem-press: normalized %d file(s)" (+ n (count created))))))
     plan))
 
-(defn ^{:org.babashka/cli {:spec common-spec}}
+(defn ^{:org.babashka/cli {:error-fn option-error :spec common-spec}}
   doctor
   [opts]
   ;; Config diagnostics are part of the report, not a gate in front of it: a
@@ -323,7 +333,7 @@
                       {:clogem/errors errs :clogem/warnings warns :babashka/exit 1})))
     {:warnings warns :errors errs}))
 
-(defn ^{:org.babashka/cli {:spec (assoc common-spec
+(defn ^{:org.babashka/cli {:error-fn option-error :spec (assoc common-spec
                                         :out {:desc out-desc :alias :o :ref "<dir>"})}}
   clean
   [opts]
@@ -341,7 +351,8 @@
    :host {:desc "Address to listen on; 0.0.0.0 for every interface." :default "127.0.0.1" :ref "<addr>"}})
 
 (defn ^{:org.babashka/cli
-        {:spec (merge common-spec server-spec
+        {:error-fn option-error
+         :spec (merge common-spec server-spec
                       ;; no :default (P4-D.3 item 2): it hid site.edn's :build :out
                       {:dir  {:desc "Directory to serve (default: --out, else site.edn's :build :out, else dist)." :ref "<dir>"}
                        :out  {:desc "Output directory to serve, from --site-dir, as `build --out` names it." :alias :o :ref "<dir>"}
@@ -352,7 +363,8 @@
   ((requiring-resolve 'clogem.dev/serve!) opts))
 
 (defn ^{:org.babashka/cli
-        {:spec (merge common-spec server-spec
+        {:error-fn option-error
+         :spec (merge common-spec server-spec
                       {:out      {:desc out-desc :alias :o :ref "<dir>"}
                        :base     {:desc "Site base path, e.g. /project/; the site is served there." :ref "<path>"}
                        :poll     {:desc "Poll the filesystem instead of using inotify."
@@ -372,7 +384,7 @@
   [opts]
   ((requiring-resolve 'clogem.dev/dev!) opts))
 
-(defn ^{:org.babashka/cli {:spec {:pattern {:desc "Only run test namespaces matching this substring."
+(defn ^{:org.babashka/cli {:error-fn option-error :spec {:pattern {:desc "Only run test namespaces matching this substring."
                                             :ref "<str>"}}}}
   test-cmd
   [opts]

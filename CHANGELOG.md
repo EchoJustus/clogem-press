@@ -132,7 +132,10 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   resolve, is not this machine's or has no address family here (`::1` on
   an IPv4-only host)** is one error naming the host and port (exit 1), not
   a stack trace; `bb dev` binds before its first build, so it writes
-  nothing then. `--port 0` prints the port it got.
+  nothing then. `--port 0` prints the port it got. An option value that
+  does not parse (`--port abc`) is one line too, not babashka's dump of
+  the whole option spec, and `--host [::1]` is printed `[::1]`, not
+  `[[::1]]` (P4-D.3).
 - **A `:base` with non-ASCII characters or a space** (`/文档/`, `/my docs/`)
   is mounted by `dev` and `serve`; it 404'd. A base written
   percent-encoded (`"/%E6%96%87/"`) is the same base as `"/文/"`; it was
