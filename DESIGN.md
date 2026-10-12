@@ -675,11 +675,12 @@ listen on 127.0.0.1 unless given `--host`.
   a sweep counts a directory as live only when both match — a container's `bb dev` is often pid 1.
 - **The handler checks before it touches the disk**: the decoded path lexically (no backslash, `:`,
   NUL or `..` past the root), then the canonical path of the file served, a directory's
-  `index.html` included. Files of 1 MB or more are streamed through http-kit's async channel in
-  64 KB chunks — the next chunk is read only once http-kit has written the last out, so a download
-  holds one chunk however slow its client, and the file is closed when it ends (P4-D.3: the D.2
-  mapping outlived the response, which on Windows kept a rebuild from replacing the file, and could
-  not map 2 GiB) — smaller ones are read whole, both from one open. On a loopback bind — decided on
+  `index.html` included. A file under 1 MB is read whole, from one open, so a rebuild swapping it
+  mid-response cannot mix two versions; a larger one is a plain `File` body, as in 0.2.0, which
+  http-kit sends with its `Content-Length` (P4-D.4: D.3's chunked stream over the async channel gave
+  HTTP/1.0 an empty body, left a thread and an open file behind a client that dropped a download on a
+  reused keep-alive connection, and raced http-kit on its buffer). A HEAD request gets no body. A
+  file of 2 GiB or more is a clean 500 (Known limitations). On a loopback bind — decided on
   the address `--host` resolves to, so `127.1`, `127.0.0.2`, `::1` and `localhost` all count — a
   request whose `Host` is not `localhost`, `127.0.0.1`, `[::1]` or the address `--host` gave is a 403
   (DNS rebinding). `--host 0.0.0.0` prints `localhost` and says it
@@ -3332,6 +3333,11 @@ their own findings. Item 19 onward are corrections.
   registered. Linux allows 128 instances per user by default (`fs.inotify.max_user_instances`);
   when a registration fails for that limit (too many open files, or no space left on device) dev
   prints one line, releases the pod and polls for the rest of the session.
+- **Large files in `bb dev` and `bb serve`** (pre-existing, 0.2.0; P4-D.4). A file of 1 MB or more
+  is a `File` body, which http-kit reads into the heap whole, or maps from 20 MB up, for each
+  request. On Windows a mapped file cannot be replaced until the mapping is collected, so a rebuild
+  may fail to replace a large asset that was just served until a GC runs. A file of 2 GiB or more
+  cannot be sent at all and is a 500 saying so; GitHub Pages refuses a published site over 1 GB.
 - **The stale-HTML sweep skips a symlinked output directory** (pre-existing, 0.2.0).
   `sweep-stale-html!` checks the out directory with `:nofollow-links`, so with `dist ->
   /var/www/site` the `.html` of deleted articles is never removed there. The temp sweep resolves

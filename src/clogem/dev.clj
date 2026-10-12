@@ -278,101 +278,62 @@
     (some #(resolve-path root (str "/" (fs/file-name %) (subs rel (count "/pagefind"))))
           (search/previous-dirs root))))
 
-(def stream-threshold
-  "Files at least this big are streamed in `chunk-bytes` chunks
-  (`stream-file!`), smaller ones read whole into the heap (P4-D.2 item 6,
-  P4-D.3 item 3). 1 MB covers every Pagefind file, which are what change
-  under a running dev."
+(def whole-read-limit
+  "Files smaller than this are read whole into the heap and sent as bytes
+  (P4-D.2 item 6): what is sent was read at once, so a rebuild swapping the
+  file mid-response cannot mix two versions. 1 MB covers every Pagefind
+  file, which are what change under a running dev. A larger file is a
+  plain `File` body, as 0.2.0 served every file (P4-D.4 item 1)."
   (* 1024 1024))
 
-(def chunk-bytes
-  "The size of each chunk `stream-file!` sends, and so the memory one
-  download of a large file holds."
-  (* 64 1024))
-
-(defn- open-read
-  "A read-only `FileChannel` on `f`, opened once: a file gone by now
-  throws an `IOException` here, before any response exists."
-  ^java.nio.channels.FileChannel [f]
-  (java.nio.channels.FileChannel/open
-   (fs/path f) (into-array java.nio.file.StandardOpenOption [java.nio.file.StandardOpenOption/READ])))
-
 (defn- read-all
-  "Every byte of the open channel `ch` of `n` bytes, as a `byte[]`."
-  [^java.nio.channels.FileChannel ch n]
-  (let [buf (java.nio.ByteBuffer/allocate (int n))]
-    (while (and (.hasRemaining buf) (pos? (.read ch buf))))
-    (java.util.Arrays/copyOf (.array buf) (.position buf))))
+  "Every byte of `f`, read through one open channel: a file gone by now
+  throws an `IOException`, before any response exists."
+  [f]
+  (with-open [ch (java.nio.channels.FileChannel/open
+                  (fs/path f) (into-array java.nio.file.StandardOpenOption [java.nio.file.StandardOpenOption/READ]))]
+    (let [buf (java.nio.ByteBuffer/allocate (int (.size ch)))]
+      (while (and (.hasRemaining buf) (pos? (.read ch buf))))
+      (java.util.Arrays/copyOf (.array buf) (.position buf)))))
 
-(defn stream-file!
-  "Send the open channel `fc` to the http-kit channel `ch` in chunks of
-  `chunk-bytes`, then close both; runs on its own daemon thread. Never
-  more than one chunk is in memory, however slow the client: each chunk
-  is a `ByteBuffer` http-kit writes from as it is, so the next is read
-  only once its position shows the last was written out (P4-D.3 item 3).
-  `closed?` — the client went — ends it, as does a read that fails (a
-  truncated download, never a 500). No mapping: the file is closed when
-  the download ends, so on Windows a rebuild can replace it at once, and
-  a file of 2 GiB or more is served like any other."
-  [ch ^java.nio.channels.FileChannel fc closed?]
-  (doto (Thread.
-         ^Runnable
-         (fn []
-           (try
-             (let [buf (java.nio.ByteBuffer/allocate (int chunk-bytes))]
-               (loop []
-                 (.clear buf)
-                 (let [r (.read fc buf)]
-                   (if (neg? r)
-                     (http/close ch)
-                     (do (.flip buf)
-                         (when (http/send! ch buf false)
-                           ;; wait for http-kit to have written it all
-                           (loop [ms 1]
-                             (when (and (.hasRemaining buf) (not @closed?))
-                               (Thread/sleep (long ms))
-                               (recur (min 50 (* 2 ms)))))
-                           (when-not @closed? (recur))))))))
-             (catch Throwable _ (try (http/close ch) (catch Throwable _ nil)))
-             (finally (try (.close fc) (catch Throwable _ nil)))))
-         "clogem-file-stream")
-    (.setDaemon true)
-    (.start)))
+(def max-file-bytes
+  "The largest file http-kit can send: it reads a `File` body whole, or
+  maps it, as one buffer, so a file of 2 GiB or more fails inside it with
+  a stack trace and a 500 (0.2.0 too). Such a file is refused cleanly
+  (`too-large`); GitHub Pages refuses a published site over 1 GB anyway."
+  Integer/MAX_VALUE)
 
-(defn- streamed
-  "The response for a large file, already open as `fc`: through http-kit's
-  async channel when `req` came from http-kit, streamed by
-  `stream-file!`; else (a direct call, as the tests make) the channel as
-  an `InputStream` body."
-  [req fc headers]
-  (if (:async-channel req)
-    (let [closed? (atom false)]
-      (http/as-channel req
-                       {:on-open  (fn [ch]
-                                    (http/send! ch {:status 200 :headers headers} false)
-                                    (stream-file! ch fc closed?))
-                        :on-close (fn [_ _] (reset! closed? true))}))
-    {:status 200 :headers headers
-     :body (java.nio.channels.Channels/newInputStream fc)}))
+(def ^:private too-large
+  {:status 500
+   :headers {"Content-Type" "text/plain; charset=utf-8"}
+   :body (str "500 Internal Server Error: this file is 2 GiB or more, which the "
+              "clogem-press preview server cannot send.\n")})
 
 (defn- file-response
-  "Serve `f`, opened here, once: a file renamed or deleted since it was
-  resolved is nil (the caller tries elsewhere), never a 500 naming its
-  path. Under `stream-threshold` the bytes are read whole; a larger file
-  is streamed (`streamed`)."
+  "Serve `f`: a file renamed or deleted since it was resolved is nil (the
+  caller tries elsewhere), never a 500 naming its path. Under
+  `whole-read-limit` the bytes are read whole; a larger file is a `File`
+  body, as 0.2.0 served it, which http-kit sends with its `Content-Length`
+  to HTTP/1.0 and HTTP/1.1 alike (P4-D.4 item 1); one of `max-file-bytes`
+  or more is `too-large`. A HEAD request gets the headers and no body:
+  the http-kit in babashka 1.13.219 sent a body to HEAD, which corrupts a
+  keep-alive connection. http-kit then says `Content-Length: 0`."
   [req f inject-reload?]
   (try
     (let [html?   (= "html" (u-ext f))
+          n       (fs/size f)
           headers (cond-> {"Content-Type" (content-type f)}
                     inject-reload? (assoc "Cache-Control" "no-cache"))]
-      (if (and html? inject-reload?)
+      (cond
+        (> n max-file-bytes)            too-large
+        (= :head (:request-method req)) {:status 200 :headers headers :body nil}
+        :else
         {:status 200 :headers headers
-         :body (str/replace (slurp (fs/file f)) "</body>" (str reload-script "</body>"))}
-        (let [fc (open-read f)
-              n  (try (.size fc) (catch Throwable t (.close fc) (throw t)))]
-          (if (< n stream-threshold)
-            (with-open [fc fc] {:status 200 :headers headers :body (read-all fc n)})
-            (streamed req fc headers)))))
+         :body (cond
+                 (and html? inject-reload?)
+                 (str/replace (slurp (fs/file f)) "</body>" (str reload-script "</body>"))
+                 (< n whole-read-limit) (read-all f)
+                 :else                  (fs/file f))}))
     (catch java.io.IOException _ nil)))
 
 (defn- value [x] (if (fn? x) (x) x))
