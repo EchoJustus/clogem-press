@@ -279,43 +279,100 @@
           (search/previous-dirs root))))
 
 (def stream-threshold
-  "Files at least this big are served memory-mapped, smaller ones read
-  whole (P4-D.2 item 6). Reading every file into the heap — what an
-  `InputStream` body made http-kit do — cost a 200 MB file a second before
-  its first byte and 450 MB of heap per client. 1 MB covers every Pagefind
-  file, which are what change under a running dev."
+  "Files at least this big are streamed in `chunk-bytes` chunks
+  (`stream-file!`), smaller ones read whole into the heap (P4-D.2 item 6,
+  P4-D.3 item 3). 1 MB covers every Pagefind file, which are what change
+  under a running dev."
   (* 1024 1024))
 
-(defn file-body
-  "The bytes of `f` as a response body, from ONE open: a `byte[]` under
-  `stream-threshold`, else a read-only mapping (a `ByteBuffer`, which
-  http-kit writes as it is — off-heap, and its first byte at once). Never
-  a `File`, which http-kit would reopen later — and a file gone by then
-  was a 500 naming its path (finding 1)."
-  [f]
-  (with-open [ch (java.nio.channels.FileChannel/open
-                  (fs/path f) (into-array java.nio.file.StandardOpenOption
-                                          [java.nio.file.StandardOpenOption/READ]))]
-    (let [n (.size ch)]
-      (if (< n stream-threshold)
-        (let [buf (java.nio.ByteBuffer/allocate (int n))]
-          (while (and (.hasRemaining buf) (pos? (.read ch buf))))
-          (java.util.Arrays/copyOf (.array buf) (.position buf)))
-        (.map ch java.nio.channels.FileChannel$MapMode/READ_ONLY 0 n)))))
+(def chunk-bytes
+  "The size of each chunk `stream-file!` sends, and so the memory one
+  download of a large file holds."
+  (* 64 1024))
+
+(defn- open-read
+  "A read-only `FileChannel` on `f`, opened once: a file gone by now
+  throws an `IOException` here, before any response exists."
+  ^java.nio.channels.FileChannel [f]
+  (java.nio.channels.FileChannel/open
+   (fs/path f) (into-array java.nio.file.StandardOpenOption [java.nio.file.StandardOpenOption/READ])))
+
+(defn- read-all
+  "Every byte of the open channel `ch` of `n` bytes, as a `byte[]`."
+  [^java.nio.channels.FileChannel ch n]
+  (let [buf (java.nio.ByteBuffer/allocate (int n))]
+    (while (and (.hasRemaining buf) (pos? (.read ch buf))))
+    (java.util.Arrays/copyOf (.array buf) (.position buf))))
+
+(defn stream-file!
+  "Send the open channel `fc` to the http-kit channel `ch` in chunks of
+  `chunk-bytes`, then close both; runs on its own daemon thread. Never
+  more than one chunk is in memory, however slow the client: each chunk
+  is a `ByteBuffer` http-kit writes from as it is, so the next is read
+  only once its position shows the last was written out (P4-D.3 item 3).
+  `closed?` — the client went — ends it, as does a read that fails (a
+  truncated download, never a 500). No mapping: the file is closed when
+  the download ends, so on Windows a rebuild can replace it at once, and
+  a file of 2 GiB or more is served like any other."
+  [ch ^java.nio.channels.FileChannel fc closed?]
+  (doto (Thread.
+         ^Runnable
+         (fn []
+           (try
+             (let [buf (java.nio.ByteBuffer/allocate (int chunk-bytes))]
+               (loop []
+                 (.clear buf)
+                 (let [r (.read fc buf)]
+                   (if (neg? r)
+                     (http/close ch)
+                     (do (.flip buf)
+                         (when (http/send! ch buf false)
+                           ;; wait for http-kit to have written it all
+                           (loop [ms 1]
+                             (when (and (.hasRemaining buf) (not @closed?))
+                               (Thread/sleep (long ms))
+                               (recur (min 50 (* 2 ms)))))
+                           (when-not @closed? (recur))))))))
+             (catch Throwable _ (try (http/close ch) (catch Throwable _ nil)))
+             (finally (try (.close fc) (catch Throwable _ nil)))))
+         "clogem-file-stream")
+    (.setDaemon true)
+    (.start)))
+
+(defn- streamed
+  "The response for a large file, already open as `fc`: through http-kit's
+  async channel when `req` came from http-kit, streamed by
+  `stream-file!`; else (a direct call, as the tests make) the channel as
+  an `InputStream` body."
+  [req fc headers]
+  (if (:async-channel req)
+    (let [closed? (atom false)]
+      (http/as-channel req
+                       {:on-open  (fn [ch]
+                                    (http/send! ch {:status 200 :headers headers} false)
+                                    (stream-file! ch fc closed?))
+                        :on-close (fn [_ _] (reset! closed? true))}))
+    {:status 200 :headers headers
+     :body (java.nio.channels.Channels/newInputStream fc)}))
 
 (defn- file-response
   "Serve `f`, opened here, once: a file renamed or deleted since it was
-  resolved is nil (the caller tries elsewhere), never a 500 naming its path."
-  [f inject-reload?]
+  resolved is nil (the caller tries elsewhere), never a 500 naming its
+  path. Under `stream-threshold` the bytes are read whole; a larger file
+  is streamed (`streamed`)."
+  [req f inject-reload?]
   (try
-    (let [html? (= "html" (u-ext f))
-          body  (if (and html? inject-reload?)
-                  (str/replace (slurp (fs/file f)) "</body>" (str reload-script "</body>"))
-                  (file-body f))]
-      {:status 200
-       :headers (cond-> {"Content-Type" (content-type f)}
-                  inject-reload? (assoc "Cache-Control" "no-cache"))
-       :body body})
+    (let [html?   (= "html" (u-ext f))
+          headers (cond-> {"Content-Type" (content-type f)}
+                    inject-reload? (assoc "Cache-Control" "no-cache"))]
+      (if (and html? inject-reload?)
+        {:status 200 :headers headers
+         :body (str/replace (slurp (fs/file f)) "</body>" (str reload-script "</body>"))}
+        (let [fc (open-read f)
+              n  (try (.size fc) (catch Throwable t (.close fc) (throw t)))]
+          (if (< n stream-threshold)
+            (with-open [fc fc] {:status 200 :headers headers :body (read-all fc n)})
+            (streamed req fc headers)))))
     (catch java.io.IOException _ nil)))
 
 (defn- value [x] (if (fn? x) (x) x))
@@ -387,8 +444,8 @@
           :else
           (let [rel (strip-base base path)]
             (or (when rel
-                  (or (some-> (resolve-path root rel) (file-response inject-reload?))
-                      (some-> (pagefind-fallback root rel) (file-response inject-reload?))))
+                  (or (when-let [f (resolve-path root rel)] (file-response req f inject-reload?))
+                      (when-let [f (pagefind-fallback root rel)] (file-response req f inject-reload?))))
                 (not-found base path)))))
       (catch Throwable _ server-error))))
 

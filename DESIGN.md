@@ -664,8 +664,11 @@ listen on 127.0.0.1 unless given `--host`.
   a sweep counts a directory as live only when both match — a container's `bb dev` is often pid 1.
 - **The handler checks before it touches the disk**: the decoded path lexically (no backslash, `:`,
   NUL or `..` past the root), then the canonical path of the file served, a directory's
-  `index.html` included. Files of 1 MB or more are served as a read-only mapping, smaller ones read
-  whole, both from one open. On a loopback bind, a request whose `Host` is not `localhost`,
+  `index.html` included. Files of 1 MB or more are streamed through http-kit's async channel in
+  64 KB chunks — the next chunk is read only once http-kit has written the last out, so a download
+  holds one chunk however slow its client, and the file is closed when it ends (P4-D.3: the D.2
+  mapping outlived the response, which on Windows kept a rebuild from replacing the file, and could
+  not map 2 GiB) — smaller ones are read whole, both from one open. On a loopback bind, a request whose `Host` is not `localhost`,
   `127.0.0.1` or `[::1]` is a 403 (DNS rebinding). `--host 0.0.0.0` prints `localhost` and says it
   listens on every interface; `--port 0` prints the port it got; a port out of range or an address
   family the host lacks is the same clean error as a busy port.

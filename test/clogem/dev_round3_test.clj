@@ -8,6 +8,7 @@
   Each test names the item it pins down; each failed before its fix."
   (:require [babashka.cli :as bcli]
             [babashka.fs :as fs]
+            [babashka.http-client :as http-client]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [clogem.cli :as cli]
@@ -242,3 +243,123 @@
             (is (wait-until #(= "two" (str (fs/file-name (config/out-dir @(:cfg-ref h)))))))
             (finally (quiet (:stop! h))))
           (is (not (fs/exists? old)) "the old directory's previous bundle went too"))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 3: large files are streamed, never mapped
+
+(defn- with-root [f]
+  (let [root (fs/create-temp-dir {:prefix "clogem-r3root"})]
+    (try (f root) (finally (fs/delete-tree root)))))
+
+(defn- sparse!
+  "A sparse file of `n` bytes at `p`, its last byte 7."
+  [p n]
+  (with-open [f (java.io.RandomAccessFile. (fs/file p) "rw")]
+    (.setLength f n)
+    (.seek f (dec n))
+    (.write f 7)))
+
+(defn- with-server
+  "Run the dev handler over `root` on a real http-kit server; (f get!)
+  where (get! uri) opens a connection: {:status :headers :in}."
+  [root f]
+  (let [srv (dev/run-server! (dev/make-handler root {}) {:ip "127.0.0.1" :port 0 :legacy-return-value? false})
+        port (org.httpkit.server/server-port srv)]
+    (try
+      (f (fn [uri]
+           (let [r (http-client/get (str "http://127.0.0.1:" port uri)
+                                    {:as :stream :throw false :timeout 20000})]
+             {:status   (:status r)
+              :chunked? (= "chunked" (get-in r [:headers "transfer-encoding"]))
+              :in       (:body r)})))
+      (finally (org.httpkit.server/server-stop! srv)))))
+
+(defn- drain
+  "Read `in` to its end: [byte count, last byte]."
+  [^java.io.InputStream in]
+  (with-open [in in]
+    (let [buf (byte-array 65536)]
+      (loop [n 0 last -1]
+        (let [r (.read in buf)]
+          (if (neg? r) [n last] (recur (+ n r) (if (pos? r) (aget buf (dec r)) last))))))))
+
+(defn- maps-or-holds?
+  "Does this process still map, or hold open, the file `p`? (Linux: /proc.)"
+  [p]
+  (let [s (str (fs/canonicalize p))]
+    (boolean
+     ;; `slurp` of a /proc file fails with EINVAL here; a stream reads it
+     (or (str/includes? (with-open [in (java.io.FileInputStream. "/proc/self/maps")]
+                          (String. (.readAllBytes in) "UTF-8"))
+                        s)
+         (some #(= s (try (str (fs/read-link %)) (catch Exception _ nil)))
+               (fs/list-dir "/proc/self/fd"))))))
+
+(defn- stream-threads []
+  (filter #(= "clogem-file-stream" (.getName ^Thread %)) (keys (Thread/getAllStackTraces))))
+
+(deftest a-large-file-is-streamed-and-released-when-the-response-ends
+  (testing "item 3: a 1 MB+ file was a MappedByteBuffer that outlived the
+            response — on Windows a rebuild could not replace it until a GC"
+    (with-root
+      (fn [root]
+        (spit (fs/file root "small.txt") "small")
+        (sparse! (fs/path root "big.bin") (+ 10 (* 2 1024 1024)))
+        (let [h (dev/make-handler root {})]
+          (is (bytes? (:body (h {:uri "/small.txt"}))) "small: read whole")
+          (let [b (:body (h {:uri "/big.bin"}))]
+            (is (not (instance? java.nio.ByteBuffer b)) "big: no mapping")
+            (is (not (instance? java.io.File b)) "never a File")
+            (when (instance? java.io.Closeable b) (.close ^java.io.Closeable b))))
+        (with-server root
+          (fn [get!]
+            (let [{:keys [status chunked? in]} (get! "/big.bin")]
+              (is (= 200 status))
+              (is chunked? "streamed in chunks")
+              (is (= [(+ 10 (* 2 1024 1024)) 7] (drain in)) "whole"))
+            (is (wait-until #(empty? (stream-threads))) "its thread ends")
+            (when (fs/exists? "/proc/self/maps")
+              (is (wait-until #(not (maps-or-holds? (fs/path root "big.bin"))))
+                  "nothing maps or holds the file once the response ends"))
+            (testing "a client that goes away mid-download"
+              (let [{:keys [in]} (get! "/big.bin")]
+                (.read ^java.io.InputStream in)
+                (.close ^java.io.InputStream in))
+              (is (wait-until #(empty? (stream-threads)) 10000) "ends the stream")
+              (when (fs/exists? "/proc/self/maps")
+                (is (wait-until #(not (maps-or-holds? (fs/path root "big.bin"))) 10000))))))))))
+
+(deftest a-file-of-2-gib-or-more-is-served
+  (testing "item 3: FileChannel.map takes at most Integer.MAX_VALUE bytes,
+            so a 2 GiB file was a 500"
+    (with-root
+      (fn [root]
+        (let [n (+ 1024 (* 2 1024 1024 1024))]
+          (sparse! (fs/path root "huge.bin") n)
+          (with-server root
+            (fn [get!]
+              (let [t0 (System/currentTimeMillis)
+                    {:keys [status in]} (get! "/huge.bin")]
+                (is (= 200 status))
+                (is (<= 0 (.read ^java.io.InputStream in)) "a first byte")
+                (is (< (- (System/currentTimeMillis) t0) 2000) "at once, whatever the size")
+                (is (= [(dec n) 7] (drain in)) "and the rest")))))))))
+
+(deftest a-large-file-that-vanishes-is-a-404-without-a-path
+  (testing "item 3 keeps finding 1: resolved, then gone before it is opened"
+    (with-root
+      (fn [root]
+        (let [ghost (fs/path root "gone.bin")
+              h     (dev/make-handler root {})]
+          (with-redefs [dev/resolve-path (fn [& _] ghost)]
+            (let [r (h {:uri "/gone.bin"})]
+              (is (= 404 (:status r)))
+              (is (not (str/includes? (str (:body r)) (str root))))))
+          (testing "deleted mid-download: the open file is still sent whole"
+            (sparse! (fs/path root "big.bin") (* 3 1024 1024))
+            (with-server root
+              (fn [get!]
+                (let [{:keys [status in]} (get! "/big.bin")]
+                  (is (= 200 status))
+                  (fs/delete (fs/path root "big.bin"))
+                  (is (= [(* 3 1024 1024) 7] (drain in))))))))))))

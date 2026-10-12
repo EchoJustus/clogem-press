@@ -78,9 +78,13 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   container) is not mistaken for it.
 - **A file renamed while dev served it** is a 404, never a 500 whose body
   named its absolute path (reachable with `--host 0.0.0.0`). Files of
-  1 MB or more are served memory-mapped, the rest read whole, both from
-  one open: a 200 MB file waited a second for its first byte and took
-  450 MB of heap per client.
+  1 MB or more are streamed in 64 KB chunks, the next read only once the
+  last is written out, so one download holds one chunk however slow the
+  client; smaller files are read whole. Both come from one open: a 200 MB
+  file waited a second for its first byte and took 450 MB of heap per
+  client. (D.2 mapped large files instead; P4-D.3 dropped the mapping,
+  which outlived the response — on Windows a rebuild could not replace a
+  served file until a GC ran — and made a file of 2 GiB or more a 500.)
 - **Neither server serves outside its directory through a link**: a
   directory's `index.html` linked outside it was served (`GET /dir/`). A
   request path with a backslash, a `:`, a NUL or a `..` past the root is

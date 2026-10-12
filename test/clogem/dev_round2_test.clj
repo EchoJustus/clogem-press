@@ -123,7 +123,7 @@
   (let [root (fs/create-temp-dir {:prefix "clogem-r2root"})]
     (try (f root) (finally (fs/delete-tree root)))))
 
-(deftest a-big-file-is-mapped-not-read-into-the-heap
+(deftest a-big-file-is-not-read-into-the-heap
   (testing "item 6: an InputStream body made http-kit read the whole file
             before its first byte"
     (with-root
@@ -134,7 +134,9 @@
         (let [h (dev/make-handler root {})]
           (is (bytes? (:body (h {:uri "/small.txt"}))) "small: read whole, from one open")
           (is (= "small" (String. ^bytes (:body (h {:uri "/small.txt"})) "UTF-8")))
-          (is (instance? java.nio.ByteBuffer (:body (h {:uri "/big.bin"}))) "big: a mapping")
+          ;; P4-D.3 item 3: streamed, not mapped (dev-round3-test); called
+          ;; directly, without http-kit's channel, it is a stream on one open
+          (is (instance? java.io.InputStream (:body (h {:uri "/big.bin"}))) "big: a stream")
           (is (not-any? #(instance? java.io.File (:body (h {:uri %}))) ["/small.txt" "/big.bin"]) "never a File")
           (testing "and http-kit sends both, whole"
             (let [srv (dev/run-server! h {:ip "127.0.0.1" :port 0 :legacy-return-value? false})]
