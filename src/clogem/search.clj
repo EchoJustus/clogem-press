@@ -316,11 +316,12 @@
   every directory of a process no longer running, and any older-named one;
   this process's own staging and retiring directories (it runs one index
   at a time, so none is in use); and, with `:own-previous?` — `bb dev`
-  stopping — this process's previous bundles too. Never through a link.
+  stopping — this process's previous bundles too. Never through a link,
+  and only in a directory clogem made (`config/out-owned?`, P4-D.3 item 1).
   Returns the paths deleted."
   [out & [{:keys [own-previous?]}]]
   (vec
-   (for [{:keys [kind legacy? path pid start] :as d} (work-dirs out)
+   (for [{:keys [kind legacy? path pid start] :as d} (when (config/out-owned? out) (work-dirs out))
          :when (cond
                  legacy?   true
                  (mine? d) (or (not= "prev" kind) own-previous?)

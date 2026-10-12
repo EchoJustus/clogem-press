@@ -411,6 +411,8 @@
             readme (fs/path blocker "readme.txt")]
         (fs/create-dirs blocker)
         (spit (fs/file readme) "kept")
+        ;; an earlier build's output directory (P4-D.3 item 1)
+        (config/mark-out-dir! out)
         (dotimes [_ 2]
           (let [e (try (write! out [(out-of (fs/path out "a.txt") "a")
                                     (out-of blocker "now a file")])
@@ -649,6 +651,8 @@
                      p)]
         (fs/create-dirs real)
         (fs/create-sym-link out real)
+        ;; an earlier build's output directory (P4-D.3 item 1)
+        (config/mark-out-dir! out)
         ;; pages/gone/ holds only a temp file: the stale-HTML sweep has the
         ;; same blind spot for a linked out (DESIGN §11.3, Phase 5)
         (write! out [(out-of (fs/path out "index.html") "home")])
@@ -673,6 +677,8 @@
             blocker (fs/path out "assets" "docs")]
         (fs/create-dirs (fs/parent blocker))
         (spit (fs/file blocker) "an earlier build's file")
+        ;; an earlier build's output directory (P4-D.3 item 1)
+        (config/mark-out-dir! out)
         (dotimes [_ 2]
           (let [e (try (write! out [(out-of (fs/path out "a.txt") "a")
                                     (out-of (fs/path blocker "readme.txt") "now in a directory")
@@ -686,7 +692,7 @@
             (is (re-find #"clean" (str (ex-message e))) (ex-message e)))
           (is (= "an earlier build's file" (slurp (fs/file blocker))) "the blocker is unchanged")
           (is (empty? (temp-files out)) "no temp file is left")
-          (is (= #{"assets"} (set (map #(str (fs/file-name %)) (fs/list-dir out))))
+          (is (= #{"assets" config/out-marker} (set (map #(str (fs/file-name %)) (fs/list-dir out))))
               "checked before anything is written")
           (is (= ["docs"] (map #(str (fs/file-name %)) (fs/list-dir (fs/path out "assets"))))))
         (testing "a symlinked directory below out is still a directory"
@@ -851,6 +857,8 @@
             link (fs/path out "assets" "docs")]
         (fs/create-dirs (fs/parent link))
         (fs/create-sym-link link (fs/path d "nowhere"))
+        ;; an earlier build's output directory (P4-D.3 item 1)
+        (config/mark-out-dir! out)
         (let [e (try (write! out [(out-of (fs/path link "readme.txt") "x")]) nil
                      (catch clojure.lang.ExceptionInfo e e))]
           (is (= 1 (:babashka/exit (ex-data e))))

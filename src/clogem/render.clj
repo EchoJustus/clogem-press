@@ -1221,6 +1221,9 @@
         files (mapv :file outputs)
         cache (atom {})]
     (check-outputs! out (concat outputs reserved))
+    ;; P4-D.3 item 1: what makes it a directory `bb clean` may delete —
+    ;; once the outputs are known to fit, before the first is written
+    (config/mark-out-dir! out)
     (sweep-temp-files! out)
     (reduce (fn [acc {:keys [file bytes]}]
               (if (same-bytes? cache file bytes)
@@ -1335,6 +1338,8 @@
   stale pages, and stale files under `<out>/clogem/`, which is the
   generator's own (`sweep-stale-html!`)."
   [{:keys [outputs reserved out] :as rendered}]
+  ;; P4-D.3 item 1: never into, or sweeping, a directory clogem did not make
+  (config/check-out-owned! out "the build will not write into or remove anything from")
   (fs/create-dirs out)
   (let [{:keys [written unchanged files]} (write-outputs! out outputs reserved)
         stale (sweep-stale-html! out files)

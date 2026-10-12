@@ -143,6 +143,8 @@
         cfg  (cond-> (load-cfg! opts)
                dev? (assoc :clogem/dev? true)
                (or (:clogem/dev-loop? opts) (:clogem/dev? opts)) (assoc :clogem/dev-loop? true))]
+    ;; P4-D.3 item 1: before front matter is written back, too
+    (config/check-out-owned! (config/out-dir cfg) "the build will not write into or remove anything from")
     ;; Pass 1 — normalize front matter. Its diagnostics are discarded because
     ;; pass 2 re-derives them from the normalized tree and is the authoritative
     ;; report; but content ERRORS abort before anything is written, since
@@ -297,6 +299,13 @@
                    (render/check-code-languages! m)
                    ;; … and outputs of one build that would collide
                    (render/check-output-collisions! m)
+                   ;; … and an output directory clogem did not make
+                   ;; (P4-D.3 item 1), which build and clean refuse
+                   (let [out (config/out-dir cfg)]
+                     (when (config/foreign-out-dir? out)
+                       (diag/error! nil (str/replace (first (str/split-lines (config/foreign-out-message out "a build would refuse")))
+                                                     #"^clogem-press: " "")
+                                    "Choose another output directory with `--out` or :build :out, or move that directory away.")))
                    m)))
         ds    (into (vec cds) ds)
         errs  (diag/errors ds)
@@ -320,6 +329,9 @@
   [opts]
   (let [cfg (load-cfg! opts)
         out (config/out-dir cfg)]
+    ;; P4-D.3 item 1: only a directory clogem made — an empty one is
+    ;; nothing to lose
+    (config/check-out-owned! out "`bb clean` will not delete")
     (when (fs/exists? out) (fs/delete-tree out))
     (println "clogem-press: removed" (str out))))
 

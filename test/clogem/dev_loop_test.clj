@@ -589,6 +589,7 @@
         init  (java.lang.ProcessHandle/of 1)
         i-st  (some-> init (.orElse nil) .info .startInstant (.orElse nil) .toEpochMilli)]
     (try
+      (config/mark-out-dir! out)   ; an output directory clogem made (P4-D.3 item 1)
       (fs/create-dirs (fs/path out ".pagefind-staging-999999999-1-1"))     ; no such process
       (fs/create-dirs (fs/path out (str ".pagefind-old-" (.pid me) "-" start "-2")))  ; this one's
       (fs/create-dirs (fs/path out (str ".pagefind-prev-" (.pid me) "-" start "-3"))) ; in use: kept
@@ -598,12 +599,12 @@
       (fs/create-dirs (fs/path out ".pagefind-prev"))            ; D.1's single previous bundle
       (when i-st (fs/create-dirs (fs/path out (str ".pagefind-staging-1-" i-st "-5"))))
       (search/sweep-staging! out)
-      (is (= (cond-> #{(str ".pagefind-prev-" (.pid me) "-" start "-3")}
+      (is (= (cond-> #{config/out-marker (str ".pagefind-prev-" (.pid me) "-" start "-3")}
                i-st (conj (str ".pagefind-staging-1-" i-st "-5")))
              (set (map #(str (fs/file-name %)) (fs/list-dir out)))))
       (testing "dev stopping takes its own previous bundles too"
         (search/sweep-staging! out {:own-previous? true})
-        (is (= (if i-st #{(str ".pagefind-staging-1-" i-st "-5")} #{})
+        (is (= (cond-> #{config/out-marker} i-st (conj (str ".pagefind-staging-1-" i-st "-5")))
                (set (map #(str (fs/file-name %)) (fs/list-dir out))))))
       (finally (fs/delete-tree out)))))
 

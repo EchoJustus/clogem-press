@@ -291,7 +291,7 @@
             outside (fs/path dir "outside")]
         (spit (fs/file dir "site.edn") (pr-str (assoc url-site :search {:provider :pagefind}
                                                       :tools {:pagefind {:path bin}})))
-        (fs/create-dirs out)
+        (config/mark-out-dir! out)   ; a killed dev's output directory (P4-D.3 item 1)
         (fs/create-dirs (fs/path out ".pagefind-staging-999999999-1" "fragment"))
         (fs/create-dirs (fs/path out ".pagefind-old-999999999-2"))
         (fs/create-dirs (fs/path out ".pagefind-prev"))

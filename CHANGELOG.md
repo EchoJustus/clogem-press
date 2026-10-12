@@ -121,6 +121,21 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   `clean`: the CLI's `--out` defaulted to `dist` and overrode it every
   time. `--out` still wins. A site whose CI passes `--out` (the live
   site's passes `--out ../dist`) is unaffected.
+- **An output directory can no longer be a source directory** (P4-D.3).
+  `:build :out "assets"` passed `doctor`, then the build swept
+  `assets/mine.html` as a stale page and `bb clean` deleted `assets/`.
+  `build`, `clean` and `doctor` now refuse — as a config error — an
+  output directory, from `site.edn` or `--out`, that is, holds or is
+  inside the content, assets, i18n or overrides directory or a `.git`,
+  or is the site directory or an ancestor of it; a `site.edn` value must
+  also stay inside the site directory (absolute, `..` and links
+  included), while `--out` may point elsewhere (`--out ../dist`).
+- **Builds mark their output directory** with a `.clogem-output` file, and
+  `bb clean`, the stale-page sweep and the search sweeps delete only in a
+  marked directory: an existing, non-empty directory without the marker is
+  refused by `build` and `clean`, and reported by `doctor`. A `dist/` an
+  earlier version wrote (it holds `clogem/` and `index.html`) is adopted
+  and marked by the next build.
 - **`bb serve` with an unreadable `site.edn`** warns and serves at `/`, as
   0.2.0 did (`--base` needs no config); it exited 1.
 - **Messages:** the pod fallback line has one `clogem-press:` prefix and
