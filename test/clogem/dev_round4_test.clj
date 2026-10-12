@@ -512,3 +512,51 @@
         (testing "the option error's pointer to --help is true"
           (let [[v] (run-task #'cli/serve dir "--port" "abc")]
             (is (re-find #"`--help` lists the options" (str (ex-msg v))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 6: the change that hit the inotify limit is built
+
+(deftest the-change-that-hits-the-inotify-limit-is-built
+  (testing "item 6: dev fell back to polling, and the poller's first
+            snapshot already held the new directories, so their pages were
+            never built until another edit"
+    (with-site url-site
+      (fn [dir]
+        (let [out    (java.io.StringWriter.)
+              cb     (atom nil)
+              k      (atom 0)
+              after  (atom 0)          ; registrations after startup
+              started? (atom false)
+              register! (fn [spec]
+                          ;; the second registration after startup is the
+                          ;; one past the system's limit
+                          (when (and @started? (= 2 (swap! after inc)))
+                            (throw (ex-info "inotify_init1: too many open files" {})))
+                          {:w (swap! k inc) :path (:path spec)})
+              pod (fn [_cfg on-change {:keys [specs accept? on-ready]}]
+                    (reset! cb {:on-change on-change :accept? accept?})
+                    (let [ws (mapv register! specs)]
+                      (on-ready register! {:unwatch! (fn [_]) :watchers (zipmap (map :path specs) ws)}))
+                    true)
+              event! (fn [p type]
+                       (let [{:keys [on-change accept?]} @cb]
+                         (when (accept? (str p)) (on-change (with-meta [(str p)] {:type type})))))
+              h (binding [*out* out *err* out]
+                  (dev/start-dev! {:site-dir (str dir) :port 1888 :no-write true :no-search true :interval 100}
+                                  {:run-server! (fn [& _] (fn [& _] nil))
+                                   :try-pod-watch! pod
+                                   :poll-watch! dev/poll-watch!
+                                   :follow-ms 50
+                                   :notify! (fn [_]) :notify-error! (fn [_])}))
+              page (fn [id] (fs/path dir "dist" "pages" id "index.html"))]
+          (try
+            (reset! started? true)
+            (doseq [[d id] [["50.A" "a00001"] ["51.B" "b00002"]]]
+              (fs/create-dirs (fs/path dir "content" d))
+              (spit (fs/file dir "content" d "01.p.md") (str/replace article "t00001" id)))
+            (event! (fs/path dir "content" "50.A") :create)
+            (event! (fs/path dir "content" "51.B") :create)
+            (is (wait-until #(str/includes? (str out) "inotify limit is reached") 5000) (str out))
+            (is (wait-until #(and (fs/exists? (page "a00001")) (fs/exists? (page "b00002"))) 5000)
+                (str "both new directories' pages are built:\n" out))
+            (finally (binding [*out* out *err* out] ((:stop! h))))))))))

@@ -803,11 +803,15 @@
   `paths-fn` is called on every pass, so a `site.edn` change that moves
   `:content :dir` is followed without a restart. A `Throwable` in one pass
   is reported and the loop goes on: an `Error` used to end the polling
-  thread silently, and with it every rebuild."
-  [paths-fn interval on-change & [{:keys [stop?] :or {stop? (constantly false)}}]]
-  (let [roots #(set (map norm %))]
-    (loop [prev-roots (roots (paths-fn))
-           prev       (snapshot prev-roots)]
+  thread silently, and with it every rebuild. `on-baseline` is called
+  once the first snapshot is taken: a change before it is never seen."
+  [paths-fn interval on-change & [{:keys [stop? on-baseline] :or {stop? (constantly false)}}]]
+  (let [roots #(set (map norm %))
+        r0    (roots (paths-fn))
+        s0    (snapshot r0)]
+    (when on-baseline (on-baseline))
+    (loop [prev-roots r0
+           prev       s0]
       (Thread/sleep (long interval))
       (when-not (stop?)
         (let [rs  (try (roots (paths-fn)) (catch Throwable _ prev-roots))
@@ -1709,14 +1713,19 @@
                              (println (format "clogem-press: watching by polling every %d ms" interval))
                              (spawn #(poll* paths interval submit! {:stop? (fn [] @stopping)}))))
           ;; the system's inotify limit, reached mid-session: polling from
-          ;; here on, with the pod's watches all released (P4-D.3 item 5)
+          ;; here on, with the pod's watches all released (P4-D.3 item 5).
+          ;; The change that hit the limit, and the rest of its batch, are
+          ;; in the poller's first snapshot, so it never sees them: one
+          ;; full rebuild once that snapshot is taken (P4-D.4 item 6)
           fall-back-to-polling! (fn [why]
                                   (when-not @stopping
                                     (println (str "clogem-press: the system's inotify limit is reached (" why
                                                   "); dev polls every " interval " ms for the rest of this session."))
                                     (reset! registered {})
                                     (unload-pod! @pod-id)
-                                    (spawn #(poll* paths interval submit! {:stop? (fn [] @stopping)}))))
+                                    (spawn #(poll* paths interval submit!
+                                                   {:stop?       (fn [] @stopping)
+                                                    :on-baseline (fn [] (submit! (mapv str (paths))))}))))
           ;; pod events: a directory the pod must be told about goes to
           ;; the follower (pod calls never run on the pod's callback
           ;; thread), which registers it and submits it with its files

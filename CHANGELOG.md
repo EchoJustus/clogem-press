@@ -116,7 +116,8 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   re-registration that fails keeps the working watch and is retried. At
   the system's limit (too many open files, or no space left on device)
   dev prints one line, releases the pod and polls for the rest of the
-  session.
+  session, rebuilding once as polling starts: the change that hit the
+  limit was otherwise never built (P4-D.4).
 - **A `:content :dir` that does not exist yet** is followed once it is
   created; the failed build in between left dev watching the old one.
   With `--poll`, the save that moves it is one failed build, not two: the

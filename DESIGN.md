@@ -3340,7 +3340,8 @@ their own findings. Item 19 onward are corrections.
   directory's instance is released when its delete arrives; a replaced one's once its new one is
   registered. Linux allows 128 instances per user by default (`fs.inotify.max_user_instances`);
   when a registration fails for that limit (too many open files, or no space left on device) dev
-  prints one line, releases the pod and polls for the rest of the session.
+  prints one line, releases the pod and polls for the rest of the session, with one full rebuild
+  once the poller has its first snapshot, so the change that hit the limit is built (P4-D.4).
 - **Large files in `bb dev` and `bb serve`** (pre-existing, 0.2.0; P4-D.4). A file of 1 MB or more
   is a `File` body, which http-kit reads into the heap whole, or maps from 20 MB up, for each
   request. On Windows a mapped file cannot be replaced until the mapping is collected, so a rebuild
