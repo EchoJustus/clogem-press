@@ -859,6 +859,28 @@
                    (println "clogem-press: polling failed —" (or (ex-message t) (str t)))))))
         (recur now)))))
 
+(def signal-grace-ms
+  "How long a failure that a stop may have caused — a Pagefind stopped by
+  SIGTERM, a pod that died loading or registering — waits for dev's own
+  `stopping` before it is reported: the process group's signal and the
+  JVM's shutdown hook are not ordered."
+  1000)
+
+(defn- soon?
+  "Does `(pred)` become true within `ms`?"
+  [pred ms]
+  (let [deadline (+ (System/currentTimeMillis) ms)]
+    (loop []
+      (cond (pred) true
+            (> (System/currentTimeMillis) deadline) false
+            :else (do (Thread/sleep 20) (recur))))))
+
+(defn- stop-caused?
+  "Is dev stopping, or does it start to within `signal-grace-ms`?
+  (`stopping?` nil: never.)"
+  [stopping?]
+  (boolean (and stopping? (soon? stopping? signal-grace-ms))))
+
 (def watch-delay-ms
   "The fswatcher pod's event-coalescing window, in ms.
 
@@ -946,12 +968,15 @@
   follower uses for a directory created later (§5.4) — and a map of
   `:unwatch!` (the same spacing) and `:watchers`, the startup
   registrations by path, so a replaced directory's old watch can go."
-  [cfg on-change {:keys [watch unwatch timeout-ms gap-ms sleep specs accept? on-ready]
+  [cfg on-change {:keys [watch unwatch timeout-ms gap-ms sleep specs accept? on-ready stopping?]
                   :or   {timeout-ms default-probe-ms
                          gap-ms     registration-gap-ms
                          sleep      #(Thread/sleep (long %))
                          accept?    (constantly true)}}]
   (let [specs (or specs (filterv #(fs/exists? (:path %)) (watch-specs cfg)))
+        ;; dev stopping — Ctrl-C reached the pod too: a failure here is
+        ;; the stop, not news (P4-D.3 item 14)
+        say!      (fn [& xs] (when-not (stop-caused? stopping?) (apply println xs)))
         dirs  (filterv #(and (:recursive? %) (fs/directory? (:path %))) specs)]
     (if (empty? dirs)
       (do (println "clogem-press: no watchable directory to probe; using polling")
@@ -993,14 +1018,14 @@
           (cond
             (= ::timeout r)
             (do (reset! abandoned? true)
-                (println (format (str "clogem-press: the fswatcher pod did not finish registering "
+                (say! (format (str "clogem-press: the fswatcher pod did not finish registering "
                                       "in %d ms; falling back to polling.")
                                  timeout-ms))
                 false)
 
             error
             (do (reset! abandoned? true)
-                (println "clogem-press: fswatcher could not watch —" error)
+                (say! "clogem-press: fswatcher could not watch —" error)
                 false)
 
             :else
@@ -1029,7 +1054,7 @@
                           :watchers  (zipmap (map :path specs) watchers)}))
                       true)
                   (do (reset! abandoned? true)
-                      (println
+                      (say!
                        (format (str "clogem-press: fswatcher registered but delivered no event "
                                     "within the %d ms probe budget — this environment does not "
                                     "deliver filesystem events (DESIGN.md Appendix A item 5). "
@@ -1228,6 +1253,27 @@
                       (map #(str "    " (str/trim %)) (remove hint? more))
                       (map #(str "  " (str/trim %)) (filter hint? more))))))
 
+(defn- gated-writer
+  "A Writer onto `w` that drops what is written while `(quiet?)` says so.
+  `quiet?` may take its time (`stop-caused?`), so it is asked once per
+  burst — a `println` is several writes — and the answer kept 2 s."
+  [^java.io.Writer w quiet?]
+  (let [decided (atom nil)
+        quiet!  (fn []
+                  (let [now (System/currentTimeMillis)
+                        {:keys [until q]} @decided]
+                    (if (and until (< now until))
+                      q
+                      (let [q (boolean (quiet?))]
+                        (reset! decided {:until (+ (System/currentTimeMillis) 2000) :q q})
+                        q))))]
+    (proxy [java.io.Writer] []
+      (write
+        ([x] (when-not (quiet!) (if (string? x) (.write w ^String x) (.write w (int x)))))
+        ([x off len] (when-not (quiet!) (if (string? x) (.write w ^String x (int off) (int len)) (.write w ^chars x (int off) (int len))))))
+      (flush [] (.flush w))
+      (close [] nil))))
+
 (defn load-pod!
   "Fetch the fswatcher pod through `clogem.tools` — the pinned, per-platform
   sha256, cached under XDG, or `CLOGEM_FSWATCHER` / `:tools :fswatcher
@@ -1236,7 +1282,7 @@
   (`unload-pod!` takes the id), or nil
   after one line saying why (offline on the first run, no asset for this
   platform, a hash that does not match): the caller polls."
-  [cfg]
+  [cfg & [stopping?]]
   (try
     (let [bin (tools/ensure-binary! tools/fswatcher cfg)]
       ;; `babashka.pods` is required in the ns form on purpose. Resolving it
@@ -1249,13 +1295,20 @@
       ;;
       ;; `pod.babashka.fswatcher` still has to be resolved late: it does not exist
       ;; until load-pod has run.
-      (let [{:pod/keys [id]} (pods/load-pod (str bin))]
+      ;; babashka's pod client prints `ERROR: Pod quit unexpectedly` to the
+      ;; `*err*` of this call when the pod's process ends — which the
+      ;; Ctrl-C that stops dev does: dropped then (P4-D.3 item 14)
+      ;; Only the pod client writes there, and only when something failed,
+      ;; so waiting for the hook's flag (`stop-caused?`) costs nothing.
+      (let [{:pod/keys [id]} (binding [*err* (gated-writer *err* #(stop-caused? stopping?))]
+                               (pods/load-pod (str bin)))]
         {:watch   (requiring-resolve 'pod.babashka.fswatcher/watch)
          :unwatch (requiring-resolve 'pod.babashka.fswatcher/unwatch)
          :pod-id  id}))
     (catch Throwable e
-      (println (str "clogem-press: the fswatcher pod is unavailable, so dev watches by polling: "
-                    (one-line (or (ex-message e) (str e)))))
+      (when-not (stop-caused? stopping?)
+        (println (str "clogem-press: the fswatcher pod is unavailable, so dev watches by polling: "
+                      (one-line (or (ex-message e) (str e))))))
       nil)))
 
 (defn unload-pod!
@@ -1270,11 +1323,12 @@
   registered *and* delivered an event within the probe window; otherwise
   false, with the pod unloaded."
   [cfg on-change & [opts]]
-  (if-let [fns (load-pod! cfg)]
+  (if-let [fns (load-pod! cfg (:stopping? opts))]
     (let [ok? (try
                 (probe-watch! cfg on-change (merge (dissoc fns :pod-id) (into {} (remove (comp nil? val)) opts)))
                 (catch Throwable e
-                  (println "clogem-press: fswatcher pod unavailable —" (ex-message e))
+                  (when-not (stop-caused? (:stopping? opts))
+                    (println "clogem-press: fswatcher pod unavailable —" (ex-message e)))
                   false))]
       (if ok?
         {:pod-id (:pod-id fns)}
@@ -1415,21 +1469,6 @@
 (def ^:private sigterm-exit
   "Pagefind's exit code when SIGTERM stopped it."
   143)
-
-(def signal-grace-ms
-  "How long a Pagefind stopped by SIGTERM waits for dev's own `stopping`
-  before it is reported: the process group's signal and the JVM's
-  shutdown hook are not ordered."
-  1000)
-
-(defn- soon?
-  "Does `(pred)` become true within `ms`?"
-  [pred ms]
-  (let [deadline (+ (System/currentTimeMillis) ms)]
-    (loop []
-      (cond (pred) true
-            (> (System/currentTimeMillis) deadline) false
-            :else (do (Thread/sleep 20) (recur))))))
 
 (defn- exit-reason
   "How a Pagefind exit code reads in dev's terminal: a signal by name
@@ -1699,6 +1738,7 @@
           pod?     (and (not poll)
                         (not @stopping)
                         (pod* @cfg-ref on-pod {:timeout-ms probe-ms
+                                               :stopping? (fn [] @stopping)
                                                :specs     existing
                                                :accept?   #(watched-event? @specs %)
                                                :on-ready  (fn [reg & [{:keys [unwatch! watchers]}]]

@@ -858,3 +858,53 @@
           (is (not written?) "nothing written")
           (is (not (re-find #"(?i)chroma" out)) (str "no Chroma warning: " out))
           (is (not (str/includes? out "build failed")) out))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 14: the pod's shutdown noise
+
+(deftest ctrl-c-reaching-the-pod-is-not-reported
+  (testing "item 14: Ctrl-C reaches the pod too, and dev printed
+            \"fswatcher could not watch — Stream Closed\""
+    (with-site url-site
+      (fn [dir]
+        (let [cfg   (first (diag/collecting (config/load-config (str dir))))
+              probe (fn [stopping?]
+                      (with-out-str
+                        (dev/probe-watch! cfg (fn [_])
+                                          {:watch (fn [& _] (throw (java.io.IOException. "Stream closed")))
+                                           :unwatch (fn [_]) :sleep (fn [_]) :timeout-ms 2000
+                                           :stopping? (constantly stopping?)})))]
+          (is (str/includes? (probe false) "fswatcher could not watch — Stream closed") "still said otherwise")
+          (is (= "" (probe true)) "nothing while dev stops"))
+        (testing "a pod that dies while it loads"
+          (let [bin (str (fs/path dir "bin" "dead-pod"))]
+            (fs/create-dirs (fs/parent bin))
+            (spit bin "#!/bin/sh\nexit 1\n")
+            (fs/set-posix-file-permissions bin "rwxr-xr-x")
+            (binding [tools/*env* {"CLOGEM_FSWATCHER" bin}]
+              (let [cfg (first (diag/collecting (config/load-config (str dir))))]
+                (is (str/includes? (with-out-str (dev/load-pod! cfg (constantly false))) "fswatcher pod is unavailable"))
+                (is (= "" (with-out-str (dev/load-pod! cfg (constantly true)))))))))))))
+
+(deftest the-real-pod-quitting-at-ctrl-c-is-not-reported
+  (testing "item 14: babashka's `ERROR: Pod quit unexpectedly` at Ctrl-C"
+    (if-not (System/getenv "CLOGEM_FSWATCHER")
+      (println "the-real-pod-quitting-at-ctrl-c-is-not-reported: CLOGEM_FSWATCHER is not set; skipped")
+      (with-site url-site
+        (fn [dir]
+          (let [cfg (first (diag/collecting (config/load-config (str dir))))]
+            (doseq [stopping? [false true]]
+              (let [err (java.io.StringWriter.)
+                    fns (binding [*err* err] (dev/load-pod! cfg (constantly stopping?)))
+                    pid (some (fn [^java.lang.ProcessHandle h]
+                                (when (str/includes? (str (.orElse (.command (.info h)) "")) "fswatcher") h))
+                              (iterator-seq (.iterator (.children (java.lang.ProcessHandle/current)))))]
+                (is (some? pid))
+                ((:watch fns) (str dir) (fn [_]) {})
+                ;; the SIGINT a Ctrl-C sends the whole process group
+                (.destroy ^java.lang.ProcessHandle pid)
+                (if stopping?
+                  (do (Thread/sleep 1500)
+                      (is (= "" (str err)) "nothing while dev stops"))
+                  (is (wait-until #(str/includes? (str err) "Pod quit unexpectedly") 3000) "said otherwise"))
+                (dev/unload-pod! (:pod-id fns))))))))))
