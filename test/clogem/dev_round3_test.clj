@@ -739,3 +739,32 @@
                 (is (re-find #"already in use" (str (ex-message e))) (ex-message e))
                 (is (not (str/includes? (with-out-str (@hook)) "stopped")) "a listen error: no `stopped`")))
             (finally (.close busy))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 11: SIGTERM to the process group during an index
+
+(deftest a-sigterm-to-the-group-during-an-index-reports-nothing
+  (testing "item 11: Pagefind got the group's SIGTERM before dev's hook set
+            `stopping`, and its exit 143 was reported as an index failure"
+    (with-site (assoc url-site :search {:provider :pagefind})
+      (fn [dir]
+        (let [bin (str (fs/path dir "bin" "pagefind_extended"))]
+          (fs/create-dirs (fs/parent bin))
+          (spit bin "#!/bin/sh\nexit 143\n")
+          (fs/set-posix-file-permissions bin "rwxr-xr-x")
+          (config/mark-out-dir! (fs/path dir "dist"))
+          (let [cfg      (first (diag/collecting
+                                 (config/load-config (str dir) nil {:tools {:pagefind {:path bin}}})))
+                stopping (atom false)
+                index!   (#'dev/indexer #(deref stopping) (fn [f] (f)))
+                out      (with-out-str
+                           ;; the hook's stop! runs a moment after the signal
+                           (future (Thread/sleep 150) (reset! stopping true))
+                           (index! cfg))]
+            (is (not (str/includes? out "search index failed")) out))
+          (testing "while a SIGTERM from elsewhere, dev not stopping, is still reported"
+            (let [cfg   (first (diag/collecting
+                                (config/load-config (str dir) nil {:tools {:pagefind {:path bin}}})))
+                  index! (#'dev/indexer (constantly false) (fn [f] (f)))
+                  out    (with-out-str (index! cfg))]
+              (is (str/includes? out "Pagefind was terminated (SIGTERM)") out))))))))

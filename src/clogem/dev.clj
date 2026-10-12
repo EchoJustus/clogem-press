@@ -1394,6 +1394,25 @@
   this one is never reported."
   130)
 
+(def ^:private sigterm-exit
+  "Pagefind's exit code when SIGTERM stopped it."
+  143)
+
+(def signal-grace-ms
+  "How long a Pagefind stopped by SIGTERM waits for dev's own `stopping`
+  before it is reported: the process group's signal and the JVM's
+  shutdown hook are not ordered."
+  1000)
+
+(defn- soon?
+  "Does `(pred)` become true within `ms`?"
+  [pred ms]
+  (let [deadline (+ (System/currentTimeMillis) ms)]
+    (loop []
+      (cond (pred) true
+            (> (System/currentTimeMillis) deadline) false
+            :else (do (Thread/sleep 20) (recur))))))
+
 (defn- exit-reason
   "How a Pagefind exit code reads in dev's terminal: a signal by name
   (128 + n), else the code."
@@ -1424,7 +1443,11 @@
                                         (- (System/currentTimeMillis) t0)))
                        (catch Throwable t
                          (let [exit (:clogem/pagefind-exit (ex-data t))]
-                           (when-not (or (stopping?) (= sigint-exit exit))
+                           (when-not (or (stopping?) (= sigint-exit exit)
+                                         ;; a SIGTERM to the process group reaches
+                                         ;; Pagefind before dev's shutdown hook sets
+                                         ;; `stopping`: given a moment (P4-D.3 item 11)
+                                         (and (= sigterm-exit exit) (soon? stopping? signal-grace-ms)))
                              (println "clogem-press: search index failed —"
                                       (if-let [why (exit-reason exit)]
                                         (str why "; the previous search index is still in place.")
