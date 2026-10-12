@@ -1714,10 +1714,14 @@
   ;; Ctrl-C: stop the server, the loop and any Pagefind run, wait for the
   ;; build running, remove the staging and previous bundles, and say so
   ;; once. Installed first (P4-D.2 item 12): Ctrl-C during the first build
-  ;; or the pod's probe used to skip all of it.
+  ;; or the pod's probe used to skip all of it. `stopped` is said only when
+  ;; dev got as far as handing out its `stop!` — after the server is bound,
+  ;; before the first build — never after a failed start (a listen error, a
+  ;; config error), which said `stopped` under its error (P4-D.3 item 10).
   (let [stop (atom nil)]
     (add-shutdown-hook! (fn []
-                          (when-let [f @stop] (f))
-                          (println "clogem-press: stopped")))
+                          (when-let [f @stop]
+                            (f)
+                            (println "clogem-press: stopped"))))
     (start-dev! opts {:on-stop! #(reset! stop %)})
     @(promise)))

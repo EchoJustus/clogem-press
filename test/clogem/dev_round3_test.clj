@@ -719,3 +719,23 @@
       (is (str/includes? (str (ex-message e)) "cannot listen on [::1]:70000") (ex-message e)))
     (is (= "http://[::1]:1888/" (dev/url-for {:ip "[::1]" :port 1888} "/")))
     (is (= "http://[::1]:1888/" (dev/url-for {:ip "::1" :port 1888} "/")))))
+
+;; ---------------------------------------------------------------------------
+;; Item 10: `stopped` only after a start
+
+(deftest a-failed-start-does-not-say-stopped
+  (testing "item 10: every startup failure, a listen error included, ended
+            with \"clogem-press: stopped\""
+    (with-site url-site
+      (fn [dir]
+        (let [hook (atom nil)
+              busy (java.net.ServerSocket. 0 50 (java.net.InetAddress/getByName "127.0.0.1"))]
+          (try
+            (with-redefs [dev/add-shutdown-hook! (fn [f] (reset! hook f))]
+              (let [e (try (quiet #(dev/dev! (assoc (parse #'cli/dev ["--poll" "--port" (str (.getLocalPort busy))])
+                                                    :site-dir (str dir))))
+                           nil
+                           (catch clojure.lang.ExceptionInfo e e))]
+                (is (re-find #"already in use" (str (ex-message e))) (ex-message e))
+                (is (not (str/includes? (with-out-str (@hook)) "stopped")) "a listen error: no `stopped`")))
+            (finally (.close busy))))))))
