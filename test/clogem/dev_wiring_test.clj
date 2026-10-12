@@ -442,7 +442,8 @@
                  [143 true nil]
                  [137 true nil]
                  [3 true nil]
-                 [143 false #"^clogem-press: search index failed — Pagefind was terminated \(SIGTERM\); the previous search index is still in place"]
+                 ;; no index yet in this out: said so (P4-D.3 item 21)
+                 [143 false #"^clogem-press: search index failed — Pagefind was terminated \(SIGTERM\); there is no search index yet"]
                  [137 false #"^clogem-press: search index failed — Pagefind was killed \(SIGKILL"]
                  [3 false #"^clogem-press: search index failed — Pagefind exited 3:"]]]
           (let [bin (fake/fake-pagefind! (fs/path dir (str "bin" exit)) :exit exit)

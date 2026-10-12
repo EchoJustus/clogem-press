@@ -1516,7 +1516,8 @@
                        (println (format "clogem-press: search index updated in %d ms"
                                         (- (System/currentTimeMillis) t0)))
                        (catch Throwable t
-                         (let [exit (:clogem/pagefind-exit (ex-data t))]
+                         (let [exit (:clogem/pagefind-exit (ex-data t))
+                               prev? (:clogem/previous-index? (ex-data t))]
                            (when-not (or (stopping?) (= sigint-exit exit)
                                          ;; a SIGTERM to the process group reaches
                                          ;; Pagefind before dev's shutdown hook sets
@@ -1524,7 +1525,9 @@
                                          (and (= sigterm-exit exit) (soon? stopping? signal-grace-ms)))
                              (println "clogem-press: search index failed —"
                                       (if-let [why (exit-reason exit)]
-                                        (str why "; the previous search index is still in place.")
+                                        (str why (if prev?
+                                                   "; the previous search index is still in place."
+                                                   "; there is no search index yet."))
                                         (tool-output (or (ex-message t) (str t)))))))))))
                  (or spawn future-call)
                  stopping?)]

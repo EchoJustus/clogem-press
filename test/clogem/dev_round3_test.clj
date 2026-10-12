@@ -1047,3 +1047,28 @@
                 (let [h (serve-handler (fs/path dir "dist") ["--base" base])]
                   (doseq [u [(str enc "clogem/css/theme.css") (str enc "ta/") (str enc "assets/demo.txt")]]
                     (is (= 200 (:status (h {:uri u :headers {"host" "localhost"}}))) u)))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 21: Pagefind failure hints
+
+(deftest pagefind-failure-hints-say-what-is-true
+  (testing "item 21: the first index's failure said the previous index was
+            still in place, and `build --out X`'s named dist/"
+    (with-site (assoc url-site :search {:provider :pagefind})
+      (fn [dir]
+        (let [bad (fake/fake-pagefind! (fs/path dir "bad") :exit 3)
+              cfg (fn [out] (first (diag/collecting (config/load-config (str dir) nil {:build {:out out}
+                                                                                     :tools {:pagefind {:path bad}}}))))
+              out (fs/path dir "dist")
+              msg (fn [f] (try (f) nil (catch clojure.lang.ExceptionInfo e (ex-message e))))]
+          (config/mark-out-dir! out)
+          (is (re-find #"There is no search index yet" (str (msg #(search/run-staged! (cfg "dist")))))
+              "the first index: none to keep")
+          (fs/create-dirs (fs/path out "pagefind"))
+          (is (re-find #"The previous search index is still in place" (str (msg #(search/run-staged! (cfg "dist"))))))
+          (testing "build names the directory it wrote"
+            (spit (fs/file dir "site.edn") (pr-str (assoc url-site :search {:provider :pagefind}
+                                                          :tools {:pagefind {:path bad}})))
+            (let [m (msg #(quiet (fn [] (cli/build (assoc (parse #'cli/build ["--out" "public"]) :site-dir (str dir))))))]
+              (is (re-find #"public/ \(.*public\) is already written but has no search index" (str m)) m)
+              (is (not (str/includes? (str m) "dist/")) m))))))))

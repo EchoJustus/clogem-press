@@ -189,7 +189,10 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   the same lock, which then failed too); Ctrl-C while the index runs prints `stopped`, not "Pagefind
   exited 130", while a Pagefind killed from outside (the OOM killer) is
   reported as an index failure; a Pagefind failure shows its output on
-  indented lines, not run together with `;`.
+  indented lines, not run together with `;`. Its hint says what is true
+  (P4-D.3): "the previous search index is still in place" only when there
+  is one — the first index of a session has none — and `build`'s names
+  the output directory written, not always `dist/`.
 - **`doctor`'s code-language check** reports an unreadable Chroma — cached,
   `CLOGEM_CHROMA` or `:tools :chroma :path` — with `build`'s own message
   and hint, not as a stack trace (follow-up to Task C).

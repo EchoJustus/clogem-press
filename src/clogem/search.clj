@@ -236,7 +236,8 @@
         output (str (:out r) (:err r))]
     (when-not (zero? exit)
       (fail! (str "Pagefind exited " exit ":\n" (str/trimr output))
-             (str "dist/ is already written but has no search index; "
+             ;; the directory written, not always dist/ (P4-D.3 item 21)
+             (str (fs/file-name out) "/ (" out ") is already written but has no search index; "
                   "fix the cause, or build with `--no-search`.")))
     {:binary bin :output output}))
 
@@ -392,7 +393,8 @@
   (let [bin     (ensure-binary! cfg)
         out     (config/out-dir cfg)
         staging (fs/path out (str ".pagefind-staging-" (tag)))
-        live    (fs/path out output-subdir)]
+        live    (fs/path out output-subdir)
+        had-live? (fs/exists? live {:nofollow-links true})]
     (sweep-staging! out)
     (try
       (let [proc (try (p/process {:out :string :err :string}
@@ -406,10 +408,15 @@
             {:keys [exit] :as r} (try @proc (finally (locking indexing (swap! indexing disj proc))))
             output (str (:out r) (:err r))]
         (when-not (zero? exit)
+          ;; true only when there is one (P4-D.3 item 21): the first index
+          ;; of a session has none to keep
           (try (fail! (str "Pagefind exited " exit ":\n" (str/trimr output))
-                      "The previous search index is still in place.")
+                      (if had-live?
+                        "The previous search index is still in place."
+                        "There is no search index yet: search works once an index succeeds."))
                (catch clojure.lang.ExceptionInfo e
-                 (throw (ex-info (ex-message e) (assoc (ex-data e) :clogem/pagefind-exit exit))))))
+                 (throw (ex-info (ex-message e) (assoc (ex-data e) :clogem/pagefind-exit exit
+                                                       :clogem/previous-index? had-live?))))))
         (let [retired (fs/path out (str previous-prefix (tag)))]
           (when (fs/exists? live {:nofollow-links true})
             (fs/move live retired {:atomic-move true}))
