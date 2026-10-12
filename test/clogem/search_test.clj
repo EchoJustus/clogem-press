@@ -186,9 +186,9 @@
           (is (some? e))
           (is (= 1 (:babashka/exit (ex-data e))))
           (is (str/includes? (ex-message e) (str "expected " want ", got " got)) (ex-message e))
-          ;; nor the lock file, and so not the version directory either
-          ;; (P4-D.2 item 25)
-          (is (not (fs/exists? (fs/path dir "cache" "pagefind" "1.5.2")))
+          ;; the lock file stays: another fetch may hold it (P4-D.3 item 6)
+          (is (= [(str plat ".lock")]
+                 (map (comp str fs/file-name) (fs/list-dir (fs/path dir "cache" "pagefind" "1.5.2"))))
               "the bad download is deleted and no binary is installed"))))))))
 
 (deftest no-network-and-no-cache-names-the-path-and-the-way-out
@@ -543,10 +543,8 @@
               (is (= 1 (:babashka/exit (ex-data e))))
               (is (re-find #"could not run `clogem-no-such-tar` to unpack Pagefind" (str (ex-message e)))
                   (ex-message e))
-              (is (let [d (fs/path dir "cache" "pagefind" "1.5.2")]
-                    ;; gone with its lock when nothing is left (P4-D.2 item 25)
-                    (or (not (fs/exists? d))
-                        (empty? (filter #(str/includes? (str (fs/file-name %)) ".partial-") (fs/list-dir d)))))
+              (is (empty? (filter #(str/includes? (str (fs/file-name %)) ".partial-")
+                                  (fs/list-dir (fs/path dir "cache" "pagefind" "1.5.2"))))
                   "no staging directory is left behind"))))))))))
 
 (deftest clogem-pagefind-is-relative-to-the-working-directory

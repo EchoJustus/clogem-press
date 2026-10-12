@@ -162,8 +162,10 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   the session, not only the last.
 - **Messages:** the pod fallback line has one `clogem-press:` prefix and
   keeps its hint, which names `bb dev --poll` for a `CLOGEM_FSWATCHER`
-  that names nothing; a failed pod download leaves no `.lock` in the
-  cache; Ctrl-C while the index runs prints `stopped`, not "Pagefind
+  that names nothing; a failed download leaves only an empty
+  `<platform>.lock` in the cache, which is harmless (P4-D.3: D.2 deleted
+  it, and with it the version directory, under a second fetch waiting on
+  the same lock, which then failed too); Ctrl-C while the index runs prints `stopped`, not "Pagefind
   exited 130", while a Pagefind killed from outside (the OOM killer) is
   reported as an index failure; a Pagefind failure shows its output on
   indented lines, not run together with `;`.

@@ -152,11 +152,8 @@
                       (is (str/starts-with? (ex-message e) (str "clogem-press: " (:error-prefix tool) ": ")))
                       (is (= 1 (:babashka/exit (ex-data e))))
                       (is (not (fs/exists? (tools/tool-dir tool cfg plat))) "nothing installed")
-                      ;; the version directory goes too once nothing is
-                      ;; left in it (P4-D.2 item 25)
-                      (is (let [d (fs/parent (tools/tool-dir tool cfg plat))]
-                            (or (not (fs/exists? d))
-                                (empty? (filter #(re-find #"\.download-" (str (fs/file-name %))) (fs/list-dir d)))))
+                      (is (empty? (filter #(re-find #"\.download-" (str (fs/file-name %)))
+                                          (fs/list-dir (fs/parent (tools/tool-dir tool cfg plat)))))
                           "the download was deleted"))))))))))
 
 (deftest a-tampered-or-unstamped-entry-is-fetched-again
@@ -377,8 +374,10 @@
 ;; ---------------------------------------------------------------------------
 ;; P4-D.2 item 25: the pod's fallback messages
 
-(deftest a-failed-fetch-leaves-no-lock-behind
-  (testing "a download that fails left `<plat>.lock` in the cache"
+(deftest a-failed-fetch-leaves-only-its-lock-behind
+  (testing "a download that fails leaves the empty `<plat>.lock`, which is
+            harmless, and nothing else (P4-D.3 item 6 reverted P4-D.2 item
+            25's deletion of it: another fetch may be waiting on it)"
     (for-each-tool
      (fn [tool]
        (with-dir
@@ -389,10 +388,9 @@
                  e    (try (binding [*err* (java.io.StringWriter.)] (tools/ensure-binary! tool cfg)) nil
                            (catch clojure.lang.ExceptionInfo e e))]
              (is (some? e) (:name tool))
-             (is (not (fs/exists? (fs/path (fs/parent (tools/tool-dir tool cfg plat)) (str plat ".lock"))))
-                 (str (:name tool) ": no lock file"))
-             (is (not (fs/exists? (fs/parent (tools/tool-dir tool cfg plat))))
-                 (str (:name tool) ": nor an empty version directory")))))))))
+             (is (= [(str plat ".lock")]
+                    (map (comp str fs/file-name) (fs/list-dir (fs/parent (tools/tool-dir tool cfg plat)))))
+                 (str (:name tool) ": the lock file only")))))))))
 
 (deftest a-missing-env-path-for-the-pod-names-poll
   (testing "CLOGEM_FSWATCHER naming nothing: the hint did not mention --poll"
@@ -404,3 +402,41 @@
           (is (some? e))
           (is (str/includes? (ex-message e) "does not exist") (ex-message e))
           (is (str/includes? (ex-message e) "`bb dev --poll`") (ex-message e)))))))
+
+;; ---------------------------------------------------------------------------
+;; P4-D.3 item 6: a failed fetch never breaks one waiting on its lock
+
+(deftest a-fetch-waiting-on-the-lock-survives-the-one-that-failed
+  (testing "item 25's cleanup deleted the lock file and the version
+            directory under a fetch waiting on the same lock, which failed"
+    (for-each-tool
+     (fn [tool]
+       (with-dir
+         (fn [dir]
+           (let [plat    (tools/platform tool)
+                 archive (fake/fake-tool-archive! dir tool plat)
+                 sha     (tools/sha256-hex archive)
+                 hits    (atom 0)
+                 server  (hk/run-server (fn [_]
+                                          (if (= 1 (swap! hits inc))
+                                            ;; slow, so the other fetch is
+                                            ;; waiting on the lock by then
+                                            (do (Thread/sleep 400) {:status 500 :body "no"})
+                                            {:status 200 :body (fs/file archive)}))
+                                        {:port 0 :legacy-return-value? false})]
+             (try
+               (let [url (str "http://127.0.0.1:" (hk/server-port server) "/v{{version}}/{{platform}}")
+                     cfg (cfg-for dir tool url sha)
+                     env tools/*env*
+                     go! #(future (binding [tools/*env* env *err* (java.io.StringWriter.)]
+                                    (try (tools/ensure-binary! tool cfg) (catch Throwable e e))))
+                     a   (go!)
+                     _   (Thread/sleep 150)
+                     b   (go!)
+                     [ra rb] [@a @b]]
+                 (is (instance? clojure.lang.ExceptionInfo ra) "the first fetch failed")
+                 (is (string? rb) (str "the one waiting on the lock fetched: " (pr-str rb)))
+                 (is (= 2 @hits))
+                 (is (fs/exists? (fs/path (fs/parent (tools/tool-dir tool cfg plat)) (str plat ".lock")))
+                     "the lock stays: it is harmless, and another fetch may hold it"))
+               (finally (hk/server-stop! server))))))))))

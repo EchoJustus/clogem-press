@@ -461,10 +461,11 @@
 (defn with-cache-lock
   "Run `f` holding an exclusive lock on `lock-file`, across threads and
   processes, so two cold-cache builds fetch once rather than racing to
-  install the same directory. When `f` throws — a failed fetch — the lock
-  file goes, and the version directory with it when that leaves it empty:
-  a fetch that installed nothing leaves nothing in the cache (P4-D.2
-  item 25)."
+  install the same directory. The lock file is never deleted, a failed
+  fetch's included: another fetch may hold it or be waiting on it, and
+  deleting it — or its directory — under that one made it fail too
+  (P4-D.3 item 6). What a failed fetch leaves is an empty `<plat>.lock`,
+  which is harmless: the next fetch locks it again."
   [lock-file f]
   (fs/create-dirs (fs/parent lock-file))
   (let [k (str (fs/normalize (fs/absolutize lock-file)))
@@ -478,14 +479,7 @@
                                    java.nio.file.StandardOpenOption/WRITE]))]
         ;; closing the channel releases the lock
         (.lock ch)
-        (try (f)
-             (catch Throwable t
-               (try (fs/delete-if-exists lock-file)
-                    (let [parent (fs/parent lock-file)]
-                      (when (and (fs/directory? parent) (empty? (fs/list-dir parent)))
-                        (fs/delete parent)))
-                    (catch Exception _ nil))
-               (throw t)))))))
+        (f)))))
 
 (defn sweep-stale-downloads!
   "Remove `<plat>.download-*` and `<plat>.partial-*` siblings a killed run
