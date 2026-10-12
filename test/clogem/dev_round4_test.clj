@@ -3,10 +3,13 @@
   "P4-D.4: the follow-up to Task D — its known issues, fixed mainly by
   simplifying. Each test names the item it pins down; each failed before
   its fix."
-  (:require [babashka.fs :as fs]
+  (:require [babashka.cli :as bcli]
+            [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [clogem.dev :as dev]))
+            [clogem.cli :as cli]
+            [clogem.dev :as dev]
+            [clogem.search :as search]))
 
 ;; ---------------------------------------------------------------------------
 ;; Helpers
@@ -20,6 +23,63 @@
           (if (> (- (System/currentTimeMillis) t0) (or ms 5000))
             (pred)
             (do (Thread/sleep 10) (recur)))))))
+
+;; Sites
+
+(def ^:private marker ".clogem-output")
+
+(def ^:private article
+  "---\ntitle: T\ndate: \"2026-02-01 00:00:00\"\npermalink: /pages/t00001/\n---\n\nPlain body text.\n")
+
+(def ^:private url-site {:site {:title "S" :url "https://s.example"} :content {:write-front-matter false}})
+
+(defn- with-site
+  "A temp site with one article (and `site-edn`); calls (f dir)."
+  [site-edn f]
+  (let [dir (fs/create-temp-dir {:prefix "clogem-r4"})]
+    (try
+      (spit (fs/file dir "site.edn") (pr-str site-edn))
+      (fs/create-dirs (fs/path dir "content" "01.Guide"))
+      (spit (fs/file dir "content" "01.Guide" "01.t.md") article)
+      (binding [search/*env* {}]
+        (f dir))
+      (finally (fs/delete-tree dir)))))
+
+(defn- with-temp-dir [prefix f]
+  (let [d (fs/create-temp-dir {:prefix prefix})]
+    (try (f d) (finally (fs/delete-tree d)))))
+
+(defn- quiet [f]
+  (binding [*out* (java.io.StringWriter.) *err* (java.io.StringWriter.)] (f)))
+
+(defn- captured
+  "Run `f`: [its value or the ex-info it threw, what it printed]."
+  [f]
+  (let [w (java.io.StringWriter.)]
+    (binding [*out* w *err* w]
+      (let [v (try (f) (catch clojure.lang.ExceptionInfo e e))]
+        [v (str w)]))))
+
+(defn- parse [v args] (bcli/parse-opts args {:spec (:spec (:org.babashka/cli (meta v)))}))
+
+(defn- run-task
+  "Task `v` (`#'cli/build` …) over the site `dir` with `args`: [value-or-ex output]."
+  [v dir & args]
+  (captured #(v (assoc (parse v (vec args)) :site-dir (str dir)))))
+
+(defn- ex-msg [v] (when (instance? Throwable v) (ex-message v)))
+
+(defn- doctor-errors [dir]
+  (let [[v] (run-task #'cli/doctor dir)]
+    (if (instance? Throwable v) (:clogem/errors (ex-data v)) (:errors v))))
+
+(defn- tree
+  "Every file under `dir` → its content."
+  [dir]
+  (into (sorted-map)
+        (for [p (fs/glob dir "**" {:hidden true})
+              :when (fs/regular-file? p)]
+          [(str (fs/relativize dir p)) (slurp (fs/file p))])))
 
 ;; ---------------------------------------------------------------------------
 ;; Item 1: a large file is a plain `File` body again
@@ -144,12 +204,13 @@
     (with-root
       (fn [root]
         (spit (fs/file root "small.txt") "small")
-        (sparse! (fs/path root "big.bin") (* 8 1024 1024))
+        (sparse! (fs/path root "big.bin") (* 64 1024 1024))
         (with-port root
           (fn [port]
             ;; warm the server's own threads up first
             (raw-get port "GET /small.txt HTTP/1.1")
-            (let [threads #(set (map (fn [^Thread t] (.getName t)) (keys (Thread/getAllStackTraces))))
+            (let [threads #(set (remove (fn [n] (str/starts-with? n "ForkJoinPool"))   ; shared pools, started lazily
+                                        (map (fn [^Thread t] (.getName t)) (keys (Thread/getAllStackTraces)))))
                   before  (threads)]
               (dotimes [_ 3]
                 (with-open [s (java.net.Socket. "127.0.0.1" (int port))]
@@ -199,3 +260,209 @@
                       (is (= 200 (:status next-head)) "the connection serves on")
                       (is (= "5" (get-in next-head [:headers "content-length"]))))
                     (is (= [5 (int \l)] (skip! in nil)) "the next response is the small file, whole")))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 3: output directories — containment kept, adoption and pre-seed
+;; refusal gone
+
+(deftest a-symlinked-default-dist-is-built-into
+  (testing "item 3: `dist -> /var/www/site`, which DESIGN supports, was
+            refused by build, dev, doctor and clean as \"outside the site
+            directory\": the default merged in from `defaults` was taken for
+            a site.edn value"
+    (with-site url-site
+      (fn [dir]
+        (with-temp-dir "clogem-r4www"
+          (fn [www]
+            (fs/create-sym-link (fs/path dir "dist") www)
+            (is (empty? (doctor-errors dir)) "doctor: no error")
+            (let [[v out] (run-task #'cli/build dir)]
+              (is (not (instance? Throwable v)) (str out (ex-msg v))))
+            (is (fs/exists? (fs/path www "pages" "t00001" "index.html")) "built through the link")
+            (is (fs/exists? (fs/path www marker)))
+            (testing "dev"
+              (let [h (quiet #(dev/start-dev! {:site-dir (str dir) :poll true :no-write true :no-search true}
+                                              {:run-server! (fn [& _] (fn [& _] nil))
+                                               :poll-watch! (fn [& _] nil)
+                                               :notify! (fn [_]) :notify-error! (fn [_])}))]
+                (try (is (:ever-ok? @(:state h)) "dev's first build succeeds")
+                     (finally (quiet (:stop! h))))))
+            (testing "--out through a link outside the site, too"
+              (fs/create-sym-link (fs/path dir "out-link") www)
+              (let [[v out] (run-task #'cli/build dir "--out" "out-link")]
+                (is (not (instance? Throwable v)) (str out (ex-msg v)))))
+            (testing "but a site.edn value is still kept inside the site"
+              (spit (fs/file dir "site.edn") (pr-str (assoc url-site :build {:out "dist"})))
+              (let [[v] (run-task #'cli/build dir)]
+                (is (re-find #"outside the site directory" (str (ex-msg v)))))
+              (spit (fs/file dir "site.edn") (pr-str url-site)))
+            (testing "clean removes the link, and leaves its target, as 0.2.0 did"
+              (let [[v out] (run-task #'cli/clean dir)]
+                (is (not (instance? Throwable v)) (str out (ex-msg v))))
+              (is (not (fs/exists? (fs/path dir "dist") {:nofollow-links true})))
+              (is (fs/exists? (fs/path www "index.html"))))))))))
+
+(deftest a-dangling-dist-link-is-a-clear-error
+  (testing "item 3: a dist symlink to nothing was a raw FileAlreadyExistsException"
+    (with-site url-site
+      (fn [dir]
+        (fs/create-sym-link (fs/path dir "dist") (fs/path dir "nowhere"))
+        (doseq [v [#'cli/build #'cli/clean]]
+          (let [[r out] (run-task v dir)]
+            (is (re-find #"is a symbolic link to .*nowhere, which does not exist" (str (ex-msg r) out))
+                (str v ": " (ex-msg r) out))
+            (is (not (str/includes? (str (ex-msg r) out) "FileAlreadyExists")))))
+        (is (some #(re-find #"which does not exist" (:message %)) (doctor-errors dir)))
+        (is (not (fs/exists? (fs/path dir "nowhere"))) "nothing created")))))
+
+(deftest a-pre-seeded-dist-builds-and-is-swept-from-its-second-build
+  (testing "item 3: a dist/ holding only CNAME, .nojekyll, .gitkeep or a
+            deploy worktree's .git file failed build and doctor; 0.2.0
+            built into it"
+    (with-site url-site
+      (fn [dir]
+        (let [dist (fs/path dir "dist")]
+          (fs/create-dirs dist)
+          (spit (fs/file dist "CNAME") "docs.example\n")
+          (spit (fs/file dist ".nojekyll") "")
+          (spit (fs/file dist ".gitkeep") "")
+          (spit (fs/file dist ".git") "gitdir: ../.git/worktrees/dist\n")
+          (spit (fs/file dist "notes.html") "<p>mine</p>")
+          (let [seed (tree dist)]
+            (is (empty? (doctor-errors dir)) "doctor: no error")
+            (let [[v out] (run-task #'cli/build dir)]
+              (is (not (instance? Throwable v)) (str out (ex-msg v))))
+            (is (= seed (select-keys (tree dist) (keys seed))) "the first build sweeps nothing")
+            (is (fs/exists? (fs/path dist marker)))
+            (testing "the second sweeps the stale .html, and only that"
+              (spit (fs/file dir "content" "01.Guide" "02.u.md")
+                    (str/replace article "t00001" "u00002"))
+              (run-task #'cli/build dir)
+              (is (fs/exists? (fs/path dist "pages" "u00002" "index.html")))
+              (fs/delete (fs/path dir "content" "01.Guide" "02.u.md"))
+              (let [[v out] (run-task #'cli/build dir)]
+                (is (not (instance? Throwable v)) (str out (ex-msg v))))
+              (is (not (fs/exists? (fs/path dist "pages" "u00002" "index.html"))) "a deleted article's page")
+              (is (= (dissoc seed "notes.html") (select-keys (tree dist) (keys (dissoc seed "notes.html"))))
+                  "CNAME, .nojekyll, .gitkeep and .git stay"))))))))
+
+(deftest a-dist-an-earlier-version-built-is-marked-then-swept
+  (testing "item 3: a 0.2.0 dist/ (no marker) is simply marked by its first
+            build and swept from the second; no adoption"
+    (with-site url-site
+      (fn [dir]
+        (let [dist (fs/path dir "dist")]
+          (fs/create-dirs (fs/path dist "clogem" "css"))
+          (spit (fs/file dist "clogem" "css" "dropped.css") "old theme file")
+          (spit (fs/file dist "index.html") "<p>old home</p>")
+          (fs/create-dirs (fs/path dist "pages" "gone00"))
+          (spit (fs/file dist "pages" "gone00" "index.html") "<p>old page</p>")
+          (run-task #'cli/build dir)
+          (is (fs/exists? (fs/path dist "pages" "gone00" "index.html")) "first build: nothing swept")
+          (is (fs/exists? (fs/path dist "clogem" "css" "dropped.css")))
+          (is (fs/exists? (fs/path dist marker)) "but marked")
+          (let [[v out] (run-task #'cli/build dir)]
+            (is (not (instance? Throwable v)) (str out (ex-msg v)))
+            (is (re-find #"removed 1 stale page" out) out))
+          (is (not (fs/exists? (fs/path dist "pages" "gone00" "index.html"))) "second build: swept")
+          (is (not (fs/exists? (fs/path dist "clogem" "css" "dropped.css")))))))))
+
+(deftest clean-deletes-only-a-marked-directory-without-a-git
+  (testing "item 3: D.3 adopted any directory with a clogem/ and an
+            index.html, so `bb clean --out` on a git deploy clone deleted
+            its .git"
+    (with-site url-site
+      (fn [dir]
+        (let [dist (fs/path dir "dist")
+              clean! #(apply run-task #'cli/clean dir %&)]
+          (testing "nothing there"
+            (let [[v] (clean!)] (is (not (instance? Throwable v)))))
+          (testing "a marked one"
+            (run-task #'cli/build dir)
+            (let [[v] (clean!)] (is (not (instance? Throwable v))))
+            (is (not (fs/exists? dist))))
+          (testing "an unmarked one, the deploy clone D.3 adopted"
+            (fs/create-dirs (fs/path dist "clogem"))
+            (spit (fs/file dist "index.html") "<p>home</p>")
+            (fs/create-dirs (fs/path dist ".git"))
+            (spit (fs/file dist ".git" "HEAD") "ref: refs/heads/gh-pages\n")
+            (let [before (tree dist)
+                  [v]    (clean!)]
+              (is (= 1 (:babashka/exit (ex-data v))))
+              (is (re-find #"has no \.clogem-output" (str (ex-msg v))))
+              (is (re-find #"hint: .*rm -r" (str (ex-msg v))) "says how to clean it")
+              (is (= before (tree dist)) "untouched")))
+          (testing "a marked one holding a .git — a directory, or a worktree's file"
+            (doseq [git-file? [false true]]
+              (fs/delete-tree dist)
+              (run-task #'cli/build dir)
+              (if git-file?
+                (spit (fs/file dist ".git") "gitdir: ../.git/worktrees/dist\n")
+                (do (fs/create-dirs (fs/path dist ".git"))
+                    (spit (fs/file dist ".git" "HEAD") "ref: refs/heads/gh-pages\n")))
+              (let [before (tree dist)
+                    [v]    (clean!)]
+                (is (re-find #"holds a \.git" (str (ex-msg v))))
+                (is (= before (tree dist)) "untouched")))))))))
+
+(deftest doctor-reports-only-a-refused-output-directory
+  (testing "item 3: doctor reported an unmarked, non-empty dist/ as an
+            error, and after a refusal a second, spurious one for the
+            default it repaired to"
+    (with-site (assoc url-site :build {:out "content"})
+      (fn [dir]
+        (fs/create-dirs (fs/path dir "dist"))
+        (spit (fs/file dir "dist" "CNAME") "x\n")
+        (let [errs (doctor-errors dir)]
+          (is (= 1 (count errs)) (pr-str (map :message errs)))
+          (is (re-find #"is the content directory" (:message (first errs)))))
+        (spit (fs/file dir "site.edn") (pr-str url-site))
+        (is (empty? (doctor-errors dir)))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 4: a :nav link gets the base, percent-encoded, and is kept as written
+
+(deftest nav-links-keep-their-fragment-query-and-encoding-under-any-base
+  (testing "item 4: D.3 percent-encoded the base and the link together, so
+            `#x`, `?q=1` and `%20` became part of the path"
+    (doseq [base ["/" "/my docs/" "/文档/"]]
+      (testing base
+        (with-site (assoc url-site
+                          :site {:title "S" :url "https://s.example" :base base}
+                          :nav [{:text "Frag"  :link "/assets/demo.txt#x"}
+                                {:text "Query" :link "/assets/demo.txt?q=1"}
+                                {:text "Enc"   :link "/my%20file.pdf"}
+                                {:text "CJK"   :link "/文件/说明.pdf"}
+                                {:text "CJKdir" :link "/分类/"}
+                                {:text "Gone"  :link "/pages/zzzzzz/#sec"}
+                                {:text "Abs"   :link "https://example.com/a%20b?x=1#y"}])
+          (fn [dir]
+            (fs/create-dirs (fs/path dir "assets"))
+            (spit (fs/file dir "assets" "demo.txt") "demo")
+            (run-task #'cli/build dir "--no-write")
+            (let [enc  (clogem.util/url-encode-path base)
+                  home (slurp (fs/file dir "dist" "index.html"))]
+              (doseq [[label want] [["Frag"   (str enc "assets/demo.txt#x")]
+                                    ["Query"  (str enc "assets/demo.txt?q=1")]
+                                    ["Enc"    (str enc "my%20file.pdf")]
+                                    ["CJK"    (str enc "文件/说明.pdf")]
+                                    ["CJKdir" (str enc "%E5%88%86%E7%B1%BB/")]
+                                    ["Gone"   (str enc "pages/zzzzzz/#sec")]
+                                    ["Abs"    "https://example.com/a%20b?x=1#y"]]]
+                (is (str/includes? home (str "href=\"" want "\"")) (str label " → " want))))))))))
+
+(deftest a-redirect-stub-and-the-dev-404-page-encode-the-base
+  (testing "item 4: D.3 missed these two: the stub's refresh URL and link,
+            and the 404 page's link to the base, carried `/my docs/` raw"
+    (with-site (assoc url-site
+                      :site {:title "S" :url "https://s.example" :base "/my docs/"}
+                      :i18n {:prefix-default? true})
+      (fn [dir]
+        (run-task #'cli/build dir "--no-write")
+        (let [stub (slurp (fs/file dir "dist" "pages" "t00001" "index.html"))]
+          (is (str/includes? stub "url=/my%20docs/en/pages/t00001/") stub)
+          (is (str/includes? stub "href=\"/my%20docs/en/pages/t00001/\"") stub)
+          (is (not (re-find #"(?:url=|href=\")/my docs" stub)) "never raw in a URL"))
+        (let [r ((dev/make-handler (fs/path dir "dist") {:base "/my docs/"}) {:uri "/elsewhere"})]
+          (is (= 404 (:status r)))
+          (is (str/includes? (:body r) "href=\"/my%20docs/\"") (:body r)))))))

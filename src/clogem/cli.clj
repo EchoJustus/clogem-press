@@ -153,8 +153,6 @@
         cfg  (cond-> (load-cfg! opts)
                dev? (assoc :clogem/dev? true)
                (or (:clogem/dev-loop? opts) (:clogem/dev? opts)) (assoc :clogem/dev-loop? true))]
-    ;; P4-D.3 item 1: before front matter is written back, too
-    (config/check-out-owned! (config/out-dir cfg) "the build will not write into or remove anything from")
     ;; Pass 1 — normalize front matter. Its diagnostics are discarded because
     ;; pass 2 re-derives them from the normalized tree and is the authoritative
     ;; report; but content ERRORS abort before anything is written, since
@@ -313,13 +311,6 @@
                    (render/check-code-languages! m)
                    ;; … and outputs of one build that would collide
                    (render/check-output-collisions! m)
-                   ;; … and an output directory clogem did not make
-                   ;; (P4-D.3 item 1), which build and clean refuse
-                   (let [out (config/out-dir cfg)]
-                     (when (config/foreign-out-dir? out)
-                       (diag/error! nil (str/replace (first (str/split-lines (config/foreign-out-message out "a build would refuse")))
-                                                     #"^clogem-press: " "")
-                                    "Choose another output directory with `--out` or :build :out, or move that directory away.")))
                    m)))
         ds    (into (vec cds) ds)
         errs  (diag/errors ds)
@@ -340,14 +331,34 @@
 (defn ^{:org.babashka/cli {:error-fn option-error :spec (assoc common-spec
                                         :out {:desc out-desc :alias :o :ref "<dir>"})}}
   clean
+  "Delete the output directory — only one a build marked as its own
+  (`config/out-owned?`), and never one holding a `.git` (a deploy
+  worktree): those are refused, saying how to clean them (P4-D.4 item 3)."
   [opts]
-  (let [cfg (load-cfg! opts)
-        out (config/out-dir cfg)]
-    ;; P4-D.3 item 1: only a directory clogem made — an empty one is
-    ;; nothing to lose
-    (config/check-out-owned! out "`bb clean` will not delete")
-    (when (fs/exists? out) (fs/delete-tree out))
-    (println "clogem-press: removed" (str out))))
+  (let [cfg  (load-cfg! opts)
+        out  (config/out-dir cfg)
+        git? #(or (fs/exists? (fs/path out ".git") {:nofollow-links true})
+                  (some (fn [p] (= ".git" (str (fs/file-name p))))
+                        (fs/glob out "**" {:hidden true})))
+        refuse! (fn [why hint]
+                  (throw (ex-info (str "clogem-press: " out " " why ", so `bb clean` will not delete it.\n"
+                                       "  hint: " hint)
+                                  {:babashka/exit 1})))]
+    (cond
+      (not (fs/exists? out))
+      (println "clogem-press:" (str out) "does not exist; nothing to remove")
+
+      (not (config/out-owned? out))
+      (refuse! (str "has no " config/out-marker ", which every build writes there")
+               (str "Build once to mark it, or delete it yourself (rm -r " out ")."))
+
+      (git?)
+      (refuse! "holds a .git (a deploy worktree?)"
+               (str "Delete what you want gone yourself; `bb build` overwrites the pages it writes anyway."))
+
+      :else
+      (do (fs/delete-tree out)
+          (println "clogem-press: removed" (str out))))))
 
 (def server-spec
   "The options `serve` and `dev` share: where to listen (§11.3 item 12)."

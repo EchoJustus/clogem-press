@@ -154,7 +154,11 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   encoded again in every link, by `build` too. Every URL `build` emits now
   carries the base percent-encoded (P4-D.3): theme assets, the icon
   sprite, the search bundle, the home and language-home links, nav links
-  and markdown's `/assets/…` links had `href="/my docs/…"`.
+  and markdown's `/assets/…` links had `href="/my docs/…"`. Since P4-D.4
+  a `:nav` link that gets only the base has the base encoded and is
+  appended as written, so its `#fragment`, `?query` or `%20` is kept (D.3
+  encoded them into the path), and the redirect stubs of
+  `:prefix-default? true` and dev's 404 page encode the base too.
 - **`:build :out` in `site.edn` is honoured** by `build`, `dev` and
   `clean`: the CLI's `--out` defaulted to `dist` and overrode it every
   time. `--out` still wins. A site whose CI passes `--out` (the live
@@ -164,16 +168,22 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   `assets/mine.html` as a stale page and `bb clean` deleted `assets/`.
   `build`, `clean` and `doctor` now refuse — as a config error — an
   output directory, from `site.edn` or `--out`, that is, holds or is
-  inside the content, assets, i18n or overrides directory or a `.git`,
-  or is the site directory or an ancestor of it; a `site.edn` value must
-  also stay inside the site directory (absolute, `..` and links
-  included), while `--out` may point elsewhere (`--out ../dist`).
-- **Builds mark their output directory** with a `.clogem-output` file, and
-  `bb clean`, the stale-page sweep and the search sweeps delete only in a
-  marked directory: an existing, non-empty directory without the marker is
-  refused by `build` and `clean`, and reported by `doctor`. A `dist/` an
-  earlier version wrote (it holds `clogem/` and `index.html`) is adopted
-  and marked by the next build.
+  inside the content, assets, i18n or overrides directory or the site's
+  `.git`, sits inside any `.git`, or is the site directory or an ancestor
+  of it. A `:build :out` written in `site.edn` must also stay inside the
+  site directory (absolute, `..` and links included), while the default
+  `dist` and `--out` may point elsewhere — `--out ../dist`, or a `dist`
+  that is a symbolic link to `/var/www/site` (P4-D.4). A `dist` link to
+  nothing is a clear config error, not a `FileAlreadyExistsException`.
+- **Builds mark their output directory** with a `.clogem-output` file.
+  A build still writes into any existing directory the rules above
+  accept, as 0.2.0 did — one holding only `CNAME`, `.nojekyll` or a deploy
+  worktree's `.git` included — but removes stale `.html` (and stale files
+  under `dist/clogem/`) only where a previous build left the marker: the
+  first build into a directory deletes nothing, so a `dist/` 0.2.0 built
+  is marked by its first build and swept from its second (P4-D.4).
+  `bb clean` deletes only a marked directory, and never one holding a
+  `.git`; it refuses both, saying how to clean them.
 - **`bb serve` with an unreadable `site.edn`** warns and serves at `/`, as
   0.2.0 did (`--base` needs no config); it exited 1.
 - **`bb serve` serves the directory `bb build` wrote** (P4-D.3): `--dir`,

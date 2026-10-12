@@ -689,9 +689,17 @@ listen on 127.0.0.1 unless given `--host`.
 - `:build :out` from `site.edn` is honoured: `--out` has no spec default any more, so the precedence
   is `--out`, then `:build :out`, then `"dist"`; `bb serve` resolves `--dir`, then `--out`, then
   `:build :out`, then `dist` (P4-D.3). An output directory may not be, hold or sit inside a source
-  directory (content, assets, i18n, overrides, `.git`), nor be the site directory or an ancestor;
-  a `site.edn` value must stay inside the site. Builds mark it (`.clogem-output`), and `bb clean`,
-  the stale sweep and the search sweeps delete only in a marked directory (§11.2 item 46). `:site :base` is decoded once in
+  directory (content, assets, i18n, overrides, the site's `.git`), sit inside any `.git`, nor be
+  the site directory or an ancestor; a `:build :out` written in `site.edn` must stay inside the
+  site, while the default `dist` and `--out` may resolve anywhere, through a link too (P4-D.4: the
+  default was taken for a `site.edn` value, so `dist -> /var/www/site` was refused). A dangling
+  `dist` link is a config error. Builds write into any existing directory those rules accept, as
+  0.2.0 did, and mark it (`.clogem-output`); the stale sweep runs only where the marker was before
+  the build, so a first build into a pre-seeded (`CNAME`, `.nojekyll`, a worktree's `.git`) or
+  0.2.0-built `dist/` deletes nothing, and the next sweeps (§11.2 item 46). The search sweeps run
+  only in a marked directory. `bb clean` deletes only a marked directory without a `.git` (D.3's
+  adoption of an unmarked one with `clogem/` and `index.html` let it delete a deploy clone's
+  `.git`). `:site :base` is decoded once in
   `config/base-path`, so a base written percent-encoded is the same base.
 
 ### 5.5 Caching strategy
@@ -1550,7 +1558,7 @@ are one decision, not two.
 |---|---|
 | Published site ≤ 1 GB; deployments time out at 10 minutes | Measure `dist/` size in CI and **hard-fail** above 500 MB with a clear error naming the limit, the measured size, and the 1 GB platform cap (§7.3). A warning would be the wrong instrument: the cap is hard, the failure mode past it is a *deploy* failure that costs a full build cycle to discover, and a warning in a green log is not read. Self-hosted fonts subsetted, images the owner's responsibility. |
 | `upload-pages-artifact` tars with `--dereference --hard-dereference` | Symlinks in `dist/` are **materialized into real files** by the upload step, so they are not a platform constraint. clogem-press keeps "the exporter copies, never symlinks" as a **house rule** anyway — a dereferenced symlink silently duplicates its target's bytes against the 1 GB cap, and a broken one fails the tar — and keeps the `.cache/tools/` binary cache outside `dist/` regardless. |
-| `upload-pages-artifact` `include-hidden-files` defaults to `false` (and always excludes `.git`/`.github`) | We emit no dotfiles by design. If that ever changes (e.g. `.well-known/`), the input must be flipped — noted in the workflow comments. |
+| `upload-pages-artifact` `include-hidden-files` defaults to `false` (and always excludes `.git`/`.github`) | No page or asset is a dotfile, by design; the one dotfile a build writes, `.clogem-output` (§5.4), marks the output directory and is meant to stay out of the upload. If a published dotfile is ever needed (e.g. `.well-known/`), the input must be flipped — noted in the workflow comments — and the marker excluded. |
 | `retention-days` defaults to `1` | Fine: the artifact is an intermediate, not a backup. |
 | Pages responses are `cache-control: max-age=600`, not configurable | Fingerprinted asset filenames (unchanged from v1) so HTML and CSS can never be served as a mismatched pair. |
 

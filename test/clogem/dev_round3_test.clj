@@ -140,38 +140,29 @@
             (is (not (fs/exists? sibling)) "clean removes what the build made")
             (finally (fs/delete-tree sibling))))))))
 
-(deftest only-a-directory-clogem-made-is-written-swept-or-cleaned
-  (testing "item 1: an unrelated directory as the output is never swept or deleted"
+(deftest only-a-directory-clogem-made-is-swept-or-cleaned
+  (testing "item 1, as P4-D.4 item 3 left it: an unrelated directory as the
+            output is written into, as in 0.2.0, but never swept by that
+            first build, and never deleted by clean"
     (with-site url-site
       (fn [dir]
         (let [mine (fs/path dir "dist")]
           (fs/create-dirs mine)
           (spit (fs/file mine "notes.html") "<p>my notes</p>")
-          (let [before (tree mine)]
-            (doseq [[task f] [["build" #(cli/build (assoc (parse #'cli/build []) :site-dir (str dir)))]
-                              ["clean" #(cli/clean (assoc (parse #'cli/clean []) :site-dir (str dir)))]]]
-              (let [msg (refusal f)]
-                (is (re-find #"was not made by clogem-press" (str msg)) (str task ": " msg))))
-            (is (some #(re-find #"was not made by clogem-press" (:message %)) (doctor-errors dir)))
-            (is (= before (tree mine)) "untouched"))
-          (fs/delete-tree mine))
-        (testing "an empty one is fine, and marked"
-          (fs/create-dirs (fs/path dir "dist"))
+          (is (re-find #"has no \.clogem-output" (str (refusal #(cli/clean (assoc (parse #'cli/clean []) :site-dir (str dir)))))))
+          (is (= "<p>my notes</p>" (slurp (fs/file mine "notes.html"))))
+          (is (empty? (doctor-errors dir)) "doctor: no error")
           (quiet #(cli/build (assoc (parse #'cli/build []) :site-dir (str dir))))
-          (is (fs/exists? (fs/path dir "dist" marker))))
-        (testing "a build's stale pages are still swept, and clean removes it"
+          (is (fs/exists? (fs/path mine "notes.html")) "the first build sweeps nothing")
+          (is (fs/exists? (fs/path mine marker)) "and marks it")
+          (fs/delete-tree mine))
+        (testing "a build's stale pages are swept, and clean removes it"
+          (quiet #(cli/build (assoc (parse #'cli/build []) :site-dir (str dir))))
           (spit (fs/file dir "dist" "stale.html") "<p>old</p>")
           (quiet #(cli/build (assoc (parse #'cli/build []) :site-dir (str dir))))
           (is (not (fs/exists? (fs/path dir "dist" "stale.html"))))
           (quiet #(cli/clean (assoc (parse #'cli/clean []) :site-dir (str dir))))
           (is (not (fs/exists? (fs/path dir "dist")))))
-        (testing "a 0.2.0 dist/ — clogem/ and index.html, no marker — is adopted"
-          (fs/create-dirs (fs/path dir "dist" "clogem"))
-          (spit (fs/file dir "dist" "index.html") "<p>old home</p>")
-          (spit (fs/file dir "dist" "gone.html") "<p>old</p>")
-          (quiet #(cli/build (assoc (parse #'cli/build []) :site-dir (str dir))))
-          (is (not (fs/exists? (fs/path dir "dist" "gone.html"))))
-          (is (fs/exists? (fs/path dir "dist" marker))))
         (testing "search's sweep keeps out of an unmarked directory"
           (let [d (fs/path dir "plain")]
             (fs/create-dirs (fs/path d ".pagefind-prev"))

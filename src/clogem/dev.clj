@@ -257,7 +257,9 @@
    :headers {"Content-Type" "text/html; charset=utf-8"}
    :body (str "<!doctype html><meta charset=utf-8><h1>404</h1><p>Not found."
               (when (and (not= "/" base) (nil? (strip-base base path)))
-                (str " This site is served at <a href=\"" (escape-html base) "\">" (escape-html base) "</a>."))
+                ;; the href percent-encoded, as every link (P4-D.4 item 4)
+                (str " This site is served at <a href=\"" (escape-html (u/url-encode-path base)) "\">"
+                     (escape-html base) "</a>."))
               "</p>")})
 
 (def ^:private server-error
