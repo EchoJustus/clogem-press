@@ -993,3 +993,24 @@
               (is (wait-until #(= 3 @builds) 5000) "a rebuild")
               (is (wait-until #(= 2 (count (re-seq #"rebuilt in" (str out)))) 3000) (str "a good one: " out)))
             (finally (binding [*out* out *err* out] ((:stop! h))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 18: rename-saves through temp names with a random "extension"
+
+(deftest a-stylesheet-saved-through-a-random-suffixed-temp-swaps-the-css
+  (testing "item 18: rsync's .custom.css.Xy12Zq and write-file-atomic's
+            custom.css.<hash> made a full reload"
+    (with-root
+      (fn [root]
+        (let [css    (fs/path root "custom.css")
+              sheets #{"overrides/custom.css"}]
+          (spit (fs/file css) "a{}")
+          (doseq [tmp [".custom.css.Xy12Zq" "custom.css.3141592653" "custom.css.a1b2c3"]]
+            (is (= "css" (dev/reload-kind [(str (fs/path root tmp)) (str css)] sheets sheets true)) tmp))
+          (testing "but not a file that is still there, or names no stylesheet here"
+            (spit (fs/file root "custom.css.bak") "kept")
+            (is (= "reload" (dev/reload-kind [(str (fs/path root "custom.css.bak")) (str css)] sheets sheets true)))
+            (is (= "reload" (dev/reload-kind [(str (fs/path root "other.css.Xy12Zq")) (str css)] sheets sheets true))
+                "other.css is not here")
+            (is (= "reload" (dev/reload-kind [(str (fs/path root "page.md.Xy12Zq"))] sheets sheets true))
+                "not a stylesheet's")))))))

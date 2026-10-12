@@ -190,8 +190,10 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
 - **`doctor`'s code-language check** reports an unreadable Chroma — cached,
   `CLOGEM_CHROMA` or `:tools :chroma :path` — with `build`'s own message
   and hint, not as a stack trace (follow-up to Task C).
-- **A stylesheet saved by rename** (`sed -i`, JetBrains, GNOME editors) is
-  swapped in place; the temp file's name made it a full reload.
+- **A stylesheet saved by rename** (`sed -i`, JetBrains, GNOME editors,
+  and since P4-D.3 rsync's `.custom.css.Xy12Zq` and npm write-file-atomic's
+  `custom.css.<hash>`) is swapped in place; the temp file's name made it a
+  full reload.
 - **The 404 page escapes the base it links to** as an attribute.
 - **Feed summaries are well-formed XML.** A character reference to a
   control character, U+FFFE or U+FFFF stays as written, references are

@@ -1374,16 +1374,22 @@
 (defn gone-temp?
   "Is `p`, a changed path, the temp file of a rename-style save — gone by
   now, and named as editors and tools name them: an `editor-temp?` name, a
-  name with no extension (`sed -i`'s `sedAb12Cd`), or JetBrains' and
-  GNOME's (`x___jb_tmp___`, `.goutputstream-…`)? A deleted page has an
-  extension and is never one."
+  name with no extension (`sed -i`'s `sedAb12Cd`), JetBrains' and
+  GNOME's (`x___jb_tmp___`, `.goutputstream-…`), or a stylesheet's name
+  with a random suffix (`custom.css.3141592653`, `.custom.css.Xy12Zq`)
+  beside that stylesheet? A deleted page has an extension and is never one."
   [p]
   (let [n (str (fs/file-name (str p)))]
     (boolean
      (and (not (fs/exists? (str p) {:nofollow-links true}))
           (or (editor-temp? p)
               (nil? (u-ext p))
-              (re-find #"___jb_(?:tmp|old)___$|^\.goutputstream-" n))))))
+              (re-find #"___jb_(?:tmp|old)___$|^\.goutputstream-" n)
+              ;; `<sheet>.css.<random>` (npm's write-file-atomic) or
+              ;; `.<sheet>.css.<random>` (rsync), beside the stylesheet it
+              ;; became (P4-D.3 item 18)
+              (when-let [[_ sheet] (re-matches #"(?i)\.?(.+\.css)\.[A-Za-z0-9_-]+" n)]
+                (fs/regular-file? (fs/path (or (fs/parent (str p)) ".") sheet))))))))
 
 (defn reload-kind
   "`css` when every changed file is a stylesheet, the set of stylesheets is
