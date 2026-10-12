@@ -363,3 +363,37 @@
                   (is (= 200 status))
                   (fs/delete (fs/path root "big.bin"))
                   (is (= [(* 3 1024 1024) 7] (drain in))))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 4: a build's own write is filtered once
+
+(deftest an-undo-to-the-bytes-the-build-wrote-rebuilds
+  (testing "item 4: within 3 s of an auto-fill, a save restoring exactly what
+            the build wrote was taken for the build's own write; dist/ kept
+            the intermediate edit"
+    (with-site (assoc-in url-site [:content :write-front-matter] true)
+      (fn [dir]
+        (let [a      (fs/path dir "content" "01.Guide" "02.new.md")
+              builds (atom 0)
+              _      (spit (fs/file a) "---\ntitle: New\ndate: \"2026-02-01 00:00:00\"\n---\n\nBody\n")
+              h      (quiet #(dev/start-dev! {:site-dir (str dir) :poll true}
+                                             {:run-server! (fn [& _] (fn [& _] nil))
+                                              :poll-watch! (fn [& _] nil)
+                                              :notify! (fn [_]) :notify-error! (fn [_])
+                                              :build (fn [o] (swap! builds inc) (cli/build o))}))]
+          (try
+            (let [filled (slurp (fs/file a))
+                  page   (fs/file dir "dist" "pages" (second (re-find #"permalink: /pages/([^/]+)/" filled)) "index.html")]
+              (is (str/includes? filled "permalink:") "auto-filled")
+              (quiet #((:submit! h) [(str a)]))
+              (Thread/sleep 400)
+              (is (= 1 @builds) "the auto-fill's own event rebuilds nothing")
+              (spit (fs/file a) (str/replace filled "Body" "Edited"))
+              ((:submit! h) [(str a)])
+              (is (wait-until #(= 2 @builds)) "the edit rebuilds")
+              (is (wait-until #(str/includes? (slurp page) "Edited")))
+              (spit (fs/file a) filled)
+              ((:submit! h) [(str a)])
+              (is (wait-until #(= 3 @builds)) "the undo rebuilds too")
+              (is (wait-until #(not (str/includes? (slurp page) "Edited"))) "and dist/ has the undo"))
+            (finally (quiet (:stop! h)))))))))

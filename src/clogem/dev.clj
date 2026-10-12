@@ -1363,6 +1363,19 @@
                           (= content (try (slurp (fs/file c)) (catch Exception _ ::gone)))))))
                changed)))
 
+(defn- canonical [p] (try (str (fs/canonicalize p)) (catch Exception _ (str p))))
+
+(defn take-own-writes!
+  "`own-writes` of `changed` against the atom `writes`, each mark used up:
+  the first event for a path the build wrote is the build's own at most
+  once, and every later one is the user's, whatever its content (P4-D.3
+  item 4 — an undo back to the bytes the build wrote, within
+  `own-write-ms`, was taken for the build's write and never rebuilt)."
+  [writes changed now]
+  (let [own (own-writes @writes changed now)]
+    (swap! writes #(apply dissoc % (map canonical changed)))
+    own))
+
 (def stop-wait-ms
   "How long `stop!` waits for the build running, and then for the index
   run, to end (P4-D.2 item 2)."
@@ -1466,7 +1479,7 @@
         rebuild!  (fn [changed]
                     (.lock build-lock)
                     (try (when-not @stopping
-                           (let [own     (own-writes @writes changed (System/currentTimeMillis))
+                           (let [own     (take-own-writes! writes changed (System/currentTimeMillis))
                                  changed (vec (remove own changed))]
                              ;; a batch of nothing but the last build's own
                              ;; writes is no change at all
