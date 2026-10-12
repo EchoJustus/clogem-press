@@ -41,7 +41,7 @@
   `?v=<pinned Pagefind version>` (D-P4-7): the bundle's UI files are
   Pagefind's, and change exactly when the pin does."
   [ctx file]
-  (let [url (str/replace (str (config/base-path (:cfg ctx)) "/" search/output-subdir "/" file) #"/{2,}" "/")]
+  (let [url (u/url-encode-path (str/replace (str (config/base-path (:cfg ctx)) "/" search/output-subdir "/" file) #"/{2,}" "/"))]
     (if (str/blank? (str file))
       url
       (str url "?v=" (search/version (:cfg ctx))))))
@@ -201,7 +201,7 @@
     (when (seq cats)
       [:nav.clogem-breadcrumbs {:aria-label (i18n/tr ctx :page/breadcrumbs)}
        (into [:ol
-              [:li [:a {:href (model/home-url cfg lang)} (i18n/tr ctx :nav/home)]]]
+              [:li [:a {:href (href ctx (model/home-url cfg lang))} (i18n/tr ctx :nav/home)]]]
              (map-indexed
               (fn [i c]
                 (let [dir-key (when (and segs (< i (count segs)))
@@ -325,15 +325,15 @@
   [{:keys [cfg lang model] :as ctx} link]
   (let [link (str link)]
     (cond
-      (str/blank? link) (model/home-url cfg lang)
+      (str/blank? link) (href ctx (model/home-url cfg lang))
       (re-find #"^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|//|#)" link) link
       (get-in model [:articles (u/clean-url link)])
       (:href (article-link ctx (get-in model [:articles (u/clean-url link)])))
       ;; a permalink that names nothing: the base only, never a language
       ;; prefix that would invent a URL — doctor reports it
-      (re-find #"^/pages/" link) (str/replace (str (config/base-path cfg) "/" link) #"/{2,}" "/")
+      (re-find #"^/pages/" link) (href ctx (str/replace (str (config/base-path cfg) "/" link) #"/{2,}" "/"))
       (str/ends-with? link "/") (href ctx (model/site-url cfg lang link))
-      :else (str/replace (str (config/base-path cfg) "/" link) #"/{2,}" "/"))))
+      :else (href ctx (str/replace (str (config/base-path cfg) "/" link) #"/{2,}" "/")))))
 
 (defn- nav-item
   [ctx {:keys [text link items]}]
@@ -412,7 +412,7 @@
 (defn navbar
   [{:keys [cfg lang] :as ctx}]
   [:header.clogem-navbar
-   [:a.clogem-navbar__brand {:href (model/home-url cfg lang)}
+   [:a.clogem-navbar__brand {:href (href ctx (model/home-url cfg lang))}
     (i18n/resolve-str ctx (get-in cfg [:site :title]))]
    [:nav.clogem-navbar__nav
     (into [:ul] (map #(nav-item ctx %) (:nav cfg)))]

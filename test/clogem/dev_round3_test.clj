@@ -1014,3 +1014,36 @@
                 "other.css is not here")
             (is (= "reload" (dev/reload-kind [(str (fs/path root "page.md.Xy12Zq"))] sheets sheets true))
                 "not a stylesheet's")))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 19: a base with a space or non-ASCII characters
+
+(deftest every-emitted-url-carries-the-base-percent-encoded
+  (testing "item 19: article links were encoded, but theme assets, the icon
+            sprite, the home and language links and markdown's /assets/
+            links carried the raw base"
+    (doseq [base ["/my docs/" "/文档/"]]
+      (testing base
+        (with-site (assoc url-site :site {:title "S" :url "https://s.example" :base base}
+                          :langs {:default :en :priority [:en :ta]
+                                  :locales {:en {:label "English" :html-lang "en"}
+                                            :ta {:label "தமிழ்" :html-lang "ta"}}}
+                          :nav [{:text "Home" :link "/"} {:text "Cats" :link "/categories/"} {:text "File" :link "/assets/demo.txt"}])
+          (fn [dir]
+            (spit (fs/file dir "content" "01.Guide" "01.t.md")
+                  (str article "\n![d](/assets/demo.txt) and [file](/assets/demo.txt)\n"))
+            (quiet #(cli/build (assoc (parse #'cli/build []) :site-dir (str dir))))
+            (let [enc   (clogem.util/url-encode-path base)
+                  html  (for [f (fs/glob (fs/path dir "dist") "**.html")] (slurp (fs/file f)))
+                  raw   (re-pattern (str "(?:href|src|action)=\"" (java.util.regex.Pattern/quote base)))
+                  all   (apply str html)]
+              (is (seq html))
+              (is (not (re-find raw all)) (str "a raw base: " (re-find (re-pattern (str ".{40}" (java.util.regex.Pattern/quote base) ".{30}")) all)))
+              (doseq [part ["clogem/css/theme.css" "clogem/js/lang.js" "clogem/icons.svg" "assets/demo.txt"]]
+                (is (str/includes? all (str enc part)) part))
+              (is (str/includes? all (str "href=\"" enc "\"")) "the home link")
+              (is (str/includes? all (str "href=\"" enc "ta/\"")) "a language's home")
+              (testing "and serve answers what the pages link"
+                (let [h (serve-handler (fs/path dir "dist") ["--base" base])]
+                  (doseq [u [(str enc "clogem/css/theme.css") (str enc "ta/") (str enc "assets/demo.txt")]]
+                    (is (= 200 (:status (h {:uri u :headers {"host" "localhost"}}))) u)))))))))))

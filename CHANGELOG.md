@@ -151,7 +151,10 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
 - **A `:base` with non-ASCII characters or a space** (`/文档/`, `/my docs/`)
   is mounted by `dev` and `serve`; it 404'd. A base written
   percent-encoded (`"/%E6%96%87/"`) is the same base as `"/文/"`; it was
-  encoded again in every link, by `build` too.
+  encoded again in every link, by `build` too. Every URL `build` emits now
+  carries the base percent-encoded (P4-D.3): theme assets, the icon
+  sprite, the search bundle, the home and language-home links, nav links
+  and markdown's `/assets/…` links had `href="/my docs/…"`.
 - **`:build :out` in `site.edn` is honoured** by `build`, `dev` and
   `clean`: the CLI's `--out` defaulted to `dist` and overrode it every
   time. `--out` still wins. A site whose CI passes `--out` (the live
