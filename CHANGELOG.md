@@ -122,7 +122,9 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   build, and with the pod's filter gone an endless loop. Each write is
   filtered once (P4-D.3): the first event for the file uses it up, and any
   later one rebuilds whatever it holds — an undo back to the bytes the
-  build wrote, within 3 s, was ignored and `dist/` kept the edit.
+  build wrote, within 3 s, was ignored and `dist/` kept the edit. A
+  directory the build creates (`content/@pages/`) is the build's own too;
+  it was one extra rebuild.
 - **Ctrl-C waits for the build running** (up to 10 s), stops Pagefind and
   any index run queued behind it, and removes the staging directories, so
   nothing is written after `stopped` and no Pagefind outlives `bb dev`.

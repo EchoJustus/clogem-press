@@ -1554,7 +1554,11 @@
                  (let [c (try (str (fs/canonicalize p)) (catch Exception _ (str p)))]
                    (when-let [{:keys [content at]} (get writes c)]
                      (and (< (- now at) own-write-ms)
-                          (= content (try (slurp (fs/file c)) (catch Exception _ ::gone)))))))
+                          ;; a directory the build made: still a directory
+                          ;; (`u/create-source-dirs!`, P4-D.3 item 15)
+                          (if (= u/dir-mark content)
+                            (fs/directory? c)
+                            (= content (try (slurp (fs/file c)) (catch Exception _ ::gone))))))))
                changed)))
 
 (defn- canonical [p] (try (str (fs/canonicalize p)) (catch Exception _ (str p))))

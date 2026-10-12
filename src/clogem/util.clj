@@ -26,6 +26,24 @@
     (swap! a assoc (str (.getCanonicalPath (io/file (str f)))) content))
   nil)
 
+(def dir-mark
+  "What `*source-writes*` records for a directory the build created."
+  ::dir)
+
+(defn create-source-dirs!
+  "`mkdir -p` `dir` in the SOURCE tree, each directory it creates recorded
+  in `*source-writes*` as `dir-mark`: the event for a directory the build
+  made — `content/@pages/` — is the build's own too (P4-D.3 item 15)."
+  [dir]
+  (let [missing (->> (iterate #(.getParentFile ^java.io.File %) (.getAbsoluteFile (io/file (str dir))))
+                     (take-while #(and % (not (.exists ^java.io.File %))))
+                     vec)]
+    (.mkdirs (io/file (str dir)))
+    (when-let [a *source-writes*]
+      (doseq [d missing :when (.isDirectory ^java.io.File d)]
+        (swap! a assoc (.getCanonicalPath ^java.io.File d) dir-mark)))
+    nil))
+
 ;; ---------------------------------------------------------------------------
 ;; Cancellation
 

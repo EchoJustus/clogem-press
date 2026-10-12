@@ -76,7 +76,7 @@
        (for [{:keys [flag] :as kind} (enabled-kinds cfg)
              :let [f (fs/path dir (str flag ".md"))]
              :when (not (fs/exists? f))]
-         (do (fs/create-dirs dir)
+         (do (u/create-source-dirs! dir)
              (u/write-source! f (generated-content cfg strings kind))
              (str "@pages/" flag ".md")))))))
 

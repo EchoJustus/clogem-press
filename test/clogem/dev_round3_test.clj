@@ -412,7 +412,7 @@
   unwatched. `(event! path type)` delivers an event as the pod would. With
   `fail?`, a (fn [spec]) — a registration it says yes to throws its
   answer (a message). Calls (f ctx), then stops dev."
-  [dir {:keys [fail? follow-ms] :or {follow-ms 50}} f]
+  [dir {:keys [fail? follow-ms opts] :or {follow-ms 50}} f]
   (let [regs (atom []) unwatched (atom []) builds (atom 0) polls (atom 0)
         out (java.io.StringWriter.) cb (atom nil) k (atom 0)
         register! (fn [spec]
@@ -431,7 +431,7 @@
                  (when-let [{:keys [on-change accept?]} @cb]
                    (when (accept? (str p)) (on-change (with-meta [(str p)] {:type type})))))
         h (binding [*out* out *err* out]
-            (dev/start-dev! {:site-dir (str dir) :port 1888 :no-write true}
+            (dev/start-dev! (merge {:site-dir (str dir) :port 1888 :no-write true} opts)
                             {:run-server! (fn [& _] (fn [& _] nil))
                              :try-pod-watch! pod
                              :poll-watch! (fn [& _] (swap! polls inc) nil)
@@ -908,3 +908,29 @@
                       (is (= "" (str err)) "nothing while dev stops"))
                   (is (wait-until #(str/includes? (str err) "Pod quit unexpectedly") 3000) "said otherwise"))
                 (dev/unload-pod! (:pod-id fns))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 15: a directory the build creates
+
+(deftest a-directory-the-build-creates-rebuilds-nothing
+  (testing "item 15: the build's content/@pages/ was one extra rebuild"
+    (with-site (assoc-in url-site [:content :write-front-matter] true)
+      (fn [dir]
+        (let [pages (fs/path dir "content" "@pages")]
+          (is (not (fs/exists? pages)))
+          (pod-dev dir {:opts {:no-write false}}
+                   (fn [{:keys [event! builds regs-of]}]
+                     (is (fs/directory? pages) "the first build made it")
+                     (is (= 1 @builds))
+                     ;; what the content directory's watch reports: the
+                     ;; directory; its files were made before any watch of
+                     ;; it existed
+                     (event! pages :create)
+                     (is (wait-until #(= 1 (count (regs-of pages)))) "registered, to watch it")
+                     (Thread/sleep 500)
+                     (is (= 1 @builds) "and no rebuild")
+                     (testing "while a directory the author makes is one"
+                       (let [t (fs/path dir "content" "50.Mine")]
+                         (fs/create-dirs t)
+                         (event! t :create)
+                         (is (wait-until #(= 2 @builds))))))))))))
