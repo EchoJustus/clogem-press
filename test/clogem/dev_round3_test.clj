@@ -934,3 +934,33 @@
                          (fs/create-dirs t)
                          (event! t :create)
                          (is (wait-until #(= 2 @builds))))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 16: a symlinked site.edn pointed elsewhere
+
+(deftest re-pointing-a-symlinked-site-edn-is-one-rebuild
+  (testing "item 16: two rebuilds, the second a rescan of the whole new
+            target directory"
+    (with-site url-site
+      (fn [dir]
+        (let [shared (fs/path dir "shared")
+              other  (fs/path dir "elsewhere")
+              link   (fs/path dir "site.edn")]
+          (fs/create-dirs shared)
+          (fs/move link (fs/path shared "site.edn"))
+          (fs/create-sym-link link (fs/path shared "site.edn"))
+          (fs/create-dirs (fs/path other "unrelated" "deep"))
+          (spit (fs/file other "site.edn") (pr-str (assoc-in url-site [:site :title] "Other")))
+          (spit (fs/file other "notes.txt") "not the site's")
+          (spit (fs/file other "unrelated" "deep" "x.md") "nor this")
+          (pod-dev dir {}
+                   (fn [{:keys [event! builds regs-of out]}]
+                     (is (= 1 @builds))
+                     (fs/delete link)
+                     (fs/create-sym-link link (fs/path other "site.edn"))
+                     (event! link :create)
+                     (is (wait-until #(= 1 (count (regs-of other)))) "the new target's directory is watched")
+                     (Thread/sleep 600)
+                     (is (= 2 @builds) (str "one rebuild: " out))
+                     (is (not (str/includes? (str out) "notes.txt")) "no rescan of the target's directory")
+                     (is (not (str/includes? (str out) "files changed")) (str out)))))))))

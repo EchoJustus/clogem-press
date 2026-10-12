@@ -1775,7 +1775,11 @@
                                                                              register! unwatch!)
                                                          [])
                                                        (when pass? (follow-new-paths! @specs registered register! unwatch!)))]
-                                         (when (seq new) (submit! (vec (mapcat new-dir-batch (distinct new))))))
+                                         ;; a recursive registration's files are rescanned;
+                                         ;; a single-file watch's directory — a site.edn
+                                         ;; link's new target — is not (P4-D.3 item 16)
+                                         (when-let [new (seq (filter #(get-in @registered [% :spec :recursive?]) (distinct new)))]
+                                           (submit! (vec (mapcat new-dir-batch new)))))
                                        false
                                        (catch Throwable t
                                          (if (::exhausted (ex-data t))

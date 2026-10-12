@@ -95,7 +95,9 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   would have been a network stat).
 - **With the pod, `site.edn` saved by rename** (`sed -i`, vim, emacs,
   atomic-save editors) is still watched afterwards, and a `site.edn` that
-  is a symbolic link is watched at its target too.
+  is a symbolic link is watched at its target too. Pointing the link
+  elsewhere is one rebuild; it was two, the second a rescan of every file
+  in the new target's directory (P4-D.3).
 - **With the pod, a directory created while `bb dev` runs is watched**:
   `mkdir content/07.Topic` and a page in it, `mkdir -p a/b/c`, `cp -r` of
   a tree. The pod watches only the subdirectories that exist when it is
