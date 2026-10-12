@@ -342,7 +342,9 @@
 
 (defn ^{:org.babashka/cli
         {:spec (merge common-spec server-spec
-                      {:dir  {:desc "Directory to serve." :default "dist" :ref "<dir>"}
+                      ;; no :default (P4-D.3 item 2): it hid site.edn's :build :out
+                      {:dir  {:desc "Directory to serve (default: --out, else site.edn's :build :out, else dist)." :ref "<dir>"}
+                       :out  {:desc "Output directory to serve, from --site-dir, as `build --out` names it." :alias :o :ref "<dir>"}
                        :base {:desc "Serve it at this path, e.g. /project/ (default: the site's :base when --site-dir has a site.edn, else /)."
                               :ref "<path>"}})}}
   serve

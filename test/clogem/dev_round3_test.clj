@@ -12,6 +12,7 @@
             [clojure.test :refer [deftest is testing]]
             [clogem.cli :as cli]
             [clogem.config :as config]
+            [clogem.dev :as dev]
             [clogem.diag :as diag]
             [clogem.search :as search]))
 
@@ -173,3 +174,71 @@
             (fs/create-dirs (fs/path d ".pagefind-prev"))
             (is (empty? (search/sweep-staging! d)))
             (is (fs/exists? (fs/path d ".pagefind-prev")))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 2: serve follows `:build :out`; dev sweeps every output directory
+
+(defn- wait-until
+  "Poll `pred` every 10 ms for up to `ms`; its last value."
+  [pred & [ms]]
+  (let [t0 (System/currentTimeMillis)]
+    (loop []
+      (or (pred)
+          (if (> (- (System/currentTimeMillis) t0) (or ms 5000))
+            (pred)
+            (do (Thread/sleep 10) (recur)))))))
+
+(defn- served-root
+  "The directory `bb serve <args>` would serve in `dir`, by its handler: the
+  path of the file it answers `/probe.txt` with, read back."
+  [dir args]
+  (let [got (atom nil)]
+    (with-redefs [dev/run-server! (fn [h _] (reset! got h) :server)]
+      (quiet #((requiring-resolve 'clogem.dev/start-serve!)
+               (assoc (parse #'cli/serve (into ["--port" "1"] args)) :site-dir (str dir)))))
+    (some-> (:body (@got {:uri "/probe.txt" :headers {"host" "localhost"}})) (String. "UTF-8"))))
+
+(deftest serve-serves-the-output-directory-the-build-wrote
+  (testing "item 2: with :build :out \"public\", bb serve looked for dist/"
+    (with-site (assoc url-site :build {:out "public"})
+      (fn [dir]
+        (doseq [d ["public" "dist" "given" "elsewhere"]]
+          (fs/create-dirs (fs/path dir d))
+          (spit (fs/file dir d "probe.txt") d))
+        (is (nil? (:dir (parse #'cli/serve []))) "no spec default to hide site.edn's")
+        (is (= "public" (served-root dir [])) "site.edn's :build :out")
+        (is (= "given" (served-root dir ["--out" "given"])) "--out wins")
+        (is (= "elsewhere" (served-root dir ["--out" "given" "--dir" (str (fs/path dir "elsewhere"))]))
+            "--dir wins over both")
+        (testing "an unreadable site.edn warns once and serves dist/"
+          (spit (fs/file dir "site.edn") "{:build {:out \"public\"")
+          (let [err (java.io.StringWriter.)]
+            (binding [*err* err]
+              (let [got (atom nil)]
+                (with-redefs [dev/run-server! (fn [h _] (reset! got h) :server)]
+                  (binding [*out* (java.io.StringWriter.)]
+                    (dev/start-serve! (assoc (parse #'cli/serve ["--port" "1"]) :site-dir (str dir)))))
+                (is (= "dist" (String. ^bytes (:body (@got {:uri "/probe.txt"})) "UTF-8")))))
+            (is (= 1 (count (re-seq #"(?m)^warning: " (str err)))) (str err))))))))
+
+(deftest dev-sweeps-every-output-directory-it-built-into
+  (testing "item 2: after a mid-session :build :out change, stop! swept only
+            the new one, and dev's previous bundles stayed in the old"
+    (with-site (assoc url-site :build {:out "one"})
+      (fn [dir]
+        (let [me  (java.lang.ProcessHandle/current)
+              st  (.toEpochMilli ^java.time.Instant (.get (.startInstant (.info me))))
+              old (fs/path dir "one" (str ".pagefind-prev-" (.pid me) "-" st "-9"))
+              h   (quiet #(dev/start-dev! {:site-dir (str dir) :poll true :no-write true}
+                                          {:run-server! (fn [& _] (fn [& _] nil))
+                                           :poll-watch! (fn [& _] nil)
+                                           :notify! (fn [_]) :notify-error! (fn [_])}))]
+          (try
+            (is (fs/exists? (fs/path dir "one" "index.html")))
+            (fs/create-dirs old)
+            (spit (fs/file dir "site.edn") (pr-str (assoc url-site :build {:out "two"})))
+            ((:submit! h) [(str (fs/path dir "site.edn"))])
+            (is (wait-until #(fs/exists? (fs/path dir "two" "index.html"))))
+            (is (wait-until #(= "two" (str (fs/file-name (config/out-dir @(:cfg-ref h)))))))
+            (finally (quiet (:stop! h))))
+          (is (not (fs/exists? old)) "the old directory's previous bundle went too"))))))

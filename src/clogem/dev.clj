@@ -485,30 +485,47 @@
 
 (defn- clean-base [b] (config/base-path {:site {:base b}}))
 
+(defn- serve-cfg
+  "The site's config for `serve`, or nil: `--site-dir` holds no config
+  file, or it cannot be read — one warning, and `serve` falls back, as
+  0.2.0 served regardless. Diagnostics are not printed: `serve` builds
+  nothing, and a refused `:build :out` is already repaired to the default."
+  [{:keys [site-dir config-file]}]
+  (let [f (fs/path (or site-dir ".") (or config-file "site.edn"))]
+    (when (fs/regular-file? f)
+      (try
+        (first (diag/collecting (config/load-config (str (or site-dir ".")) config-file nil)))
+        (catch Exception e
+          (binding [*out* *err*]
+            (println (str "warning: " f ": could not read it (" (first (str/split-lines (str (ex-message e))))
+                          "), so the site is served at / from dist/."))
+            (println "  hint: Fix it, or give the base with `--base` and the directory with `--dir`."))
+          nil)))))
+
+(defn serve-settings
+  "`serve`'s {:base :dir} (P4-D.3 item 2). The base: `--base`, else the
+  site's `:base`, else `/`. The directory: `--dir` (from the working
+  directory), else `--out`, else the site's `:build :out` (both from
+  `--site-dir`, as `build` reads them), else `dist`. The config is read
+  only when one of them needs it."
+  [{:keys [base dir out site-dir] :as opts}]
+  (let [cfg (delay (serve-cfg opts))
+        sd  (or site-dir ".")]
+    {:base (if base (clean-base base) (if-let [c @cfg] (config/base-path c) "/"))
+     :dir  (fs/absolutize
+            (cond dir  dir
+                  out  (fs/path sd out)
+                  :else (if-let [c @cfg] (config/out-dir c) (fs/path sd "dist"))))}))
+
 (defn serve-base
-  "`serve`'s base: `--base`, else the site's `:base` when `--site-dir` holds
-  its config file, else `/`. A config file that cannot be read is one
-  warning and `/`: `serve` only needs the base, and 0.2.0 served regardless."
-  [{:keys [base site-dir config-file]}]
-  (if base
-    (clean-base base)
-    (let [f (fs/path (or site-dir ".") (or config-file "site.edn"))]
-      (if (fs/regular-file? f)
-        (try
-          (config/base-path (first (diag/collecting (config/load-config (str (or site-dir ".")) config-file nil))))
-          (catch Exception e
-            (binding [*out* *err*]
-              (println (str "warning: " f ": could not read it (" (first (str/split-lines (str (ex-message e))))
-                            "), so the site is served at /."))
-              (println "  hint: Fix it, or give the base with `--base`."))
-            "/"))
-        "/"))))
+  "`serve`'s base (`serve-settings`)."
+  [opts]
+  (:base (serve-settings (assoc opts :dir "."))))
 
 (defn start-serve!
   "Start `serve`'s server and return what `run-server!` returned."
-  [{:keys [dir] :or {dir "dist"} :as opts}]
-  (let [root (fs/absolutize dir)
-        base (serve-base opts)
+  [opts]
+  (let [{root :dir base :base} (serve-settings opts)
         sopts (server-options opts)]
     (when-not (fs/directory? root)
       (throw (ex-info (str "nothing to serve: " root " does not exist (run `bb build` first)")
@@ -1339,6 +1356,10 @@
         session   (atom #{})
         sopts     (server-options opts)
         out-fn    #(fs/absolutize (config/out-dir @cfg-ref))
+        ;; every output directory this session built into: a `:build :out`
+        ;; changed mid-session leaves previous bundles in the old one, which
+        ;; `stop!` sweeps too (P4-D.3 item 2)
+        outs      (atom #{(str (out-fn))})
         base-fn   #(config/base-path @cfg-ref)
         server    (serve* (make-handler out-fn {:inject-reload? true :base base-fn :state state
                                                 :check-host? (loopback-ip? (:ip sopts))}) sopts)
@@ -1363,6 +1384,7 @@
                     :on-config     (fn [c]
                                      (let [before @cfg-ref]
                                        (reset! cfg-ref c)
+                                       (swap! outs conj (str (out-fn)))
                                        (reset! watch-cfg c)
                                        (reset! specs (watch-specs c {:reload-code? reload-code}))
                                        (run! println (config-moves before c url))))})
@@ -1406,7 +1428,8 @@
                       (when-let [await! (:await (meta index*))] (await! stop-wait-ms))
                       ;; the pod process and its watches go with dev (P4-D.2 item 15)
                       (unload-pod! @pod-id)
-                      (try (search/sweep-staging! (out-fn) {:own-previous? true}) (catch Throwable _ nil))
+                      (doseq [o @outs]
+                        (try (search/sweep-staging! o {:own-previous? true}) (catch Throwable _ nil)))
                       nil))]
     (when-let [f (:on-stop! env)] (f stop!))
     (rebuild! [])

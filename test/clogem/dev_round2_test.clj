@@ -108,7 +108,12 @@
         (is (fs/exists? (fs/path dir "dist" "pages" "t00001" "index.html")))))))
 
 (deftest serve-s-dir-keeps-its-default
-  (is (= "dist" (:dir (parse #'cli/serve []))))
+  ;; P4-D.3 item 2: the default is resolved by `serve-settings`, after
+  ;; --out and site.edn's :build :out, not by the spec
+  (with-site url-site
+    (fn [dir _]
+      (is (= (str (fs/absolutize (fs/path dir "dist")))
+             (str (:dir (dev/serve-settings (assoc (parse #'cli/serve []) :site-dir (str dir)))))))))
   (is (= "x" (:dir (parse #'cli/serve ["--dir" "x"])))))
 
 ;; ---------------------------------------------------------------------------

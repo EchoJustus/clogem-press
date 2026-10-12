@@ -138,6 +138,11 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   and marked by the next build.
 - **`bb serve` with an unreadable `site.edn`** warns and serves at `/`, as
   0.2.0 did (`--base` needs no config); it exited 1.
+- **`bb serve` serves the directory `bb build` wrote** (P4-D.3): `--dir`,
+  else `--out` (new), else `site.edn`'s `:build :out`, else `dist`. With
+  `:build :out "public"` it looked for `dist/`. `bb dev` sweeps its
+  previous search bundles from every output directory it built into in
+  the session, not only the last.
 - **Messages:** the pod fallback line has one `clogem-press:` prefix and
   keeps its hint, which names `bb dev --poll` for a `CLOGEM_FSWATCHER`
   that names nothing; a failed pod download leaves no `.lock` in the
