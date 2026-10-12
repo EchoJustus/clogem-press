@@ -1398,11 +1398,13 @@
         ;; Throwable: a StackOverflowError or an AssertionError in a render
         ;; must not kill the loop
         (catch Throwable e
-          (let [err (error-info e)]
-            (swap! state assoc :last-ok? false :error err)
-            (println "clogem-press: build failed —" (:message err))
-            (notify-error! err)
-            nil))))))
+          ;; dev is stopping: nothing written, nothing to report (P4-D.3 item 13)
+          (when-not (u/cancelled-ex? e)
+            (let [err (error-info e)]
+              (swap! state assoc :last-ok? false :error err)
+              (println "clogem-press: build failed —" (:message err))
+              (notify-error! err)))
+          nil)))))
 
 (def ^:private sigint-exit
   "Pagefind's exit code when SIGINT stopped it: Ctrl-C reaches the whole
@@ -1593,7 +1595,8 @@
         rebuild   (make-rebuild
                    {:build         #(let [w (atom {})]
                                       (try (binding [i18n/*session-keys* session
-                                                     u/*source-writes*   w]
+                                                     u/*source-writes*   w
+                                                     u/*cancelled?*      (fn [] @stopping)]
                                              (build* (build-opts opts)))
                                            (finally
                                              (let [now (System/currentTimeMillis)]

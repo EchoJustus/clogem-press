@@ -16,7 +16,8 @@
             [clogem.render :as render]
             [clogem.scan :as scan]
             [clogem.search :as search]
-            [clogem.tools :as tools]))
+            [clogem.tools :as tools]
+            [clogem.util :as u]))
 
 ;; ---------------------------------------------------------------------------
 ;; Shared option spec
@@ -200,7 +201,10 @@
           [result rds]
           (diag/collecting
            (let [written (binding [i18n/*missing-keys* missing]
-                           (render/write-site! (render/render-site cfg m)))]
+                           (let [rendered (render/render-site cfg m)]
+                             ;; `bb dev` stopping: nothing is written (P4-D.3 item 13)
+                             (when (u/cancelled?) (throw (u/cancelled)))
+                             (render/write-site! rendered)))]
              (i18n/report-missing-keys! cfg @missing)
              (when (config/write-front-matter? cfg)
                (model/write-ledger! cfg (model/ledger-from-model m)))

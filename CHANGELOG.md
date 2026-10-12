@@ -127,7 +127,12 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   any index run queued behind it, and removes the staging directories, so
   nothing is written after `stopped` and no Pagefind outlives `bb dev`.
   Ctrl-C during the first build or the pod's probe now does the same; it
-  printed nothing and skipped it all.
+  printed nothing and skipped it all. Since P4-D.3: a build Ctrl-C
+  interrupts writes nothing — Chroma killed by the same signal is not
+  reported as a failure, and the build no longer goes on to write `dist/`
+  with plain code; a Pagefind the process group's SIGTERM stopped is not
+  reported either; the probe's temp file is removed; and `stopped` is
+  printed only once dev has started, not under a listen or config error.
 - **A busy port, a port out of range, or a `--host` that does not
   resolve, is not this machine's or has no address family here (`::1` on
   an IPv4-only host)** is one error naming the host and port (exit 1), not

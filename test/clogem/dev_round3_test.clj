@@ -15,7 +15,10 @@
             [clogem.config :as config]
             [clogem.dev :as dev]
             [clogem.diag :as diag]
-            [clogem.search :as search]))
+            [clogem.fake-tools :as fake]
+            [clogem.highlight :as highlight]
+            [clogem.search :as search]
+            [clogem.tools :as tools]))
 
 ;; ---------------------------------------------------------------------------
 ;; Fixtures
@@ -804,3 +807,54 @@
           (quiet @stop)
           (is (empty? (probe-files dir)) "stop! removed it")
           (deref done 6000 nil))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 13: Ctrl-C while Chroma runs
+
+(defn- stop-while-chroma-runs
+  "Start dev on a site with a code block and a fake Chroma that, after
+  `sleep` seconds, exits 130 as the SIGINT of a Ctrl-C makes it; call dev's
+  stop! once Chroma is running. [out written?]."
+  [sleep]
+  (let [result (atom nil)]
+    (with-site (assoc url-site :highlight {:provider :chroma})
+      (fn [dir]
+        (spit (fs/file dir "content" "01.Guide" "01.t.md")
+              (str article "\n```clojure\n(defn f [] 1)\n```\n"))
+        (let [real    (fake/fake-chroma! (fs/path dir "bin") :exit 130)
+              wrapper (str (fs/path dir "bin" "slow-chroma"))]
+          (spit wrapper (str "#!/bin/sh\ncase \"$*\" in *--lexer=*) sleep " sleep ";; esac\nexec " real " \"$@\"\n"))
+          (fs/set-posix-file-permissions wrapper "rwxr-xr-x")
+          (spit (fs/file dir "site.edn") (pr-str (assoc url-site :highlight {:provider :chroma}
+                                                        :tools {:chroma {:path wrapper}})))
+          (highlight/clear-cache!)
+          (let [stop (promise)
+                out  (java.io.StringWriter.)
+                done (future
+                       ;; CI's CLOGEM_CHROMA would win over :tools :chroma :path
+                       (binding [*out* out *err* out tools/*env* {}]
+                         (dev/start-dev! {:site-dir (str dir) :poll true :no-write true}
+                                         {:run-server! (fn [& _] (fn [& _] nil))
+                                          :poll-watch! (fn [& _] nil)
+                                          :notify! (fn [_]) :notify-error! (fn [_])
+                                          :on-stop! #(deliver stop %)})))]
+            (is (wait-until #(and (fs/exists? (fs/path dir "bin" "calls.txt"))
+                                  (str/includes? (slurp (fs/file dir "bin" "calls.txt")) "--lexer="))
+                            5000)
+                "Chroma is running")
+            ;; what the shutdown hook runs, after the SIGINT reached Chroma
+            (Thread/sleep 100)
+            (binding [*out* out *err* out] (@stop))
+            (deref done 10000 nil)
+            (reset! result [(str out) (fs/exists? (fs/path dir "dist" "pages" "t00001" "index.html"))])))))
+    @result))
+
+(deftest stop-while-chroma-runs-writes-nothing-and-warns-nothing
+  (testing "item 13: Ctrl-C killed Chroma (exit 130), the dev build warned
+            that Chroma failed and wrote dist/ with plain code"
+    (doseq [sleep ["0.8" "0"]]
+      (testing (if (= "0" sleep) "Chroma died before dev's hook ran" "dev's hook ran before Chroma died")
+        (let [[out written?] (stop-while-chroma-runs sleep)]
+          (is (not written?) "nothing written")
+          (is (not (re-find #"(?i)chroma" out)) (str "no Chroma warning: " out))
+          (is (not (str/includes? out "build failed")) out))))))

@@ -27,6 +27,27 @@
   nil)
 
 ;; ---------------------------------------------------------------------------
+;; Cancellation
+
+(def ^:dynamic *cancelled?*
+  "When bound (by `bb dev`, around each build) to a function, it says
+  whether dev is stopping: a build then stops before it writes, and a tool
+  the stop killed is not reported as a failure (P4-D.3 item 13)."
+  nil)
+
+(defn cancelled?
+  "Is the build running cancelled (`*cancelled?*`), or `f` says so?"
+  ([] (cancelled? *cancelled?*))
+  ([f] (boolean (when f (f)))))
+
+(defn cancelled
+  "The exception a cancelled build stops with: dev says nothing about it."
+  []
+  (ex-info "clogem-press: the build was cancelled (bb dev is stopping)" {:clogem/cancelled true}))
+
+(defn cancelled-ex? [e] (boolean (:clogem/cancelled (ex-data e))))
+
+;; ---------------------------------------------------------------------------
 ;; Maps
 
 (defn deep-merge
