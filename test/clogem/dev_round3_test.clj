@@ -598,3 +598,75 @@
               (finally
                 (babashka.process/destroy-tree proc)
                 (deref proc 5000 nil)))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 8: the mutants that survived D.2
+
+(defn- dev-handler
+  "The handler `start-dev!` serves with `args` (as `bb dev` parses them)."
+  [dir args]
+  (let [servers (atom [])
+        h (quiet #(dev/start-dev! (assoc (parse #'cli/dev (into ["--poll" "--no-write"] args)) :site-dir (str dir))
+                                  {:run-server! (fn [handler _] (swap! servers conj handler) (fn [& _] nil))
+                                   :poll-watch! (fn [& _] nil)
+                                   :notify! (fn [_]) :notify-error! (fn [_])}))]
+    (quiet (:stop! h))
+    (first @servers)))
+
+(defn- serve-handler
+  "The handler `start-serve!` serves `root` with `args` (as `bb serve` parses them)."
+  [root args]
+  (let [got (atom nil)]
+    (with-redefs [dev/run-server! (fn [handler _] (reset! got handler) :server)]
+      (quiet #(dev/start-serve! (assoc (parse #'cli/serve (into ["--dir" (str root)] args)) :site-dir (str root)))))
+    @got))
+
+(deftest every-interface-binds-have-no-host-check
+  (testing "i17e, i17f: `:check-host?` forced true in dev or serve survived —
+            with --host 0.0.0.0 a LAN name must be answered"
+    (with-site url-site
+      (fn [dir]
+        (quiet #(cli/build (assoc (parse #'cli/build []) :site-dir (str dir))))
+        (doseq [host ["0.0.0.0" "::"]]
+          (testing (str "dev --host " host)
+            (let [h (dev-handler dir ["--host" host])]
+              (is (= 200 (:status (h {:uri "/pages/t00001/" :headers {"host" "192.168.1.5:1888"}}))))
+              (is (= 200 (:status (h {:uri "/pages/t00001/" :headers {"host" "my-laptop.local:1888"}}))))))
+          (testing (str "serve --host " host)
+            (let [h (serve-handler (fs/path dir "dist") ["--host" host])]
+              (is (= 200 (:status (h {:uri "/pages/t00001/" :headers {"host" "192.168.1.5:1888"}}))))))
+          (testing "and on loopback the check is on, in both"
+            (is (= 403 (:status ((dev-handler dir []) {:uri "/pages/t00001/" :headers {"host" "192.168.1.5"}}))))
+            (is (= 403 (:status ((serve-handler (fs/path dir "dist") []) {:uri "/pages/t00001/" :headers {"host" "192.168.1.5"}}))))))))))
+
+(deftest follower-registrations-are-spaced
+  (testing "i1c: the gap before each of the follower's `watch` calls was
+            removable — back-to-back registrations hang the pod"
+    (with-site url-site
+      (fn [dir]
+        (let [log   (atom [])
+              ready (promise)
+              cfg   (first (diag/collecting (config/load-config (str dir))))]
+          (quiet
+           #(dev/probe-watch! cfg (fn [_])
+                              {:watch   (fn [path cb _]
+                                          (swap! log conj [:watch path])
+                                          ;; deliver the probe's own event
+                                          (future (Thread/sleep 20)
+                                                  (doseq [f (fs/list-dir path)
+                                                          :when (str/includes? (str (fs/file-name f)) ".clogem-watch-probe-")]
+                                                    (cb {:path (str f) :type :create})))
+                                          {:w path})
+                               :unwatch (fn [_])
+                               :sleep   (fn [ms] (swap! log conj [:sleep ms]))
+                               :timeout-ms 3000
+                               :on-ready (fn [register! _] (deliver ready register!))}))
+          (let [register! (deref ready 3000 nil)]
+            (is (some? register!))
+            (reset! log [])
+            (register! {:path (str (fs/path dir "content")) :recursive? true})
+            (register! {:path (str (fs/path dir "assets")) :recursive? true})
+            (is (= [[:sleep dev/registration-gap-ms] [:watch (str (fs/path dir "content"))]
+                    [:sleep dev/registration-gap-ms] [:watch (str (fs/path dir "assets"))]]
+                   @log)
+                "a gap before each, so two in a row are spaced")))))))
