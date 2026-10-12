@@ -1228,7 +1228,12 @@
 (defn- gated-writer
   "A Writer onto `w` that drops what is written while `(quiet?)` says so.
   `quiet?` may take its time (`stop-caused?`), so it is asked once per
-  burst — a `println` is several writes — and the answer kept 2 s."
+  burst — a `println` is several writes — and the answer kept 2 s.
+
+  Gated at the byte level, under an `OutputStreamWriter`: a `proxy` of
+  `java.io.Writer` needs its one-argument `write` dispatched, which only
+  babashka 1.13.220 and later do (babashka #2054) — on 1.13.219 every
+  write threw (P4-D.4 item 2)."
   [^java.io.Writer w quiet?]
   (let [decided (atom nil)
         quiet!  (fn []
@@ -1239,12 +1244,16 @@
                       (let [q (boolean (quiet?))]
                         (reset! decided {:until (+ (System/currentTimeMillis) 2000) :q q})
                         q))))]
-    (proxy [java.io.Writer] []
-      (write
-        ([x] (when-not (quiet!) (if (string? x) (.write w ^String x) (.write w (int x)))))
-        ([x off len] (when-not (quiet!) (if (string? x) (.write w ^String x (int off) (int len)) (.write w ^chars x (int off) (int len))))))
-      (flush [] (.flush w))
-      (close [] nil))))
+    (java.io.OutputStreamWriter.
+     (proxy [java.io.OutputStream] []
+       (write
+         ([b] (when-not (quiet!)
+                (if (bytes? b)
+                  (.write w (String. ^bytes b "UTF-8"))
+                  (.write w (int b)))))
+         ([b off len] (when-not (quiet!) (.write w (String. ^bytes b (int off) (int len) "UTF-8")))))
+       (flush [] (.flush w)))
+     "UTF-8")))
 
 (defn load-pod!
   "Fetch the fswatcher pod through `clogem.tools` — the pinned, per-platform

@@ -792,8 +792,9 @@
         (fn [dir]
           (let [cfg (first (diag/collecting (config/load-config (str dir))))]
             (doseq [stopping? [false true]]
-              (let [err (java.io.StringWriter.)
-                    fns (binding [*err* err] (dev/load-pod! cfg (constantly stopping?)))
+              (let [err   (java.io.StringWriter.)
+                    asked (atom 0)
+                    fns   (binding [*err* err] (dev/load-pod! cfg (fn [] (swap! asked inc) stopping?)))
                     pid (some (fn [^java.lang.ProcessHandle h]
                                 (when (str/includes? (str (.orElse (.command (.info h)) "")) "fswatcher") h))
                               (iterator-seq (.iterator (.children (java.lang.ProcessHandle/current)))))]
@@ -802,7 +803,10 @@
                 ;; the SIGINT a Ctrl-C sends the whole process group
                 (.destroy ^java.lang.ProcessHandle pid)
                 (if stopping?
-                  (do (Thread/sleep 1500)
+                  ;; P4-D.4 item 2: the gate must have been asked — a
+                  ;; writer that throws on every write is quiet too
+                  (do (is (wait-until #(pos? @asked) 3000) "the pod client wrote, and was gated")
+                      (Thread/sleep 500)
                       (is (= "" (str err)) "nothing while dev stops"))
                   (is (wait-until #(str/includes? (str err) "Pod quit unexpectedly") 3000) "said otherwise"))
                 (dev/unload-pod! (:pod-id fns))))))))))
