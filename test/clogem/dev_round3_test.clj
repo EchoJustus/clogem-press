@@ -670,3 +670,31 @@
                     [:sleep dev/registration-gap-ms] [:watch (str (fs/path dir "assets"))]]
                    @log)
                 "a gap before each, so two in a row are spaced")))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 9: the Host check follows the bind, however --host is spelled
+
+(deftest every-loopback-spelling-gets-the-host-check-and-answers-its-own-url
+  (testing "item 9: `--host 127.1` turned the check off, and `--host
+            127.0.0.2` printed a URL the check refused"
+    (with-site url-site
+      (fn [dir]
+        (quiet #(cli/build (assoc (parse #'cli/build []) :site-dir (str dir))))
+        (doseq [host ["localhost" "127.1" "::1" "0:0:0:0:0:0:0:1" "[::1]" "127.0.0.2"]]
+          (testing host
+            (is (dev/loopback-ip? host))
+            (let [servers (atom [])
+                  h (quiet #(dev/start-dev! (assoc (parse #'cli/dev ["--poll" "--no-write" "--host" host]) :site-dir (str dir))
+                                            {:run-server! (fn [handler _] (swap! servers conj handler) (fn [& _] nil))
+                                             :poll-watch! (fn [& _] nil)
+                                             :notify! (fn [_]) :notify-error! (fn [_])}))
+                  handler (first @servers)
+                  printed (.getAuthority (java.net.URI. (:url h)))]
+              (quiet (:stop! h))
+              (is (= 403 (:status (handler {:uri "/pages/t00001/" :headers {"host" "evil.example"}}))) "checked")
+              (doseq [ok [printed "localhost:1888" "127.0.0.1" "[::1]:1888"]]
+                (is (= 200 (:status (handler {:uri "/pages/t00001/" :headers {"host" ok}}))) (str "answers " ok)))
+              (is (= 200 (:status ((serve-handler (fs/path dir "dist") ["--host" host])
+                                   {:uri "/pages/t00001/" :headers {"host" printed}})))
+                  "serve too"))))
+        (is (not-any? dev/loopback-ip? ["0.0.0.0" "::" "192.0.2.1" "no-such-host.invalid"]))))))

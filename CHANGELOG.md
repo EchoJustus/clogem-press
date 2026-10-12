@@ -17,9 +17,12 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   (`http://localhost:[0-9]+`) does not accept `127.0.0.1` — with
   `--host 0.0.0.0` too, plus a line saying it listens on every interface.
 - **On loopback, both servers answer only for `localhost`, `127.0.0.1`
-  and `[::1]`** (any port): a request with another `Host` is a 403, so a
-  DNS-rebinding page cannot read the site or a build error through a name
-  of its own. With any other `--host` there is no check.
+  and `[::1]`** (any port), and for the address `--host` gave: a request
+  with another `Host` is a 403, so a DNS-rebinding page cannot read the
+  site or a build error through a name of its own. Loopback is decided on
+  the address `--host` resolves to, however it is spelled (`127.1`,
+  `127.0.0.2`, `::1`, `localhost`), and the URL printed is always
+  answered. With any other `--host` there is no check.
 - **`permalinks.edn` is written only when it changes.** It was rewritten,
   byte for byte the same, on every build.
 - **A missing UI string key warns once per key and language, in `build`

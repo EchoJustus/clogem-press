@@ -377,26 +377,54 @@
 
 (defn- value [x] (if (fn? x) (x) x))
 
-(defn loopback-ip?
-  "Does `ip` (`--host`) bind loopback only?"
+(defn- bare-ip
+  "`ip` (`--host`) lower-cased, without the brackets of `[::1]`."
   [ip]
-  (let [ip (str/lower-case (str ip))]
-    (boolean (or (#{"localhost" "::1" "0:0:0:0:0:0:0:1" "[::1]"} ip)
-                 (re-matches #"127(?:\.\d{1,3}){3}" ip)))))
+  (let [ip (str/lower-case (str/trim (str ip)))]
+    (if (and (str/starts-with? ip "[") (str/ends-with? ip "]")) (subs ip 1 (dec (count ip))) ip)))
+
+(defn loopback-ip?
+  "Does `ip` (`--host`) bind loopback only — decided on the address it
+  resolves to, however it is spelled (`localhost`, `127.1`, `::1`,
+  `0:0:0:0:0:0:0:1`, `127.0.0.2`; P4-D.3 item 9)? False when it does not
+  resolve: the bind then fails on its own."
+  [ip]
+  (boolean
+   ;; the address read from `toString` (`name/address`): babashka's image
+   ;; allows no InetAddress method on Inet4Address or Inet6Address
+   (try (let [a (last (str/split (str (java.net.InetAddress/getByName (bare-ip ip))) #"/"))]
+          (or (str/starts-with? a "127.")
+              (= a "0:0:0:0:0:0:0:1")))
+        (catch Exception _ false))))
+
+(defn- host-name
+  "The name part of a `Host` header, lower-cased: `[::1]` kept bracketed,
+  a port dropped."
+  [host]
+  (let [h (str/lower-case (str/trim (str host)))]
+    (if (str/starts-with? h "[")
+      (subs h 0 (inc (or (str/index-of h "]") (dec (count h)))))
+      (str/replace h #":\d*$" ""))))
+
+(def ^:private loopback-names #{"localhost" "127.0.0.1" "[::1]"})
+
+(defn allowed-host-names
+  "The `Host` names a server bound to `ip` answers: `localhost`,
+  `127.0.0.1` and `[::1]`, and the bound address itself as given —
+  `127.0.0.2`, `127.1`, `[::1]` for `::1` — so the URL it prints is never
+  refused (P4-D.3 item 9)."
+  [ip]
+  (let [b (bare-ip ip)]
+    (conj loopback-names (if (str/includes? b ":") (str "[" b "]") b))))
 
 (defn local-host-header?
-  "Is `host`, a request's `Host` header, `localhost`, `127.0.0.1` or
-  `[::1]`, with any port or none? A request with no `Host` (HTTP/1.0) is
-  let through: a browser always sends one, and DNS rebinding needs it to
-  be the attacker's name."
-  [host]
-  (if (nil? host)
-    true
-    (let [h    (str/lower-case (str/trim (str host)))
-          name (if (str/starts-with? h "[")
-                 (subs h 0 (inc (or (str/index-of h "]") (dec (count h)))))
-                 (str/replace h #":\d*$" ""))]
-      (contains? #{"localhost" "127.0.0.1" "[::1]"} name))))
+  "Is `host`, a request's `Host` header, one of `names` (default
+  `localhost`, `127.0.0.1` and `[::1]`), with any port or none? A request
+  with no `Host` (HTTP/1.0) is let through: a browser always sends one,
+  and DNS rebinding needs it to be the attacker's name."
+  ([host] (local-host-header? host loopback-names))
+  ([host names]
+   (or (nil? host) (contains? names (host-name host)))))
 
 (def ^:private wrong-host
   {:status 403
@@ -413,10 +441,10 @@
   a page request gets `error-page`. A `pagefind/` file the live bundle no
   longer has is served from the previous one (`pagefind-fallback`). With
   `:check-host?` (a loopback bind), a request whose `Host` is not a
-  loopback name is a 403 (`local-host-header?`): a DNS-rebinding page
+  loopback name, or one of `:host-names`, is a 403 (`local-host-header?`): a DNS-rebinding page
   cannot read the site, or the build errors, through a name of its own
   (P4-D.2 item 17)."
-  [root {:keys [inject-reload? base state check-host?] :or {base "/"}}]
+  [root {:keys [inject-reload? base state check-host? host-names] :or {base "/"}}]
   (fn [{:keys [uri headers] :as req}]
     (try
       (let [uri  (str uri)
@@ -424,7 +452,7 @@
             root (value root)
             path (decode-path uri)]
         (cond
-          (and check-host? (not (local-host-header? (get headers "host"))))
+          (and check-host? (not (local-host-header? (get headers "host") (or host-names loopback-names))))
           wrong-host
 
           (and inject-reload? (= uri "/__reload"))
@@ -483,7 +511,7 @@
               (re-find #"(?i)protocol family|address family" (str (ex-message e)))
               (str "this machine cannot listen on " ip)
               :else (or (ex-message e) cls))]
-    (ex-info (str "clogem-press: cannot listen on " (if (str/includes? (str ip) ":") (str "[" ip "]") ip) ":" port
+    (ex-info (str "clogem-press: cannot listen on " (if (str/includes? (str ip) ":") (str "[" (bare-ip ip) "]") ip) ":" port
                   " — " why ".\n  hint: Choose another port with `--port`, or listen on loopback with `--host 127.0.0.1`.")
              {:babashka/exit 1})))
 
@@ -529,7 +557,8 @@
   [{:keys [ip port]} base]
   (str "http://"
        (cond (or (= ip default-host) (= ip "localhost") (wildcard-ips ip)) "localhost"
-             (str/includes? ip ":")     (str "[" ip "]")
+             ;; `[::1]` as given is bracketed once, not twice (P4-D.3 item 20)
+             (str/includes? ip ":")     (str "[" (bare-ip ip) "]")
              :else                      ip)
        ":" port
        (.toASCIIString (java.net.URI. nil nil (str base) nil))))
@@ -588,7 +617,8 @@
       (throw (ex-info (str "nothing to serve: " root " does not exist (run `bb build` first)")
                       {:babashka/exit 1})))
     (let [srv   (run-server! (make-handler root {:inject-reload? false :base base
-                                                   :check-host? (loopback-ip? (:ip sopts))}) sopts)
+                                                   :check-host? (loopback-ip? (:ip sopts))
+                                                   :host-names (allowed-host-names (:ip sopts))}) sopts)
           sopts (assoc sopts :port (bound-port srv (:port sopts)))]
       (println (format "clogem-press: serving %s at %s" root (url-for sopts base)))
       (some-> (listening-note sopts) println)
@@ -1516,7 +1546,8 @@
         outs      (atom #{(str (out-fn))})
         base-fn   #(config/base-path @cfg-ref)
         server    (serve* (make-handler out-fn {:inject-reload? true :base base-fn :state state
-                                                :check-host? (loopback-ip? (:ip sopts))}) sopts)
+                                                :check-host? (loopback-ip? (:ip sopts))
+                                                   :host-names (allowed-host-names (:ip sopts))}) sopts)
         sopts     (assoc sopts :port (bound-port server (:port sopts)))
         url       #(url-for sopts %)
         writes    (atom {})
