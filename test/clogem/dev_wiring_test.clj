@@ -475,8 +475,9 @@
                (is (= 302 (:status (handler {:uri "/"}))))
                (is (fs/exists? (fs/path dir "public" "pages" "t00001" "index.html")))
                (is (wait-until #(str/includes? (str out) "the site base changed from / to /new/")) (str out))
-               (is (str/includes? (str out) "http://localhost:1888/new/"))
-               (is (str/includes? (str out) "the output directory changed")))))))
+               ;; printed after the line waited for: waited for too (P4-D.3 item 7)
+               (is (wait-until #(str/includes? (str out) "http://localhost:1888/new/")) (str out))
+               (is (wait-until #(str/includes? (str out) "the output directory changed")) (str out)))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Findings 2 and 3: pod mode follows renames and new directories

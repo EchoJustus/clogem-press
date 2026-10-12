@@ -492,7 +492,10 @@
                      (event! topic)
                      (is (wait-until #(= [{:path (n topic) :recursive? true}] (regs-of topic))) "registered, recursively")
                      (is (wait-until #(= 2 (count @builds))))
-                     (is (some #(str/includes? (second %) "01.new.md") (rebuilt-lines out)) (str out))
+                     ;; the line is printed after the build returns: waited
+                     ;; for, not read at once (P4-D.3 item 7)
+                     (is (wait-until #(some (fn [l] (str/includes? (second l) "01.new.md")) (rebuilt-lines out)))
+                         (str out))
                      (testing "and an edit inside it is a rebuild"
                        (spit (fs/file topic "01.new.md") (str (art "t00002") "\nmore\n"))
                        (event! (fs/path topic "01.new.md"))
@@ -505,7 +508,7 @@
                        (event! a)
                        (is (wait-until #(= 1 (count (regs-of a)))))
                        (is (wait-until #(= 4 (count @builds))))
-                       (is (str/includes? (str out) "01.d.md"))))
+                       (is (wait-until #(str/includes? (str out) "01.d.md")) (str out))))
                    (testing "`cp -r` of a tree: one rebuild for all of it"
                      (let [t (fs/path dir "content" "11.Copy")]
                        (fs/create-dirs (fs/path t "x"))
@@ -515,7 +518,8 @@
                        (is (wait-until #(= 5 (count @builds))))
                        (Thread/sleep 300)
                        (is (= 5 (count @builds)) "one rebuild")
-                       (is (str/includes? (str out) "6 files changed") (str "the directory and its 5 files: " out))))
+                       (is (wait-until #(str/includes? (str out) "6 files changed"))
+                           (str "the directory and its 5 files: " out))))
                    (testing "a file is not a directory to register"
                      (let [before (count (regs-of (fs/path dir "content" "01.Guide" "01.t.md")))]
                        (event! (fs/path dir "content" "01.Guide" "01.t.md"))
