@@ -634,3 +634,58 @@
                       (is (= before (tree (fs/path dir "dist"))) "dist/ is as it was")
                       (is (= n0 (count (re-seq #"rebuilt in|build failed" (str out))))
                           (str "nothing said about it: " out)))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 10: nits
+
+(deftest serve-s-fallback-warning-names-only-what-falls-back
+  (testing "item 10: it said \"served at / from dist/\" whatever --base,
+            --dir or --out said"
+    (with-temp-dir "clogem-r4serve"
+      (fn [site]
+        (spit (fs/file site "site.edn") "{:site {:title \"x\" :base \"/p/\"")
+        (fs/create-dirs (fs/path site "other"))
+        (doseq [[opts has hasnt] [[{} ["served at / from dist/"] []]
+                                  [{:base "/q/"} ["served from dist/"] ["at /"]]
+                                  [{:dir (str (fs/path site "other"))} ["served at /."] ["dist/"]]
+                                  [{:base "/q/" :out "other"} [] ["at /" "dist/" "--base" "--dir"]]]]
+          (let [err (java.io.StringWriter.)]
+            (binding [*err* err]
+              (dev/serve-settings (assoc opts :site-dir (str site))))
+            (doseq [h has] (is (str/includes? (str err) h) (str opts ": " err)))
+            (doseq [h hasnt] (is (not (str/includes? (str err) h)) (str opts ": " err)))))))))
+
+(deftest serve-prints-a-normalized-directory
+  (testing "item 10: `serve` printed …/site/./other"
+    (with-temp-dir "clogem-r4norm"
+      (fn [site]
+        (fs/create-dirs (fs/path site "other"))
+        (let [{:keys [dir]} (dev/serve-settings {:site-dir (str site) :out "./x/../other"})]
+          (is (= (str (fs/normalize (fs/absolutize (fs/path site "other")))) (str dir))))))))
+
+(deftest fetch-tool-s-fswatcher-errors-are-not-dev-s
+  (testing "item 10: `bb fetch-tool --tool fswatcher` failed with `dev:`"
+    (is (= "fswatcher" (:error-prefix clogem.tools/fswatcher)))))
+
+(deftest ctrl-c-during-the-first-build-prints-no-server-line
+  (testing "item 10: Ctrl-C during the first build printed \"dev server at …\"
+            after stop!, once on the same line as \"stopped\""
+    (with-site url-site
+      (fn [dir]
+        (let [out  (java.io.StringWriter.)
+              stop (promise)]
+          (binding [*out* out *err* out]
+            (dev/start-dev! {:site-dir (str dir) :port 1888 :no-write true :poll true}
+                            {:on-stop!     #(deliver stop %)
+                             :run-server!  (fn [& _] (fn [& _] nil))
+                             :poll-watch!  (fn [& _] nil)
+                             :index!       (fn [_])
+                             :build        (fn [_]
+                                             ;; Ctrl-C while the first build runs
+                                             (future (@stop))
+                                             (Thread/sleep 300)
+                                             {})
+                             :notify! (fn [_]) :notify-error! (fn [_])}))
+          (Thread/sleep 300)
+          (is (not (str/includes? (str out) "dev server at")) (str out))
+          (is (not (str/includes? (str out) "watching")) (str out)))))))

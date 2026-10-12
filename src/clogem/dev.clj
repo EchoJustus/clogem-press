@@ -539,16 +539,26 @@
   file, or it cannot be read — one warning, and `serve` falls back, as
   0.2.0 served regardless. Diagnostics are not printed: `serve` builds
   nothing, and a refused `:build :out` is already repaired to the default."
-  [{:keys [site-dir config-file]}]
-  (let [f (fs/path (or site-dir ".") (or config-file "site.edn"))]
+  [{:keys [site-dir config-file base dir out]}]
+  (let [f (fs/normalize (fs/absolutize (fs/path (or site-dir ".") (or config-file "site.edn"))))]
     (when (fs/regular-file? f)
       (try
         (first (diag/collecting (config/load-config (str (or site-dir ".")) config-file nil)))
         (catch Exception e
-          (binding [*out* *err*]
-            (println (str "warning: " f ": could not read it (" (first (str/split-lines (str (ex-message e))))
-                          "), so the site is served at / from dist/."))
-            (println "  hint: Fix it, or give the base with `--base` and the directory with `--dir`."))
+          ;; what the fallback is, only for what the options left to the
+          ;; config (P4-D.4 item 10: it said "at / from dist/" regardless)
+          (let [falls (cond-> []
+                        (not base)           (conj "at /")
+                        (not (or dir out))   (conj "from dist/"))]
+            (binding [*out* *err*]
+              (println (str "warning: " f ": could not read it (" (first (str/split-lines (str (ex-message e))))
+                            "), so the site is served " (str/join " " falls) "."))
+              (println (str "  hint: Fix it"
+                            (when (seq falls)
+                              (str ", or give " (str/join " and " (cond-> []
+                                                                     (not base) (conj "the base with `--base`")
+                                                                     (not (or dir out)) (conj "the directory with `--dir`")))))
+                            "."))))
           nil)))))
 
 (defn serve-settings
@@ -561,10 +571,12 @@
   (let [cfg (delay (serve-cfg opts))
         sd  (or site-dir ".")]
     {:base (if base (clean-base base) (if-let [c @cfg] (config/base-path c) "/"))
-     :dir  (fs/absolutize
-            (cond dir  dir
-                  out  (fs/path sd out)
-                  :else (if-let [c @cfg] (config/out-dir c) (fs/path sd "dist"))))}))
+     ;; normalized: `serve` printed `…/site/./other` (P4-D.4 item 10)
+     :dir  (fs/normalize
+            (fs/absolutize
+             (cond dir  dir
+                   out  (fs/path sd out)
+                   :else (if-let [c @cfg] (config/out-dir c) (fs/path sd "dist")))))}))
 
 (defn serve-base
   "`serve`'s base (`serve-settings`)."
@@ -1726,8 +1738,14 @@
                       nil))]
     (when-let [f (:on-stop! env)] (f stop!))
     (rebuild! [])
-    (println (format "clogem-press: dev server at %s" (url (base-fn))))
-    (some-> (listening-note sopts) println)
+    ;; under the build lock, and only while not stopping: Ctrl-C during
+    ;; the first build printed it after `stop!`, once on the same line as
+    ;; `stopped` (P4-D.4 item 10)
+    (.lock build-lock)
+    (try (when-not @stopping
+           (println (format "clogem-press: dev server at %s" (url (base-fn))))
+           (some-> (listening-note sopts) println))
+         (finally (.unlock build-lock)))
     (spawn #(drain-loop! {:take! (queue-take queue) :on-batch rebuild!}))
     (let [existing (filterv #(fs/exists? (:path %)) @specs)
           ;; walked before the pod registers them: what each covers
