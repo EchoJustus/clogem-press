@@ -1129,6 +1129,22 @@
              (swap! registered dissoc p)
              p))))
 
+(defn release-unwanted!
+  "Unwatch, and forget, every registration in `registered` that `specs` no
+  longer ask for: not a spec's own path, and not inside a recursive one's
+  — a symlinked `site.edn`'s previous target directory, or a `:content
+  :dir` moved away (P4-D.4 item 7: each kept its inotify instance for the
+  rest of the session). Returns the paths released."
+  [registered specs unwatch!]
+  (let [wanted? (fn [p] (some (fn [{:keys [path recursive?]}]
+                                (or (= p path) (and recursive? (in-dir? path p))))
+                              specs))]
+    (vec (for [[p {:keys [watcher]}] @registered
+               :when (not (wanted? p))]
+           (do (when watcher (try (unwatch! watcher) (catch Throwable _ nil)))
+               (swap! registered dissoc p)
+               p)))))
+
 (def ^:private fresh-types
   "The pod's event types after which a directory is not the one any walk
   saw: made, removed (an `rm -rf` and `mkdir` within the pod's window is
@@ -1180,6 +1196,7 @@
   [specs registered register! & [unwatch!]]
   (let [unwatch! (or unwatch! (fn [_]))]
     (release-gone! registered unwatch!)
+    (release-unwanted! registered specs unwatch!)
     (let [todo (vals (into {} (map (juxt :path identity))
                            (concat (keep :spec (vals @registered)) specs)))]
       (vec (keep (fn [{:keys [path] :as spec}]

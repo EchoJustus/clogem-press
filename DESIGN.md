@@ -3335,10 +3335,13 @@ their own findings. Item 19 onward are corrections.
   makes a new watcher — an inotify instance — for every `watch` call. dev registers each watched
   root at startup, and later each directory, at any depth, that no registration covers: one made
   after its parent's registration (the top one of a `mkdir -p`; each folder of a slow `cp -r` whose
-  parent was already registered), or one replaced. A registration covers the subdirectories that
+  parent was already registered — a slow copy of 40 folders measured +39), or one replaced. No
+  mechanism bounds that (P4-D.4 item 7): README "Working locally" suggests `--poll`, or one `mv`,
+  for a large tree copied in slowly. A registration covers the subdirectories that
   existed when it was made, so `chmod -R` or edits in existing folders take none. A deleted
   directory's instance is released when its delete arrives; a replaced one's once its new one is
-  registered. Linux allows 128 instances per user by default (`fs.inotify.max_user_instances`);
+  registered; one no watched path asks for any more — a symlinked `site.edn`'s previous target
+  directory, a `:content :dir` moved away — on the follower's next pass (P4-D.4). Linux allows 128 instances per user by default (`fs.inotify.max_user_instances`);
   when a registration fails for that limit (too many open files, or no space left on device) dev
   prints one line, releases the pod and polls for the rest of the session, with one full rebuild
   once the poller has its first snapshot, so the change that hit the limit is built (P4-D.4).

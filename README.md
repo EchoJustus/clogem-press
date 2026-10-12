@@ -111,11 +111,19 @@ it.
 |---|---|
 | `--port 1888`, `--host 127.0.0.1` | Where to listen. Both servers listen on loopback only; `--host 0.0.0.0` to reach it from another device. |
 | `--base /project/` | The site's base path (default: `:site :base`). The output directory (`dist/` by default) is served there, and `/` redirects to it, so a project site's links work locally. `bb serve --base` too. |
-| `--poll`, `--interval 500` | Watch by polling instead of the fswatcher pod. Not usually needed: dev proves the pod delivers events at startup and polls on its own when it does not (`--probe-ms 3000` is that check's budget). |
+| `--poll`, `--interval 500` | Watch by polling instead of the fswatcher pod. Not usually needed: dev proves the pod delivers events at startup and polls on its own when it does not (`--probe-ms 3000` is that check's budget). Use it to copy a large tree in slowly (below). |
 | `--no-search` | Build without search (no index, no search UI). |
 | `--no-highlight` | Render code without syntax highlighting (no Chroma). Without it, a Chroma that cannot be fetched or run is warned about once and code shows plain; `build` fails instead. |
 | `--no-write` | Never write front matter or `permalinks.edn` back to the source tree (dev writes them by default, as `build` does). |
 | `--reload-code` | When working on the generator: also reload the theme's `.clj` code on change. |
+
+**Many folders copied in slowly.** With the pod, every folder that appears
+after its parent is already watched takes an inotify instance of its own
+(fswatcher makes one per watch), and Linux allows 128 per user by default: a
+`cp -r` of 40 folders that is slow enough for dev to see each parent first
+takes up to 40 more. At the limit dev says so, polls for the rest of the
+session and rebuilds once. For a large tree copied in slowly, run `bb dev
+--poll`, or copy it elsewhere and move it in with one `mv`.
 
 The fswatcher pod is fetched on first use like Pagefind — pinned, sha256-verified
 and cached (`bb fetch-tool --tool fswatcher`); offline, or on a platform it has

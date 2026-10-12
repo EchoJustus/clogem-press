@@ -858,6 +858,30 @@
                      (is (not (str/includes? (str out) "notes.txt")) "no rescan of the target's directory")
                      (is (not (str/includes? (str out) "files changed")) (str out)))))))))
 
+(deftest re-pointing-a-symlinked-site-edn-releases-the-old-target
+  (testing "P4-D.4 item 7: the previous target's directory kept its
+            registration — an inotify instance — for the rest of the session"
+    (with-site url-site
+      (fn [dir]
+        (let [shared (fs/path dir "shared")
+              other  (fs/path dir "elsewhere")
+              link   (fs/path dir "site.edn")]
+          (fs/create-dirs shared)
+          (fs/move link (fs/path shared "site.edn"))
+          (fs/create-sym-link link (fs/path shared "site.edn"))
+          (fs/create-dirs other)
+          (spit (fs/file other "site.edn") (pr-str (assoc-in url-site [:site :title] "Other")))
+          (pod-dev dir {}
+                   (fn [{:keys [event! regs-of unwatched]}]
+                     (let [[old] (regs-of shared)]
+                       (is (some? old) "the first target's directory is watched")
+                       (fs/delete link)
+                       (fs/create-sym-link link (fs/path other "site.edn"))
+                       (event! link :create)
+                       (is (wait-until #(= 1 (count (regs-of other)))) "the new target's directory is watched")
+                       (is (wait-until #(some #{old} @unwatched) 2000) "the old one's is released")
+                       (is (not-any? #{(first (regs-of other))} @unwatched) "and not the new one's")))))))))
+
 ;; ---------------------------------------------------------------------------
 ;; Item 17: --poll and a :content :dir moved to a missing directory
 

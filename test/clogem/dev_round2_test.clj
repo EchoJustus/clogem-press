@@ -210,7 +210,9 @@
     (with-root
       (fn [root]
         (let [r (:body ((dev/make-handler root {:base "/a\"onmouseover=\"x/"}) {:uri "/nope"}))]
-          (is (str/includes? r "href=\"/a&quot;onmouseover=&quot;x/\"") r)
+          ;; P4-D.4 item 4: the href is percent-encoded now, the text escaped
+          (is (str/includes? r "href=\"/a%22onmouseover%3D%22x/\"") r)
+          (is (str/includes? r ">/a&quot;onmouseover=&quot;x/<") r)
           (is (not (str/includes? r "a\"onmouseover")) r))))))
 
 (deftest a-loopback-server-answers-only-loopback-names
