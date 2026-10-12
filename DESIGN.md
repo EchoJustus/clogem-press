@@ -599,18 +599,20 @@ listen on 127.0.0.1 unless given `--host`.
 
 *Amended in P4-D.1 (§11.3 item 12):*
 
-- **A page keeps the search bundle it loaded.** The swap keeps the bundle it replaces as
-  `dist/.pagefind-prev/` until the next swap (the one before it moves aside and is deleted), and the
-  dev server answers a `pagefind/` file the live bundle does not have from there — including during
-  the instant between the swap's two renames, when `pagefind/` does not exist. Pagefind's index
-  chunks, fragments and `.pf_meta` are content-hashed, so a page that reloaded and initialised search
-  before the swap holds the old `pagefind-entry.json`; it now keeps searching **the previous index,
-  until its next reload**. One swap later those files are gone, so a page that sits through two
-  background indexes without reloading can still miss; a reload always sees the current index. The
+- **A page keeps the search bundle it loaded.** The swap keeps the bundles it replaces as
+  `<out>/.pagefind-prev-<pid>-<start>-<n>/` — every one live since the last page reload, at most 8
+  (P4-D.2; D.1 kept a single `dist/.pagefind-prev/`) — and the dev server answers a `pagefind/` file
+  the live bundle does not have from them, newest first — including during the instant between the
+  swap's two renames, when `pagefind/` does not exist. Pagefind's index chunks, fragments and
+  `.pf_meta` are content-hashed, so a page that reloaded and initialised search before the swap
+  holds the old `pagefind-entry.json`; it keeps searching **the index it loaded, until its next
+  reload**, however many background indexes run in between (up to the 8 kept); a reload always sees
+  the current index. The
   handler opens each file itself and serves the stream: a file renamed away after it was found is a
   404 (or the previous bundle's copy), and any failure is a bare 500 — never http-kit's, which named
-  the absolute path. `bb build` removes `.pagefind-prev/` and the staging directories of a `bb dev`
-  that is no longer running; dev removes its own on a normal exit (Ctrl-C prints `stopped`).
+  the absolute path. `bb build` removes the previous bundles and staging directories of a `bb dev`
+  that is no longer running; dev removes its own when it stops, from every output directory it built
+  into in the session (P4-D.3), and Ctrl-C prints `stopped`.
 - **Watching follows what appears.** With the pod, `site.edn` is watched through its directory (not
   recursively, its own events only): a watch on the file stayed on its inode, so after an editor's
   atomic save (`sed -i`, vim, emacs) later edits went unseen. A watched directory that does not exist
@@ -621,7 +623,8 @@ listen on 127.0.0.1 unless given `--host`.
   server listens on 127.0.0.1: an origin of `localhost` is what tools allow-list — giscus accepts an
   origin only if it equals an `origins` entry or matches an `originsRegex`, and a site's
   `giscus.json` has `"originsRegex": ["http://localhost:[0-9]+"]`, which `http://127.0.0.1:…` does not
-  match. Another `--host` prints that host.
+  match. `--host 0.0.0.0` and `--host ::` print `localhost` too, with a line saying it listens on
+  every interface; any other `--host` prints that host (an IPv6 address bracketed once).
 - **A changed `:site :base` or `:build :out` is served at once.** The handler reads both from the
   config of the last successful build; dev prints one line saying where the site now is.
 - The server is bound **before** the first build, so a busy port, a `--host` that does not resolve or
@@ -648,14 +651,22 @@ listen on 127.0.0.1 unless given `--host`.
   After a failed build the config alone is read again, quietly, so what is watched follows a
   `:content :dir` that does not exist yet.
 - **The build's own writes never rebuild.** Every write into the source tree — front matter,
-  `permalinks.edn` (now written only when it changes), `@pages/` — goes through
-  `util/write-source!`, which records it when `util/*source-writes*` is bound; dev binds it around
-  each build and drops, from the next batch, a path that within 3 s still holds exactly what the
-  build wrote. Without it, a missing event filter was an endless loop.
+  `permalinks.edn` (now written only when it changes), `@pages/` and the directory it is in — goes
+  through `util/write-source!` (`util/create-source-dirs!` for a directory), which records it when
+  `util/*source-writes*` is bound; dev binds it around each build and drops, from the next batch, a
+  path that within 3 s still holds exactly what the build wrote (a directory: is still one). Each
+  record is used once (P4-D.3): the first event for the path consumes it, and any later event is the
+  author's, whatever it holds — an undo back to the bytes the build wrote rebuilds. Without the
+  filter, a missing event filter was an endless loop.
 - **`stop!` waits.** Every build holds one lock, the first included; `stop!` stops the server,
   cancels queued index runs, kills a running Pagefind (one registered after that is killed at once),
   waits up to 10 s for the build and the index run, unloads the pod, and removes the staging
-  directories and dev's previous bundles. `dev!` installs its shutdown hook before it starts.
+  directories and dev's previous bundles from every output directory of the session, and a watch
+  probe's temp file. `dev!` installs its shutdown hook before it starts; it says `stopped` only once
+  `start-dev!` has handed out `stop!`, never under a listen or config error. While dev stops, a
+  build stops before it writes (`util/*cancelled?*`), and neither a Chroma nor a Pagefind the
+  Ctrl-C's signal killed, nor the pod's own exit, is reported (each waits up to 1 s for the flag,
+  since the signal reaches the process group before the JVM's shutdown hook runs).
 - **Every bundle a page could hold stays servable.** A swap retires the live bundle as
   `.pagefind-prev-<pid>-<start>-<retired ms>`; a retired bundle is deleted at a later swap only once
   it was retired before the last page reload (dev records the time just before it sends `reload`),
@@ -668,12 +679,18 @@ listen on 127.0.0.1 unless given `--host`.
   64 KB chunks — the next chunk is read only once http-kit has written the last out, so a download
   holds one chunk however slow its client, and the file is closed when it ends (P4-D.3: the D.2
   mapping outlived the response, which on Windows kept a rebuild from replacing the file, and could
-  not map 2 GiB) — smaller ones are read whole, both from one open. On a loopback bind, a request whose `Host` is not `localhost`,
-  `127.0.0.1` or `[::1]` is a 403 (DNS rebinding). `--host 0.0.0.0` prints `localhost` and says it
+  not map 2 GiB) — smaller ones are read whole, both from one open. On a loopback bind — decided on
+  the address `--host` resolves to, so `127.1`, `127.0.0.2`, `::1` and `localhost` all count — a
+  request whose `Host` is not `localhost`, `127.0.0.1`, `[::1]` or the address `--host` gave is a 403
+  (DNS rebinding). `--host 0.0.0.0` prints `localhost` and says it
   listens on every interface; `--port 0` prints the port it got; a port out of range or an address
   family the host lacks is the same clean error as a busy port.
 - `:build :out` from `site.edn` is honoured: `--out` has no spec default any more, so the precedence
-  is `--out`, then `:build :out`, then `"dist"`. `:site :base` is decoded once in
+  is `--out`, then `:build :out`, then `"dist"`; `bb serve` resolves `--dir`, then `--out`, then
+  `:build :out`, then `dist` (P4-D.3). An output directory may not be, hold or sit inside a source
+  directory (content, assets, i18n, overrides, `.git`), nor be the site directory or an ancestor;
+  a `site.edn` value must stay inside the site. Builds mark it (`.clogem-output`), and `bb clean`,
+  the stale sweep and the search sweeps delete only in a marked directory (§11.2 item 46). `:site :base` is decoded once in
   `config/base-path`, so a base written percent-encoded is the same base.
 
 ### 5.5 Caching strategy
@@ -697,11 +714,14 @@ cross-page artifacts (sidebar, indexes, backlinks, now hreflang groups) than a b
   *Amended in P4-D.1:* the swap keeps one previous generation (`dist/.pagefind-prev/`), which dev's
   server falls back to for `pagefind/` files, so a page that loaded the old bundle searches it until
   its next reload (§5.4); `bb build` deletes it. *Amended in P4-D.2:* it keeps every generation live
-  since the last page reload (at most 8), as `dist/.pagefind-prev-<pid>-<start>-<n>/`; `bb dev`
-  deletes its own when it stops, and every non-dev `bb build` those of a dev no longer running. The rest of dev's state — the base and output
-  directory it serves, the directories it watches, the missing UI keys it has already warned about
-  (once per key and language per `bb dev` session, again only after the key was defined and went
-  missing once more) — follows the config of the last good build.
+  since the last page reload (at most 8), as `<out>/.pagefind-prev-<pid>-<start>-<n>/` — no single
+  `.pagefind-prev/` any more; `bb dev` deletes its own when it stops, from every output directory it
+  built into in the session (P4-D.3), and every non-dev `bb build` those of a dev no longer running.
+  The rest of dev's state: the base and the output directory it serves follow the config of the last
+  good build; the directories it watches follow the latest config it read, a failed build's
+  included (a `:content :dir` moved to a directory not made yet is followed); the missing UI keys it
+  has already warned about are kept per `bb dev` session (once per key and language, again only
+  after the key was defined and went missing once more).
 - Content-hash disk caching for production is a *later* optimization, only if build times ever warrant
   it. Note that i18n does **not** multiply build cost by the number of languages: cost is per
   *variant file that exists*, and most articles will have exactly one.
@@ -3186,8 +3206,8 @@ their own findings. Item 19 onward are corrections.
       rebuild for the `mkdir`, then nothing, before); a replaced watched directory is registered
       again and its old watch released; a symlinked `site.edn` is watched at its target; `stop!`
       waits for the build and the index, cancels a queued index and kills Pagefind; `:build :out`
-      in `site.edn` is honoured (`--out`'s spec default overrode it); every file is no longer read
-      into the heap before its first byte; a directory's `index.html` link cannot escape the root,
+      in `site.edn` is honoured (`--out`'s spec default overrode it); a file of 1 MB or more is no
+      longer read into the heap before its first byte (smaller ones still are, whole); a directory's `index.html` link cannot escape the root,
       and a request path is checked lexically before any filesystem call; a percent-encoded `:base`
       is decoded once; a Pagefind killed from outside is reported; the shutdown hook comes first;
       creating `overrides/` is one rebuild; every bundle a page could hold since its last reload
@@ -3200,6 +3220,20 @@ their own findings. Item 19 onward are corrections.
       Chroma hint is build's; Pagefind's output is printed on indented lines. The build's own writes
       never rebuild. Four mutants of D.1's wiring that survived (n4e, n5c, n4f, n10b) each fail a
       test now.
+    - *Fix round P4-D.3* (§5.4, §5.5 and Known limitations amended), mostly what D.2's own fixes
+      introduced, fixed conservatively, each pinned by a test that failed before it
+      (`dev_round3_test`, plus `tools_test`): an output directory — from `site.edn` or `--out` —
+      that is, holds or is inside a source directory, or is the site or an ancestor, is a config
+      error, a `site.edn` one outside the site too, and builds mark their output (`.clogem-output`)
+      so `bb clean` and every sweep delete only there; `bb serve` serves `:build :out`; large files
+      are streamed in bounded chunks instead of mapped; each own-write record is used once, and the
+      build's own directories are records too; inotify use is bounded (covered directories,
+      release on delete, retry, polling at the limit); a failed fetch leaves its lock for the fetch
+      waiting on it (D.2's cleanup reverted); log assertions wait for their lines; the Host check
+      follows the resolved bind; Ctrl-C at any point is quiet and writes nothing; a symlinked
+      `site.edn` re-pointed is one rebuild; `--poll` moving `:content :dir` is one failed build;
+      more rename-save temp names; every emitted URL encodes the base; a bad option is one line;
+      Pagefind's hints say what is true. Mutants i17e, i17f and i1c each fail a test now.
 13. **Blog identity and htmlModules (E1).** Kebab-case keys; 7 slots plus 2 show-modes (§1.2
     corrected); wrappers get `data-pagefind-ignore` and overflow-safe CSS; per-language values use the
     fallback chain only, and `""` suppresses; `{{base}}` is interpolated; raw HTML from the owner is
@@ -3288,13 +3322,16 @@ their own findings. Item 19 onward are corrections.
   `<out>/pagefind/` and rebuilds it, so two builds with search on can collide there. Give one
   `--no-search`, or a separate `--out`. (`bb dev` itself now swaps a staged bundle in, Task D, but
   a concurrent `bb build` still deletes it.)
-- **One inotify instance per directory created while `bb dev` runs** (Task D, P4-D.2). fswatcher
-  0.0.7 makes a new watcher for every `watch` call, and dev registers each directory made after
-  startup (the top one of a `mkdir -p` or a `cp -r`) and each one replaced. Linux allows 128
-  instances per user by default (`fs.inotify.max_user_instances`); a session that makes more new
-  top-level folders than that gets one "cannot watch …; restart `bb dev`" line per folder past the
-  limit. A replaced directory's old instance is released; a deleted one's, at the next follower
-  pass.
+- **One inotify instance per registered directory** (Task D, P4-D.2, P4-D.3). fswatcher 0.0.7
+  makes a new watcher — an inotify instance — for every `watch` call. dev registers each watched
+  root at startup, and later each directory, at any depth, that no registration covers: one made
+  after its parent's registration (the top one of a `mkdir -p`; each folder of a slow `cp -r` whose
+  parent was already registered), or one replaced. A registration covers the subdirectories that
+  existed when it was made, so `chmod -R` or edits in existing folders take none. A deleted
+  directory's instance is released when its delete arrives; a replaced one's once its new one is
+  registered. Linux allows 128 instances per user by default (`fs.inotify.max_user_instances`);
+  when a registration fails for that limit (too many open files, or no space left on device) dev
+  prints one line, releases the pod and polls for the rest of the session.
 - **The stale-HTML sweep skips a symlinked output directory** (pre-existing, 0.2.0).
   `sweep-stale-html!` checks the out directory with `:nofollow-links`, so with `dist ->
   /var/www/site` the `.html` of deleted articles is never removed there. The temp sweep resolves
