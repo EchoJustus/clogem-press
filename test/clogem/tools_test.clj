@@ -267,9 +267,10 @@
 ;; Config and the CLI
 
 (deftest an-unused-tool-pin-warns-and-keeps-the-built-in-one
-  (testing "0.2.0 accepted any :tools :fswatcher pin; nothing runs it yet,
-            so a bad one is a warning and the config is repaired (Pagefind's
-            and, since Phase 4 C, Chroma's are errors)"
+  (testing "0.2.0 accepted any :tools :fswatcher pin; only `bb dev` runs the
+            pod, falling back to polling, so a bad one is a warning and the
+            config is repaired (Pagefind's and, since Phase 4 C, Chroma's are
+            errors)"
     (doseq [[edn re check] [[{:tools {:fswatcher {:version 7}}} #":tools :fswatcher :version is 7"
                              #(= "0.0.7" (get-in % [:tools :fswatcher :version]))]
                             [{:tools {:fswatcher {:sha256 {"linux-amd64" "zz"}}}} #":tools :fswatcher :sha256 must map"
@@ -282,7 +283,7 @@
             (is (empty? (diag/errors ds)) (pr-str edn))
             (is (= 1 (count ws)) (pr-str edn (map :message ws)))
             (is (re-find re (str (:message (first ws)))) (pr-str edn))
-            (is (re-find #"It has no effect in 0\.2\.0 \(nothing runs fswatcher yet\), so the built-in pin is used\."
+            (is (re-find #"Only `bb dev` runs the fswatcher pod, and it falls back to polling when it cannot, so the built-in pin is used\."
                          (str (:hint (first ws))))
                 (:hint (first ws)))
             (is (check cfg) (pr-str edn (:tools cfg))))))))
@@ -369,3 +370,73 @@
           (is (= 1 (:babashka/exit (ex-data e)))))
         (is (= "pagefind" (get-in (meta #'cli/fetch-tool) [:org.babashka/cli :spec :tool :default]))
             "pagefind stays the default, so CI's `bb fetch-tool` is unchanged")))))
+
+;; ---------------------------------------------------------------------------
+;; P4-D.2 item 25: the pod's fallback messages
+
+(deftest a-failed-fetch-leaves-only-its-lock-behind
+  (testing "a download that fails leaves the empty `<plat>.lock`, which is
+            harmless, and nothing else (P4-D.3 item 6 reverted P4-D.2 item
+            25's deletion of it: another fetch may be waiting on it)"
+    (for-each-tool
+     (fn [tool]
+       (with-dir
+         (fn [dir]
+           (let [plat (tools/platform tool)
+                 ;; nothing listens on port 1
+                 cfg  (cfg-for dir tool "http://127.0.0.1:1/x" (apply str (repeat 64 "0")))
+                 e    (try (binding [*err* (java.io.StringWriter.)] (tools/ensure-binary! tool cfg)) nil
+                           (catch clojure.lang.ExceptionInfo e e))]
+             (is (some? e) (:name tool))
+             (is (= [(str plat ".lock")]
+                    (map (comp str fs/file-name) (fs/list-dir (fs/parent (tools/tool-dir tool cfg plat)))))
+                 (str (:name tool) ": the lock file only")))))))))
+
+(deftest a-missing-env-path-for-the-pod-names-poll
+  (testing "CLOGEM_FSWATCHER naming nothing: the hint did not mention --poll"
+    (with-dir
+      (fn [dir]
+        (let [e (binding [tools/*env* {"CLOGEM_FSWATCHER" (str (fs/path dir "nope"))}]
+                  (try (tools/ensure-binary! tools/fswatcher (first (diag/collecting (config/load-config (str dir))))) nil
+                       (catch clojure.lang.ExceptionInfo e e)))]
+          (is (some? e))
+          (is (str/includes? (ex-message e) "does not exist") (ex-message e))
+          (is (str/includes? (ex-message e) "`bb dev --poll`") (ex-message e)))))))
+
+;; ---------------------------------------------------------------------------
+;; P4-D.3 item 6: a failed fetch never breaks one waiting on its lock
+
+(deftest a-fetch-waiting-on-the-lock-survives-the-one-that-failed
+  (testing "item 25's cleanup deleted the lock file and the version
+            directory under a fetch waiting on the same lock, which failed"
+    (for-each-tool
+     (fn [tool]
+       (with-dir
+         (fn [dir]
+           (let [plat    (tools/platform tool)
+                 archive (fake/fake-tool-archive! dir tool plat)
+                 sha     (tools/sha256-hex archive)
+                 hits    (atom 0)
+                 server  (hk/run-server (fn [_]
+                                          (if (= 1 (swap! hits inc))
+                                            ;; slow, so the other fetch is
+                                            ;; waiting on the lock by then
+                                            (do (Thread/sleep 400) {:status 500 :body "no"})
+                                            {:status 200 :body (fs/file archive)}))
+                                        {:port 0 :legacy-return-value? false})]
+             (try
+               (let [url (str "http://127.0.0.1:" (hk/server-port server) "/v{{version}}/{{platform}}")
+                     cfg (cfg-for dir tool url sha)
+                     env tools/*env*
+                     go! #(future (binding [tools/*env* env *err* (java.io.StringWriter.)]
+                                    (try (tools/ensure-binary! tool cfg) (catch Throwable e e))))
+                     a   (go!)
+                     _   (Thread/sleep 150)
+                     b   (go!)
+                     [ra rb] [@a @b]]
+                 (is (instance? clojure.lang.ExceptionInfo ra) "the first fetch failed")
+                 (is (string? rb) (str "the one waiting on the lock fetched: " (pr-str rb)))
+                 (is (= 2 @hits))
+                 (is (fs/exists? (fs/path (fs/parent (tools/tool-dir tool cfg plat)) (str plat ".lock")))
+                     "the lock stays: it is harmless, and another fetch may hold it"))
+               (finally (hk/server-stop! server))))))))))

@@ -27,7 +27,8 @@
             [clojure.string :as str]
             [clogem.config :as config]
             [clogem.highlight :as highlight]
-            [clogem.sprite :as sprite]))
+            [clogem.sprite :as sprite]
+            [clogem.util :as u]))
 
 (defn theme-resource-dir
   "Locate the theme's static resources on the classpath, so they are found
@@ -178,7 +179,8 @@
   joined directly. Every theme asset URL goes through here, so an asset a
   later task adds is versioned for free."
   [cfg rel]
-  (let [url (str/replace (str (config/base-path cfg) "/clogem/" rel) #"/{2,}" "/")]
+  ;; percent-encoded, base included: `/my docs/` is `/my%20docs/` (P4-D.3 item 19)
+  (let [url (u/url-encode-path (str/replace (str (config/base-path cfg) "/clogem/" rel) #"/{2,}" "/"))]
     (if-let [v (version cfg rel)]
       (str url "?v=" v)
       url)))

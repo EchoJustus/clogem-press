@@ -11,6 +11,7 @@
   class name the write path reads is stubbed alongside it."
   (:require [babashka.fs :as fs]
             [clojure.test :refer [deftest is testing]]
+            [clogem.config :as config]
             [clogem.diag :as diag]
             [clogem.render :as render]))
 
@@ -42,6 +43,8 @@
     (try
       (fs/create-dirs (fs/parent f))
       (spit (fs/file f) "old")
+      ;; an earlier build's output directory (P4-D.3 item 1)
+      (config/mark-out-dir! out)
       (let [result (binding [render/*windows?* windows?
                              diag/*sink* (atom [])]
                      (with-redefs-fn {#'render/exception-class-name stub-class-name
@@ -139,6 +142,7 @@
         refused (atom 0)]
     (try
       (spit (fs/file (doto (fs/file out) (.mkdirs)) "index.html") "old")
+      (config/mark-out-dir! out)
       (binding [diag/*sink* (atom [])]
         (with-redefs-fn {#'render/exception-class-name stub-class-name
                          #'render/write-bytes! (fn [p b]
@@ -164,6 +168,8 @@
       (try
         (fs/create-dirs dir)
         (spit (fs/file f) "old")
+        ;; an earlier build's output directory (P4-D.3 item 1)
+        (config/mark-out-dir! out)
         (fs/set-posix-file-permissions dir "r-xr-xr-x")
         (binding [diag/*sink* (atom [])]
           (render/write-site! {:outputs [{:file f :bytes (.getBytes "new" "UTF-8")}] :out (str out)}))

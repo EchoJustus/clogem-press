@@ -186,6 +186,7 @@
           (is (some? e))
           (is (= 1 (:babashka/exit (ex-data e))))
           (is (str/includes? (ex-message e) (str "expected " want ", got " got)) (ex-message e))
+          ;; the lock file stays: another fetch may hold it (P4-D.3 item 6)
           (is (= [(str plat ".lock")]
                  (map (comp str fs/file-name) (fs/list-dir (fs/path dir "cache" "pagefind" "1.5.2"))))
               "the bad download is deleted and no binary is installed"))))))))

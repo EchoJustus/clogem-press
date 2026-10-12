@@ -56,16 +56,71 @@ and run it against local content with no packaging step.
 
 | Task | What it does |
 |---|---|
-| `bb build` | Render the site to `dist/`. Writes missing front matter unless `--no-write`. Renders every page in memory first (in parallel; `CLOGEM_JOBS=1` for one thread) and writes only when all of it succeeded, file by file and atomically (temp file and rename; in place when the OS refuses the temp file or the rename), skipping files whose bytes are unchanged — a page that fails to render, or a site asset that cannot be read, leaves `dist/` and `permalinks.edn` as they were (an I/O error while writing, such as a full disk, or a Pagefind failure can still leave some files updated). Runs Pagefind last under `:search {:provider :pagefind}`; `--no-search` builds without search (no index, no search UI). Highlights code with Chroma unless `--no-highlight` (see Theme). Removes `.html` files in the output directory that the build did not write, so the output directory must be a directory of its own. |
-| `bb dev` | Build, serve on :1888, rebuild on change, push an SSE reload. `--poll` if inotify is unreliable; `--no-search` builds without search; `--no-highlight` without highlighting. |
-| `bb serve` | Serve an already-built directory, no watching. |
+| `bb build` | Render the site to the output directory (`dist/` by default; `--out` or `:build :out`). Writes missing front matter unless `--no-write`. Renders every page in memory first (in parallel; `CLOGEM_JOBS=1` for one thread) and writes only when all of it succeeded, file by file and atomically (temp file and rename; in place when the OS refuses the temp file or the rename), skipping files whose bytes are unchanged — a page that fails to render, or a site asset that cannot be read, leaves `dist/` and `permalinks.edn` as they were (an I/O error while writing, such as a full disk, or a Pagefind failure can still leave some files updated). Runs Pagefind last under `:search {:provider :pagefind}`; `--no-search` builds without search (no index, no search UI). Highlights code with Chroma unless `--no-highlight` (see Theme). Removes `.html` files in the output directory that the build did not write, so the output directory must be a directory of its own: it may not be, hold or sit inside `content/`, `assets/`, `i18n/`, `overrides/` or a `.git`, nor be the site directory or one of its ancestors; a `site.edn` value must stay inside the site directory (`--out ../dist` may point elsewhere). A build marks its output directory with `.clogem-output` and refuses an existing, non-empty one without it (a `dist/` an earlier version wrote is adopted). |
+| `bb dev` | Build, serve on 127.0.0.1:1888 (printed as `http://localhost:1888/`), rebuild on change, push a reload to the browser. See [Working locally](#working-locally). |
+| `bb serve` | Serve an already-built directory at the site's `:base`, no watching: `--dir`, else `--out`, else `:build :out`, else `dist/`. `--host`, `--port`, `--base`. |
 | `bb doctor` | Report content problems without building. Exits non-zero on errors. |
 | `bb fm-fix` | Front-matter normalization only — what CI runs before the build. `--dry-run` to preview. |
-| `bb clean` | Remove the output directory. |
+| `bb clean` | Remove the output directory — only one a build marked as its own (`.clogem-output`). |
 | `bb fetch-tool` | Fetch, sha256-verify and cache a pinned binary — Pagefind by default, `--tool chroma` or `--tool fswatcher` — and print its path. |
 | `bb test` | Run the test suite. The browser tests over a built site are separate: `test/browser/README.md`. |
 
 Every task takes `--help`.
+
+## Working locally
+
+```bash
+cd my-site
+bb --config ../clogem-press/bb.edn dev            # http://localhost:1888/
+```
+
+`bb dev` builds, serves the output directory (`dist/` by default) and rebuilds on every change to `content/`,
+`assets/`, `i18n/`, `overrides/`, `site.edn` and the generator's own theme
+resources — including a directory created while it runs (a new
+`content/07.Topic/` and the pages in it, an `overrides/` the site did not
+have, a tree copied in with `cp -r`), a watched directory deleted and made
+again, and a `site.edn` saved by an editor that replaces the file, or that is
+a symbolic link to one elsewhere. Saves are collected until 100 ms pass
+quietly, so a burst of writes is one rebuild, and editor temp files (`.#x`,
+`x~`, `4913`, `*.swp`, `*.tmp`) are ignored; so are dev's own writes — the
+front matter and `permalinks.edn` a build fills in never trigger another. A rebuild of the demo takes about 0.3 s; the page reloads about 0.6 s
+after a save, and a stylesheet-only change swaps the CSS in place. Search is
+re-indexed in the background after the reload; a page that loaded the previous
+index keeps searching it until its next reload. A `site.edn` edit that changes
+`:site :base` or `:build :out` is served at once. Ctrl-C waits for a rebuild
+in progress (up to 10 s), stops a running index and removes its working
+directories before it prints `stopped`.
+
+It listens on 127.0.0.1 but prints `http://localhost:1888/`: an embed that
+allow-lists origins — giscus's `giscus.json`, with `"originsRegex":
+["http://localhost:[0-9]+"]` — accepts `localhost` and refuses `127.0.0.1`, so
+open the URL as printed (with `--host 0.0.0.0` too, which also says it listens
+on every interface). On loopback — however `--host` spells it — it answers
+only requests addressed to `localhost`, `127.0.0.1`, `[::1]` or the address
+`--host` gave: any other `Host` is a 403, so a web page
+cannot reach it through a DNS-rebinding name of its own; with any other
+`--host` there is no such check. A port in use or out of range, or a `--host`
+that is not this machine's, is one error saying which; `--port` or `--host
+127.0.0.1`. `--port 0` takes any free port and prints it.
+
+When a rebuild fails, the terminal says why and the open page shows the error
+in an overlay over the last good build; saving a fix clears it. Escape hides
+it.
+
+| Flag | |
+|---|---|
+| `--port 1888`, `--host 127.0.0.1` | Where to listen. Both servers listen on loopback only; `--host 0.0.0.0` to reach it from another device. |
+| `--base /project/` | The site's base path (default: `:site :base`). The output directory (`dist/` by default) is served there, and `/` redirects to it, so a project site's links work locally. `bb serve --base` too. |
+| `--poll`, `--interval 500` | Watch by polling instead of the fswatcher pod. Not usually needed: dev proves the pod delivers events at startup and polls on its own when it does not (`--probe-ms 3000` is that check's budget). |
+| `--no-search` | Build without search (no index, no search UI). |
+| `--no-highlight` | Render code without syntax highlighting (no Chroma). Without it, a Chroma that cannot be fetched or run is warned about once and code shows plain; `build` fails instead. |
+| `--no-write` | Never write front matter or `permalinks.edn` back to the source tree (dev writes them by default, as `build` does). |
+| `--reload-code` | When working on the generator: also reload the theme's `.clj` code on change. |
+
+The fswatcher pod is fetched on first use like Pagefind — pinned, sha256-verified
+and cached (`bb fetch-tool --tool fswatcher`); offline, or on a platform it has
+no build for (Windows on ARM), dev polls. Ctrl-C stops it, its background
+index included, and prints `stopped`.
 
 ## Conventions in one screen
 

@@ -786,6 +786,10 @@
                     (catch java.io.IOException _ false)))
       (recur (fs/parent d)))))
 
+(def ^:private temp-marker
+  "What names a temp file of `write-atomically!` (§11.3 item 11)."
+  ".clogem-tmp-")
+
 (defn sweep-stale-html!
   "Delete the `.html` files under `out` that this build did not write — the
   pages of articles since deleted or moved — so neither `bb serve` nor
@@ -793,15 +797,25 @@
   `.html` files, only inside `out`, never through a link: a symlinked
   directory is not descended and a symlink is never deleted. `<out>/pagefind/`
   is left to `search/run!`, which replaces it whole. Directories emptied by
-  the sweep are removed. Returns the files deleted."
+  the sweep are removed. Returns the files deleted.
+
+  `<out>/clogem/` is the generator's own directory (§11.3 item 12): every
+  file in it is one this build wrote, so anything else there — a deleted
+  `overrides/custom.css`, a theme file since dropped — is swept too,
+  whatever its extension, under the same guards. A temp file
+  (`.clogem-tmp-…`) is left to `sweep-temp-files!`, which knows whether its
+  build is still running."
   [out written]
   (let [out     (fs/normalize (fs/absolutize out))
         keep?   (into #{} (map #(str (fs/normalize (fs/absolutize %)))) written)
         bundle  (fs/path out search/output-subdir)
+        theme   (fs/path out "clogem")
         stale   (when (fs/directory? out {:nofollow-links true})
                   (->> (fs/glob out "**" {:follow-links false :hidden true})
                        (map #(fs/normalize (fs/absolutize %)))
-                       (filter #(and (html-file? %)
+                       (filter #(and (or (html-file? %)
+                                         (and (str/starts-with? (str %) (str theme java.io.File/separator))
+                                              (not (str/includes? (str (fs/file-name %)) temp-marker))))
                                      (fs/regular-file? % {:nofollow-links true})
                                      (str/starts-with? (str %) (str out java.io.File/separator))
                                      (not (str/starts-with? (str %) (str bundle java.io.File/separator)))
@@ -812,20 +826,37 @@
       (prune-empty-dirs! out (fs/parent f)))
     stale))
 
-(defn- decode-char-ref
-  "A numeric character reference's code point → its text, or the reference
-  unchanged when it names no valid character."
-  [whole ^long cp]
-  (if (and (Character/isValidCodePoint cp) (not (<= 0xD800 cp 0xDFFF)) (pos? cp))
-    (String. (Character/toChars cp))
-    whole))
+(defn- xml-char?
+  "Is `cp` a character XML 1.0 allows in text? Tab, LF, CR, and
+  U+0020–U+D7FF, U+E000–U+FFFD, U+10000–U+10FFFF: no other C0 control,
+  no surrogate, not U+FFFE or U+FFFF."
+  [^long cp]
+  (or (= cp 0x9) (= cp 0xA) (= cp 0xD)
+      (<= 0x20 cp 0xD7FF) (<= 0xE000 cp 0xFFFD) (<= 0x10000 cp 0x10FFFF)))
+
+(def ^:private named-refs
+  {"lt" "<" "gt" ">" "quot" "\"" "apos" "'" "amp" "&"})
+
+(defn- decode-ref
+  "One character reference → its text, or the reference unchanged when it
+  names no character an XML document may contain: clojure.data.xml writes
+  text as it is, so a raw ESC or U+FFFE makes `feed.xml` not well-formed
+  (`&#0;` and surrogates stay literal for the same reason)."
+  [[whole named dec hex]]
+  (if named
+    (named-refs named)
+    (let [cp (if dec (parse-long dec) (Long/parseLong hex 16))]
+      (if (xml-char? cp) (String. (Character/toChars cp)) whole))))
 
 (defn- strip-tags
   "Plain text of an HTML string: aria-hidden elements dropped whole, block
   tags → a space, inline tags dropped, the five entities hiccup escapes and
   every numeric character reference (`&#34;`, `&#x27;` — what Chroma and
   `highlight/escape-html` emit) decoded, whitespace collapsed (a feed
-  `summary` is type=\"text\")."
+  `summary` is type=\"text\"). References are decoded in ONE pass, so
+  `&#38;amp;` is the text `&amp;` and `&amp;#34;` the text `&#34;` — each
+  is decoded once — and one that names a character XML forbids stays as
+  written (`decode-ref`); such a character already raw is dropped."
   [html]
   (-> (str html)
       ;; an aria-hidden element is decoration — the heading anchor's `#` —
@@ -835,13 +866,11 @@
       ;; inside a CJK sentence must not split it with a space
       (str/replace #"(?i)</?(?:p|div|li|ul|ol|h[1-6]|br|blockquote|pre|tr|td|th|table|dt|dd|hr)\b[^>]*>" " ")
       (str/replace #"<[^>]*>" "")
-      (str/replace "&lt;" "<") (str/replace "&gt;" ">") (str/replace "&quot;" "\"")
-      (str/replace "&#39;" "'") (str/replace "&apos;" "'")
-      ;; before &amp;, so an escaped `&amp;#34;` stays the text `&#34;`
-      (str/replace #"&#(?:([0-9]{1,7})|[xX]([0-9a-fA-F]{1,6}));"
-                   (fn [[whole dec hex]]
-                     (decode-char-ref whole (if dec (parse-long dec) (Long/parseLong hex 16)))))
-      (str/replace "&amp;" "&")
+      ;; a raw character XML forbids — the markdown parser decodes `&#27;`
+      ;; in prose to a raw ESC — is dropped: emitting it failed the build
+      ;; (0.2.0 too) rather than writing a feed no reader could parse
+      (str/replace #"[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]" "")
+      (str/replace #"&(?:(lt|gt|quot|apos|amp)|#([0-9]{1,7})|#[xX]([0-9a-fA-F]{1,6}));" decode-ref)
       (str/replace #"\s+" " ")
       str/trim))
 
@@ -915,8 +944,6 @@
 ;; its bytes changed, so a rebuild with no source change writes nothing at
 ;; all. An I/O failure WHILE writing (disk full, an unwritable directory) can
 ;; still leave some files updated: there is no transaction over a directory.
-
-(def ^:private temp-marker ".clogem-tmp-")
 
 (def ^:private temp-max-age-ms
   "A temp file older than this is abandoned whoever wrote it: no build holds
@@ -1194,6 +1221,9 @@
         files (mapv :file outputs)
         cache (atom {})]
     (check-outputs! out (concat outputs reserved))
+    ;; P4-D.3 item 1: what makes it a directory `bb clean` may delete —
+    ;; once the outputs are known to fit, before the first is written
+    (config/mark-out-dir! out)
     (sweep-temp-files! out)
     (reduce (fn [acc {:keys [file bytes]}]
               (if (same-bytes? cache file bytes)
@@ -1304,14 +1334,20 @@
   deletes only the temp files killed builds abandoned (`sweep-temp-files!`)
   and the directories either sweep leaves empty — `CNAME`, `.nojekyll`, a
   verification file the site owner or a CI step put there all stay.
-  Returns the render summary plus {:written :unchanged :stale}."
+  Returns the render summary plus {:written :unchanged :stale :stale-theme}:
+  stale pages, and stale files under `<out>/clogem/`, which is the
+  generator's own (`sweep-stale-html!`)."
   [{:keys [outputs reserved out] :as rendered}]
+  ;; P4-D.3 item 1: never into, or sweeping, a directory clogem did not make
+  (config/check-out-owned! out "the build will not write into or remove anything from")
   (fs/create-dirs out)
   (let [{:keys [written unchanged files]} (write-outputs! out outputs reserved)
-        stale (sweep-stale-html! out files)]
+        stale (sweep-stale-html! out files)
+        pages (count (filter html-file? stale))]
     (-> rendered
         (dissoc :outputs :reserved)
-        (assoc :written written :unchanged unchanged :stale (count stale)))))
+        (assoc :written written :unchanged unchanged :stale pages
+               :stale-theme (- (count stale) pages)))))
 
 (defn build!
   "Render, then export: `render-site`, then `write-site!`. Returns a summary

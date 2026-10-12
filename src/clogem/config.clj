@@ -218,7 +218,7 @@
 (defn- base-path*
   "`base-path`, usable before it is defined."
   [cfg]
-  (u/clean-url (or (get-in cfg [:site :base]) "/")))
+  (u/clean-url (u/percent-decode (or (get-in cfg [:site :base]) "/"))))
 
 (defn- check-fallback!
   "D-P3-7: `:i18n :fallback` is a vector of configured language keywords or
@@ -316,16 +316,20 @@
   `:tools :chroma` (its own DESIGN §5.6 sketched one with a single
   `:sha256` string), so a pin nothing reads must not start failing builds.
   The task that makes a build run a tool adds its id here: Chroma in C
-  (§11.3 item 10), the fswatcher pod in D."
+  (§11.3 item 10). The fswatcher pod stays out (Task D): only `bb dev` runs
+  it, and a pod it cannot fetch, verify or load only means watching by
+  polling."
   #{:pagefind :chroma})
 
 (defn- unused-tool-hint
-  "B2's hint for a bad pin of a tool nothing runs yet (not in
-  `fatal-tool-ids`): why it is only a warning, and what is used instead."
+  "B2's hint for a bad pin of a tool not in `fatal-tool-ids`: why it is only
+  a warning, and what is used instead."
   [id hint]
   (str (when hint (str hint " "))
-       "It has no effect in " (generator-version) " (nothing runs "
-       (name id) " yet), so the built-in pin is used."))
+       (if (= :fswatcher id)
+         "Only `bb dev` runs the fswatcher pod, and it falls back to polling when it cannot, so the built-in pin is used."
+         (str "It has no effect in " (generator-version) " (nothing runs "
+              (name id) " yet), so the built-in pin is used."))))
 
 (defn- check-search!
   "D-P3-8 / D-P3-12: the search provider, the Pagefind pin, and the Tamil
@@ -783,33 +787,80 @@
   (let [d (str dir) s (str p)]
     (or (= d s) (str/starts-with? s (str (str/replace d #"[/\\\\]+$" "") java.io.File/separator)))))
 
+(def out-marker
+  "The file every build writes into its output directory (P4-D.3 item 1).
+  `bb clean`, the stale-page sweep and Pagefind's sweeps delete only in a
+  directory that holds it (`out-owned?`): the marker is what says clogem
+  made the directory, so a misconfigured `:build :out` that names a
+  directory of the author's own can never be emptied."
+  ".clogem-output")
+
+(defn- protected-dirs
+  "The site's own source directories, which no output directory may be,
+  hold, or sit inside: the content, assets, i18n and overrides directories
+  and `.git`, as {:label :path}, each real (`real-path`)."
+  [cfg site]
+  (for [[label k] [["the content directory" [:content :dir]]
+                   ["the assets directory"  [:content :assets-dir]]
+                   ["the i18n directory"    [:i18n :strings-dir]]]
+        :let [v (u/blank->nil (str (get-in cfg k)))]
+        :when v]
+    {:label label :path (real-path (fs/path site v))}))
+
+(defn out-dir-refusal
+  "Why `out` — an output directory, already real (`real-path`) — is refused
+  for the site `site` (real too), or nil (P4-D.3 item 1). A build writes
+  into it and deletes from it, so it must be a directory of its own: not
+  the site directory or an ancestor of it; not, not holding, and not
+  inside one of the site's source directories (`protected-dirs`,
+  `overrides/`, `.git`) or any `.git`; and not another site's directory.
+  A value from site.edn (`from-file?`) must also stay inside the site
+  directory, however it gets out — absolute, `..` or a link; `--out` may
+  point anywhere else (CI builds `--out ../dist`)."
+  [cfg site out from-file?]
+  (let [cfg-name (str (fs/file-name (or (:clogem/config-file cfg) "site.edn")))
+        dirs     (concat (protected-dirs cfg site)
+                         [{:label "the overrides directory" :path (real-path (fs/path site "overrides"))}
+                          {:label "the site's .git"         :path (real-path (fs/path site ".git"))}])]
+    (or
+     (cond
+       (= (str out) (str site)) "is the site directory itself"
+       (within? out site)       (str "is " out ", which contains the site directory"))
+     (some (fn [{:keys [label path]}]
+             (when-not (= (str path) (str site))
+               (cond
+                 (= (str out) (str path)) (str "is " label " " path)
+                 (within? out path)       (str "contains " label " " path)
+                 (within? path out)       (str "is inside " label " " path))))
+           dirs)
+     (when (some #(= ".git" (str %)) (iterator-seq (.iterator ^java.nio.file.Path out)))
+       (str "is " out ", inside a .git directory"))
+     (when (and from-file? (not (within? site out)))
+       (str "is " out ", outside the site directory"))
+     (when (or (fs/exists? (fs/path out "site.edn"))
+               (fs/exists? (fs/path out cfg-name)))
+       (str "is " out ", which holds a " cfg-name " — another site's directory")))))
+
 (defn- check-out-dir!
-  "§11.2 item 46: a build deletes `.html` files in its output directory that
-  it did not write, so the output directory must hold nothing but output. It
-  is a config error, before anything is written, when `:build :out` resolves
-  to the site directory or an ancestor of it, or to a directory holding the
-  content directory or a `site.edn`. Repaired to the default so `doctor` can
+  "§11.2 item 46, P4-D.3 item 1: a build deletes `.html` files in its output
+  directory that it did not write, and `bb clean` deletes it whole, so a
+  `:build :out` that `out-dir-refusal` refuses is a config error, before
+  anything is written or deleted. Repaired to the default so `doctor` can
   keep going."
   [cfg]
   (let [site    (real-path (:clogem/site-dir cfg))
         out-raw (get-in cfg [:build :out])
         out     (when (u/blank->nil (str out-raw)) (real-path (fs/path site (str out-raw))))
-        content (real-path (fs/path site (str (get-in cfg [:content :dir]))))
-        cfg-name (str (fs/file-name (or (:clogem/config-file cfg) "site.edn")))
-        why (cond
-              (nil? out)                 "is blank"
-              (within? out site)         (if (= (str out) (str site))
-                                           "is the site directory itself"
-                                           (str "is " out ", which contains the site directory"))
-              (within? out content)      (str "contains the content directory " content)
-              (or (fs/exists? (fs/path out "site.edn"))
-                  (fs/exists? (fs/path out cfg-name)))
-              (str "is " out ", which holds a " cfg-name " — another site's directory"))]
+        why     (if (nil? out)
+                  "is blank"
+                  (out-dir-refusal cfg site out (not (:clogem/out-from-cli? cfg))))]
     (if why
-      (do (diag/error! nil (str ":build :out (" (pr-str out-raw) ") " why "; refusing to build there.")
+      (do (diag/error! nil (str ":build :out (" (pr-str out-raw) ")"
+                                (when (:clogem/out-from-cli? cfg) ", given with --out,")
+                                " " why "; refusing to build there.")
                        (str "A build removes .html files it did not write from its output directory "
-                            "(DESIGN.md §11.2 item 46), so it must be a directory of its own, "
-                            "such as the default \"dist\"."))
+                            "(DESIGN.md §11.2 item 46), and `bb clean` removes it whole, so it must be "
+                            "a directory of its own, such as the default \"dist\"."))
           (assoc-in cfg [:build :out] (get-in defaults [:build :out])))
       cfg)))
 
@@ -923,7 +974,9 @@
          (update :langs normalize-langs)
          (assoc :clogem/site-dir    (str site-dir)
                 :clogem/config-file (str cfg-file)
-                :clogem/version     (generator-version))
+                :clogem/version     (generator-version)
+                ;; P4-D.3 item 1: site.edn's :build :out must stay in the site
+                :clogem/out-from-cli? (some? (get-in overrides [:build :out])))
          validate!))))
 
 ;; ---------------------------------------------------------------------------
@@ -935,6 +988,48 @@
 (defn strings-dir   [cfg] (fs/path (site-dir cfg) (get-in cfg [:i18n :strings-dir])))
 (defn permalinks-file [cfg] (fs/path (site-dir cfg) (get-in cfg [:content :permalinks-file])))
 (defn out-dir       [cfg] (fs/path (site-dir cfg) (get-in cfg [:build :out])))
+
+(defn out-owned?
+  "Did clogem make the directory `out`: does it hold `out-marker`? A
+  directory 0.2.0 or an earlier 0.2.x build wrote — no marker, but the
+  theme's `clogem/` and an `index.html` — counts too, so an upgrade keeps
+  building into it; the next build marks it."
+  [out]
+  (boolean
+   (or (fs/regular-file? (fs/path out out-marker) {:nofollow-links true})
+       (and (fs/directory? (fs/path out "clogem") {:nofollow-links true})
+            (fs/regular-file? (fs/path out "index.html") {:nofollow-links true})))))
+
+(defn foreign-out-dir?
+  "Is `out` a directory clogem must not write into or delete: it exists,
+  is not empty, and is not `out-owned?` (P4-D.3 item 1)?"
+  [out]
+  (boolean
+   ;; `out` itself is followed: `dist -> /var/www/site` is a setup §11.3 supports
+   (and (fs/exists? out)
+        (or (not (fs/directory? out))
+            (and (seq (fs/list-dir out)) (not (out-owned? out)))))))
+
+(defn foreign-out-message
+  "The refusal for a `foreign-out-dir?`, naming what to do."
+  [out what]
+  (str "clogem-press: " out " already exists and was not made by clogem-press (it has no "
+       out-marker "), so " what " it.\n"
+       "  hint: Choose another output directory with `--out` or :build :out, or move that directory away."))
+
+(defn check-out-owned!
+  "Throw (exit 1) when `out` is `foreign-out-dir?`; `what` says what was refused."
+  [out what]
+  (when (foreign-out-dir? out)
+    (throw (ex-info (foreign-out-message out what) {:babashka/exit 1}))))
+
+(defn mark-out-dir!
+  "Create `out` if need be and write `out-marker` into it, once."
+  [out]
+  (fs/create-dirs out)
+  (let [m (fs/path out out-marker)]
+    (when-not (fs/exists? m {:nofollow-links true})
+      (spit (fs/file m) "This directory is clogem-press's build output: `bb build` rewrites it and `bb clean` deletes it.\n"))))
 
 (defn lang-keys     [cfg] (get-in cfg [:langs :priority]))
 (defn default-lang  [cfg] (get-in cfg [:langs :default]))
@@ -979,6 +1074,10 @@
 
 (defn base-path
   "Site base path, e.g. \"/\" for a user site or \"/clogem-press/\" for a project
-  site. Prefixed onto every emitted URL."
+  site. Prefixed onto every emitted URL, which encodes it.
+
+  Decoded here, once (P4-D.2 item 10): `\"/%E6%96%87/\"` and `\"/文/\"`
+  are one base. Written percent-encoded, it used to be encoded again in
+  every link, the dev redirect and the printed URL."
   [cfg]
-  (u/clean-url (or (get-in cfg [:site :base]) "/")))
+  (u/clean-url (u/percent-decode (or (get-in cfg [:site :base]) "/"))))

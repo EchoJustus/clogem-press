@@ -76,7 +76,7 @@
         ;; tried after the requested language; configured language keywords
         ;; or :site-default (= :langs :default). A bad value is a config error.
         :fallback      [:site-default :en]
-        :missing-key   :warn      ; :warn in dev, :silent in prod
+        :missing-key   :warn      ; :warn (once per key and language, build and dev) | :silent
         ;; Display-only (D-12): category KEYS stay the raw directory-derived
         ;; names and are the URL slugs; labels localize what is shown.
         :category-labels {}       ; e.g. {"Basics" {:zh-Hans "基础"}}

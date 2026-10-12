@@ -12,7 +12,7 @@
   "Write an executable `pagefind_extended` stand-in into `dir` and return its
   path. It records its arguments in `args.txt` beside itself, writes the
   bundle files the theme links to plus a `pagefind-entry.json` under
-  `<--site>/<--output-subdir>/`, prints `output`, and exits `exit`. Without
+  `<--site>/<--output-subdir>/` (or `--output-path`, as `bb dev` passes), prints `output`, and exits `exit`. Without
   `--site` it writes no bundle and exits 2: an empty site would otherwise
   mean `/pagefind`, at the filesystem root."
   [dir & {:keys [exit output] :or {exit 0 output "fake pagefind ran"}}]
@@ -27,16 +27,17 @@
             (if (zero? exit)
               (str/join
                "\n"
-               ["site=''; sub=pagefind"
+               ["site=''; sub=pagefind; outp=''"
                 "while [ $# -gt 0 ]; do"
-                "  case \"$1\" in --site) site=\"$2\"; shift;; --output-subdir) sub=\"$2\"; shift;; esac"
+                "  case \"$1\" in --site) site=\"$2\"; shift;; --output-subdir) sub=\"$2\"; shift;; --output-path) outp=\"$2\"; shift;; esac"
                 "  shift"
                 "done"
                 "if [ -z \"$site\" ]; then echo 'fake pagefind: --site is required' >&2; exit 2; fi"
-                "mkdir -p \"$site/$sub\""
-                ": > \"$site/$sub/pagefind-component-ui.js\""
-                ": > \"$site/$sub/pagefind-component-ui.css\""
-                "echo '{\"version\":\"fake\",\"languages\":{\"en\":{\"page_count\":2},\"ta\":{\"page_count\":1}}}' > \"$site/$sub/pagefind-entry.json\""
+                "b=\"$site/$sub\"; if [ -n \"$outp\" ]; then b=\"$outp\"; fi"
+                "mkdir -p \"$b\""
+                ": > \"$b/pagefind-component-ui.js\""
+                ": > \"$b/pagefind-component-ui.css\""
+                "echo '{\"version\":\"fake\",\"languages\":{\"en\":{\"page_count\":2},\"ta\":{\"page_count\":1}}}' > \"$b/pagefind-entry.json\""
                 "exit 0"])
               (str "echo 'boom' >&2\nexit " exit))
             ""]))

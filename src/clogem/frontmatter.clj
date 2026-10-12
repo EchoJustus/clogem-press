@@ -351,4 +351,4 @@
           out (insert-keys raw additions)]
       (if (= raw out)
         false
-        (do (spit (str path) out) true)))))
+        (do (u/write-source! path out) true)))))

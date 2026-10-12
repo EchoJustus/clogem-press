@@ -5,7 +5,213 @@
 Phase 4, Task B1 — colour modes, an accessible palette, the mode toggle and
 icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
 (§11.3 items 7, 11, 16, 18), then Task C — code highlighting (§11.3 item
-10). The version stays 0.2.0.
+10), then Task D — the dev loop (§11.3 item 12). The version stays 0.2.0.
+
+**Task D — the dev loop** (§11.3 item 12):
+
+### Changed (D)
+
+- **`bb dev` and `bb serve` listen on 127.0.0.1** instead of every
+  interface. `--host 0.0.0.0` restores the old behaviour. The URL they
+  print is still `http://localhost:PORT/` — giscus's `originsRegex`
+  (`http://localhost:[0-9]+`) does not accept `127.0.0.1` — with
+  `--host 0.0.0.0` too, plus a line saying it listens on every interface.
+- **On loopback, both servers answer only for `localhost`, `127.0.0.1`
+  and `[::1]`** (any port), and for the address `--host` gave: a request
+  with another `Host` is a 403, so a DNS-rebinding page cannot read the
+  site or a build error through a name of its own. Loopback is decided on
+  the address `--host` resolves to, however it is spelled (`127.1`,
+  `127.0.0.2`, `::1`, `localhost`), and the URL printed is always
+  answered. With any other `--host` there is no check.
+- **`permalinks.edn` is written only when it changes.** It was rewritten,
+  byte for byte the same, on every build.
+- **A missing UI string key warns once per key and language, in `build`
+  too**, naming the string file to add it to (`i18n/ta.edn`). It used to
+  warn only in dev — where it never fired, because the rebuild dropped the
+  dev flag — and once per call. `build` still renders the key's name;
+  `bb dev` renders `⟦key⟧`, and warns once per `bb dev` session (again
+  only if the key is defined and then goes missing once more).
+  `:i18n {:missing-key :silent}` turns it off.
+- **`dist/clogem/` is the generator's own directory**: a build deletes any
+  file there it did not write, so a deleted `overrides/custom.css` no
+  longer lingers as `dist/clogem/overrides/custom.css`. Everything else a
+  build did not write outside `dist/clogem/` and `.html` stays (`CNAME`,
+  `.nojekyll`).
+
+### Added (D)
+
+- **One rebuild per burst of saves.** `bb dev` collects changes until
+  100 ms pass quietly and ignores editor temp files; 20 quick writes were 20
+  full rebuilds.
+- **A build-error overlay.** A failed rebuild shows its error over the page
+  (self-contained, no theme CSS), and the next good build clears it. While
+  no build has succeeded, pages show a plain error page.
+- **`:base` in `dev` and `serve`.** With `:base "/project/"`, `dist/` is
+  served at `/project/`, `/` redirects there, and links work. `bb serve
+  --base`, defaulting to the site's `:base`.
+- **`--host`** on `dev` and `serve`; **`--base`**, **`--no-write`** and
+  **`--reload-code`** (reload the theme's `.clj` code) on `dev`.
+- **Theme hot reload.** `bb dev` watches the generator's theme resources;
+  a theme CSS change swaps in place.
+- **`bb dev` follows `site.edn`.** A changed `:site :base` or `:build :out`
+  is served at once (one line says where), and a watched directory that
+  appears later — `overrides/`, `assets/`, `i18n/`, or a `:content :dir`
+  moved in `site.edn` — is watched and rebuilt for, with the pod as with
+  `--poll`.
+
+### Fixed (D)
+
+- **The fswatcher pod is fetched, sha256-verified and cached** through
+  `clogem.tools` and loaded from that path, not from the pod registry.
+  Offline on the first run, or with no build for the platform, dev polls
+  with one message. Its registrations are spaced 20 ms apart: back-to-back
+  ones hung the pod more often than not, and dev then fell back to
+  polling after its 3 s probe.
+- **Search no longer 404s during a dev rebuild.** The index is rebuilt in
+  the background after the reload, into a staging directory swapped in
+  whole; it was deleted first and rebuilt before the reload was sent.
+  Every bundle it replaces that a page could have loaded since the last
+  reload is kept (at most 8) as `dist/.pagefind-prev-<pid>-<start>-<n>/`,
+  and dev serves a `pagefind/` file the live bundle lacks from them,
+  newest first — so a page that loaded an older index keeps searching it
+  until its next reload, two saves within one index run included. `bb dev`
+  removes them when it stops; any `bb build`, `--no-search` too, removes
+  those and the staging directories of a `bb dev` no longer running —
+  by process id and start time, so a reused pid (dev is often pid 1 in a
+  container) is not mistaken for it.
+- **A file renamed while dev served it** is a 404, never a 500 whose body
+  named its absolute path (reachable with `--host 0.0.0.0`). Files of
+  1 MB or more are streamed in 64 KB chunks, the next read only once the
+  last is written out, so one download holds one chunk however slow the
+  client; smaller files are read whole. Both come from one open: a 200 MB
+  file waited a second for its first byte and took 450 MB of heap per
+  client. (D.2 mapped large files instead; P4-D.3 dropped the mapping,
+  which outlived the response — on Windows a rebuild could not replace a
+  served file until a GC ran — and made a file of 2 GiB or more a 500.)
+- **Neither server serves outside its directory through a link**: a
+  directory's `index.html` linked outside it was served (`GET /dir/`). A
+  request path with a backslash, a `:`, a NUL or a `..` past the root is
+  refused before the filesystem is touched (on Windows, `\\host\share`
+  would have been a network stat).
+- **With the pod, `site.edn` saved by rename** (`sed -i`, vim, emacs,
+  atomic-save editors) is still watched afterwards, and a `site.edn` that
+  is a symbolic link is watched at its target too. Pointing the link
+  elsewhere is one rebuild; it was two, the second a rescan of every file
+  in the new target's directory (P4-D.3).
+- **With the pod, a directory created while `bb dev` runs is watched**:
+  `mkdir content/07.Topic` and a page in it, `mkdir -p a/b/c`, `cp -r` of
+  a tree. The pod watches only the subdirectories that exist when it is
+  told about a directory, so the page 404'd until something else changed.
+  Files made before the new directory is registered are rescanned. A
+  watched directory replaced (`rm -rf overrides && mkdir overrides`, an
+  `mv` swap) is watched again — its old watch died with it, silently —
+  and the old registration is released. Creating `overrides/` is one
+  rebuild, not two.
+- **`bb dev` keeps its inotify use bounded** (P4-D.3). Each pod
+  registration is an inotify instance, and Linux allows 128 per user. A
+  directory an existing registration already covers is no longer
+  registered again (`chmod -R` over 14 subdirectories took 14
+  instances); a deleted directory's watch is released when its delete
+  arrives, however busy the tree (a mkdir/rm loop leaked one per cycle); a
+  re-registration that fails keeps the working watch and is retried. At
+  the system's limit (too many open files, or no space left on device)
+  dev prints one line, releases the pod and polls for the rest of the
+  session.
+- **A `:content :dir` that does not exist yet** is followed once it is
+  created; the failed build in between left dev watching the old one.
+  With `--poll`, the save that moves it is one failed build, not two: the
+  old directory's files no longer being watched read as deleted
+  (P4-D.3).
+- **The build's own writes never trigger a rebuild**: front matter it
+  fills in, `permalinks.edn` and `@pages/` files each caused a second
+  build, and with the pod's filter gone an endless loop. Each write is
+  filtered once (P4-D.3): the first event for the file uses it up, and any
+  later one rebuilds whatever it holds — an undo back to the bytes the
+  build wrote, within 3 s, was ignored and `dist/` kept the edit. A
+  directory the build creates (`content/@pages/`) is the build's own too;
+  it was one extra rebuild.
+- **Ctrl-C waits for the build running** (up to 10 s), stops Pagefind and
+  any index run queued behind it, and removes the staging directories, so
+  nothing is written after `stopped` and no Pagefind outlives `bb dev`.
+  Ctrl-C during the first build or the pod's probe now does the same; it
+  printed nothing and skipped it all. Since P4-D.3: a build Ctrl-C
+  interrupts writes nothing — Chroma killed by the same signal is not
+  reported as a failure, and the build no longer goes on to write `dist/`
+  with plain code; a Pagefind the process group's SIGTERM stopped is not
+  reported either; the probe's temp file is removed; and `stopped` is
+  printed only once dev has started, not under a listen or config error.
+- **A busy port, a port out of range, or a `--host` that does not
+  resolve, is not this machine's or has no address family here (`::1` on
+  an IPv4-only host)** is one error naming the host and port (exit 1), not
+  a stack trace; `bb dev` binds before its first build, so it writes
+  nothing then. `--port 0` prints the port it got. An option value that
+  does not parse (`--port abc`) is one line too, not babashka's dump of
+  the whole option spec, and `--host [::1]` is printed `[::1]`, not
+  `[[::1]]` (P4-D.3).
+- **A `:base` with non-ASCII characters or a space** (`/文档/`, `/my docs/`)
+  is mounted by `dev` and `serve`; it 404'd. A base written
+  percent-encoded (`"/%E6%96%87/"`) is the same base as `"/文/"`; it was
+  encoded again in every link, by `build` too. Every URL `build` emits now
+  carries the base percent-encoded (P4-D.3): theme assets, the icon
+  sprite, the search bundle, the home and language-home links, nav links
+  and markdown's `/assets/…` links had `href="/my docs/…"`.
+- **`:build :out` in `site.edn` is honoured** by `build`, `dev` and
+  `clean`: the CLI's `--out` defaulted to `dist` and overrode it every
+  time. `--out` still wins. A site whose CI passes `--out` (the live
+  site's passes `--out ../dist`) is unaffected.
+- **An output directory can no longer be a source directory** (P4-D.3).
+  `:build :out "assets"` passed `doctor`, then the build swept
+  `assets/mine.html` as a stale page and `bb clean` deleted `assets/`.
+  `build`, `clean` and `doctor` now refuse — as a config error — an
+  output directory, from `site.edn` or `--out`, that is, holds or is
+  inside the content, assets, i18n or overrides directory or a `.git`,
+  or is the site directory or an ancestor of it; a `site.edn` value must
+  also stay inside the site directory (absolute, `..` and links
+  included), while `--out` may point elsewhere (`--out ../dist`).
+- **Builds mark their output directory** with a `.clogem-output` file, and
+  `bb clean`, the stale-page sweep and the search sweeps delete only in a
+  marked directory: an existing, non-empty directory without the marker is
+  refused by `build` and `clean`, and reported by `doctor`. A `dist/` an
+  earlier version wrote (it holds `clogem/` and `index.html`) is adopted
+  and marked by the next build.
+- **`bb serve` with an unreadable `site.edn`** warns and serves at `/`, as
+  0.2.0 did (`--base` needs no config); it exited 1.
+- **`bb serve` serves the directory `bb build` wrote** (P4-D.3): `--dir`,
+  else `--out` (new), else `site.edn`'s `:build :out`, else `dist`. With
+  `:build :out "public"` it looked for `dist/`. `bb dev` sweeps its
+  previous search bundles from every output directory it built into in
+  the session, not only the last.
+- **Messages:** the pod fallback line has one `clogem-press:` prefix and
+  keeps its hint, which names `bb dev --poll` for a `CLOGEM_FSWATCHER`
+  that names nothing; a failed download leaves only an empty
+  `<platform>.lock` in the cache, which is harmless (P4-D.3: D.2 deleted
+  it, and with it the version directory, under a second fetch waiting on
+  the same lock, which then failed too); Ctrl-C while the index runs prints `stopped`, not "Pagefind
+  exited 130", while a Pagefind killed from outside (the OOM killer) is
+  reported as an index failure; a Pagefind failure shows its output on
+  indented lines, not run together with `;`. Its hint says what is true
+  (P4-D.3): "the previous search index is still in place" only when there
+  is one — the first index of a session has none — and `build`'s names
+  the output directory written, not always `dist/`.
+- **`doctor`'s code-language check** reports an unreadable Chroma — cached,
+  `CLOGEM_CHROMA` or `:tools :chroma :path` — with `build`'s own message
+  and hint, not as a stack trace (follow-up to Task C).
+- **A stylesheet saved by rename** (`sed -i`, JetBrains, GNOME editors,
+  and since P4-D.3 rsync's `.custom.css.Xy12Zq` and npm write-file-atomic's
+  `custom.css.<hash>`) is swapped in place; the temp file's name made it a
+  full reload.
+- **The 404 page escapes the base it links to** as an attribute.
+- **Feed summaries are well-formed XML.** A character reference to a
+  control character, U+FFFE or U+FFFF stays as written, references are
+  decoded once (`&#38;amp;` is `&amp;`), and a raw control character —
+  the markdown parser turns `&#27;` in prose into one — is dropped; it
+  failed the build, in 0.2.0 too.
+- **A new or deleted `overrides/custom.css` reloads the page** instead of
+  waiting for a manual reload (the CSS swap only re-fetches stylesheets the
+  page already links).
+- **The poll loop survives an `Error`**, and so do pod callbacks.
+- **A `site.edn` change that moves `:content :dir`** is followed, polling
+  or with the pod.
 
 **Task C — code highlighting** (§11.3 item 10):
 

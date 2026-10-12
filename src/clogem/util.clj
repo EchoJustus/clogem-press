@@ -2,9 +2,68 @@
 (ns clogem.util
   "Small pure helpers shared across the pipeline. Nothing here knows about
   content, config, or HTML."
-  (:require [clojure.string :as str])
+  (:require [clojure.java.io :as io]
+            [clojure.string :as str])
   (:import [java.security MessageDigest]
            [java.util Locale]))
+
+;; ---------------------------------------------------------------------------
+;; Source writes
+
+(def ^:dynamic *source-writes*
+  "When bound to an atom (by `bb dev`, around each build), every file this
+  program writes into the SOURCE tree — front matter, `permalinks.edn`,
+  `@pages/` — is recorded in it as path → the content written
+  (`write-source!`), so dev can tell its own writes from the author's: a
+  build's write must never trigger another build (P4-D.2 item 9)."
+  nil)
+
+(defn write-source!
+  "`spit` `content` to the source file `f`, recorded in `*source-writes*`."
+  [f content]
+  (spit (io/file (str f)) content)
+  (when-let [a *source-writes*]
+    (swap! a assoc (str (.getCanonicalPath (io/file (str f)))) content))
+  nil)
+
+(def dir-mark
+  "What `*source-writes*` records for a directory the build created."
+  ::dir)
+
+(defn create-source-dirs!
+  "`mkdir -p` `dir` in the SOURCE tree, each directory it creates recorded
+  in `*source-writes*` as `dir-mark`: the event for a directory the build
+  made — `content/@pages/` — is the build's own too (P4-D.3 item 15)."
+  [dir]
+  (let [missing (->> (iterate #(.getParentFile ^java.io.File %) (.getAbsoluteFile (io/file (str dir))))
+                     (take-while #(and % (not (.exists ^java.io.File %))))
+                     vec)]
+    (.mkdirs (io/file (str dir)))
+    (when-let [a *source-writes*]
+      (doseq [d missing :when (.isDirectory ^java.io.File d)]
+        (swap! a assoc (.getCanonicalPath ^java.io.File d) dir-mark)))
+    nil))
+
+;; ---------------------------------------------------------------------------
+;; Cancellation
+
+(def ^:dynamic *cancelled?*
+  "When bound (by `bb dev`, around each build) to a function, it says
+  whether dev is stopping: a build then stops before it writes, and a tool
+  the stop killed is not reported as a failure (P4-D.3 item 13)."
+  nil)
+
+(defn cancelled?
+  "Is the build running cancelled (`*cancelled?*`), or `f` says so?"
+  ([] (cancelled? *cancelled?*))
+  ([f] (boolean (when f (f)))))
+
+(defn cancelled
+  "The exception a cancelled build stops with: dev says nothing about it."
+  []
+  (ex-info "clogem-press: the build was cancelled (bb dev is stopping)" {:clogem/cancelled true}))
+
+(defn cancelled-ex? [e] (boolean (:clogem/cancelled (ex-data e))))
 
 ;; ---------------------------------------------------------------------------
 ;; Maps
@@ -166,6 +225,13 @@
 
 (defn ensure-leading-slash [s] (if (str/starts-with? s "/") s (str "/" s)))
 (defn ensure-trailing-slash [s] (if (str/ends-with? s "/") s (str s "/")))
+
+(defn percent-decode
+  "`s` with its percent-escapes decoded as UTF-8, once — a `+` stays a plus
+  — or `s` itself when they are not valid."
+  [s]
+  (try (java.net.URLDecoder/decode (str/replace (str s) "+" "%2B") "UTF-8")
+       (catch IllegalArgumentException _ (str s))))
 
 (defn clean-url
   "Normalize a site-relative URL to /a/b/ form: leading and trailing slash, no

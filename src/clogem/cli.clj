@@ -16,7 +16,8 @@
             [clogem.render :as render]
             [clogem.scan :as scan]
             [clogem.search :as search]
-            [clogem.tools :as tools]))
+            [clogem.tools :as tools]
+            [clogem.util :as u]))
 
 ;; ---------------------------------------------------------------------------
 ;; Shared option spec
@@ -24,6 +25,12 @@
 (def common-spec
   {:site-dir    {:desc "Directory holding site.edn and content/." :default "." :alias :d :ref "<dir>"}
    :config-file {:desc "Config filename inside --site-dir." :default "site.edn" :ref "<file>"}})
+
+;; No `:default` on purpose (P4-D.2 item 5): a spec default is indistinguishable
+;; from `--out dist` once parsed, and overrode `:build :out` in site.edn on
+;; every run. The precedence is `--out`, then site.edn's `:build :out`, then
+;; config's default, "dist".
+(def ^:private out-desc "Output directory (default: site.edn's :build :out, else dist).")
 
 (defn- load-cfg*
   "Load config under a diagnostic sink. Returns [cfg diagnostics]."
@@ -116,9 +123,18 @@
 ;; ---------------------------------------------------------------------------
 ;; Tasks
 
+(defn option-error
+  "babashka.cli's `:error-fn` for every task: a bad option — `--port abc`
+  — is one line and exit 1, not babashka's dump of the whole spec
+  (P4-D.3 item 20)."
+  [{:keys [msg]}]
+  (throw (ex-info (str "clogem-press: " msg " (`--help` lists the options).")
+                  {:babashka/exit 1})))
+
 (defn ^{:org.babashka/cli
-        {:spec (merge common-spec
-                      {:out      {:desc "Output directory." :default "dist" :alias :o :ref "<dir>"}
+        {:error-fn option-error
+         :spec (merge common-spec
+                      {:out      {:desc out-desc :alias :o :ref "<dir>"}
                        :base     {:desc "Site base path, e.g. /project/." :ref "<path>"}
                        :no-write {:desc "Read-only build: never touch source files." :coerce :boolean}
                        :no-search {:desc "Build without search (no index, no search UI) even when :search :provider is set."
@@ -127,10 +143,18 @@
                                       :coerce :boolean}})}}
   build
   [opts]
-  (let [cfg (cond-> (load-cfg! opts)
-              ;; a `dev` rebuild (§11.3 item 10): a Chroma failure warns
-              ;; once and code renders plain, instead of failing the build
-              (or (:clogem/dev-loop? opts) (:clogem/dev? opts)) (assoc :clogem/dev-loop? true))]
+  ;; `:clogem/dev?` is set by `bb dev` (never on the command line): pages
+  ;; render dev's ⟦key⟧ for a missing UI string, and search is left to dev's
+  ;; background indexer (§11.3 item 12) — the result says `:search :deferred`
+  ;; and carries the config the build used as `:clogem/cfg`. `:clogem/dev-loop?`
+  ;; is set only by `bb dev` too, and makes a Chroma failure warn once and
+  ;; render code plain instead of failing the build (§11.3 item 10).
+  (let [dev? (boolean (:clogem/dev? opts))
+        cfg  (cond-> (load-cfg! opts)
+               dev? (assoc :clogem/dev? true)
+               (or (:clogem/dev-loop? opts) (:clogem/dev? opts)) (assoc :clogem/dev-loop? true))]
+    ;; P4-D.3 item 1: before front matter is written back, too
+    (config/check-out-owned! (config/out-dir cfg) "the build will not write into or remove anything from")
     ;; Pass 1 — normalize front matter. Its diagnostics are discarded because
     ;; pass 2 re-derives them from the normalized tree and is the authoritative
     ;; report; but content ERRORS abort before anything is written, since
@@ -162,17 +186,26 @@
     ;; asset leaves dist/ exactly as it was, rather than a mix of this build's
     ;; pages and the last one's. The ledger is written only once dist/ has
     ;; been, so a failed write leaves permalinks.edn as it was too.
-    (let [[m ads]    (diag/collecting
-                      (let [m (analyse cfg)]
-                        ;; two outputs of this build that would collide —
-                        ;; `/assets/demo.txt/` and the asset assets/demo.txt —
-                        ;; are a content error, before anything is rendered
-                        (render/check-output-collisions! m)
-                        m))
+    ;; a UI string key no language defines is reported once per (key,
+    ;; language) over analysis and render together, not once per page
+    (let [missing    (atom #{})
+          [m ads]    (diag/collecting
+                      (binding [i18n/*missing-keys* missing]
+                        (let [m (analyse cfg)]
+                          ;; two outputs of this build that would collide —
+                          ;; `/assets/demo.txt/` and the asset assets/demo.txt —
+                          ;; are a content error, before anything is rendered
+                          (render/check-output-collisions! m)
+                          m)))
           _          (when (seq (diag/errors ads)) (report! ads))
           [result rds]
           (diag/collecting
-           (let [written (render/write-site! (render/render-site cfg m))]
+           (let [written (binding [i18n/*missing-keys* missing]
+                           (let [rendered (render/render-site cfg m)]
+                             ;; `bb dev` stopping: nothing is written (P4-D.3 item 13)
+                             (when (u/cancelled?) (throw (u/cancelled)))
+                             (render/write-site! rendered)))]
+             (i18n/report-missing-keys! cfg @missing)
              (when (config/write-front-matter? cfg)
                (model/write-ledger! cfg (model/ledger-from-model m)))
              written))
@@ -184,20 +217,36 @@
       (when (pos? (:stale result 0))
         (println (format "clogem-press: removed %d stale page%s from %s"
                          (:stale result) (if (= 1 (:stale result)) "" "s") (:out result))))
+      (when (pos? (:stale-theme result 0))
+        (println (format "clogem-press: removed %d stale file%s from %s/clogem"
+                         (:stale-theme result) (if (= 1 (:stale-theme result)) "" "s") (:out result))))
       ;; D-P3-8: search runs last, over the finished dist/. A failure here is
       ;; a build error (exit 1) even though dist/ is already written — the
       ;; known limitation of §11.2, left for Phase 5: CI stops before
       ;; deploying it.
-      (if (search/enabled? cfg)
+      ;; P4-D.2 item 20: what a `bb dev` no longer running left — staging
+      ;; directories and previous bundles — goes with `--no-search` too
+      (when-not dev? (search/sweep-staging! (config/out-dir cfg)))
+      (cond
+        (and dev? (search/enabled? cfg))
+        (assoc result :search :deferred :clogem/cfg cfg)
+
+        dev?
+        (assoc result :clogem/cfg cfg)
+
+        (search/enabled? cfg)
         (let [{:keys [languages pages]} (search/index! cfg)]
           (println (format "clogem-press: search index → %s/%s (%d language%s, %d pages)"
                            (:out result) search/output-subdir
                            languages (if (= 1 languages) "" "s") pages))
           (assoc result :search {:languages languages :pages pages}))
+
+        :else
         result))))
 
 (defn ^{:org.babashka/cli
-        {:spec (assoc common-spec
+        {:error-fn option-error
+         :spec (assoc common-spec
                       :tool {:desc "The tool to fetch: pagefind, chroma or fswatcher."
                              :default "pagefind" :ref "<name>"})}}
   fetch-tool
@@ -218,7 +267,7 @@
     (println bin)
     bin))
 
-(defn ^{:org.babashka/cli {:spec (assoc common-spec
+(defn ^{:org.babashka/cli {:error-fn option-error :spec (assoc common-spec
                                         :dry-run {:desc "Report what would be written, write nothing."
                                                   :coerce :boolean})}}
   fm-fix
@@ -239,7 +288,7 @@
         (println (format "clogem-press: normalized %d file(s)" (+ n (count created))))))
     plan))
 
-(defn ^{:org.babashka/cli {:spec common-spec}}
+(defn ^{:org.babashka/cli {:error-fn option-error :spec common-spec}}
   doctor
   [opts]
   ;; Config diagnostics are part of the report, not a gate in front of it: a
@@ -248,21 +297,30 @@
   ;; same — D-P2-12: a config error is an error.
   (let [[cfg cds] (load-cfg* opts)
         [m ds] (diag/collecting
-                (let [m (analyse cfg)]
-                  ;; findings that must not fire inside analyse (undated
-                  ;; articles, disagreeing variants, over-deep directories,
-                  ;; unresolved catalogue paths) …
-                  (model/doctor-checks! m)
-                  ;; … and the render-time ones (dead links, unknown
-                  ;; containers, bad card-list YAML), by rendering every page
-                  ;; in memory and discarding it
-                  (when (seq (:articles m)) (render/check-pages! m))
-                  ;; … and unknown code languages, with a Chroma already
-                  ;; here (never downloaded), §11.3 item 10
-                  (render/check-code-languages! m)
-                  ;; … and outputs of one build that would collide
-                  (render/check-output-collisions! m)
-                  m))
+                (i18n/reporting-missing-keys
+                 cfg
+                 (let [m (analyse cfg)]
+                   ;; findings that must not fire inside analyse (undated
+                   ;; articles, disagreeing variants, over-deep directories,
+                   ;; unresolved catalogue paths) …
+                   (model/doctor-checks! m)
+                   ;; … and the render-time ones (dead links, unknown
+                   ;; containers, bad card-list YAML), by rendering every page
+                   ;; in memory and discarding it
+                   (when (seq (:articles m)) (render/check-pages! m))
+                   ;; … and unknown code languages, with a Chroma already
+                   ;; here (never downloaded), §11.3 item 10
+                   (render/check-code-languages! m)
+                   ;; … and outputs of one build that would collide
+                   (render/check-output-collisions! m)
+                   ;; … and an output directory clogem did not make
+                   ;; (P4-D.3 item 1), which build and clean refuse
+                   (let [out (config/out-dir cfg)]
+                     (when (config/foreign-out-dir? out)
+                       (diag/error! nil (str/replace (first (str/split-lines (config/foreign-out-message out "a build would refuse")))
+                                                     #"^clogem-press: " "")
+                                    "Choose another output directory with `--out` or :build :out, or move that directory away.")))
+                   m)))
         ds    (into (vec cds) ds)
         errs  (diag/errors ds)
         warns (diag/warnings ds)]
@@ -279,30 +337,48 @@
                       {:clogem/errors errs :clogem/warnings warns :babashka/exit 1})))
     {:warnings warns :errors errs}))
 
-(defn ^{:org.babashka/cli {:spec (assoc common-spec
-                                        :out {:desc "Output directory." :default "dist" :alias :o})}}
+(defn ^{:org.babashka/cli {:error-fn option-error :spec (assoc common-spec
+                                        :out {:desc out-desc :alias :o :ref "<dir>"})}}
   clean
   [opts]
   (let [cfg (load-cfg! opts)
         out (config/out-dir cfg)]
+    ;; P4-D.3 item 1: only a directory clogem made — an empty one is
+    ;; nothing to lose
+    (config/check-out-owned! out "`bb clean` will not delete")
     (when (fs/exists? out) (fs/delete-tree out))
     (println "clogem-press: removed" (str out))))
 
+(def server-spec
+  "The options `serve` and `dev` share: where to listen (§11.3 item 12)."
+  {:port {:desc "Port." :default 1888 :coerce :long :alias :p}
+   :host {:desc "Address to listen on; 0.0.0.0 for every interface." :default "127.0.0.1" :ref "<addr>"}})
+
 (defn ^{:org.babashka/cli
-        {:spec {:dir  {:desc "Directory to serve." :default "dist" :ref "<dir>"}
-                :port {:desc "Port." :default 1888 :coerce :long :alias :p}}}}
+        {:error-fn option-error
+         :spec (merge common-spec server-spec
+                      ;; no :default (P4-D.3 item 2): it hid site.edn's :build :out
+                      {:dir  {:desc "Directory to serve (default: --out, else site.edn's :build :out, else dist)." :ref "<dir>"}
+                       :out  {:desc "Output directory to serve, from --site-dir, as `build --out` names it." :alias :o :ref "<dir>"}
+                       :base {:desc "Serve it at this path, e.g. /project/ (default: the site's :base when --site-dir has a site.edn, else /)."
+                              :ref "<path>"}})}}
   serve
   [opts]
   ((requiring-resolve 'clogem.dev/serve!) opts))
 
 (defn ^{:org.babashka/cli
-        {:spec (merge common-spec
-                      {:out      {:desc "Output directory." :default "dist" :alias :o}
-                       :port     {:desc "Port." :default 1888 :coerce :long :alias :p}
+        {:error-fn option-error
+         :spec (merge common-spec server-spec
+                      {:out      {:desc out-desc :alias :o :ref "<dir>"}
+                       :base     {:desc "Site base path, e.g. /project/; the site is served there." :ref "<path>"}
                        :poll     {:desc "Poll the filesystem instead of using inotify."
                                   :coerce :boolean}
-                       :no-search {:desc "Do not rebuild the search index on each rebuild."
+                       :no-search {:desc "Build without search (no index, no search UI)."
                                    :coerce :boolean}
+                       :no-write {:desc "Never write front matter or permalinks.edn back to the source tree."
+                                  :coerce :boolean}
+                       :reload-code {:desc "Also watch the theme's .clj code and reload it on change."
+                                     :coerce :boolean}
                        :no-highlight {:desc "Render code without syntax highlighting (no Chroma)."
                                       :coerce :boolean}
                        :interval {:desc "Poll interval in ms." :default 500 :coerce :long}
@@ -312,7 +388,7 @@
   [opts]
   ((requiring-resolve 'clogem.dev/dev!) opts))
 
-(defn ^{:org.babashka/cli {:spec {:pattern {:desc "Only run test namespaces matching this substring."
+(defn ^{:org.babashka/cli {:error-fn option-error :spec {:pattern {:desc "Only run test namespaces matching this substring."
                                             :ref "<str>"}}}}
   test-cmd
   [opts]

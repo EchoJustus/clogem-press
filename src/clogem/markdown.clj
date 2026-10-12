@@ -42,6 +42,7 @@
             [clojure.walk :as walk]
             [hiccup2.core :as h]
             [nextjournal.markdown :as md]
+            [clogem.config :as config]
             [clogem.containers :as containers]
             [clogem.diag :as diag]
             [clogem.highlight :as highlight]
@@ -82,10 +83,16 @@
   on a project site served under `/project/`. Already-prefixed paths and a
   root base are left alone."
   [cfg href]
-  (let [base (u/clean-url (or (get-in cfg [:site :base]) "/"))]
-    (if (or (= "/" base) (str/starts-with? href base))
-      href
-      (str/replace (str base href) #"/{2,}" "/"))))
+  ;; the base as `config/base-path` decodes it, emitted percent-encoded —
+  ;; `/my docs/` is `/my%20docs/` — and the author's own path as written
+  ;; (P4-D.3 item 19)
+  (let [base (config/base-path cfg)
+        enc  (u/url-encode-path base)]
+    (cond
+      (= "/" base)                   href
+      (str/starts-with? href enc)    href
+      (str/starts-with? href base)   (str enc (subs href (count base)))
+      :else                          (str/replace (str enc href) #"/{2,}" "/"))))
 
 (defn rewrite-href
   "Resolve a link to its destination URL.

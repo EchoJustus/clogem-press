@@ -57,7 +57,8 @@
             [hiccup2.core :as h]
             [clogem.config :as config]
             [clogem.diag :as diag]
-            [clogem.tools :as tools]))
+            [clogem.tools :as tools]
+            [clogem.util :as u]))
 
 ;; ---------------------------------------------------------------------------
 ;; Config
@@ -317,6 +318,42 @@
     e
     (ex-info (str (ex-message e) "\n  hint: " hint) (merge (ex-data e) {:babashka/exit 1}) e)))
 
+(defn chroma-failure
+  "Any failure to use Chroma as the ex-info `build` raises: an
+  `IOException` hashing an unreadable binary included, never a stack
+  trace, and always with the hint naming `--no-highlight` (`with-hint`).
+  `doctor` reports the same message and hint (P4-D.2 item 26)."
+  [^Throwable e]
+  (with-hint
+    (if (instance? clojure.lang.ExceptionInfo e)
+      e
+      (ex-info (str "clogem-press: highlight: could not use Chroma: "
+                    (or (ex-message e) (.getName (class e))))
+               {:babashka/exit 1 :clogem/tool-error :chroma} e))))
+
+(defn- killed-by-signal?
+  "Did Chroma exit 130 or 143 — SIGINT or SIGTERM, which a Ctrl-C of
+  `bb dev` sends the whole process group?"
+  [^Throwable e]
+  (boolean (re-find #"\(exit 1(?:30|43)\)" (str (ex-message e)))))
+
+(defn- cancel-instead!
+  "In a dev rebuild, throw `u/cancelled` instead of reporting `e` when dev
+  is stopping (`cancelled?`, captured when the session was made — render
+  workers may not carry the binding): a Chroma the Ctrl-C killed is not a
+  failure, and the build must not go on to write plain code (P4-D.3 item
+  13). A signal exit waits a moment for dev's own flag, which the shutdown
+  hook sets after the signal arrives."
+  [cancelled? ^Throwable e]
+  (when (and cancelled?
+             (or (cancelled?)
+                 (and (killed-by-signal? e)
+                      (let [deadline (+ (System/currentTimeMillis) 1000)]
+                        (loop [] (cond (cancelled?) true
+                                       (> (System/currentTimeMillis) deadline) false
+                                       :else (do (Thread/sleep 20) (recur))))))))
+    (throw (u/cancelled))))
+
 (defn- dev-warn!
   [k ^Throwable e]
   (when-not (contains? @dev-failures k)
@@ -373,6 +410,7 @@
              :dark-style (check-style! styles :dark-style (get-in cfg [:highlight :dark-style]))
              :line-numbers (not (false? (get-in cfg [:highlight :line-numbers])))
              :soft? (soft? cfg)
+             :cancelled? u/*cancelled?*
              :pin pin
              :broken (atom false)
              :warned (atom #{})
@@ -381,14 +419,12 @@
           (catch Exception e
             ;; an `IOException` hashing an unreadable binary is a Chroma
             ;; failure too, not a stack trace
-            (let [e (if (instance? clojure.lang.ExceptionInfo e)
-                      e
-                      (ex-info (str "clogem-press: highlight: could not use Chroma: "
-                                    (or (ex-message e) (.getName (class e))))
-                               {:babashka/exit 1 :clogem/tool-error :chroma} e))]
+            (when (u/cancelled-ex? e) (throw e))
+            (let [e (chroma-failure e)]
               (if (soft? cfg)
-                (do (dev-warn! pin e) nil)
-                (throw (with-hint e))))))))))
+                (do (cancel-instead! u/*cancelled?* e)
+                    (dev-warn! pin e) nil)
+                (throw e)))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Highlighting
@@ -471,7 +507,8 @@
   restarted, as the warning says."
   [session ^Throwable e]
   (if (:soft? session)
-    (do (when (compare-and-set! (:broken session) false true)
+    (do (cancel-instead! (:cancelled? session) e)
+        (when (compare-and-set! (:broken session) false true)
           (dev-warn! (:pin session) e))
         nil)
     (throw e)))
@@ -570,11 +607,14 @@
   [cfg sources]
   (when (and (enabled? cfg) (has-code? (map second sources)))
     (let [problem (fn [^Throwable e]
-                    (diag/error! nil (str/replace (str (ex-message e)) #"^clogem-press: " "")
-                                 "`bb build` fails on this too; `bb build --no-highlight` builds without Chroma.")
+                    ;; build's message and build's hint, as build gives them
+                    (let [[msg & hints] (str/split (str (ex-message (chroma-failure e))) #"\n\s*hint: ")]
+                      (diag/error! nil (str/replace msg #"^clogem-press: " "") (str/join " " hints)))
                     nil)
+          ;; an `IOException` hashing an unreadable cached binary is that
+          ;; error too, as in `session`, never a stack trace
           bin     (try (tools/available-binary tools/chroma cfg)
-                       (catch clojure.lang.ExceptionInfo e (problem e) ::unusable))]
+                       (catch Exception e (problem e) ::unusable))]
       (cond
         (= ::unusable bin) nil
 
@@ -586,10 +626,7 @@
         :else
         (when-let [{:keys [lexers] n :count}
                    (try (listing bin (binary-sha bin))
-                        (catch Exception e
-                          (problem (if (instance? clojure.lang.ExceptionInfo e)
-                                     e
-                                     (ex-info (str "highlight: could not use Chroma: " (ex-message e)) {})))))]
+                        (catch Exception e (problem e)))]
           (let [s {:lexers lexers :lexer-count n :warned (atom #{}) :version (tools/version tools/chroma cfg)}]
             (doseq [[path ast] sources
                     node (code-nodes ast)]

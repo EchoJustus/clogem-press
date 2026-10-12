@@ -195,8 +195,9 @@
   "The babashka filesystem-watcher pod, org.babashka/fswatcher. Each release
   asset is a zip whose single member is the pod binary. Upstream publishes
   no checksums: these were computed from the release zips on 2026-10-02
-  (trust on first use, DESIGN.md §11.3). Phase 4 Task A adds the descriptor
-  only; `dev` does not use it yet (Task D)."
+  (trust on first use, DESIGN.md §11.3). `bb dev` fetches it through
+  `ensure-binary!` and loads it from the verified path (`dev/load-pod!`,
+  Task D); `bb fetch-tool --tool fswatcher` fills the cache, as CI does."
   {:id           :fswatcher
    :name         "fswatcher pod"
    :error-prefix "dev"
@@ -218,8 +219,10 @@
                   :no-sha       (fn [plat]
                                   (str "Pin the zip's sha256 yourself: :tools {:fswatcher {:sha256 {\""
                                        plat "\" \"<hex>\"}}}."))
-                  :preinstalled "CLOGEM_FSWATCHER and :tools :fswatcher :path name an installed pod-babashka-fswatcher."
-                  :unpack       "Point CLOGEM_FSWATCHER at an installed pod-babashka-fswatcher."}})
+                  :preinstalled (str "Point CLOGEM_FSWATCHER (or :tools :fswatcher :path) at an installed "
+                                     "pod-babashka-fswatcher, or unset it to fetch the pinned one; "
+                                     "`bb dev --poll` watches without the pod.")
+                  :unpack       "Run `bb dev --poll`, or point CLOGEM_FSWATCHER at an installed pod-babashka-fswatcher."}})
 
 (def descriptors
   "Every tool `bb fetch-tool --tool` can fetch, by id."
@@ -458,7 +461,11 @@
 (defn with-cache-lock
   "Run `f` holding an exclusive lock on `lock-file`, across threads and
   processes, so two cold-cache builds fetch once rather than racing to
-  install the same directory."
+  install the same directory. The lock file is never deleted, a failed
+  fetch's included: another fetch may hold it or be waiting on it, and
+  deleting it — or its directory — under that one made it fail too
+  (P4-D.3 item 6). What a failed fetch leaves is an empty `<plat>.lock`,
+  which is harmless: the next fetch locks it again."
   [lock-file f]
   (fs/create-dirs (fs/parent lock-file))
   (let [k (str (fs/normalize (fs/absolutize lock-file)))

@@ -13,13 +13,14 @@
   fixture (`clogem.test-runner`), so each site here asks for :chroma."
   (:require [babashka.fs :as fs]
             [babashka.process :as p]
+            [clojure.data.xml :as xml]
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [hiccup2.core :as h]
             [clogem.cli :as cli]
             [clogem.config :as config]
-            [clogem.dev]
+            [clogem.dev :as dev]
             [clogem.diag :as diag]
             [clogem.fake-tools :as fake]
             [clogem.highlight :as hl]
@@ -40,11 +41,13 @@
 (declare bb-exe)
 
 (defn- with-site
-  "A temp site: site.edn from `site-edn` (highlighting on, the fake chroma
-  at `bin` as :tools :chroma :path) and {rel → content} under content/.
-  Calls (f dir out bin) with the fake's path, the cache cleared and the
-  process counts reset; `tools/*env*` holds only CLOGEM_CHROMA=bin, so a
-  CI runner's real binary never stands in for the fake."
+  "A temp site: site.edn from `site-edn` (highlighting on) and {rel →
+  content} under content/, and a fake chroma at `bin`, passed as
+  CLOGEM_CHROMA through the `tools/*env*` binding — the only variable it
+  holds, so a CI runner's real binary never stands in for the fake (a test
+  that wants `:tools :chroma :path` or the tools cache rebinds it). Calls
+  (f dir out bin) with the fake's path, the cache cleared and the process
+  counts reset."
   [files f & [{:keys [site-edn fake-opts]}]]
   (let [dir (fs/create-temp-dir {:prefix "clogem-hl"})
         bin (apply fake/fake-chroma! (fs/path dir ".fake-bin") (mapcat identity fake-opts))
@@ -588,6 +591,53 @@
                 (is (some? error))
                 (is (re-find #"error: highlight: Chroma binary .* does not exist" err) err)))))))))
 
+(defn- cache-entry!
+  "A verified tools-cache entry under `root` for the pinned Chroma, holding
+  a copy of `bin`, as `tools/ensure-binary!` would have left it."
+  [root bin]
+  (let [plat (tools/platform tools/chroma)
+        dir  (fs/path root "chroma" (tools/version tools/chroma {}) plat)
+        dest (fs/path dir (tools/binary-name tools/chroma plat))]
+    (fs/create-dirs dir)
+    (fs/copy bin dest)
+    (fs/set-posix-file-permissions dest "rwxr-xr-x")
+    (spit (fs/file dir tools/stamp-name)
+          (pr-str {:archive-sha256 (tools/expected-sha256 tools/chroma {} plat)
+                   :binary-sha256  (tools/sha256-hex dest)}))
+    dest))
+
+(deftest doctor-checks-languages-with-a-chroma-from-path-or-the-cache
+  (testing "P4-D.1 items 16 and 18: `tools/available-binary`'s :path and cache
+            branches, reached through doctor (with-site's CLOGEM_CHROMA always
+            won before)"
+    (with-site mixed-site
+      (fn [dir _ bin]
+        (let [unknown #(filter (fn [w] (str/includes? (:message w) "unknown code language")) (:warnings %))
+              edn     (read-string (slurp (fs/file dir "site.edn")))]
+          (testing ":tools :chroma :path"
+            (spit (fs/file dir "site.edn") (pr-str (assoc-in edn [:tools :chroma :path] (str bin))))
+            (binding [tools/*env* {}]
+              (let [{:keys [result error err]} (doctor! dir)]
+                (is (nil? error) (str error))
+                (is (= ["01.Guide/01.code.md"] (map :path (unknown result))) err))))
+          (spit (fs/file dir "site.edn") (pr-str edn))
+          (let [cache (fs/create-temp-dir {:prefix "clogem-hl-cache"})]
+            (try
+              (cache-entry! cache bin)
+              (binding [tools/*env* {"CLOGEM_TOOLS_DIR" (str cache)}]
+                (testing "the tools cache"
+                  (let [{:keys [result error err]} (doctor! dir)]
+                    (is (nil? error) (str error))
+                    (is (= ["01.Guide/01.code.md"] (map :path (unknown result))) err)
+                    (is (not (str/includes? err "not checked")) err)))
+                (testing "item 16: an unreadable cached binary is doctor's error, with build's hint, not a stack trace"
+                  (with-redefs [tools/sha256-hex (fn [_] (throw (java.io.IOException. "Permission denied")))]
+                    (let [{:keys [error err]} (doctor! dir)]
+                      (is (= 1 (:babashka/exit (ex-data error))) (str error))
+                      (is (re-find #"error: highlight: could not use Chroma: Permission denied" err) err)
+                      (is (str/includes? err "--no-highlight") err)))))
+              (finally (fs/delete-tree cache)))))))))
+
 (deftest no-highlight-renders-0-2-0-markup-and-runs-nothing
   (doseq [[how opts site-edn] [["--no-highlight" {:no-highlight true} nil]
                                [":provider :none" nil {:highlight {:provider :none}}]]]
@@ -751,26 +801,38 @@
       {:fake-opts {:exit 2}})))
 
 (deftest what-dev-passes-to-build-makes-a-chroma-failure-a-warning
-  (testing "P4-C.1 item 11: the options `dev!` really passes to `build` (captured,
-            then built with a missing binary) are soft; either dev flag is"
+  (testing "P4-C.1 item 11: the options `dev!`'s wiring really passes to `build`
+            (captured, then built with a missing binary) are `dev/build-opts`'s,
+            both dev flags included, and soft"
     (with-site {"01.Guide/01.a.md" (article "A" "/pages/aaaaa1/" "```clojure\n(a)\n```\n")}
       (fn [dir out bin]
         (let [seen  (atom [])
               build cli/build
-              dev!  clogem.dev/dev!]
+              opts  {:site-dir (str dir) :config-file "site.edn"
+                     :out (str out) :poll true :port 0}]
           (binding [tools/*env* {"CLOGEM_CHROMA" (str bin "-missing")}]
-            (with-redefs [cli/build (fn [o] (swap! seen conj o) (build o))
-                          clogem.dev/poll-watch! (fn [& _] nil)
-                          org.httpkit.server/run-server (fn [& _] (fn [& _] nil))]
-              (let [err (java.io.StringWriter.)
-                    o   (binding [*err* err]
-                          (with-out-str (dev! {:site-dir (str dir) :config-file "site.edn"
-                                               :out (str out) :poll true :port 0})))]
-                (is (= 1 (count @seen)))
-                (is (not (str/includes? o "build failed")) o)
-                (is (str/includes? o "rebuilt in") o)
-                (is (str/includes? (str err) "does not exist") (str err))))
-            (reset-dev-failures!)
+            ;; `start-dev!` is what `dev!` runs; no port, no watcher, and its
+            ;; drain loop ends with `stop!`
+            (let [err (java.io.StringWriter.)
+                  h   (atom nil)
+                  o   (binding [*err* err]
+                        (with-out-str
+                          (reset! h (dev/start-dev!
+                                     opts
+                                     {:build        (fn [o] (swap! seen conj o) (build o))
+                                      :run-server!  (fn [& _] (fn [& _] nil))
+                                      :poll-watch!  (fn [& _] nil)
+                                      :notify!      (fn [_])}))))]
+              ((:stop! @h))
+              (is (= 1 (count @seen)))
+              (is (= (dev/build-opts opts) (first @seen)))
+              (is (true? (:clogem/dev? (first @seen))))
+              (is (true? (:clogem/dev-loop? (first @seen))))
+              (is (not (str/includes? o "build failed")) o)
+              (is (str/includes? o "rebuilt in") o)
+              (is (str/includes? (str err) "does not exist") (str err))))
+          (reset-dev-failures!)
+          (binding [tools/*env* {"CLOGEM_CHROMA" (str bin "-missing")}]
             (let [{:keys [error err]} (build! dir out (dissoc (first @seen) :site-dir :out))]
               (is (nil? error) (str error))
               (is (str/includes? err "Code renders without highlighting")))
@@ -779,6 +841,19 @@
               (is (nil? (:error (build! dir out {flag true}))) (str flag))
               (is (hl/soft? {flag true}) (str flag)))
             (is (not (hl/soft? {})))))))))
+
+(deftest dev-s-own-rebuild-options-make-a-chroma-failure-a-warning
+  (is (true? (:clogem/dev-loop? (dev/build-opts {}))))
+  (is (true? (:clogem/dev? (dev/build-opts {}))))
+  (with-site {"01.Guide/01.a.md" (article "A" "/pages/aaaaa1/" "```clojure\n(a)\n```\n")}
+    (fn [dir out _]
+      (let [r1 (build! dir out (dev/build-opts {:site-dir (str dir) :out (str out)}))
+            r2 (build! dir out (dev/build-opts {:site-dir (str dir) :out (str out)}))]
+        (is (nil? (:error r1)) (str (:error r1)))
+        (is (= 1 (count (re-seq #"fake chroma: boom" (:err r1)))) (:err r1))
+        (is (not (str/includes? (:err r2) "fake chroma: boom")) "warned once, not on every rebuild")
+        (is (str/includes? (page out "pages" "aaaaa1") "<code class=\"language-clojure\">(a)\n</code>"))))
+    {:fake-opts {:exit 2}}))
 
 ;; ---------------------------------------------------------------------------
 ;; Config
@@ -906,3 +981,87 @@
     (do (is (nil? (System/getenv "GITHUB_ACTIONS"))
             "CI must set CLOGEM_CHROMA, so this test always runs there")
         (println "the-real-chroma-highlights-the-demo: skipped — CLOGEM_CHROMA is not set"))))
+
+(deftest feed-text-never-holds-a-character-xml-forbids
+  (testing "P4-D.1 item 17: a reference to a C0 control, U+FFFE or U+FFFF
+            stays as written — clojure.data.xml writes text as it is, so
+            decoding them made feed.xml not well-formed (before Task C
+            `&#27;` stayed literal)"
+    (let [illegal? (fn [s] (some #(let [c (int %)]
+                                    (or (and (< c 0x20) (not (#{0x9 0xA 0xD} c)))
+                                        (= c 0xFFFE) (= c 0xFFFF)
+                                        (<= 0xD800 c 0xDFFF)))
+                                 s))
+          text     (#'clogem.render/strip-tags "<div>a &#27;[31m b &#1; &#xFFFE;</div>")]
+      (is (not (illegal? text)) (pr-str text))
+      (is (= "a &#27;[31m b &#1; &#xFFFE;" text))
+      (testing "and a feed with that excerpt parses as XML"
+        (with-site {"01.Guide/01.a.md"
+                    (article "A" "/pages/aaaaa1/"
+                             "# A\n\nIntro.\n\n<div>esc &#27;[31m one &#1; nonchar &#xFFFE;</div>\n\nProse the parser decodes: x &#27; y.\n\n<!-- more -->\n\nRest.\n")}
+          (fn [dir out _]
+            (is (nil? (:error (build! dir out {:no-highlight true}))))
+            (let [xml (slurp (fs/file out "feed.xml"))
+                  ;; StAX, which refuses a character XML 1.0 forbids; the
+                  ;; parse is lazy, so realised whole
+                  doc (try (pr-str (xml/parse-str xml)) (catch Exception e e))]
+              (is (string? doc) (str doc))
+              (is (not (illegal? xml)))
+              (is (str/includes? xml "esc &amp;#27;[31m one &amp;#1; nonchar &amp;#xFFFE; Prose the parser decodes: x y.") xml)))))))
+  (testing "one pass: `&#38;amp;` is decoded once, to the text `&amp;`"
+    (is (= "&amp;" (#'clogem.render/strip-tags "<div>&#38;amp;</div>")))))
+
+;; ---------------------------------------------------------------------------
+;; P4-D.2 items 9 (n10b) and 26: doctor's Chroma failures
+
+(defn- fresh-copy!
+  "A copy of `bin` no one has hashed yet: `binary-sha` memoises per binary."
+  [bin dir]
+  (let [b (fs/path dir (str "chroma-" (random-uuid)))]
+    (fs/copy bin b)
+    (spit (fs/file b) (str "\n# " (random-uuid) "\n") :append true)
+    (fs/set-posix-file-permissions b "rwxr-xr-x")
+    (str b)))
+
+(deftest doctor-reports-an-unreadable-chroma-from-the-env-or-path-cleanly
+  (testing "n10b: with the listing's catch narrowed to ExceptionInfo, an
+            IOException reading a CLOGEM_CHROMA or :path binary (mode 0111,
+            not root) was a raw FileNotFoundException trace"
+    (with-site mixed-site
+      (fn [dir _ bin]
+        (let [edn (read-string (slurp (fs/file dir "site.edn")))]
+          (doseq [[how setup] [["CLOGEM_CHROMA" (fn [b] {"CLOGEM_CHROMA" b})]
+                               [":tools :chroma :path" (fn [b]
+                                                         (spit (fs/file dir "site.edn")
+                                                               (pr-str (assoc-in edn [:tools :chroma :path] b)))
+                                                         {})]]]
+            (let [b (fresh-copy! bin dir)]
+              (binding [tools/*env* (setup b)]
+                (with-redefs [tools/sha256-hex (fn [_] (throw (java.io.FileNotFoundException. (str b " (Permission denied)"))))]
+                  (let [{:keys [error err]} (doctor! dir)]
+                    (is (instance? clojure.lang.ExceptionInfo error) (str how ": " error))
+                    (is (= 1 (:babashka/exit (ex-data error))) how)
+                    (is (re-find #"error: highlight: could not use Chroma: .*Permission denied" err) (str how ": " err))))))
+            (spit (fs/file dir "site.edn") (pr-str edn))))))))
+
+(deftest doctor-gives-build-s-hint-for-a-chroma-failure
+  (testing "item 26: doctor's hint was its own text, not build's"
+    (with-site mixed-site
+      (fn [dir out bin]
+        (doseq [[how env redefs]
+                [["a missing CLOGEM_CHROMA" {"CLOGEM_CHROMA" (str bin "-missing")} {}]
+                 ["an unreadable binary" {"CLOGEM_CHROMA" (fresh-copy! bin dir)}
+                  {#'tools/sha256-hex (fn [_] (throw (java.io.IOException. "Permission denied")))}]]]
+          (binding [tools/*env* env]
+            (with-redefs-fn redefs
+              (fn []
+                (let [b      (build! dir out)
+                      d      (doctor! dir)
+                      hint-of (fn [s] (some->> (re-seq #"(?m)^\s*hint: (.*)$" s) (map second) (str/join " ")))
+                      b-msg  (ex-message (:error b))]
+                  (is (some? (:error b)) how)
+                  (is (some? (:error d)) how)
+                  (is (seq (hint-of b-msg)) how)
+                  (is (str/includes? (:err d) (hint-of b-msg)) (str how ":\n" b-msg "\n---\n" (:err d)))
+                  (is (str/includes? (:err d) (str/replace (first (str/split-lines b-msg)) #"^clogem-press: " ""))
+                      (str how ": the same message")))))))))))
