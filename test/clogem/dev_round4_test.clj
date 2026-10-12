@@ -9,7 +9,9 @@
             [clojure.test :refer [deftest is testing]]
             [clogem.cli :as cli]
             [clogem.dev :as dev]
-            [clogem.search :as search]))
+            [clogem.search :as search]
+            [clogem.test-runner]
+            [clogem.tools]))
 
 ;; ---------------------------------------------------------------------------
 ;; Helpers
@@ -60,7 +62,10 @@
       (let [v (try (f) (catch clojure.lang.ExceptionInfo e e))]
         [v (str w)]))))
 
-(defn- parse [v args] (bcli/parse-opts args {:spec (:spec (:org.babashka/cli (meta v)))}))
+(defn- parse
+  "`args` parsed as `bb <task>` parses them: with the task's spec and error-fn."
+  [v args]
+  (bcli/parse-opts args (:org.babashka/cli (meta v))))
 
 (defn- run-task
   "Task `v` (`#'cli/build` …) over the site `dir` with `args`: [value-or-ex output]."
@@ -466,3 +471,44 @@
         (let [r ((dev/make-handler (fs/path dir "dist") {:base "/my docs/"}) {:uri "/elsewhere"})]
           (is (= 404 (:status r)))
           (is (str/includes? (:body r) "href=\"/my%20docs/\"") (:body r)))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 5: --help, for every task, before anything else
+
+(deftest every-task-s-help-has-no-side-effects
+  (testing "item 5: no task read :help, so `bb clean --help` deleted the
+            output directory"
+    (with-site url-site
+      (fn [dir]
+        (run-task #'cli/build dir)
+        (is (fs/exists? (fs/path dir "dist" marker)))
+        (let [before (tree dir)
+              boom   (fn [& _] (throw (ex-info "a side effect" {})))]
+          (with-redefs [dev/run-server!                        boom
+                        clogem.tools/ensure-binary!            boom
+                        clogem.search/ensure-binary!           boom
+                        clogem.test-runner/run                 boom]
+            (doseq [[v task] [[#'cli/build "build"] [#'cli/dev "dev"] [#'cli/serve "serve"]
+                              [#'cli/doctor "doctor"] [#'cli/clean "clean"] [#'cli/fm-fix "fm-fix"]
+                              [#'cli/fetch-tool "fetch-tool"] [#'cli/test-cmd "test"]]
+                    flag ["--help" "-h"]]
+              (testing (str task " " flag)
+                (let [[v out] (run-task v dir flag)]
+                  (is (nil? v) (str (ex-msg v)))
+                  (is (str/starts-with? out (str "Usage: bb " task " [options]")) out)
+                  (is (str/includes? out "Options:"))))))
+          (is (= before (tree dir)) "nothing written or deleted"))
+        (testing "through bb.edn, as `bb clean --help` runs"
+          (let [bb  (or (-> (java.lang.ProcessHandle/current) .info .command (.orElse nil)) "bb")
+                cfg (str (fs/absolutize "bb.edn"))
+                p   (-> (ProcessBuilder. [bb "--config" cfg "clean" "--help"])
+                        (.directory (fs/file dir))
+                        (.redirectErrorStream true)
+                        (.start))
+                out (slurp (.getInputStream p))]
+            (is (zero? (.waitFor p)) out)
+            (is (str/starts-with? out "Usage: bb clean") out)
+            (is (fs/exists? (fs/path dir "dist" marker)) "dist/ is still there")))
+        (testing "the option error's pointer to --help is true"
+          (let [[v] (run-task #'cli/serve dir "--port" "abc")]
+            (is (re-find #"`--help` lists the options" (str (ex-msg v))))))))))
