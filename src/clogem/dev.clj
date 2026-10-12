@@ -922,7 +922,10 @@
                             (= (norm p) probe-s) (deliver seen true)
                             @abandoned?          nil
                             (not (accept? p))    nil
-                            :else          (try (on-change [p])
+                            ;; the event's type rides along as metadata:
+                            ;; whether a directory is new decides its
+                            ;; registration (P4-D.3 item 5)
+                            :else          (try (on-change (with-meta [p] {:type (:type ev)}))
                                                 (catch Throwable t
                                                   (println "clogem-press: watcher callback failed —"
                                                            (or (ex-message t) (str t))))))))
@@ -1003,57 +1006,138 @@
                .fileKey str)
        (catch Exception _ nil)))
 
+(defn covered-dirs
+  "Every directory at or under `dir` now, as path → `file-key`: what a
+  recursive registration of `dir` made now covers. Walked BEFORE the
+  registration, so a directory created in between is merely registered
+  twice, never missed."
+  [dir]
+  (into {}
+        (map (fn [p] (let [p (norm p)] [p (file-key p)])))
+        (cons (fs/path dir)
+              (try (filter #(fs/directory? % {:nofollow-links true}) (fs/glob dir "**" {:hidden true}))
+                   (catch Exception _ nil)))))
+
+(defn covered?
+  "Does a registration in `registered` already cover the directory `p`
+  (`covered-dirs`, under the same file key: a directory replaced is a
+  new inode no old watch sees)? The pod's recursive watch covers the
+  subdirectories that existed when it was made (P4-D.3 item 5)."
+  [registered p]
+  (let [p (norm p) k (file-key p)]
+    (boolean
+     (some (fn [{:keys [covers watcher]}]
+             (and watcher (contains? covers p) (= k (get covers p))))
+           (vals registered)))))
+
+(defn exhausted?
+  "Is `e`, a failed `watch`, the system's inotify limit — instances
+  (EMFILE: too many open files) or watches (ENOSPC: no space left on
+  device)? Retrying cannot help that one."
+  [^Throwable e]
+  (boolean (re-find #"(?i)too many open files|no space left on device|EMFILE|ENOSPC|inotify_init|user limit"
+                    (str (ex-message e) " " (some-> (ex-cause e) ex-message)))))
+
 (defn register-dir!
   "Register `spec` with the pod now, on behalf of `registered` — an atom of
-  path → {:key :watcher :spec} — unwatching the registration it replaces
-  (P4-D.2 item 3: each re-registration used to leak one). A spec the pod
-  will not take is reported once, with the restart that fixes it, and
-  recorded, so it is not retried until its directory changes. True when
-  registered."
+  path → {:key :watcher :spec :covers} — then unwatch the registration it
+  replaces (P4-D.2 item 3: each re-registration used to leak one). The new
+  watch is made first, so nothing is missed between the two; when it
+  fails, the old one stays and the path is retried on the follower's next
+  pass, reported once (P4-D.3 item 5 — the old watch used to go first,
+  and nothing retried). The system's inotify limit (`exhausted?`) is
+  rethrown, as `::exhausted`, for the caller to give up on the pod. True
+  when registered."
   [registered {:keys [path] :as spec} register! unwatch!]
-  (let [k   (file-key path)
-        old (get @registered path)]
+  (let [k      (file-key path)
+        old    (get @registered path)
+        covers (when (:recursive? spec) (covered-dirs path))]
     (try
-      (swap! registered assoc path {:key k :watcher (register! spec) :spec spec})
-      ;; the new watch first: nothing is missed between the two
-      (when-let [w (:watcher old)]
-        (try (unwatch! w) (catch Throwable _ nil)))
-      true
-      (catch Throwable e
+      (let [w (register! spec)]
+        (swap! registered assoc path {:key k :watcher w :spec spec :covers covers})
         (when-let [w (:watcher old)]
           (try (unwatch! w) (catch Throwable _ nil)))
-        (swap! registered assoc path {:key k :failed? true :spec spec})
-        (println (str "clogem-press: cannot watch " path " ("
-                      (or (ex-message e) (str e))
-                      "); restart `bb dev` to watch it, or run it with `--poll`."))
+        true)
+      (catch Throwable e
+        (when (exhausted? e)
+          (throw (ex-info (or (ex-message e) (str e)) {::exhausted true} e)))
+        (swap! registered assoc path (assoc (or old {:spec spec}) :retry? true :reported? true))
+        (when-not (:reported? old)
+          (println (str "clogem-press: cannot watch " path " ("
+                        (or (ex-message e) (str e))
+                        "); retrying, or restart `bb dev`, or run it with `--poll`.")))
         false))))
+
+(defn release-gone!
+  "Unwatch, and forget, every registration in `registered` whose directory
+  is gone — run on every pass of the follower, so a stream of events can
+  never starve it (P4-D.3 item 5: a mkdir/rm loop leaked one instance per
+  cycle). Returns the paths released."
+  [registered unwatch!]
+  (vec (for [[p {:keys [watcher]}] @registered
+             :when (not (fs/exists? p))]
+         (do (when watcher (try (unwatch! watcher) (catch Throwable _ nil)))
+             (swap! registered dissoc p)
+             p))))
+
+(def ^:private fresh-types
+  "The pod's event types after which a directory is not the one any walk
+  saw: made, removed (an `rm -rf` and `mkdir` within the pod's window is
+  one `:remove` for a directory that exists again, often under the same
+  inode), or renamed."
+  #{:create :remove :rename})
+
+(defn uncover!
+  "Drop `p` and everything under it from every registration's `:covers`."
+  [registered p]
+  (let [p (norm p)]
+    (swap! registered
+           (fn [m] (into {} (for [[k r] m]
+                              [k (cond-> r (:covers r)
+                                   (update :covers #(into {} (remove (fn [[d _]] (in-dir? p d))) %)))]))))))
+
+(defn register-new-dirs!
+  "Register the directories `events` name — [path type] pairs the pod's
+  watches sent, the type nil when unknown — shallowest first, so a parent
+  registered in this batch covers its children. A `fresh-types` event
+  first drops the path from every registration's cover (`uncover!`); then
+  a directory registers only when no registration covers it (`covered?`,
+  P4-D.3 item 5: `chmod -R` over existing subdirectories took one inotify
+  instance each). An event of unknown type registers its directory
+  regardless, as D.2 did. Returns the paths registered."
+  [registered events register! unwatch!]
+  (let [evs (into {} (map (fn [[p t]] [(norm p) t])) events)]
+    (doseq [[p t] evs :when (fresh-types t)] (uncover! registered p))
+    (vec (for [[d t] (sort-by #(count (key %)) evs)
+               :when (and (fs/directory? d {:nofollow-links true})
+                          (or (nil? t) (not (covered? @registered d)))
+                          (register-dir! registered {:path d :recursive? true} register! unwatch!))]
+           d))))
 
 (defn follow-new-paths!
   "One pass of dev's follower, with the pod (§5.4), over `registered` (an
-  atom of path → {:key :watcher :spec}, `register-dir!`): forget — and
-  unwatch — every registration whose directory is gone; register every
-  spec of `specs`, and every registration already made, whose directory
-  exists and is not registered, or is registered under another file key —
-  `overrides/` created while `bb dev` runs, the directory a `site.edn` edit
-  moved `:content :dir` to, or a watched directory replaced between two
-  passes, whose old watch died with its inode (P4-D.2 item 3). The key is
-  a backstop: ext4 hands a directory deleted and made again the same inode
-  at once, so the event naming the new directory — from its parent's
-  watch, or its own dying one — is what re-registers it (`dir-to-watch?`).
-  Returns the paths it registered, for a rebuild."
+  atom of path → {:key :watcher :spec :covers}, `register-dir!`): forget —
+  and unwatch — every registration whose directory is gone
+  (`release-gone!`); register every spec of `specs`, and every
+  registration already made, whose directory exists and is not
+  registered, is registered under another file key, or failed and is due
+  a retry — `overrides/` created while `bb dev` runs, the directory a
+  `site.edn` edit moved `:content :dir` to, or a watched directory replaced
+  between two passes, whose old watch died with its inode (P4-D.2 item 3).
+  The key is a backstop: ext4 hands a directory deleted and made again the
+  same inode at once, so the event naming the new directory — from its
+  parent's watch, or its own dying one — is what re-registers it
+  (`dir-to-watch?`). Returns the paths it registered, for a rebuild."
   [specs registered register! & [unwatch!]]
   (let [unwatch! (or unwatch! (fn [_]))]
-    (doseq [[p {:keys [watcher]}] @registered
-            :when (not (fs/exists? p))]
-      (when watcher (try (unwatch! watcher) (catch Throwable _ nil)))
-      (swap! registered dissoc p))
+    (release-gone! registered unwatch!)
     (let [todo (vals (into {} (map (juxt :path identity))
                            (concat (keep :spec (vals @registered)) specs)))]
       (vec (keep (fn [{:keys [path] :as spec}]
                    (when (fs/exists? path)
                      (let [old (get @registered path)
                            k   (file-key path)]
-                       (when (and (or (nil? old) (and k (not= k (:key old))))
+                       (when (and (or (nil? old) (:retry? old) (and k (not= k (:key old))))
                                   (register-dir! registered spec register! unwatch!))
                          path))))
                  (sort-by :path todo))))))
@@ -1507,13 +1591,36 @@
     (some-> (listening-note sopts) println)
     (spawn #(drain-loop! {:take! (queue-take queue) :on-batch rebuild!}))
     (let [existing (filterv #(fs/exists? (:path %)) @specs)
+          ;; walked before the pod registers them: what each covers
+          startup-covers (into {} (for [{:keys [path recursive?]} existing :when recursive?]
+                                    [path (covered-dirs path)]))
+          start-polling! (fn []
+                           (when-not @stopping
+                             (println (format "clogem-press: watching by polling every %d ms" interval))
+                             (spawn #(poll* paths interval submit! {:stop? (fn [] @stopping)}))))
+          ;; the system's inotify limit, reached mid-session: polling from
+          ;; here on, with the pod's watches all released (P4-D.3 item 5)
+          fall-back-to-polling! (fn [why]
+                                  (when-not @stopping
+                                    (println (str "clogem-press: the system's inotify limit is reached (" why
+                                                  "); dev polls every " interval " ms for the rest of this session."))
+                                    (reset! registered {})
+                                    (unload-pod! @pod-id)
+                                    (spawn #(poll* paths interval submit! {:stop? (fn [] @stopping)}))))
           ;; pod events: a directory the pod must be told about goes to
           ;; the follower (pod calls never run on the pod's callback
           ;; thread), which registers it and submits it with its files
           on-pod   (fn [ps]
-                     (let [dirs (filterv #(dir-to-watch? @specs %) ps)]
+                     (let [type (:type (meta ps))
+                           dirs (filterv #(dir-to-watch? @specs %) ps)
+                           ;; a directory removed or renamed: the follower
+                           ;; drops it from what is covered, and releases a
+                           ;; registration of it now (P4-D.3 item 5)
+                           gone (filterv #(and (not (fs/exists? %))
+                                               (or (contains? @registered (norm %)) (fresh-types type)))
+                                         ps)]
                        (when-let [rest (seq (remove (set dirs) ps))] (submit! rest))
-                       (doseq [d dirs] (.put dirq (norm d)))))
+                       (doseq [d (concat dirs gone)] (.put dirq [(norm d) type]))))
           pod?     (and (not poll)
                         (not @stopping)
                         (pod* @cfg-ref on-pod {:timeout-ms probe-ms
@@ -1527,29 +1634,37 @@
       (if pod?
         (do (reset! registered (into {} (for [{:keys [path] :as spec} existing]
                                           [path {:key (file-key path) :spec spec
+                                                 :covers (get startup-covers path)
                                                  :watcher (get-in @register [:watchers path])}])))
             (println "clogem-press: watching via fswatcher")
             (when @register
               (spawn (fn []
                        (let [{:keys [register! unwatch!]} @register]
-                         (loop []
-                           (let [d (.poll dirq (long follow-ms) TimeUnit/MILLISECONDS)]
+                         (loop [last-pass (System/currentTimeMillis)]
+                           (let [d     (.poll dirq (long follow-ms) TimeUnit/MILLISECONDS)
+                                 now   (System/currentTimeMillis)
+                                 ;; the full pass runs at least every
+                                 ;; `follow-ms`, events or not (P4-D.3 item 5)
+                                 pass? (or (nil? d) (>= (- now last-pass) follow-ms))]
                              (when-not @stopping
-                               (try
-                                 (let [new (if d
-                                             (let [ds (distinct (cons d (repeatedly (.size dirq) #(.poll dirq))))]
-                                               (filterv #(and % (fs/directory? %)
-                                                              (register-dir! registered {:path % :recursive? true}
-                                                                             register! unwatch!))
-                                                        ds))
-                                             (follow-new-paths! @specs registered register! unwatch!))]
-                                   (when (seq new) (submit! (vec (mapcat new-dir-batch new)))))
-                                 (catch Throwable t
-                                   (println "clogem-press: watching failed —" (or (ex-message t) (str t)))))
-                               (recur)))))))))
-        (when-not @stopping
-          (println (format "clogem-press: watching by polling every %d ms" interval))
-          (spawn #(poll* paths interval submit! {:stop? (fn [] @stopping)}))))
+                               (let [gave-up?
+                                     (try
+                                       (release-gone! registered unwatch!)
+                                       (let [new (into (if d
+                                                         (register-new-dirs! registered
+                                                                             (remove nil? (cons d (repeatedly (.size dirq) #(.poll dirq))))
+                                                                             register! unwatch!)
+                                                         [])
+                                                       (when pass? (follow-new-paths! @specs registered register! unwatch!)))]
+                                         (when (seq new) (submit! (vec (mapcat new-dir-batch (distinct new))))))
+                                       false
+                                       (catch Throwable t
+                                         (if (::exhausted (ex-data t))
+                                           (do (fall-back-to-polling! (or (ex-message t) (str t))) true)
+                                           (do (println "clogem-press: watching failed —" (or (ex-message t) (str t)))
+                                               false))))]
+                                 (when-not gave-up? (recur (if pass? now last-pass))))))))))))
+        (start-polling!))
       {:stop!   stop!
        :state   state
        :cfg-ref cfg-ref

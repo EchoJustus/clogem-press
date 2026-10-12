@@ -102,6 +102,16 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   `mv` swap) is watched again — its old watch died with it, silently —
   and the old registration is released. Creating `overrides/` is one
   rebuild, not two.
+- **`bb dev` keeps its inotify use bounded** (P4-D.3). Each pod
+  registration is an inotify instance, and Linux allows 128 per user. A
+  directory an existing registration already covers is no longer
+  registered again (`chmod -R` over 14 subdirectories took 14
+  instances); a deleted directory's watch is released when its delete
+  arrives, however busy the tree (a mkdir/rm loop leaked one per cycle); a
+  re-registration that fails keeps the working watch and is retried. At
+  the system's limit (too many open files, or no space left on device)
+  dev prints one line, releases the pod and polls for the rest of the
+  session.
 - **A `:content :dir` that does not exist yet** is followed once it is
   created; the failed build in between left dev watching the old one.
 - **The build's own writes never trigger a rebuild**: front matter it
