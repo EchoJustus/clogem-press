@@ -896,6 +896,20 @@
   delivery, so it is the worst case, not half of one."
   3000)
 
+(def ^:private live-probes
+  "The probe files `probe-watch!` has on disk now. Its `finally` removes
+  each, but at Ctrl-C the JVM exits once the shutdown hook is done, with
+  that `finally` never run: `stop!` removes them (`remove-probes!`)."
+  (atom #{}))
+
+(defn remove-probes!
+  "Delete every probe file a `probe-watch!` still has on disk (P4-D.3
+  item 12)."
+  []
+  (doseq [p @live-probes]
+    (try (fs/delete-if-exists p) (catch Throwable _ nil))
+    (swap! live-probes disj p)))
+
 (defn probe-watch!
   "Register `watch` over every watched path, then **prove** the watcher delivers.
 
@@ -992,6 +1006,7 @@
             :else
             (try
               (let [t0 (System/currentTimeMillis)]
+                (swap! live-probes conj probe)
                 (spit (fs/file probe) "clogem-press watch probe\n")
                 (if (deref seen (remaining) false)
                   (do (println (format "clogem-press: fswatcher delivered a probe event in %d ms"
@@ -1023,7 +1038,8 @@
                       (doseq [w watchers] (try (unwatch w) (catch Throwable _ nil)))
                       false)))
               (finally
-                (try (fs/delete-if-exists probe) (catch Throwable _ nil))))))))))
+                (try (fs/delete-if-exists probe) (catch Throwable _ nil))
+                (swap! live-probes disj probe)))))))))
 
 (defn file-key
   "The identity of the file at `p` — device and inode on POSIX — as a
@@ -1636,6 +1652,8 @@
                       (when-let [await! (:await (meta index*))] (await! stop-wait-ms))
                       ;; the pod process and its watches go with dev (P4-D.2 item 15)
                       (unload-pod! @pod-id)
+                      ;; and a probe still waiting for its event (P4-D.3 item 12)
+                      (remove-probes!)
                       (doseq [o @outs]
                         (try (search/sweep-staging! o {:own-previous? true}) (catch Throwable _ nil)))
                       nil))]

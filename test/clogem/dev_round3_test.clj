@@ -768,3 +768,39 @@
                   index! (#'dev/indexer (constantly false) (fn [f] (f)))
                   out    (with-out-str (index! cfg))]
               (is (str/includes? out "Pagefind was terminated (SIGTERM)") out))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 12: Ctrl-C during the probe
+
+(defn- probe-files
+  "Probe files in the site `dir` or the theme's directory (on disk in a
+  checkout, and the first watched directory when it sorts first)."
+  [dir]
+  (filter #(str/starts-with? (str (fs/file-name %)) ".clogem-watch-probe-")
+          (mapcat #(when % (fs/list-dir %))
+                  (concat [(dev/theme-dir false)]
+                          (filter fs/directory? (fs/glob dir "**" {:hidden true}))))))
+
+(deftest stop-during-the-probe-removes-its-file
+  (testing "item 12: Ctrl-C while the probe waited left
+            .clogem-watch-probe-<nanos> in the first watched directory"
+    (with-site url-site
+      (fn [dir]
+        (let [stop  (promise)
+              done  (future
+                      (quiet (fn [] (dev/start-dev!
+                               {:site-dir (str dir) :port 1888 :no-write true :probe-ms 4000}
+                               {:run-server! (fn [& _] (fn [& _] nil))
+                                :poll-watch! (fn [& _] nil)
+                                :notify! (fn [_]) :notify-error! (fn [_])
+                                :on-stop! #(deliver stop %)
+                                ;; a pod that registers and never delivers
+                                :try-pod-watch! (fn [cfg on-change opts]
+                                                  (dev/probe-watch! cfg on-change
+                                                                    (assoc opts :watch (fn [& _] :w) :unwatch (fn [_]))))}))))]
+          (is (wait-until #(seq (probe-files dir)) 3000) "the probe is waiting")
+          ;; what the shutdown hook runs at Ctrl-C; the JVM then exits
+          ;; without running the probe's own `finally`
+          (quiet @stop)
+          (is (empty? (probe-files dir)) "stop! removed it")
+          (deref done 6000 nil))))))
