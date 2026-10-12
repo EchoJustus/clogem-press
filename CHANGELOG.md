@@ -119,6 +119,9 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   session.
 - **A `:content :dir` that does not exist yet** is followed once it is
   created; the failed build in between left dev watching the old one.
+  With `--poll`, the save that moves it is one failed build, not two: the
+  old directory's files no longer being watched read as deleted
+  (P4-D.3).
 - **The build's own writes never trigger a rebuild**: front matter it
   fills in, `permalinks.edn` and `@pages/` files each caused a second
   build, and with the pod's filter gone an endless loop. Each write is

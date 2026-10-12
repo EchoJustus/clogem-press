@@ -842,22 +842,33 @@
   is reported and the loop goes on: an `Error` used to end the polling
   thread silently, and with it every rebuild."
   [paths-fn interval on-change & [{:keys [stop?] :or {stop? (constantly false)}}]]
-  (loop [prev (snapshot (paths-fn))]
-    (Thread/sleep (long interval))
-    (when-not (stop?)
-      (let [now (try (snapshot (paths-fn))
+  (let [roots #(set (map norm %))]
+    (loop [prev-roots (roots (paths-fn))
+           prev       (snapshot prev-roots)]
+      (Thread/sleep (long interval))
+      (when-not (stop?)
+        (let [rs  (try (roots (paths-fn)) (catch Throwable _ prev-roots))
+              now (try (snapshot rs)
+                       (catch Throwable t
+                         (println "clogem-press: polling failed —" (or (ex-message t) (str t)))
+                         prev))
+              ;; a root no longer watched — `:content :dir` moved — is not
+              ;; its files deleted (P4-D.3 item 17: a save moving it to a
+              ;; missing directory failed two builds, not one)
+              dropped (remove rs prev-roots)
+              unwatched? (fn [p] (and (some #(in-dir? % p) dropped)
+                                      (not-any? #(in-dir? % p) rs)))]
+          (when (not= prev now)
+            (let [changed (->> (concat (keys now) (keys prev))
+                               distinct
+                               (remove #(= (get prev %) (get now %)))
+                               (remove unwatched?)
+                               sort vec)]
+              (when (seq changed)
+                (try (on-change changed)
                      (catch Throwable t
-                       (println "clogem-press: polling failed —" (or (ex-message t) (str t)))
-                       prev))]
-        (when (not= prev now)
-          (let [changed (->> (concat (keys now) (keys prev))
-                             distinct
-                             (remove #(= (get prev %) (get now %)))
-                             sort vec)]
-            (try (on-change changed)
-                 (catch Throwable t
-                   (println "clogem-press: polling failed —" (or (ex-message t) (str t)))))))
-        (recur now)))))
+                       (println "clogem-press: polling failed —" (or (ex-message t) (str t))))))))
+          (recur rs now))))))
 
 (def signal-grace-ms
   "How long a failure that a stop may have caused — a Pagefind stopped by

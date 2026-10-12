@@ -964,3 +964,32 @@
                      (is (= 2 @builds) (str "one rebuild: " out))
                      (is (not (str/includes? (str out) "notes.txt")) "no rescan of the target's directory")
                      (is (not (str/includes? (str out) "files changed")) (str out)))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 17: --poll and a :content :dir moved to a missing directory
+
+(deftest polling-a-content-dir-moved-to-a-missing-one-is-one-failed-build
+  (testing "item 17: the save failed one build, and the watched paths it
+            moved made the next pass see every old file as changed — a
+            second failed build"
+    (with-site url-site
+      (fn [dir]
+        (let [builds (atom 0)
+              out    (java.io.StringWriter.)
+              h      (binding [*out* out *err* out]
+                       (dev/start-dev! {:site-dir (str dir) :poll true :no-write true :interval 100}
+                                       {:run-server! (fn [& _] (fn [& _] nil))
+                                        :notify! (fn [_]) :notify-error! (fn [_])
+                                        :build (fn [o] (swap! builds inc) (cli/build o))}))]
+          (try
+            (Thread/sleep 300)
+            (spit (fs/file dir "site.edn") (pr-str (assoc url-site :content {:dir "missing" :write-front-matter false})))
+            (is (wait-until #(= 2 @builds) 3000) "the save is one build")
+            (Thread/sleep 1200)
+            (is (= 2 @builds) (str "and only one: " out))
+            (testing "and creating the directory later is followed"
+              (fs/create-dirs (fs/path dir "missing" "01.Guide"))
+              (spit (fs/file dir "missing" "01.Guide" "01.t.md") article)
+              (is (wait-until #(= 3 @builds) 5000) "a rebuild")
+              (is (wait-until #(= 2 (count (re-seq #"rebuilt in" (str out)))) 3000) (str "a good one: " out)))
+            (finally (binding [*out* out *err* out] ((:stop! h))))))))))
