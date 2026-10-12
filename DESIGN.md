@@ -26,7 +26,9 @@
 > Every library version, maintenance date, and compatibility claim was verified against primary
 > sources (GitHub, Clojars, npm/PyPI registries, vendor docs) in August 2026, and the load-bearing
 > claims were **verified empirically** by running code under babashka v1.13.219 (see
-> [Appendix A](#appendix-a--empirically-validated-claims)). v2's new claims — action versions, the
+> [Appendix A](#appendix-a--empirically-validated-claims)). Since Phase 4 D.4, CI runs the tests
+> under both babashka 1.13.219 — `bb.edn`'s `:min-bb-version` — and the latest release (1.13.226
+> when D.4 was verified). v2's new claims — action versions, the
 > `GITHUB_TOKEN` trigger contract, Pagefind's multilingual internals, hreflang rules — are verified
 > in [research/12](research/12-i18n-multilingual.md) and
 > [research/13](research/13-pages-actions-deploy.md), several of them **against source code** where

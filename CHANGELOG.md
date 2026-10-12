@@ -23,6 +23,9 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   the address `--host` resolves to, however it is spelled (`127.1`,
   `127.0.0.2`, `::1`, `localhost`), and the URL printed is always
   answered. With any other `--host` there is no check.
+- **`bb.edn` requires babashka 1.13.219 or later** (`:min-bb-version`; it
+  said 1.13.0, which no one tested). CI runs the tests and the browser
+  tests under 1.13.219 and the latest release (P4-D.4).
 - **`permalinks.edn` is written only when it changes.** It was rewritten,
   byte for byte the same, on every build.
 - **A missing UI string key warns once per key and language, in `build`

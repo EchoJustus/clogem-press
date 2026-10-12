@@ -449,8 +449,13 @@
     (cond
       (not (System/getenv "CLOGEM_FSWATCHER"))
       (println "the-real-pod-under-a-low-inotify-cap: CLOGEM_FSWATCHER is not set; skipped")
+      ;; CI lifts AppArmor's restriction first (ci.yml), so there a
+      ;; missing namespace is a failure, not a skip (P4-D.4 item 8)
+      (and (not (unshare-ok?)) (System/getenv "GITHUB_ACTIONS"))
+      (is false (str "the-real-pod-under-a-low-inotify-cap: no unprivileged user namespace on CI — "
+                     "is kernel.apparmor_restrict_unprivileged_userns still 1?"))
       (not (unshare-ok?))
-      (println "the-real-pod-under-a-low-inotify-cap: no unprivileged user namespace here; skipped")
+      (println "skip: the-real-pod-under-a-low-inotify-cap: no unprivileged user namespace here (`unshare -U -r` refused)")
       :else
       (with-site url-site
         (fn [dir]
