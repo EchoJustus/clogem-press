@@ -168,6 +168,8 @@
       (try
         (fs/create-dirs dir)
         (spit (fs/file f) "old")
+        ;; an earlier build's output directory (P4-D.3 item 1)
+        (config/mark-out-dir! out)
         (fs/set-posix-file-permissions dir "r-xr-xr-x")
         (binding [diag/*sink* (atom [])]
           (render/write-site! {:outputs [{:file f :bytes (.getBytes "new" "UTF-8")}] :out (str out)}))
