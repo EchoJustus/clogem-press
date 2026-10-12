@@ -9,6 +9,7 @@
             [clojure.test :refer [deftest is testing]]
             [clogem.cli :as cli]
             [clogem.dev :as dev]
+            [clogem.render :as render]
             [clogem.search :as search]
             [clogem.test-runner]
             [clogem.tools]))
@@ -560,3 +561,76 @@
             (is (wait-until #(and (fs/exists? (page "a00001")) (fs/exists? (page "b00002"))) 5000)
                 (str "both new directories' pages are built:\n" out))
             (finally (binding [*out* out *err* out] ((:stop! h))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 9: test gaps
+
+(defn- poll-dev
+  "`start-dev!` over `dir` with a fake server and no watcher, its output
+  captured in `out` exactly as a test binds it — dev's own threads
+  (`spawn` left to its default) included; (f h out)."
+  [dir f]
+  (let [out (java.io.StringWriter.)
+        h   (binding [*out* out *err* out]
+              (dev/start-dev! {:site-dir (str dir) :port 1888 :no-write true :no-search true :poll true}
+                              {:run-server! (fn [& _] (fn [& _] nil))
+                               :poll-watch! (fn [& _] nil)
+                               :notify! (fn [_]) :notify-error! (fn [_])}))]
+    (try (f h out)
+         (finally (binding [*out* out *err* out] ((:stop! h)))))))
+
+(deftest dev-s-threads-log-to-the-caller-s-out
+  (testing "item 9: babashka's future-call conveys no binding — its thread
+            keeps whatever binding a `future` left on it last — so the
+            drain loop's lines went to stdout, or to an earlier test's
+            writer, not the *out* a test bound: log assertions passed or
+            failed by timing"
+    (with-site url-site
+      (fn [dir]
+        ;; every idle agent-pool thread carries a stale binding to `junk`
+        (let [junk (java.io.StringWriter.)]
+          (binding [*out* junk *err* junk]
+            (run! deref (doall (repeatedly 64 #(future (Thread/sleep 50))))))
+          (let [out (java.io.StringWriter.)
+                h   (binding [*out* out *err* out]
+                      ;; a build that starts no thread of its own
+                      (dev/start-dev! {:site-dir (str dir) :port 1888 :no-write true :poll true}
+                                      {:run-server! (fn [& _] (fn [& _] nil))
+                                       :poll-watch! (fn [& _] nil)
+                                       :build       (fn [_] {})
+                                       :index!      (fn [_])
+                                       :notify! (fn [_]) :notify-error! (fn [_])}))]
+            (try
+              ((:submit! h) [(str (fs/path dir "content" "01.Guide" "01.t.md"))])
+              (is (wait-until #(= 2 (count (re-seq #"rebuilt in" (str out)))) 5000)
+                  (str "the drain loop's line: " (pr-str (str out)) " junk: " (pr-str (str junk))))
+              (finally (binding [*out* out *err* out] ((:stop! h)))))))))))
+
+(deftest a-dev-build-stopped-while-it-renders-writes-nothing
+  (testing "item 9, mutant i13b: a build Ctrl-C stops outside Chroma must
+            stop before writing; cli/build's check after render was the only
+            guard, and no test reached it"
+    (with-site url-site
+      (fn [dir]
+        (poll-dev dir
+                  (fn [h out]
+                    (is (str/includes? (str out) "rebuilt in") "the first build")
+                    (let [before  (tree (fs/path dir "dist"))
+                          n0      (count (re-seq #"rebuilt in|build failed" (str out)))
+                          orig    render/render-site
+                          stopped (promise)]
+                      (spit (fs/file dir "content" "01.Guide" "01.t.md") (str/replace article "Plain body" "Edited body"))
+                      (with-redefs [render/render-site
+                                    (fn [& args]
+                                      (let [r (apply orig args)]
+                                        ;; Ctrl-C while it renders: stop! sets the flag at
+                                        ;; once, then waits for this build
+                                        (deliver stopped (future (binding [*out* out *err* out] ((:stop! h)))))
+                                        (Thread/sleep 200)
+                                        r))]
+                        ((:submit! h) [(str (fs/path dir "content" "01.Guide" "01.t.md"))])
+                        (is (some? (deref stopped 5000 nil)) "the rebuild rendered")
+                        (some-> (deref stopped 5000 nil) (deref 15000 nil)))
+                      (is (= before (tree (fs/path dir "dist"))) "dist/ is as it was")
+                      (is (= n0 (count (re-seq #"rebuilt in|build failed" (str out))))
+                          (str "nothing said about it: " out)))))))))

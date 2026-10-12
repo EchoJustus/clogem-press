@@ -389,7 +389,9 @@
             follower's cleanup pass starved by the events"
     (with-site url-site
       (fn [dir]
-        (pod-dev dir {:follow-ms 400}
+        ;; P4-D.4 item 9 (mutant i5c): a periodic pass far away, so only
+        ;; the release on the delete event itself can pass this
+        (pod-dev dir {:follow-ms 60000}
                  (fn [{:keys [regs live event!]}]
                    (let [n0   (count @regs)
                          ;; another directory's event every 30 ms, the whole
@@ -406,7 +408,7 @@
                            (event! c :remove)
                            (Thread/sleep 30)))
                        (is (< n0 (count @regs)) "the churn was registered")
-                       (is (wait-until #(= n0 (count (live))) 3000)
+                       (is (wait-until #(= n0 (count (live))) 200)
                            (str "every churned watch released while events still come: "
                                 (count (live)) " live, " n0 " at start"))
                        (finally (future-cancel pump))))))))))

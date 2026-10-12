@@ -651,15 +651,23 @@
     (when-let [ps (seq (remove editor-temp? paths))]
       (.put q (vec ps)))))
 
+(defn spawn-bound
+  "Run `f` on a thread of its own, with the dynamic bindings of the caller
+  — `*out*` included. babashka's `future-call` conveys none (P4-D.4 item
+  9: a test that bound `*out*` missed dev's log lines, written from the
+  drain loop's thread to the process's stdout)."
+  [f]
+  (future-call (bound-fn* f)))
+
 (defn background-runner
   "A function that asks for `f` to run on its own thread: one run at a time,
   and any number of requests during a run coalesce into one more run after
-  it. `spawn` starts a thread (default `future-call`). A `Throwable` from `f`
+  it. `spawn` starts a thread (default `spawn-bound`). A `Throwable` from `f`
   is reported and does not stop later runs. Once `cancelled?` says so, no
   run starts — a request queued behind the running one included (P4-D.2
   item 2). The function's metadata carries `:await`, `(await ms)`: wait up
   to `ms` for the running run to end; true when none is running."
-  ([f] (background-runner f future-call))
+  ([f] (background-runner f spawn-bound))
   ([f spawn] (background-runner f spawn (constantly false)))
   ([f spawn cancelled?]
    (let [st (atom {:running? false :again? false})]
@@ -1522,7 +1530,7 @@
                                                    "; the previous search index is still in place."
                                                    "; there is no search index yet."))
                                         (tool-output (or (ex-message t) (str t)))))))))))
-                 (or spawn future-call)
+                 (or spawn spawn-bound)
                  stopping?)]
     (with-meta (fn [cfg] (reset! pending cfg) (request!))
       (meta request!))))
@@ -1607,7 +1615,7 @@
   Everything that reaches outside is injectable through `env` — `:build`,
   `:load-cfg!`, `:run-server!`, `:try-pod-watch!`, `:poll-watch!`, `:index!`,
   `:notify!`, `:notify-error!`, `:spawn` (run a function on its own thread;
-  default `future-call`) and `:follow-ms` — so the wiring is tested without
+  default `spawn-bound`) and `:follow-ms` — so the wiring is tested without
   a port, a pod or a clock (dev_loop_test)."
   [{:keys [poll interval probe-ms reload-code]
     :or {interval 500 probe-ms default-probe-ms} :as opts}
@@ -1616,7 +1624,7 @@
         serve*    (or (:run-server! env) run-server!)
         pod*      (or (:try-pod-watch! env) try-pod-watch!)
         poll*     (or (:poll-watch! env) poll-watch!)
-        spawn     (or (:spawn env) future-call)
+        spawn     (or (:spawn env) spawn-bound)
         follow-ms (or (:follow-ms env) 1000)
         stopping  (atom false)
         reloaded  (atom 0)
