@@ -19,7 +19,8 @@
  ;; http-kit, cheshire and clojure.data.xml are all built into babashka.
  :deps {}
 
- :min-bb-version "1.13.0"
+ ;; the oldest babashka CI tests (.github/workflows/ci.yml's matrix)
+ :min-bb-version "1.13.219"
 
  :tasks
  {:requires ([clogem.cli])

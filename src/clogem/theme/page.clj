@@ -2,7 +2,8 @@
 (ns clogem.theme.page
   "Page templates: article, home, and the redirect stub."
   (:require [clogem.config :as config]
-            [clogem.theme.layout :as layout]))
+            [clogem.theme.layout :as layout]
+            [clogem.util :as u]))
 
 (defn article
   [{:keys [group variant] :as ctx} content-hiccup]
@@ -43,10 +44,13 @@
   `x-default`, which is the redirector role Google describes for it.
   `<html lang>` is the site default language's, not a hard-coded `en`."
   [cfg target]
-  [:html {:lang (config/html-lang cfg (config/default-lang cfg))}
-   [:head
-    [:meta {:charset "utf-8"}]
-    [:meta {:http-equiv "refresh" :content (str "0; url=" target)}]
-    [:meta {:name "robots" :content "noindex"}]
-    [:title "Redirecting…"]]
-   [:body [:p "Redirecting to " [:a {:href target} target] "…"]]])
+  ;; the target is a site path, base included: percent-encoded like every
+  ;; other emitted URL (P4-D.4 item 4: `/my docs/` was emitted raw)
+  (let [url (u/url-encode-path target)]
+    [:html {:lang (config/html-lang cfg (config/default-lang cfg))}
+     [:head
+      [:meta {:charset "utf-8"}]
+      [:meta {:http-equiv "refresh" :content (str "0; url=" url)}]
+      [:meta {:name "robots" :content "noindex"}]
+      [:title "Redirecting…"]]
+     [:body [:p "Redirecting to " [:a {:href url} target] "…"]]]))

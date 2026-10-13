@@ -5,7 +5,8 @@
   Option specs live in each var's :org.babashka/cli metadata (quickblog's
   ns-metadata spec pattern), so `bb <task> --help`, argument coercion and
   programmatic defaults all come from one definition."
-  (:require [babashka.fs :as fs]
+  (:require [babashka.cli :as bcli]
+            [babashka.fs :as fs]
             [clojure.string :as str]
             [clogem.config :as config]
             [clogem.diag :as diag]
@@ -142,6 +143,7 @@
                        :no-highlight {:desc "Build without syntax highlighting (no Chroma) even when :highlight :provider is set."
                                       :coerce :boolean}})}}
   build
+  "Render the site to the output directory (`dist/` by default)."
   [opts]
   ;; `:clogem/dev?` is set by `bb dev` (never on the command line): pages
   ;; render dev's ⟦key⟧ for a missing UI string, and search is left to dev's
@@ -153,8 +155,6 @@
         cfg  (cond-> (load-cfg! opts)
                dev? (assoc :clogem/dev? true)
                (or (:clogem/dev-loop? opts) (:clogem/dev? opts)) (assoc :clogem/dev-loop? true))]
-    ;; P4-D.3 item 1: before front matter is written back, too
-    (config/check-out-owned! (config/out-dir cfg) "the build will not write into or remove anything from")
     ;; Pass 1 — normalize front matter. Its diagnostics are discarded because
     ;; pass 2 re-derives them from the normalized tree and is the authoritative
     ;; report; but content ERRORS abort before anything is written, since
@@ -250,9 +250,9 @@
                       :tool {:desc "The tool to fetch: pagefind, chroma or fswatcher."
                              :default "pagefind" :ref "<name>"})}}
   fetch-tool
-  "§4's fetch-tool helper: fetch, verify and cache a binary tool this site
-  pins — Pagefind by default, or `--tool chroma` / `--tool fswatcher` — and
-  print its path, which is what CI exports as CLOGEM_PAGEFIND."
+  "Fetch, sha256-verify and cache a binary tool this site pins — Pagefind
+  by default, or `--tool chroma` / `--tool fswatcher` — and print its path
+  (§4; what CI exports as CLOGEM_PAGEFIND)."
   [opts]
   (let [id   (str/lower-case (str (or (:tool opts) "pagefind")))
         tool (get tools/descriptors (keyword id))
@@ -271,6 +271,7 @@
                                         :dry-run {:desc "Report what would be written, write nothing."
                                                   :coerce :boolean})}}
   fm-fix
+  "Write missing front matter into source files."
   [opts]
   (let [cfg (load-cfg! opts)
         [plan ds] (diag/collecting (fill-plan cfg (analyse cfg)))]
@@ -290,6 +291,7 @@
 
 (defn ^{:org.babashka/cli {:error-fn option-error :spec common-spec}}
   doctor
+  "Report content problems without building."
   [opts]
   ;; Config diagnostics are part of the report, not a gate in front of it: a
   ;; bad :langs :default is repaired by validate! precisely so the content
@@ -313,13 +315,6 @@
                    (render/check-code-languages! m)
                    ;; … and outputs of one build that would collide
                    (render/check-output-collisions! m)
-                   ;; … and an output directory clogem did not make
-                   ;; (P4-D.3 item 1), which build and clean refuse
-                   (let [out (config/out-dir cfg)]
-                     (when (config/foreign-out-dir? out)
-                       (diag/error! nil (str/replace (first (str/split-lines (config/foreign-out-message out "a build would refuse")))
-                                                     #"^clogem-press: " "")
-                                    "Choose another output directory with `--out` or :build :out, or move that directory away.")))
                    m)))
         ds    (into (vec cds) ds)
         errs  (diag/errors ds)
@@ -340,14 +335,34 @@
 (defn ^{:org.babashka/cli {:error-fn option-error :spec (assoc common-spec
                                         :out {:desc out-desc :alias :o :ref "<dir>"})}}
   clean
+  "Remove the output directory: only one a build marked as its own
+  (`.clogem-output`), and never one holding a `.git` (a deploy worktree);
+  either is refused, saying how to clean it (P4-D.4 item 3)."
   [opts]
-  (let [cfg (load-cfg! opts)
-        out (config/out-dir cfg)]
-    ;; P4-D.3 item 1: only a directory clogem made — an empty one is
-    ;; nothing to lose
-    (config/check-out-owned! out "`bb clean` will not delete")
-    (when (fs/exists? out) (fs/delete-tree out))
-    (println "clogem-press: removed" (str out))))
+  (let [cfg  (load-cfg! opts)
+        out  (config/out-dir cfg)
+        git? #(or (fs/exists? (fs/path out ".git") {:nofollow-links true})
+                  (some (fn [p] (= ".git" (str (fs/file-name p))))
+                        (fs/glob out "**" {:hidden true})))
+        refuse! (fn [why hint]
+                  (throw (ex-info (str "clogem-press: " out " " why ", so `bb clean` will not delete it.\n"
+                                       "  hint: " hint)
+                                  {:babashka/exit 1})))]
+    (cond
+      (not (fs/exists? out))
+      (println "clogem-press:" (str out) "does not exist; nothing to remove")
+
+      (not (config/out-owned? out))
+      (refuse! (str "has no " config/out-marker ", which every build writes there")
+               (str "Build once to mark it, or delete it yourself (rm -r " out ")."))
+
+      (git?)
+      (refuse! "holds a .git (a deploy worktree?)"
+               (str "Delete what you want gone yourself; `bb build` overwrites the pages it writes anyway."))
+
+      :else
+      (do (fs/delete-tree out)
+          (println "clogem-press: removed" (str out))))))
 
 (def server-spec
   "The options `serve` and `dev` share: where to listen (§11.3 item 12)."
@@ -363,6 +378,7 @@
                        :base {:desc "Serve it at this path, e.g. /project/ (default: the site's :base when --site-dir has a site.edn, else /)."
                               :ref "<path>"}})}}
   serve
+  "Serve an already-built output directory."
   [opts]
   ((requiring-resolve 'clogem.dev/serve!) opts))
 
@@ -385,11 +401,49 @@
                        :probe-ms {:desc "How long to wait for the watcher to prove it delivers events."
                                   :default 3000 :coerce :long}})}}
   dev
+  "Build, serve, and rebuild on change."
   [opts]
   ((requiring-resolve 'clogem.dev/dev!) opts))
 
 (defn ^{:org.babashka/cli {:error-fn option-error :spec {:pattern {:desc "Only run test namespaces matching this substring."
                                             :ref "<str>"}}}}
   test-cmd
+  "Run the test suite."
   [opts]
   ((requiring-resolve 'clogem.test-runner/run) opts))
+
+;; ---------------------------------------------------------------------------
+;; --help (P4-D.4 item 5)
+
+(defn help-text
+  "What `bb <task> --help` prints for the task var `v`: its usage, the
+  first paragraph of its docstring and its options, from the spec in its
+  `:org.babashka/cli` metadata."
+  [v]
+  (let [m    (meta v)
+        task (str/replace (str (:name m)) #"-cmd$" "")
+        doc  (first (str/split (str (:doc m)) #"\n\s*\n"))]
+    (str "Usage: bb " task " [options]\n"
+         (when-not (str/blank? doc)
+           (str "\n" (str/join "\n" (map str/trim (str/split-lines doc))) "\n"))
+         "\nOptions:\n"
+         (bcli/format-opts {:spec (get-in m [:org.babashka/cli :spec])})
+         "\n")))
+
+(defn with-help
+  "Wrap the task function `f` of the var `v`: on `--help` or `-h` it prints
+  `help-text` and returns nil, before anything else runs. No task read its
+  options' `:help`, so `bb clean --help` deleted the output directory."
+  [f v]
+  (fn [opts]
+    (if (or (:help opts) (:h opts))
+      (print (help-text v))
+      (f opts))))
+
+(def ^:private tasks
+  "Every task bb.edn runs, each wrapped once by `with-help`."
+  [#'build #'dev #'serve #'doctor #'clean #'fm-fix #'fetch-tool #'test-cmd])
+
+(doseq [v tasks]
+  (when-not (::help? (meta @v))
+    (alter-var-root v (fn [f] (with-meta (with-help f v) {::help? true})))))

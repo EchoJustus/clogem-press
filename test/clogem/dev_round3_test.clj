@@ -8,7 +8,6 @@
   Each test names the item it pins down; each failed before its fix."
   (:require [babashka.cli :as bcli]
             [babashka.fs :as fs]
-            [babashka.http-client :as http-client]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [clogem.cli :as cli]
@@ -141,38 +140,29 @@
             (is (not (fs/exists? sibling)) "clean removes what the build made")
             (finally (fs/delete-tree sibling))))))))
 
-(deftest only-a-directory-clogem-made-is-written-swept-or-cleaned
-  (testing "item 1: an unrelated directory as the output is never swept or deleted"
+(deftest only-a-directory-clogem-made-is-swept-or-cleaned
+  (testing "item 1, as P4-D.4 item 3 left it: an unrelated directory as the
+            output is written into, as in 0.2.0, but never swept by that
+            first build, and never deleted by clean"
     (with-site url-site
       (fn [dir]
         (let [mine (fs/path dir "dist")]
           (fs/create-dirs mine)
           (spit (fs/file mine "notes.html") "<p>my notes</p>")
-          (let [before (tree mine)]
-            (doseq [[task f] [["build" #(cli/build (assoc (parse #'cli/build []) :site-dir (str dir)))]
-                              ["clean" #(cli/clean (assoc (parse #'cli/clean []) :site-dir (str dir)))]]]
-              (let [msg (refusal f)]
-                (is (re-find #"was not made by clogem-press" (str msg)) (str task ": " msg))))
-            (is (some #(re-find #"was not made by clogem-press" (:message %)) (doctor-errors dir)))
-            (is (= before (tree mine)) "untouched"))
-          (fs/delete-tree mine))
-        (testing "an empty one is fine, and marked"
-          (fs/create-dirs (fs/path dir "dist"))
+          (is (re-find #"has no \.clogem-output" (str (refusal #(cli/clean (assoc (parse #'cli/clean []) :site-dir (str dir)))))))
+          (is (= "<p>my notes</p>" (slurp (fs/file mine "notes.html"))))
+          (is (empty? (doctor-errors dir)) "doctor: no error")
           (quiet #(cli/build (assoc (parse #'cli/build []) :site-dir (str dir))))
-          (is (fs/exists? (fs/path dir "dist" marker))))
-        (testing "a build's stale pages are still swept, and clean removes it"
+          (is (fs/exists? (fs/path mine "notes.html")) "the first build sweeps nothing")
+          (is (fs/exists? (fs/path mine marker)) "and marks it")
+          (fs/delete-tree mine))
+        (testing "a build's stale pages are swept, and clean removes it"
+          (quiet #(cli/build (assoc (parse #'cli/build []) :site-dir (str dir))))
           (spit (fs/file dir "dist" "stale.html") "<p>old</p>")
           (quiet #(cli/build (assoc (parse #'cli/build []) :site-dir (str dir))))
           (is (not (fs/exists? (fs/path dir "dist" "stale.html"))))
           (quiet #(cli/clean (assoc (parse #'cli/clean []) :site-dir (str dir))))
           (is (not (fs/exists? (fs/path dir "dist")))))
-        (testing "a 0.2.0 dist/ — clogem/ and index.html, no marker — is adopted"
-          (fs/create-dirs (fs/path dir "dist" "clogem"))
-          (spit (fs/file dir "dist" "index.html") "<p>old home</p>")
-          (spit (fs/file dir "dist" "gone.html") "<p>old</p>")
-          (quiet #(cli/build (assoc (parse #'cli/build []) :site-dir (str dir))))
-          (is (not (fs/exists? (fs/path dir "dist" "gone.html"))))
-          (is (fs/exists? (fs/path dir "dist" marker))))
         (testing "search's sweep keeps out of an unmarked directory"
           (let [d (fs/path dir "plain")]
             (fs/create-dirs (fs/path d ".pagefind-prev"))
@@ -248,105 +238,12 @@
           (is (not (fs/exists? old)) "the old directory's previous bundle went too"))))))
 
 ;; ---------------------------------------------------------------------------
-;; Item 3: large files are streamed, never mapped
+;; Item 3: large files (their tests are dev-round4-test's: P4-D.4 item 1
+;; replaced D.3's stream with a plain `File` body)
 
 (defn- with-root [f]
   (let [root (fs/create-temp-dir {:prefix "clogem-r3root"})]
     (try (f root) (finally (fs/delete-tree root)))))
-
-(defn- sparse!
-  "A sparse file of `n` bytes at `p`, its last byte 7."
-  [p n]
-  (with-open [f (java.io.RandomAccessFile. (fs/file p) "rw")]
-    (.setLength f n)
-    (.seek f (dec n))
-    (.write f 7)))
-
-(defn- with-server
-  "Run the dev handler over `root` on a real http-kit server; (f get!)
-  where (get! uri) opens a connection: {:status :headers :in}."
-  [root f]
-  (let [srv (dev/run-server! (dev/make-handler root {}) {:ip "127.0.0.1" :port 0 :legacy-return-value? false})
-        port (org.httpkit.server/server-port srv)]
-    (try
-      (f (fn [uri]
-           (let [r (http-client/get (str "http://127.0.0.1:" port uri)
-                                    {:as :stream :throw false :timeout 20000})]
-             {:status   (:status r)
-              :chunked? (= "chunked" (get-in r [:headers "transfer-encoding"]))
-              :in       (:body r)})))
-      (finally (org.httpkit.server/server-stop! srv)))))
-
-(defn- drain
-  "Read `in` to its end: [byte count, last byte]."
-  [^java.io.InputStream in]
-  (with-open [in in]
-    (let [buf (byte-array 65536)]
-      (loop [n 0 last -1]
-        (let [r (.read in buf)]
-          (if (neg? r) [n last] (recur (+ n r) (if (pos? r) (aget buf (dec r)) last))))))))
-
-(defn- maps-or-holds?
-  "Does this process still map, or hold open, the file `p`? (Linux: /proc.)"
-  [p]
-  (let [s (str (fs/canonicalize p))]
-    (boolean
-     ;; `slurp` of a /proc file fails with EINVAL here; a stream reads it
-     (or (str/includes? (with-open [in (java.io.FileInputStream. "/proc/self/maps")]
-                          (String. (.readAllBytes in) "UTF-8"))
-                        s)
-         (some #(= s (try (str (fs/read-link %)) (catch Exception _ nil)))
-               (fs/list-dir "/proc/self/fd"))))))
-
-(defn- stream-threads []
-  (filter #(= "clogem-file-stream" (.getName ^Thread %)) (keys (Thread/getAllStackTraces))))
-
-(deftest a-large-file-is-streamed-and-released-when-the-response-ends
-  (testing "item 3: a 1 MB+ file was a MappedByteBuffer that outlived the
-            response — on Windows a rebuild could not replace it until a GC"
-    (with-root
-      (fn [root]
-        (spit (fs/file root "small.txt") "small")
-        (sparse! (fs/path root "big.bin") (+ 10 (* 2 1024 1024)))
-        (let [h (dev/make-handler root {})]
-          (is (bytes? (:body (h {:uri "/small.txt"}))) "small: read whole")
-          (let [b (:body (h {:uri "/big.bin"}))]
-            (is (not (instance? java.nio.ByteBuffer b)) "big: no mapping")
-            (is (not (instance? java.io.File b)) "never a File")
-            (when (instance? java.io.Closeable b) (.close ^java.io.Closeable b))))
-        (with-server root
-          (fn [get!]
-            (let [{:keys [status chunked? in]} (get! "/big.bin")]
-              (is (= 200 status))
-              (is chunked? "streamed in chunks")
-              (is (= [(+ 10 (* 2 1024 1024)) 7] (drain in)) "whole"))
-            (is (wait-until #(empty? (stream-threads))) "its thread ends")
-            (when (fs/exists? "/proc/self/maps")
-              (is (wait-until #(not (maps-or-holds? (fs/path root "big.bin"))))
-                  "nothing maps or holds the file once the response ends"))
-            (testing "a client that goes away mid-download"
-              (let [{:keys [in]} (get! "/big.bin")]
-                (.read ^java.io.InputStream in)
-                (.close ^java.io.InputStream in))
-              (is (wait-until #(empty? (stream-threads)) 10000) "ends the stream")
-              (when (fs/exists? "/proc/self/maps")
-                (is (wait-until #(not (maps-or-holds? (fs/path root "big.bin"))) 10000))))))))))
-
-(deftest a-file-of-2-gib-or-more-is-served
-  (testing "item 3: FileChannel.map takes at most Integer.MAX_VALUE bytes,
-            so a 2 GiB file was a 500"
-    (with-root
-      (fn [root]
-        (let [n (+ 1024 (* 2 1024 1024 1024))]
-          (sparse! (fs/path root "huge.bin") n)
-          (with-server root
-            (fn [get!]
-              (let [t0 (System/currentTimeMillis)
-                    {:keys [status in]} (get! "/huge.bin")]
-                (is (= 200 status))
-                (is (<= 0 (.read ^java.io.InputStream in)) "a first byte")
-                (is (< (- (System/currentTimeMillis) t0) 2000) "at once, whatever the size")
-                (is (= [(dec n) 7] (drain in)) "and the rest")))))))))
 
 (deftest a-large-file-that-vanishes-is-a-404-without-a-path
   (testing "item 3 keeps finding 1: resolved, then gone before it is opened"
@@ -357,15 +254,7 @@
           (with-redefs [dev/resolve-path (fn [& _] ghost)]
             (let [r (h {:uri "/gone.bin"})]
               (is (= 404 (:status r)))
-              (is (not (str/includes? (str (:body r)) (str root))))))
-          (testing "deleted mid-download: the open file is still sent whole"
-            (sparse! (fs/path root "big.bin") (* 3 1024 1024))
-            (with-server root
-              (fn [get!]
-                (let [{:keys [status in]} (get! "/big.bin")]
-                  (is (= 200 status))
-                  (fs/delete (fs/path root "big.bin"))
-                  (is (= [(* 3 1024 1024) 7] (drain in))))))))))))
+              (is (not (str/includes? (str (:body r)) (str root)))))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Item 4: a build's own write is filtered once
@@ -500,7 +389,9 @@
             follower's cleanup pass starved by the events"
     (with-site url-site
       (fn [dir]
-        (pod-dev dir {:follow-ms 400}
+        ;; P4-D.4 item 9 (mutant i5c): a periodic pass far away, so only
+        ;; the release on the delete event itself can pass this
+        (pod-dev dir {:follow-ms 60000}
                  (fn [{:keys [regs live event!]}]
                    (let [n0   (count @regs)
                          ;; another directory's event every 30 ms, the whole
@@ -517,7 +408,7 @@
                            (event! c :remove)
                            (Thread/sleep 30)))
                        (is (< n0 (count @regs)) "the churn was registered")
-                       (is (wait-until #(= n0 (count (live))) 3000)
+                       (is (wait-until #(= n0 (count (live))) 200)
                            (str "every churned watch released while events still come: "
                                 (count (live)) " live, " n0 " at start"))
                        (finally (future-cancel pump))))))))))
@@ -560,8 +451,13 @@
     (cond
       (not (System/getenv "CLOGEM_FSWATCHER"))
       (println "the-real-pod-under-a-low-inotify-cap: CLOGEM_FSWATCHER is not set; skipped")
+      ;; CI lifts AppArmor's restriction first (ci.yml), so there a
+      ;; missing namespace is a failure, not a skip (P4-D.4 item 8)
+      (and (not (unshare-ok?)) (System/getenv "GITHUB_ACTIONS"))
+      (is false (str "the-real-pod-under-a-low-inotify-cap: no unprivileged user namespace on CI — "
+                     "is kernel.apparmor_restrict_unprivileged_userns still 1?"))
       (not (unshare-ok?))
-      (println "the-real-pod-under-a-low-inotify-cap: no unprivileged user namespace here; skipped")
+      (println "skip: the-real-pod-under-a-low-inotify-cap: no unprivileged user namespace here (`unshare -U -r` refused)")
       :else
       (with-site url-site
         (fn [dir]
@@ -894,8 +790,9 @@
         (fn [dir]
           (let [cfg (first (diag/collecting (config/load-config (str dir))))]
             (doseq [stopping? [false true]]
-              (let [err (java.io.StringWriter.)
-                    fns (binding [*err* err] (dev/load-pod! cfg (constantly stopping?)))
+              (let [err   (java.io.StringWriter.)
+                    asked (atom 0)
+                    fns   (binding [*err* err] (dev/load-pod! cfg (fn [] (swap! asked inc) stopping?)))
                     pid (some (fn [^java.lang.ProcessHandle h]
                                 (when (str/includes? (str (.orElse (.command (.info h)) "")) "fswatcher") h))
                               (iterator-seq (.iterator (.children (java.lang.ProcessHandle/current)))))]
@@ -904,7 +801,10 @@
                 ;; the SIGINT a Ctrl-C sends the whole process group
                 (.destroy ^java.lang.ProcessHandle pid)
                 (if stopping?
-                  (do (Thread/sleep 1500)
+                  ;; P4-D.4 item 2: the gate must have been asked — a
+                  ;; writer that throws on every write is quiet too
+                  (do (is (wait-until #(pos? @asked) 3000) "the pod client wrote, and was gated")
+                      (Thread/sleep 500)
                       (is (= "" (str err)) "nothing while dev stops"))
                   (is (wait-until #(str/includes? (str err) "Pod quit unexpectedly") 3000) "said otherwise"))
                 (dev/unload-pod! (:pod-id fns))))))))))
@@ -964,6 +864,30 @@
                      (is (= 2 @builds) (str "one rebuild: " out))
                      (is (not (str/includes? (str out) "notes.txt")) "no rescan of the target's directory")
                      (is (not (str/includes? (str out) "files changed")) (str out)))))))))
+
+(deftest re-pointing-a-symlinked-site-edn-releases-the-old-target
+  (testing "P4-D.4 item 7: the previous target's directory kept its
+            registration — an inotify instance — for the rest of the session"
+    (with-site url-site
+      (fn [dir]
+        (let [shared (fs/path dir "shared")
+              other  (fs/path dir "elsewhere")
+              link   (fs/path dir "site.edn")]
+          (fs/create-dirs shared)
+          (fs/move link (fs/path shared "site.edn"))
+          (fs/create-sym-link link (fs/path shared "site.edn"))
+          (fs/create-dirs other)
+          (spit (fs/file other "site.edn") (pr-str (assoc-in url-site [:site :title] "Other")))
+          (pod-dev dir {}
+                   (fn [{:keys [event! regs-of unwatched]}]
+                     (let [[old] (regs-of shared)]
+                       (is (some? old) "the first target's directory is watched")
+                       (fs/delete link)
+                       (fs/create-sym-link link (fs/path other "site.edn"))
+                       (event! link :create)
+                       (is (wait-until #(= 1 (count (regs-of other)))) "the new target's directory is watched")
+                       (is (wait-until #(some #{old} @unwatched) 2000) "the old one's is released")
+                       (is (not-any? #{(first (regs-of other))} @unwatched) "and not the new one's")))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Item 17: --poll and a :content :dir moved to a missing directory

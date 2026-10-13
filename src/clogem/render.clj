@@ -1336,13 +1336,18 @@
   verification file the site owner or a CI step put there all stay.
   Returns the render summary plus {:written :unchanged :stale :stale-theme}:
   stale pages, and stale files under `<out>/clogem/`, which is the
-  generator's own (`sweep-stale-html!`)."
+  generator's own (`sweep-stale-html!`).
+
+  Any existing directory the config accepts is written into, as in 0.2.0,
+  and marked (`config/mark-out-dir!`); the sweep runs only in one that was
+  marked BEFORE this build (P4-D.4 item 3), so the first build into a
+  directory of the author's own — or one 0.2.0 built — deletes nothing,
+  and the next sweeps only what a clogem build wrote there since."
   [{:keys [outputs reserved out] :as rendered}]
-  ;; P4-D.3 item 1: never into, or sweeping, a directory clogem did not make
-  (config/check-out-owned! out "the build will not write into or remove anything from")
   (fs/create-dirs out)
-  (let [{:keys [written unchanged files]} (write-outputs! out outputs reserved)
-        stale (sweep-stale-html! out files)
+  (let [marked? (config/out-owned? out)
+        {:keys [written unchanged files]} (write-outputs! out outputs reserved)
+        stale (if marked? (sweep-stale-html! out files) [])
         pages (count (filter html-file? stale))]
     (-> rendered
         (dissoc :outputs :reserved)

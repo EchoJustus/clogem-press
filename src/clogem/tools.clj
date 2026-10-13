@@ -200,7 +200,8 @@
   Task D); `bb fetch-tool --tool fswatcher` fills the cache, as CI does."
   {:id           :fswatcher
    :name         "fswatcher pod"
-   :error-prefix "dev"
+   ;; not "dev": `bb fetch-tool --tool fswatcher` fails with it too (P4-D.4)
+   :error-prefix "fswatcher"
    :ex-data      {:clogem/tool-error :fswatcher}
    :platform     fswatcher-platform
    :url          "https://github.com/babashka/pod-babashka-fswatcher/releases/download/v{{version}}/pod-babashka-fswatcher-{{version}}-{{platform}}.zip"

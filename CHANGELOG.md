@@ -23,6 +23,9 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   the address `--host` resolves to, however it is spelled (`127.1`,
   `127.0.0.2`, `::1`, `localhost`), and the URL printed is always
   answered. With any other `--host` there is no check.
+- **`bb.edn` requires babashka 1.13.219 or later** (`:min-bb-version`; it
+  said 1.13.0, which no one tested). CI runs the tests and the browser
+  tests under 1.13.219 and the latest release (P4-D.4).
 - **`permalinks.edn` is written only when it changes.** It was rewritten,
   byte for byte the same, on every build.
 - **A missing UI string key warns once per key and language, in `build`
@@ -80,14 +83,14 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   by process id and start time, so a reused pid (dev is often pid 1 in a
   container) is not mistaken for it.
 - **A file renamed while dev served it** is a 404, never a 500 whose body
-  named its absolute path (reachable with `--host 0.0.0.0`). Files of
-  1 MB or more are streamed in 64 KB chunks, the next read only once the
-  last is written out, so one download holds one chunk however slow the
-  client; smaller files are read whole. Both come from one open: a 200 MB
-  file waited a second for its first byte and took 450 MB of heap per
-  client. (D.2 mapped large files instead; P4-D.3 dropped the mapping,
-  which outlived the response — on Windows a rebuild could not replace a
-  served file until a GC ran — and made a file of 2 GiB or more a 500.)
+  named its absolute path (reachable with `--host 0.0.0.0`). A file under
+  1 MB — every Pagefind file — is read whole from one open, so a rebuild
+  swapping it mid-response cannot mix two versions; a larger one is sent
+  as 0.2.0 sent every file, with its `Content-Length`, to HTTP/1.0 and
+  HTTP/1.1 alike (P4-D.4). A HEAD request gets no body; 0.2.0 sent the
+  whole file, which corrupts a keep-alive connection. A file of 2 GiB or
+  more, which http-kit cannot send (0.2.0: a 500 and a stack trace), is
+  a 500 saying so.
 - **Neither server serves outside its directory through a link**: a
   directory's `index.html` linked outside it was served (`GET /dir/`). A
   request path with a backslash, a `:`, a NUL or a `..` past the root is
@@ -97,7 +100,8 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   atomic-save editors) is still watched afterwards, and a `site.edn` that
   is a symbolic link is watched at its target too. Pointing the link
   elsewhere is one rebuild; it was two, the second a rescan of every file
-  in the new target's directory (P4-D.3).
+  in the new target's directory (P4-D.3). The previous target's directory
+  is no longer watched afterwards (P4-D.4).
 - **With the pod, a directory created while `bb dev` runs is watched**:
   `mkdir content/07.Topic` and a page in it, `mkdir -p a/b/c`, `cp -r` of
   a tree. The pod watches only the subdirectories that exist when it is
@@ -116,7 +120,8 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   re-registration that fails keeps the working watch and is retried. At
   the system's limit (too many open files, or no space left on device)
   dev prints one line, releases the pod and polls for the rest of the
-  session.
+  session, rebuilding once as polling starts: the change that hit the
+  limit was otherwise never built (P4-D.4).
 - **A `:content :dir` that does not exist yet** is followed once it is
   created; the failed build in between left dev watching the old one.
   With `--poll`, the save that moves it is one failed build, not two: the
@@ -154,7 +159,11 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   encoded again in every link, by `build` too. Every URL `build` emits now
   carries the base percent-encoded (P4-D.3): theme assets, the icon
   sprite, the search bundle, the home and language-home links, nav links
-  and markdown's `/assets/…` links had `href="/my docs/…"`.
+  and markdown's `/assets/…` links had `href="/my docs/…"`. Since P4-D.4
+  a `:nav` link that gets only the base has the base encoded and is
+  appended as written, so its `#fragment`, `?query` or `%20` is kept (D.3
+  encoded them into the path), and the redirect stubs of
+  `:prefix-default? true` and dev's 404 page encode the base too.
 - **`:build :out` in `site.edn` is honoured** by `build`, `dev` and
   `clean`: the CLI's `--out` defaulted to `dist` and overrode it every
   time. `--out` still wins. A site whose CI passes `--out` (the live
@@ -164,16 +173,22 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   `assets/mine.html` as a stale page and `bb clean` deleted `assets/`.
   `build`, `clean` and `doctor` now refuse — as a config error — an
   output directory, from `site.edn` or `--out`, that is, holds or is
-  inside the content, assets, i18n or overrides directory or a `.git`,
-  or is the site directory or an ancestor of it; a `site.edn` value must
-  also stay inside the site directory (absolute, `..` and links
-  included), while `--out` may point elsewhere (`--out ../dist`).
-- **Builds mark their output directory** with a `.clogem-output` file, and
-  `bb clean`, the stale-page sweep and the search sweeps delete only in a
-  marked directory: an existing, non-empty directory without the marker is
-  refused by `build` and `clean`, and reported by `doctor`. A `dist/` an
-  earlier version wrote (it holds `clogem/` and `index.html`) is adopted
-  and marked by the next build.
+  inside the content, assets, i18n or overrides directory or the site's
+  `.git`, sits inside any `.git`, or is the site directory or an ancestor
+  of it. A `:build :out` written in `site.edn` must also stay inside the
+  site directory (absolute, `..` and links included), while the default
+  `dist` and `--out` may point elsewhere — `--out ../dist`, or a `dist`
+  that is a symbolic link to `/var/www/site` (P4-D.4). A `dist` link to
+  nothing is a clear config error, not a `FileAlreadyExistsException`.
+- **Builds mark their output directory** with a `.clogem-output` file.
+  A build still writes into any existing directory the rules above
+  accept, as 0.2.0 did — one holding only `CNAME`, `.nojekyll` or a deploy
+  worktree's `.git` included — but removes stale `.html` (and stale files
+  under `dist/clogem/`) only where a previous build left the marker: the
+  first build into a directory deletes nothing, so a `dist/` 0.2.0 built
+  is marked by its first build and swept from its second (P4-D.4).
+  `bb clean` deletes only a marked directory, and never one holding a
+  `.git`; it refuses both, saying how to clean them.
 - **`bb serve` with an unreadable `site.edn`** warns and serves at `/`, as
   0.2.0 did (`--base` needs no config); it exited 1.
 - **`bb serve` serves the directory `bb build` wrote** (P4-D.3): `--dir`,
@@ -192,7 +207,17 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   indented lines, not run together with `;`. Its hint says what is true
   (P4-D.3): "the previous search index is still in place" only when there
   is one — the first index of a session has none — and `build`'s names
-  the output directory written, not always `dist/`.
+  the output directory written, not always `dist/`. Since P4-D.4: a
+  failed fswatcher fetch says `fswatcher:`, not `dev:` (`bb fetch-tool
+  --tool fswatcher` raises it too); `bb serve`'s unreadable-`site.edn`
+  warning names only what falls back (not "at / from dist/" whatever
+  `--base`, `--dir` or `--out` said), and the directory it prints is
+  normalized; Ctrl-C during the first build no longer prints `dev server
+  at …` after, or on the same line as, `stopped`.
+- **`bb <task> --help` (or `-h`) prints the task's usage and options and
+  does nothing else**, for every task (pre-existing, P4-D.4): no task read
+  the flag, so `bb clean --help` deleted the output directory, and the
+  one-line option error's "`--help` lists the options" was not true.
 - **`doctor`'s code-language check** reports an unreadable Chroma — cached,
   `CLOGEM_CHROMA` or `:tools :chroma :path` — with `build`'s own message
   and hint, not as a stack trace (follow-up to Task C).

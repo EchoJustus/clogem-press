@@ -20,12 +20,21 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # P4-D.4 item 8: the oldest babashka bb.edn allows (:min-bb-version)
+    # and the latest. 1.13.219 differs where it matters: its http-kit sends
+    # a body to HEAD, and it does not dispatch a proxied Writer's
+    # one-argument write (babashka #2054).
+    strategy:
+      fail-fast: false
+      matrix:
+        bb: ['1.13.219', 'latest']
+    name: test (bb ${{ matrix.bb }})
     steps:
       - uses: actions/checkout@v4
 
       - uses: DeLaGuardo/setup-clojure@13
         with:
-          bb: latest
+          bb: ${{ matrix.bb }}
 
       - name: Show versions
         run: bb --version
@@ -96,6 +105,13 @@ jobs:
           bin=$(bb --config ../../bb.edn fetch-tool --tool fswatcher | tail -n 1)
           test -x "$bin"
           echo "CLOGEM_FSWATCHER=$bin" >> "$GITHUB_ENV"
+
+      # The real-pod inotify-cap test (dev_round3_test) needs an
+      # unprivileged user namespace, which Ubuntu's AppArmor refuses by
+      # default; with GITHUB_ACTIONS set the test fails, not skips,
+      # without one (P4-D.4 item 8).
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Run tests
         run: bb test
@@ -336,12 +352,17 @@ jobs:
   # and runs every test/browser/*.test.mjs (test/browser/README.md).
   browser:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        bb: ['1.13.219', 'latest']
+    name: browser (bb ${{ matrix.bb }})
     steps:
       - uses: actions/checkout@v4
 
       - uses: DeLaGuardo/setup-clojure@13
         with:
-          bb: latest
+          bb: ${{ matrix.bb }}
 
       - uses: actions/setup-node@v4
         with:

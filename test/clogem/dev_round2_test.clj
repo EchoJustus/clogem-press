@@ -55,7 +55,7 @@
   (bcli/parse-opts args {:spec (spec-of v)}))
 
 (def ^:private big-size
-  "Over `dev/stream-threshold` (1 MB)."
+  "Over `dev/whole-read-limit` (1 MB)."
   (+ 10 (* 1024 1024)))
 
 (defn- late-var [sym]
@@ -123,9 +123,10 @@
   (let [root (fs/create-temp-dir {:prefix "clogem-r2root"})]
     (try (f root) (finally (fs/delete-tree root)))))
 
-(deftest a-big-file-is-not-read-into-the-heap
-  (testing "item 6: an InputStream body made http-kit read the whole file
-            before its first byte"
+(deftest a-small-file-is-read-whole-and-a-big-one-is-a-file
+  (testing "item 6, as P4-D.4 item 1 left it: a small file is read whole,
+            from one open (a swap cannot mix two versions); a big one is
+            0.2.0's File body (D.3's stream sent HTTP/1.0 nothing)"
     (with-root
       (fn [root]
         (spit (fs/file root "small.txt") "small")
@@ -134,10 +135,7 @@
         (let [h (dev/make-handler root {})]
           (is (bytes? (:body (h {:uri "/small.txt"}))) "small: read whole, from one open")
           (is (= "small" (String. ^bytes (:body (h {:uri "/small.txt"})) "UTF-8")))
-          ;; P4-D.3 item 3: streamed, not mapped (dev-round3-test); called
-          ;; directly, without http-kit's channel, it is a stream on one open
-          (is (instance? java.io.InputStream (:body (h {:uri "/big.bin"}))) "big: a stream")
-          (is (not-any? #(instance? java.io.File (:body (h {:uri %}))) ["/small.txt" "/big.bin"]) "never a File")
+          (is (instance? java.io.File (:body (h {:uri "/big.bin"}))) "big: a File")
           (testing "and http-kit sends both, whole"
             (let [srv (dev/run-server! h {:ip "127.0.0.1" :port 0 :legacy-return-value? false})]
               (try
@@ -212,7 +210,9 @@
     (with-root
       (fn [root]
         (let [r (:body ((dev/make-handler root {:base "/a\"onmouseover=\"x/"}) {:uri "/nope"}))]
-          (is (str/includes? r "href=\"/a&quot;onmouseover=&quot;x/\"") r)
+          ;; P4-D.4 item 4: the href is percent-encoded now, the text escaped
+          (is (str/includes? r "href=\"/a%22onmouseover%3D%22x/\"") r)
+          (is (str/includes? r ">/a&quot;onmouseover=&quot;x/<") r)
           (is (not (str/includes? r "a\"onmouseover")) r))))))
 
 (deftest a-loopback-server-answers-only-loopback-names

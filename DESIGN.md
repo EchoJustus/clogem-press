@@ -26,7 +26,9 @@
 > Every library version, maintenance date, and compatibility claim was verified against primary
 > sources (GitHub, Clojars, npm/PyPI registries, vendor docs) in August 2026, and the load-bearing
 > claims were **verified empirically** by running code under babashka v1.13.219 (see
-> [Appendix A](#appendix-a--empirically-validated-claims)). v2's new claims — action versions, the
+> [Appendix A](#appendix-a--empirically-validated-claims)). Since Phase 4 D.4, CI runs the tests
+> under both babashka 1.13.219 — `bb.edn`'s `:min-bb-version` — and the latest release (1.13.226
+> when D.4 was verified). v2's new claims — action versions, the
 > `GITHUB_TOKEN` trigger contract, Pagefind's multilingual internals, hreflang rules — are verified
 > in [research/12](research/12-i18n-multilingual.md) and
 > [research/13](research/13-pages-actions-deploy.md), several of them **against source code** where
@@ -675,11 +677,12 @@ listen on 127.0.0.1 unless given `--host`.
   a sweep counts a directory as live only when both match — a container's `bb dev` is often pid 1.
 - **The handler checks before it touches the disk**: the decoded path lexically (no backslash, `:`,
   NUL or `..` past the root), then the canonical path of the file served, a directory's
-  `index.html` included. Files of 1 MB or more are streamed through http-kit's async channel in
-  64 KB chunks — the next chunk is read only once http-kit has written the last out, so a download
-  holds one chunk however slow its client, and the file is closed when it ends (P4-D.3: the D.2
-  mapping outlived the response, which on Windows kept a rebuild from replacing the file, and could
-  not map 2 GiB) — smaller ones are read whole, both from one open. On a loopback bind — decided on
+  `index.html` included. A file under 1 MB is read whole, from one open, so a rebuild swapping it
+  mid-response cannot mix two versions; a larger one is a plain `File` body, as in 0.2.0, which
+  http-kit sends with its `Content-Length` (P4-D.4: D.3's chunked stream over the async channel gave
+  HTTP/1.0 an empty body, left a thread and an open file behind a client that dropped a download on a
+  reused keep-alive connection, and raced http-kit on its buffer). A HEAD request gets no body. A
+  file of 2 GiB or more is a clean 500 (Known limitations). On a loopback bind — decided on
   the address `--host` resolves to, so `127.1`, `127.0.0.2`, `::1` and `localhost` all count — a
   request whose `Host` is not `localhost`, `127.0.0.1`, `[::1]` or the address `--host` gave is a 403
   (DNS rebinding). `--host 0.0.0.0` prints `localhost` and says it
@@ -688,9 +691,17 @@ listen on 127.0.0.1 unless given `--host`.
 - `:build :out` from `site.edn` is honoured: `--out` has no spec default any more, so the precedence
   is `--out`, then `:build :out`, then `"dist"`; `bb serve` resolves `--dir`, then `--out`, then
   `:build :out`, then `dist` (P4-D.3). An output directory may not be, hold or sit inside a source
-  directory (content, assets, i18n, overrides, `.git`), nor be the site directory or an ancestor;
-  a `site.edn` value must stay inside the site. Builds mark it (`.clogem-output`), and `bb clean`,
-  the stale sweep and the search sweeps delete only in a marked directory (§11.2 item 46). `:site :base` is decoded once in
+  directory (content, assets, i18n, overrides, the site's `.git`), sit inside any `.git`, nor be
+  the site directory or an ancestor; a `:build :out` written in `site.edn` must stay inside the
+  site, while the default `dist` and `--out` may resolve anywhere, through a link too (P4-D.4: the
+  default was taken for a `site.edn` value, so `dist -> /var/www/site` was refused). A dangling
+  `dist` link is a config error. Builds write into any existing directory those rules accept, as
+  0.2.0 did, and mark it (`.clogem-output`); the stale sweep runs only where the marker was before
+  the build, so a first build into a pre-seeded (`CNAME`, `.nojekyll`, a worktree's `.git`) or
+  0.2.0-built `dist/` deletes nothing, and the next sweeps (§11.2 item 46). The search sweeps run
+  only in a marked directory. `bb clean` deletes only a marked directory without a `.git` (D.3's
+  adoption of an unmarked one with `clogem/` and `index.html` let it delete a deploy clone's
+  `.git`). `:site :base` is decoded once in
   `config/base-path`, so a base written percent-encoded is the same base.
 
 ### 5.5 Caching strategy
@@ -1549,7 +1560,7 @@ are one decision, not two.
 |---|---|
 | Published site ≤ 1 GB; deployments time out at 10 minutes | Measure `dist/` size in CI and **hard-fail** above 500 MB with a clear error naming the limit, the measured size, and the 1 GB platform cap (§7.3). A warning would be the wrong instrument: the cap is hard, the failure mode past it is a *deploy* failure that costs a full build cycle to discover, and a warning in a green log is not read. Self-hosted fonts subsetted, images the owner's responsibility. |
 | `upload-pages-artifact` tars with `--dereference --hard-dereference` | Symlinks in `dist/` are **materialized into real files** by the upload step, so they are not a platform constraint. clogem-press keeps "the exporter copies, never symlinks" as a **house rule** anyway — a dereferenced symlink silently duplicates its target's bytes against the 1 GB cap, and a broken one fails the tar — and keeps the `.cache/tools/` binary cache outside `dist/` regardless. |
-| `upload-pages-artifact` `include-hidden-files` defaults to `false` (and always excludes `.git`/`.github`) | We emit no dotfiles by design. If that ever changes (e.g. `.well-known/`), the input must be flipped — noted in the workflow comments. |
+| `upload-pages-artifact` `include-hidden-files` defaults to `false` (and always excludes `.git`/`.github`) | No page or asset is a dotfile, by design; the one dotfile a build writes, `.clogem-output` (§5.4), marks the output directory and is meant to stay out of the upload. If a published dotfile is ever needed (e.g. `.well-known/`), the input must be flipped — noted in the workflow comments — and the marker excluded. |
 | `retention-days` defaults to `1` | Fine: the artifact is an intermediate, not a backup. |
 | Pages responses are `cache-control: max-age=600`, not configurable | Fingerprinted asset filenames (unchanged from v1) so HTML and CSS can never be served as a mismatched pair. |
 
@@ -3234,6 +3245,19 @@ their own findings. Item 19 onward are corrections.
       `site.edn` re-pointed is one rebuild; `--poll` moving `:content :dir` is one failed build;
       more rename-save temp names; every emitted URL encodes the base; a bad option is one line;
       Pagefind's hints say what is true. Mutants i17e, i17f and i1c each fail a test now.
+    - *Follow-up P4-D.4* (§5.4, Known limitations amended), D.3's known issues fixed mainly by
+      simplifying, each pinned by a test that failed before it (`dev_round4_test`, plus amended
+      `dev_round2`/`dev_round3`/`dev_wiring` tests): a file of 1 MB or more is 0.2.0's `File` body
+      again (D.3's chunked stream gave HTTP/1.0 an empty body), HEAD gets no body, a file of 2 GiB or
+      more is a clean 500; the pod client's stderr is gated at the byte level (babashka 1.13.219 did
+      not dispatch the proxied Writer); output directories keep D.3's containment rules but not its
+      adoption or its refusal of a pre-seeded `dist/` — the stale sweep runs only where the marker
+      was before the build, the "inside the site" rule applies only to a `site.edn` value, and
+      `bb clean` deletes only a marked directory without a `.git`; `:nav` links get the encoded
+      base with the link as written; every task's `--help` runs nothing; the inotify-limit fallback
+      rebuilds once; a registration no watched path wants is released; dev's threads carry the
+      caller's bindings (`future-call` does not); CI runs babashka 1.13.219 and the latest, with
+      the real-pod inotify-cap test required there. Mutants i13b and i5c each fail a test now.
 13. **Blog identity and htmlModules (E1).** Kebab-case keys; 7 slots plus 2 show-modes (§1.2
     corrected); wrappers get `data-pagefind-ignore` and overflow-safe CSS; per-language values use the
     fallback chain only, and `""` suppresses; `{{base}}` is interpolated; raw HTML from the owner is
@@ -3326,12 +3350,21 @@ their own findings. Item 19 onward are corrections.
   makes a new watcher — an inotify instance — for every `watch` call. dev registers each watched
   root at startup, and later each directory, at any depth, that no registration covers: one made
   after its parent's registration (the top one of a `mkdir -p`; each folder of a slow `cp -r` whose
-  parent was already registered), or one replaced. A registration covers the subdirectories that
+  parent was already registered — a slow copy of 40 folders measured +39), or one replaced. No
+  mechanism bounds that (P4-D.4 item 7): README "Working locally" suggests `--poll`, or one `mv`,
+  for a large tree copied in slowly. A registration covers the subdirectories that
   existed when it was made, so `chmod -R` or edits in existing folders take none. A deleted
   directory's instance is released when its delete arrives; a replaced one's once its new one is
-  registered. Linux allows 128 instances per user by default (`fs.inotify.max_user_instances`);
+  registered; one no watched path asks for any more — a symlinked `site.edn`'s previous target
+  directory, a `:content :dir` moved away — on the follower's next pass (P4-D.4). Linux allows 128 instances per user by default (`fs.inotify.max_user_instances`);
   when a registration fails for that limit (too many open files, or no space left on device) dev
-  prints one line, releases the pod and polls for the rest of the session.
+  prints one line, releases the pod and polls for the rest of the session, with one full rebuild
+  once the poller has its first snapshot, so the change that hit the limit is built (P4-D.4).
+- **Large files in `bb dev` and `bb serve`** (pre-existing, 0.2.0; P4-D.4). A file of 1 MB or more
+  is a `File` body, which http-kit reads into the heap whole, or maps from 20 MB up, for each
+  request. On Windows a mapped file cannot be replaced until the mapping is collected, so a rebuild
+  may fail to replace a large asset that was just served until a GC runs. A file of 2 GiB or more
+  cannot be sent at all and is a 500 saying so; GitHub Pages refuses a published site over 1 GB.
 - **The stale-HTML sweep skips a symlinked output directory** (pre-existing, 0.2.0).
   `sweep-stale-html!` checks the out directory with `:nofollow-links`, so with `dist ->
   /var/www/site` the `.html` of deleted articles is never removed there. The temp sweep resolves
