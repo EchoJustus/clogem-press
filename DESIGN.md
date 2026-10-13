@@ -3245,6 +3245,19 @@ their own findings. Item 19 onward are corrections.
       `site.edn` re-pointed is one rebuild; `--poll` moving `:content :dir` is one failed build;
       more rename-save temp names; every emitted URL encodes the base; a bad option is one line;
       Pagefind's hints say what is true. Mutants i17e, i17f and i1c each fail a test now.
+    - *Follow-up P4-D.4* (§5.4, Known limitations amended), D.3's known issues fixed mainly by
+      simplifying, each pinned by a test that failed before it (`dev_round4_test`, plus amended
+      `dev_round2`/`dev_round3`/`dev_wiring` tests): a file of 1 MB or more is 0.2.0's `File` body
+      again (D.3's chunked stream gave HTTP/1.0 an empty body), HEAD gets no body, a file of 2 GiB or
+      more is a clean 500; the pod client's stderr is gated at the byte level (babashka 1.13.219 did
+      not dispatch the proxied Writer); output directories keep D.3's containment rules but not its
+      adoption or its refusal of a pre-seeded `dist/` — the stale sweep runs only where the marker
+      was before the build, the "inside the site" rule applies only to a `site.edn` value, and
+      `bb clean` deletes only a marked directory without a `.git`; `:nav` links get the encoded
+      base with the link as written; every task's `--help` runs nothing; the inotify-limit fallback
+      rebuilds once; a registration no watched path wants is released; dev's threads carry the
+      caller's bindings (`future-call` does not); CI runs babashka 1.13.219 and the latest, with
+      the real-pod inotify-cap test required there. Mutants i13b and i5c each fail a test now.
 13. **Blog identity and htmlModules (E1).** Kebab-case keys; 7 slots plus 2 show-modes (§1.2
     corrected); wrappers get `data-pagefind-ignore` and overflow-safe CSS; per-language values use the
     fallback chain only, and `""` suppresses; `{{base}}` is interpolated; raw HTML from the owner is

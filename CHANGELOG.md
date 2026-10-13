@@ -207,7 +207,13 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
   indented lines, not run together with `;`. Its hint says what is true
   (P4-D.3): "the previous search index is still in place" only when there
   is one — the first index of a session has none — and `build`'s names
-  the output directory written, not always `dist/`.
+  the output directory written, not always `dist/`. Since P4-D.4: a
+  failed fswatcher fetch says `fswatcher:`, not `dev:` (`bb fetch-tool
+  --tool fswatcher` raises it too); `bb serve`'s unreadable-`site.edn`
+  warning names only what falls back (not "at / from dist/" whatever
+  `--base`, `--dir` or `--out` said), and the directory it prints is
+  normalized; Ctrl-C during the first build no longer prints `dev server
+  at …` after, or on the same line as, `stopped`.
 - **`bb <task> --help` (or `-h`) prints the task's usage and options and
   does nothing else**, for every task (pre-existing, P4-D.4): no task read
   the flag, so `bb clean --help` deleted the output directory, and the
