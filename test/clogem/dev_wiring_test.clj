@@ -377,10 +377,17 @@
           srv  (dev/run-server! (dev/make-handler (str root) {}) {:ip "127.0.0.1" :port 0
                                                                    :legacy-return-value? false})]
       (try
-        (let [port (org.httpkit.server/server-port srv)
-              c    (java.net.Socket. "localhost" (int port))]
-          (is (.isConnected c))
-          (.close c))
+        (let [port (org.httpkit.server/server-port srv)]
+          ;; a whole exchange, not just a connect: a socket closed while the
+          ;; server is stopped races its accept, and http-kit printed a
+          ;; ClosedSelectorException trace about 1 run in 4 (P4-D.4 item 9)
+          (with-open [c (java.net.Socket. "localhost" (int port))]
+            (is (.isConnected c))
+            (.setSoTimeout c 10000)
+            (let [out (.getOutputStream c)]
+              (.write out (.getBytes "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" "UTF-8"))
+              (.flush out))
+            (is (str/starts-with? (String. (.readAllBytes (.getInputStream c)) "UTF-8") "HTTP/1.1 "))))
         (finally (org.httpkit.server/server-stop! srv)
                  (fs/delete-tree root))))))
 

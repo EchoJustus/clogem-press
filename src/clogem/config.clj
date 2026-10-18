@@ -789,10 +789,12 @@
 
 (def out-marker
   "The file every build writes into its output directory (P4-D.3 item 1).
-  `bb clean`, the stale-page sweep and Pagefind's sweeps delete only in a
-  directory that holds it (`out-owned?`): the marker is what says clogem
-  made the directory, so a misconfigured `:build :out` that names a
-  directory of the author's own can never be emptied."
+  `bb clean` deletes only a directory that holds it, and the stale-page
+  sweeps run only in a directory that held it before the build began
+  (`out-owned?`, P4-D.4 item 3): the marker is what says clogem built
+  there before, so a misconfigured `:build :out` that names a directory
+  of the author's own is never emptied, while a `dist/` holding only
+  `CNAME`, `.nojekyll` or a deploy worktree's `.git` builds as in 0.2.0."
   ".clogem-output")
 
 (defn- protected-dirs
@@ -813,10 +815,13 @@
   into it and deletes from it, so it must be a directory of its own: not
   the site directory or an ancestor of it; not, not holding, and not
   inside one of the site's source directories (`protected-dirs`,
-  `overrides/`, `.git`) or any `.git`; and not another site's directory.
-  A value from site.edn (`from-file?`) must also stay inside the site
-  directory, however it gets out — absolute, `..` or a link; `--out` may
-  point anywhere else (CI builds `--out ../dist`)."
+  `overrides/`, the site's `.git`); not inside any `.git`; and not
+  another site's directory. It may hold a `.git` of its own (a deploy
+  worktree), which `bb clean` then refuses to delete. A value written in
+  site.edn (`from-file?`) must also stay inside the site directory,
+  however it gets out — absolute, `..` or a link; the default `dist` and
+  `--out` may resolve anywhere, through a link too (`dist ->
+  /var/www/site`; CI builds `--out ../dist`; P4-D.4 item 3)."
   [cfg site out from-file?]
   (let [cfg-name (str (fs/file-name (or (:clogem/config-file cfg) "site.edn")))
         dirs     (concat (protected-dirs cfg site)
@@ -850,17 +855,30 @@
   [cfg]
   (let [site    (real-path (:clogem/site-dir cfg))
         out-raw (get-in cfg [:build :out])
-        out     (when (u/blank->nil (str out-raw)) (real-path (fs/path site (str out-raw))))
-        why     (if (nil? out)
-                  "is blank"
-                  (out-dir-refusal cfg site out (not (:clogem/out-from-cli? cfg))))]
+        given   (when (u/blank->nil (str out-raw)) (fs/path site (str out-raw)))
+        out     (some-> given real-path)
+        own     (str "A build removes .html files it did not write from its output directory "
+                     "(DESIGN.md §11.2 item 46), and `bb clean` removes it whole, so it must be "
+                     "a directory of its own, such as the default \"dist\".")
+        [why hint]
+        (cond
+          (nil? out) ["is blank" own]
+          ;; a link to nothing: `create-dirs` threw FileAlreadyExistsException
+          ;; (P4-D.4 item 3)
+          (and (fs/sym-link? given) (not (fs/exists? given)))
+          [(str "is a symbolic link to " (fs/read-link given) ", which does not exist")
+           "Create the directory it points to, or remove the link."]
+          (and (fs/exists? out) (not (fs/directory? out)))
+          [(str "is " out ", which is a file, not a directory") own]
+          :else
+          [(out-dir-refusal cfg site out (and (:clogem/out-from-file? cfg)
+                                              (not (:clogem/out-from-cli? cfg))))
+           own])]
     (if why
       (do (diag/error! nil (str ":build :out (" (pr-str out-raw) ")"
                                 (when (:clogem/out-from-cli? cfg) ", given with --out,")
                                 " " why "; refusing to build there.")
-                       (str "A build removes .html files it did not write from its output directory "
-                            "(DESIGN.md §11.2 item 46), and `bb clean` removes it whole, so it must be "
-                            "a directory of its own, such as the default \"dist\"."))
+                       hint)
           (assoc-in cfg [:build :out] (get-in defaults [:build :out])))
       cfg)))
 
@@ -975,8 +993,11 @@
          (assoc :clogem/site-dir    (str site-dir)
                 :clogem/config-file (str cfg-file)
                 :clogem/version     (generator-version)
-                ;; P4-D.3 item 1: site.edn's :build :out must stay in the site
-                :clogem/out-from-cli? (some? (get-in overrides [:build :out])))
+                ;; P4-D.3 item 1: a :build :out written in site.edn must stay
+                ;; in the site; the default "dist" merged in from `defaults`
+                ;; is not one (P4-D.4 item 3: `dist -> /var/www/site`)
+                :clogem/out-from-cli? (some? (get-in overrides [:build :out]))
+                :clogem/out-from-file? (some? (get-in from-file [:build :out])))
          validate!))))
 
 ;; ---------------------------------------------------------------------------
@@ -990,38 +1011,12 @@
 (defn out-dir       [cfg] (fs/path (site-dir cfg) (get-in cfg [:build :out])))
 
 (defn out-owned?
-  "Did clogem make the directory `out`: does it hold `out-marker`? A
-  directory 0.2.0 or an earlier 0.2.x build wrote — no marker, but the
-  theme's `clogem/` and an `index.html` — counts too, so an upgrade keeps
-  building into it; the next build marks it."
+  "Did a build mark the directory `out` as its own: does it hold
+  `out-marker`? Nothing else counts (P4-D.4 item 3: D.3 also adopted any
+  directory with a `clogem/` and an `index.html`, so `bb clean --out` on
+  a git deploy clone deleted its `.git`)."
   [out]
-  (boolean
-   (or (fs/regular-file? (fs/path out out-marker) {:nofollow-links true})
-       (and (fs/directory? (fs/path out "clogem") {:nofollow-links true})
-            (fs/regular-file? (fs/path out "index.html") {:nofollow-links true})))))
-
-(defn foreign-out-dir?
-  "Is `out` a directory clogem must not write into or delete: it exists,
-  is not empty, and is not `out-owned?` (P4-D.3 item 1)?"
-  [out]
-  (boolean
-   ;; `out` itself is followed: `dist -> /var/www/site` is a setup §11.3 supports
-   (and (fs/exists? out)
-        (or (not (fs/directory? out))
-            (and (seq (fs/list-dir out)) (not (out-owned? out)))))))
-
-(defn foreign-out-message
-  "The refusal for a `foreign-out-dir?`, naming what to do."
-  [out what]
-  (str "clogem-press: " out " already exists and was not made by clogem-press (it has no "
-       out-marker "), so " what " it.\n"
-       "  hint: Choose another output directory with `--out` or :build :out, or move that directory away."))
-
-(defn check-out-owned!
-  "Throw (exit 1) when `out` is `foreign-out-dir?`; `what` says what was refused."
-  [out what]
-  (when (foreign-out-dir? out)
-    (throw (ex-info (foreign-out-message out what) {:babashka/exit 1}))))
+  (fs/regular-file? (fs/path out out-marker) {:nofollow-links true}))
 
 (defn mark-out-dir!
   "Create `out` if need be and write `out-marker` into it, once."

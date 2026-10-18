@@ -257,7 +257,9 @@
    :headers {"Content-Type" "text/html; charset=utf-8"}
    :body (str "<!doctype html><meta charset=utf-8><h1>404</h1><p>Not found."
               (when (and (not= "/" base) (nil? (strip-base base path)))
-                (str " This site is served at <a href=\"" (escape-html base) "\">" (escape-html base) "</a>."))
+                ;; the href percent-encoded, as every link (P4-D.4 item 4)
+                (str " This site is served at <a href=\"" (escape-html (u/url-encode-path base)) "\">"
+                     (escape-html base) "</a>."))
               "</p>")})
 
 (def ^:private server-error
@@ -278,101 +280,62 @@
     (some #(resolve-path root (str "/" (fs/file-name %) (subs rel (count "/pagefind"))))
           (search/previous-dirs root))))
 
-(def stream-threshold
-  "Files at least this big are streamed in `chunk-bytes` chunks
-  (`stream-file!`), smaller ones read whole into the heap (P4-D.2 item 6,
-  P4-D.3 item 3). 1 MB covers every Pagefind file, which are what change
-  under a running dev."
+(def whole-read-limit
+  "Files smaller than this are read whole into the heap and sent as bytes
+  (P4-D.2 item 6): what is sent was read at once, so a rebuild swapping the
+  file mid-response cannot mix two versions. 1 MB covers every Pagefind
+  file, which are what change under a running dev. A larger file is a
+  plain `File` body, as 0.2.0 served every file (P4-D.4 item 1)."
   (* 1024 1024))
 
-(def chunk-bytes
-  "The size of each chunk `stream-file!` sends, and so the memory one
-  download of a large file holds."
-  (* 64 1024))
-
-(defn- open-read
-  "A read-only `FileChannel` on `f`, opened once: a file gone by now
-  throws an `IOException` here, before any response exists."
-  ^java.nio.channels.FileChannel [f]
-  (java.nio.channels.FileChannel/open
-   (fs/path f) (into-array java.nio.file.StandardOpenOption [java.nio.file.StandardOpenOption/READ])))
-
 (defn- read-all
-  "Every byte of the open channel `ch` of `n` bytes, as a `byte[]`."
-  [^java.nio.channels.FileChannel ch n]
-  (let [buf (java.nio.ByteBuffer/allocate (int n))]
-    (while (and (.hasRemaining buf) (pos? (.read ch buf))))
-    (java.util.Arrays/copyOf (.array buf) (.position buf))))
+  "Every byte of `f`, read through one open channel: a file gone by now
+  throws an `IOException`, before any response exists."
+  [f]
+  (with-open [ch (java.nio.channels.FileChannel/open
+                  (fs/path f) (into-array java.nio.file.StandardOpenOption [java.nio.file.StandardOpenOption/READ]))]
+    (let [buf (java.nio.ByteBuffer/allocate (int (.size ch)))]
+      (while (and (.hasRemaining buf) (pos? (.read ch buf))))
+      (java.util.Arrays/copyOf (.array buf) (.position buf)))))
 
-(defn stream-file!
-  "Send the open channel `fc` to the http-kit channel `ch` in chunks of
-  `chunk-bytes`, then close both; runs on its own daemon thread. Never
-  more than one chunk is in memory, however slow the client: each chunk
-  is a `ByteBuffer` http-kit writes from as it is, so the next is read
-  only once its position shows the last was written out (P4-D.3 item 3).
-  `closed?` — the client went — ends it, as does a read that fails (a
-  truncated download, never a 500). No mapping: the file is closed when
-  the download ends, so on Windows a rebuild can replace it at once, and
-  a file of 2 GiB or more is served like any other."
-  [ch ^java.nio.channels.FileChannel fc closed?]
-  (doto (Thread.
-         ^Runnable
-         (fn []
-           (try
-             (let [buf (java.nio.ByteBuffer/allocate (int chunk-bytes))]
-               (loop []
-                 (.clear buf)
-                 (let [r (.read fc buf)]
-                   (if (neg? r)
-                     (http/close ch)
-                     (do (.flip buf)
-                         (when (http/send! ch buf false)
-                           ;; wait for http-kit to have written it all
-                           (loop [ms 1]
-                             (when (and (.hasRemaining buf) (not @closed?))
-                               (Thread/sleep (long ms))
-                               (recur (min 50 (* 2 ms)))))
-                           (when-not @closed? (recur))))))))
-             (catch Throwable _ (try (http/close ch) (catch Throwable _ nil)))
-             (finally (try (.close fc) (catch Throwable _ nil)))))
-         "clogem-file-stream")
-    (.setDaemon true)
-    (.start)))
+(def max-file-bytes
+  "The largest file http-kit can send: it reads a `File` body whole, or
+  maps it, as one buffer, so a file of 2 GiB or more fails inside it with
+  a stack trace and a 500 (0.2.0 too). Such a file is refused cleanly
+  (`too-large`); GitHub Pages refuses a published site over 1 GB anyway."
+  Integer/MAX_VALUE)
 
-(defn- streamed
-  "The response for a large file, already open as `fc`: through http-kit's
-  async channel when `req` came from http-kit, streamed by
-  `stream-file!`; else (a direct call, as the tests make) the channel as
-  an `InputStream` body."
-  [req fc headers]
-  (if (:async-channel req)
-    (let [closed? (atom false)]
-      (http/as-channel req
-                       {:on-open  (fn [ch]
-                                    (http/send! ch {:status 200 :headers headers} false)
-                                    (stream-file! ch fc closed?))
-                        :on-close (fn [_ _] (reset! closed? true))}))
-    {:status 200 :headers headers
-     :body (java.nio.channels.Channels/newInputStream fc)}))
+(def ^:private too-large
+  {:status 500
+   :headers {"Content-Type" "text/plain; charset=utf-8"}
+   :body (str "500 Internal Server Error: this file is 2 GiB or more, which the "
+              "clogem-press preview server cannot send.\n")})
 
 (defn- file-response
-  "Serve `f`, opened here, once: a file renamed or deleted since it was
-  resolved is nil (the caller tries elsewhere), never a 500 naming its
-  path. Under `stream-threshold` the bytes are read whole; a larger file
-  is streamed (`streamed`)."
+  "Serve `f`: a file renamed or deleted since it was resolved is nil (the
+  caller tries elsewhere), never a 500 naming its path. Under
+  `whole-read-limit` the bytes are read whole; a larger file is a `File`
+  body, as 0.2.0 served it, which http-kit sends with its `Content-Length`
+  to HTTP/1.0 and HTTP/1.1 alike (P4-D.4 item 1); one of `max-file-bytes`
+  or more is `too-large`. A HEAD request gets the headers and no body:
+  the http-kit in babashka 1.13.219 sent a body to HEAD, which corrupts a
+  keep-alive connection. http-kit then says `Content-Length: 0`."
   [req f inject-reload?]
   (try
     (let [html?   (= "html" (u-ext f))
+          n       (fs/size f)
           headers (cond-> {"Content-Type" (content-type f)}
                     inject-reload? (assoc "Cache-Control" "no-cache"))]
-      (if (and html? inject-reload?)
+      (cond
+        (> n max-file-bytes)            too-large
+        (= :head (:request-method req)) {:status 200 :headers headers :body nil}
+        :else
         {:status 200 :headers headers
-         :body (str/replace (slurp (fs/file f)) "</body>" (str reload-script "</body>"))}
-        (let [fc (open-read f)
-              n  (try (.size fc) (catch Throwable t (.close fc) (throw t)))]
-          (if (< n stream-threshold)
-            (with-open [fc fc] {:status 200 :headers headers :body (read-all fc n)})
-            (streamed req fc headers)))))
+         :body (cond
+                 (and html? inject-reload?)
+                 (str/replace (slurp (fs/file f)) "</body>" (str reload-script "</body>"))
+                 (< n whole-read-limit) (read-all f)
+                 :else                  (fs/file f))}))
     (catch java.io.IOException _ nil)))
 
 (defn- value [x] (if (fn? x) (x) x))
@@ -576,16 +539,26 @@
   file, or it cannot be read — one warning, and `serve` falls back, as
   0.2.0 served regardless. Diagnostics are not printed: `serve` builds
   nothing, and a refused `:build :out` is already repaired to the default."
-  [{:keys [site-dir config-file]}]
-  (let [f (fs/path (or site-dir ".") (or config-file "site.edn"))]
+  [{:keys [site-dir config-file base dir out]}]
+  (let [f (fs/normalize (fs/absolutize (fs/path (or site-dir ".") (or config-file "site.edn"))))]
     (when (fs/regular-file? f)
       (try
         (first (diag/collecting (config/load-config (str (or site-dir ".")) config-file nil)))
         (catch Exception e
-          (binding [*out* *err*]
-            (println (str "warning: " f ": could not read it (" (first (str/split-lines (str (ex-message e))))
-                          "), so the site is served at / from dist/."))
-            (println "  hint: Fix it, or give the base with `--base` and the directory with `--dir`."))
+          ;; what the fallback is, only for what the options left to the
+          ;; config (P4-D.4 item 10: it said "at / from dist/" regardless)
+          (let [falls (cond-> []
+                        (not base)           (conj "at /")
+                        (not (or dir out))   (conj "from dist/"))]
+            (binding [*out* *err*]
+              (println (str "warning: " f ": could not read it (" (first (str/split-lines (str (ex-message e))))
+                            "), so the site is served " (str/join " " falls) "."))
+              (println (str "  hint: Fix it"
+                            (when (seq falls)
+                              (str ", or give " (str/join " and " (cond-> []
+                                                                     (not base) (conj "the base with `--base`")
+                                                                     (not (or dir out)) (conj "the directory with `--dir`")))))
+                            "."))))
           nil)))))
 
 (defn serve-settings
@@ -598,10 +571,12 @@
   (let [cfg (delay (serve-cfg opts))
         sd  (or site-dir ".")]
     {:base (if base (clean-base base) (if-let [c @cfg] (config/base-path c) "/"))
-     :dir  (fs/absolutize
-            (cond dir  dir
-                  out  (fs/path sd out)
-                  :else (if-let [c @cfg] (config/out-dir c) (fs/path sd "dist"))))}))
+     ;; normalized: `serve` printed `…/site/./other` (P4-D.4 item 10)
+     :dir  (fs/normalize
+            (fs/absolutize
+             (cond dir  dir
+                   out  (fs/path sd out)
+                   :else (if-let [c @cfg] (config/out-dir c) (fs/path sd "dist")))))}))
 
 (defn serve-base
   "`serve`'s base (`serve-settings`)."
@@ -688,15 +663,23 @@
     (when-let [ps (seq (remove editor-temp? paths))]
       (.put q (vec ps)))))
 
+(defn spawn-bound
+  "Run `f` on a thread of its own, with the dynamic bindings of the caller
+  — `*out*` included. babashka's `future-call` conveys none (P4-D.4 item
+  9: a test that bound `*out*` missed dev's log lines, written from the
+  drain loop's thread to the process's stdout)."
+  [f]
+  (future-call (bound-fn* f)))
+
 (defn background-runner
   "A function that asks for `f` to run on its own thread: one run at a time,
   and any number of requests during a run coalesce into one more run after
-  it. `spawn` starts a thread (default `future-call`). A `Throwable` from `f`
+  it. `spawn` starts a thread (default `spawn-bound`). A `Throwable` from `f`
   is reported and does not stop later runs. Once `cancelled?` says so, no
   run starts — a request queued behind the running one included (P4-D.2
   item 2). The function's metadata carries `:await`, `(await ms)`: wait up
   to `ms` for the running run to end; true when none is running."
-  ([f] (background-runner f future-call))
+  ([f] (background-runner f spawn-bound))
   ([f spawn] (background-runner f spawn (constantly false)))
   ([f spawn cancelled?]
    (let [st (atom {:running? false :again? false})]
@@ -840,11 +823,15 @@
   `paths-fn` is called on every pass, so a `site.edn` change that moves
   `:content :dir` is followed without a restart. A `Throwable` in one pass
   is reported and the loop goes on: an `Error` used to end the polling
-  thread silently, and with it every rebuild."
-  [paths-fn interval on-change & [{:keys [stop?] :or {stop? (constantly false)}}]]
-  (let [roots #(set (map norm %))]
-    (loop [prev-roots (roots (paths-fn))
-           prev       (snapshot prev-roots)]
+  thread silently, and with it every rebuild. `on-baseline` is called
+  once the first snapshot is taken: a change before it is never seen."
+  [paths-fn interval on-change & [{:keys [stop? on-baseline] :or {stop? (constantly false)}}]]
+  (let [roots #(set (map norm %))
+        r0    (roots (paths-fn))
+        s0    (snapshot r0)]
+    (when on-baseline (on-baseline))
+    (loop [prev-roots r0
+           prev       s0]
       (Thread/sleep (long interval))
       (when-not (stop?)
         (let [rs  (try (roots (paths-fn)) (catch Throwable _ prev-roots))
@@ -1162,6 +1149,22 @@
              (swap! registered dissoc p)
              p))))
 
+(defn release-unwanted!
+  "Unwatch, and forget, every registration in `registered` that `specs` no
+  longer ask for: not a spec's own path, and not inside a recursive one's
+  — a symlinked `site.edn`'s previous target directory, or a `:content
+  :dir` moved away (P4-D.4 item 7: each kept its inotify instance for the
+  rest of the session). Returns the paths released."
+  [registered specs unwatch!]
+  (let [wanted? (fn [p] (some (fn [{:keys [path recursive?]}]
+                                (or (= p path) (and recursive? (in-dir? path p))))
+                              specs))]
+    (vec (for [[p {:keys [watcher]}] @registered
+               :when (not (wanted? p))]
+           (do (when watcher (try (unwatch! watcher) (catch Throwable _ nil)))
+               (swap! registered dissoc p)
+               p)))))
+
 (def ^:private fresh-types
   "The pod's event types after which a directory is not the one any walk
   saw: made, removed (an `rm -rf` and `mkdir` within the pod's window is
@@ -1213,6 +1216,7 @@
   [specs registered register! & [unwatch!]]
   (let [unwatch! (or unwatch! (fn [_]))]
     (release-gone! registered unwatch!)
+    (release-unwanted! registered specs unwatch!)
     (let [todo (vals (into {} (map (juxt :path identity))
                            (concat (keep :spec (vals @registered)) specs)))]
       (vec (keep (fn [{:keys [path] :as spec}]
@@ -1267,7 +1271,12 @@
 (defn- gated-writer
   "A Writer onto `w` that drops what is written while `(quiet?)` says so.
   `quiet?` may take its time (`stop-caused?`), so it is asked once per
-  burst — a `println` is several writes — and the answer kept 2 s."
+  burst — a `println` is several writes — and the answer kept 2 s.
+
+  Gated at the byte level, under an `OutputStreamWriter`: a `proxy` of
+  `java.io.Writer` needs its one-argument `write` dispatched, which only
+  babashka 1.13.220 and later do (babashka #2054) — on 1.13.219 every
+  write threw (P4-D.4 item 2)."
   [^java.io.Writer w quiet?]
   (let [decided (atom nil)
         quiet!  (fn []
@@ -1278,12 +1287,16 @@
                       (let [q (boolean (quiet?))]
                         (reset! decided {:until (+ (System/currentTimeMillis) 2000) :q q})
                         q))))]
-    (proxy [java.io.Writer] []
-      (write
-        ([x] (when-not (quiet!) (if (string? x) (.write w ^String x) (.write w (int x)))))
-        ([x off len] (when-not (quiet!) (if (string? x) (.write w ^String x (int off) (int len)) (.write w ^chars x (int off) (int len))))))
-      (flush [] (.flush w))
-      (close [] nil))))
+    (java.io.OutputStreamWriter.
+     (proxy [java.io.OutputStream] []
+       (write
+         ([b] (when-not (quiet!)
+                (if (bytes? b)
+                  (.write w (String. ^bytes b "UTF-8"))
+                  (.write w (int b)))))
+         ([b off len] (when-not (quiet!) (.write w (String. ^bytes b (int off) (int len) "UTF-8")))))
+       (flush [] (.flush w)))
+     "UTF-8")))
 
 (defn load-pod!
   "Fetch the fswatcher pod through `clogem.tools` — the pinned, per-platform
@@ -1529,7 +1542,7 @@
                                                    "; the previous search index is still in place."
                                                    "; there is no search index yet."))
                                         (tool-output (or (ex-message t) (str t)))))))))))
-                 (or spawn future-call)
+                 (or spawn spawn-bound)
                  stopping?)]
     (with-meta (fn [cfg] (reset! pending cfg) (request!))
       (meta request!))))
@@ -1614,7 +1627,7 @@
   Everything that reaches outside is injectable through `env` — `:build`,
   `:load-cfg!`, `:run-server!`, `:try-pod-watch!`, `:poll-watch!`, `:index!`,
   `:notify!`, `:notify-error!`, `:spawn` (run a function on its own thread;
-  default `future-call`) and `:follow-ms` — so the wiring is tested without
+  default `spawn-bound`) and `:follow-ms` — so the wiring is tested without
   a port, a pod or a clock (dev_loop_test)."
   [{:keys [poll interval probe-ms reload-code]
     :or {interval 500 probe-ms default-probe-ms} :as opts}
@@ -1623,7 +1636,7 @@
         serve*    (or (:run-server! env) run-server!)
         pod*      (or (:try-pod-watch! env) try-pod-watch!)
         poll*     (or (:poll-watch! env) poll-watch!)
-        spawn     (or (:spawn env) future-call)
+        spawn     (or (:spawn env) spawn-bound)
         follow-ms (or (:follow-ms env) 1000)
         stopping  (atom false)
         reloaded  (atom 0)
@@ -1725,8 +1738,14 @@
                       nil))]
     (when-let [f (:on-stop! env)] (f stop!))
     (rebuild! [])
-    (println (format "clogem-press: dev server at %s" (url (base-fn))))
-    (some-> (listening-note sopts) println)
+    ;; under the build lock, and only while not stopping: Ctrl-C during
+    ;; the first build printed it after `stop!`, once on the same line as
+    ;; `stopped` (P4-D.4 item 10)
+    (.lock build-lock)
+    (try (when-not @stopping
+           (println (format "clogem-press: dev server at %s" (url (base-fn))))
+           (some-> (listening-note sopts) println))
+         (finally (.unlock build-lock)))
     (spawn #(drain-loop! {:take! (queue-take queue) :on-batch rebuild!}))
     (let [existing (filterv #(fs/exists? (:path %)) @specs)
           ;; walked before the pod registers them: what each covers
@@ -1737,14 +1756,19 @@
                              (println (format "clogem-press: watching by polling every %d ms" interval))
                              (spawn #(poll* paths interval submit! {:stop? (fn [] @stopping)}))))
           ;; the system's inotify limit, reached mid-session: polling from
-          ;; here on, with the pod's watches all released (P4-D.3 item 5)
+          ;; here on, with the pod's watches all released (P4-D.3 item 5).
+          ;; The change that hit the limit, and the rest of its batch, are
+          ;; in the poller's first snapshot, so it never sees them: one
+          ;; full rebuild once that snapshot is taken (P4-D.4 item 6)
           fall-back-to-polling! (fn [why]
                                   (when-not @stopping
                                     (println (str "clogem-press: the system's inotify limit is reached (" why
                                                   "); dev polls every " interval " ms for the rest of this session."))
                                     (reset! registered {})
                                     (unload-pod! @pod-id)
-                                    (spawn #(poll* paths interval submit! {:stop? (fn [] @stopping)}))))
+                                    (spawn #(poll* paths interval submit!
+                                                   {:stop?       (fn [] @stopping)
+                                                    :on-baseline (fn [] (submit! (mapv str (paths))))}))))
           ;; pod events: a directory the pod must be told about goes to
           ;; the follower (pod calls never run on the pod's callback
           ;; thread), which registers it and submits it with its files

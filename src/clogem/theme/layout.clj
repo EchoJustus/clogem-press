@@ -321,9 +321,14 @@
     a site page (`/…/`)     → the same page under the language's prefix
                               (`/` → `/zh-Hans/`, `/categories/` →
                               `/zh-Hans/categories/`)
-    a file (`/x.pdf`)       → the base only"
+    a file (`/x.pdf`)       → the base only
+
+  Where only the base is added, the base is percent-encoded and the link
+  appended as written (P4-D.4 item 4): encoding the two together turned a
+  link's `#fragment`, `?query` or `%20` into part of its path."
   [{:keys [cfg lang model] :as ctx} link]
-  (let [link (str link)]
+  (let [link      (str link)
+        with-base #(str (href ctx (config/base-path cfg)) (str/replace % #"^/+" ""))]
     (cond
       (str/blank? link) (href ctx (model/home-url cfg lang))
       (re-find #"^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|//|#)" link) link
@@ -331,9 +336,9 @@
       (:href (article-link ctx (get-in model [:articles (u/clean-url link)])))
       ;; a permalink that names nothing: the base only, never a language
       ;; prefix that would invent a URL — doctor reports it
-      (re-find #"^/pages/" link) (href ctx (str/replace (str (config/base-path cfg) "/" link) #"/{2,}" "/"))
+      (re-find #"^/pages/" link) (with-base link)
       (str/ends-with? link "/") (href ctx (model/site-url cfg lang link))
-      :else (href ctx (str/replace (str (config/base-path cfg) "/" link) #"/{2,}" "/")))))
+      :else (with-base link))))
 
 (defn- nav-item
   [ctx {:keys [text link items]}]
