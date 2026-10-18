@@ -15,6 +15,13 @@ value but drew card and line the same.
 
 ### Added (B2a)
 
+- **The card and line page styles** (vdoing's `pageStyle`). `:theme
+  :page-style :card`, the default, draws the main column of every page
+  kind, the sidebar, and the home page's right-bar sections and post cards
+  as `--mainBg` cards with a 5px radius and vdoing's shadows, on a page of
+  a contrasting colour. `:line` draws the same boxes flat — a 1px border,
+  no shadow — on a page of the card's colour, in every mode. Print draws no
+  shadow. Both values were accepted since 0.2.0 and drew the same thing.
 - **The mode button is named for the current mode** — "Colour mode: Dark",
   "主题模式：深色模式" — in the page's language (the new `:mode/current`
   string), and renamed on every change, another tab's included. It was
@@ -28,6 +35,25 @@ value but drew card and line the same.
 
 ### Changed (B2a)
 
+- **Dark mode's page is lighter than its card**, as vdoing's is: dark's
+  `--bodyBg` (and the auto media block's) is `#22252b`; the card,
+  `--mainBg`, stays `#16181d`. They were equal, so a card could not show.
+  Text, link-hover, muted and accent are 10.74, 7.66, 6.01 and 5.58:1 on
+  it. The rest of the palette is unchanged. Under `:line` the page is
+  `#16181d` again.
+- **One keyboard focus ring.** Everything focusable — links, `<summary>`,
+  buttons, heading anchors, Pagefind's trigger — draws `2px solid` in the
+  accent at a 2px offset (`--focusRing`); links, summaries and heading
+  anchors used to get the browser's thin default. Inside a code block the
+  ring is the code colour (`--codeFocusRing`): the accent on read mode's
+  dark code block was 2.41:1, under WCAG 1.4.11's 3:1. A focused heading
+  anchor is shown; it stayed invisible.
+- **The main column has a background and padding in both styles**, and the
+  sidebar's radius is 5px (was 8px). Site CSS that styled `.clogem-main`
+  may need adjusting.
+- **`:mode/label` is no longer rendered**; the mode button's name is
+  `:mode/current` (Added, above). A site that overrode `:mode/label` should
+  override `:mode/current` instead.
 - **Pagefind follows the mode in full.** The error box, its text, the
   shadows, the scroll shadow and the modal backdrop were Pagefind's light
   values in every mode (its dark ones sit under `[data-pf-theme="dark"]`,
@@ -39,6 +65,10 @@ value but drew card and line the same.
 
 ### Documentation (B2a)
 
+- README: page styles and focus rings; a CSP without the head script's hash
+  still gets the reader's mode. config.example.edn describes `:card` and
+  `:line`. DESIGN.md §8 records B2's split and marks B2a done; §11.3 items
+  2–5 and 9 carry B2a notes. test/browser/README.md's `modes` row.
 - **`[data-mode]` versus the mode class.** With JavaScript,
   `theme-mode-auto` is replaced by the resolved `theme-mode-light` or
   `theme-mode-dark`, so `.theme-mode-dark` covers both *Dark* and *Follow
@@ -57,6 +87,12 @@ value but drew card and line the same.
   translucent colour over what lies under it; `--blurBg`, the navbar, is a
   surface now. `highlight_test` shares it, and `modes.test.mjs` asks the
   browser for the merged values.
+- **`theme.css` has a budget**: at most 12,288 B gzipped, checked by `bb
+  test`. It is 29,966 B, 8,254 B gzipped (25,351 B and 6,980 B before
+  B2a). The print tests now cover everything the print rule hides.
+- `page_style_test` (new) and `modes.test.mjs` cover the page styles, focus
+  rings, Pagefind's variables and the toggle's name; each new check fails
+  on the code before B2a.
 
 ### Needs native review (B2a)
 

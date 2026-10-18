@@ -205,6 +205,15 @@ every surface, which `bb test` checks against `theme.css` — and links inside
 prose are underlined. Pagefind's search dialog and giscus follow the mode;
 printing uses the light palette and drops the chrome.
 
+**Page styles.** `:theme :page-style` is vdoing's `pageStyle`. `:card` (the
+default) draws the main column of every page, the sidebar, and the home page's
+right-bar sections and post cards as cards — the card colour, a small radius
+and a shadow — on a page of a contrasting colour: darker in light and reading
+mode, lighter in dark. `:line` draws the same boxes flat, with a 1px border
+and no shadow, on a page of the card's own colour. Print draws no shadow.
+Everything focusable draws one keyboard focus ring: 2px, in the accent (in the
+code colour inside a code block), at 3:1 or better on what is behind it.
+
 The mode and page-style classes are on `<html>`, unqualified:
 `.theme-mode-dark`, `.theme-style-card`. (0.2.0 put them on `<body>`; CSS
 written as `body.theme-mode-dark` must drop `body`.)
@@ -272,7 +281,7 @@ reader's mode: `js/mode.js` (same-origin) applies it, one frame late.
 ## Development
 
 ```bash
-bb test                                             # 249 tests / 975 assertions
+bb test                                             # 664 tests / ~20,700 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 
