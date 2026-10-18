@@ -830,6 +830,66 @@
                   :title (str (i18n/resolve-str {:cfg cfg :lang lang} (get-in cfg [:site :title])))
                   :href (u/url-encode-path (seo/feed-uri cfg lang))}]])))))
 
+;; ---------------------------------------------------------------------------
+;; Verification and analytics (§11.3 items 14, 15)
+
+(defn verification-head
+  "One `<meta name=\"google-site-verification\">` per `:seo :verification
+  :google` token and one `<meta name=\"msvalidate.01\">` per `:bing`
+  token (`config/check-verification!` made each a vector)."
+  [cfg]
+  (let [v (get-in cfg [:seo :verification])]
+    (concat
+     (for [t (:google v)] [:meta {:name "google-site-verification" :content t}])
+     (for [t (:bing v)]   [:meta {:name "msvalidate.01" :content t}]))))
+
+(defn- camel
+  "`:hash-based-routing` → \"hashBasedRouting\": plausible.init's spelling."
+  [k]
+  (if (keyword? k)
+    (let [[w & ws] (str/split (name k) #"-")]
+      (apply str w (map str/capitalize ws)))
+    (str k)))
+
+(defn plausible-init
+  "`:analytics :init` as plausible.init takes it: every option name
+  camelCased, `:file-downloads`' own included; the keys inside
+  `:custom-properties` are the site's data, left as written."
+  [init]
+  (into (sorted-map)
+        (for [[k v] init]
+          [(camel k)
+           (cond
+             (= :custom-properties k) v
+             (map? v) (into (sorted-map) (for [[k2 v2] v] [(camel k2) v2]))
+             :else v)])))
+
+(defn analytics-attrs
+  "The data-* attributes of the analytics loader's tag (all strings), or
+  nil when the page loads no analytics (`config/analytics`)."
+  [cfg]
+  (when-let [{:keys [provider id domain src website-id init consent-default respect-dnt]}
+             (config/analytics cfg)]
+    (merge {:data-provider (name provider)
+            :data-host (config/site-host cfg)
+            :data-respect-dnt (str (boolean respect-dnt))
+            :data-src src}
+           (case provider
+             :ga4       (cond-> {:data-id id}
+                          (= :denied consent-default) (assoc :data-consent-default "denied"))
+             :plausible (if domain
+                          {:data-domain domain}
+                          {:data-init (json/generate-string (plausible-init (or init {})))})
+             :umami     {:data-website-id website-id}))))
+
+(defn analytics-head
+  "§11.3 item 14: the loader, js/analytics.js, deferred, configured by its
+  own attributes — on every page built through `document`, when the site
+  loads a provider and this is not `bb dev`."
+  [{:keys [cfg] :as ctx}]
+  (when-let [attrs (analytics-attrs cfg)]
+    [:script (merge {:src (asset-href ctx "js/analytics.js") :defer true} attrs)]))
+
 (defn document
   "Wrap body hiccup in a complete HTML document.
 
@@ -859,6 +919,9 @@
                      (when (not= st title) (str " · " st))))]
       (when-let [d (u/blank->nil (i18n/resolve-str ctx (get-in cfg [:site :description])))]
         [:meta {:name "description" :content d}])
+      ;; §11.3 item 15: the search consoles' ownership tokens, on every
+      ;; page (a redirect stub, noindex, never comes through here)
+      (verification-head cfg)
       (seo-head ctx)
       ;; D-P3-13/14: the preference, the banner data and :redirect — before
       ;; the stylesheets, which the inline redirect would otherwise wait for
@@ -895,7 +958,10 @@
       ;; and only on a page that renders a TOC for it to spy on
       (when (seq (:toc ctx))
         [:script {:src (asset-href ctx "js/toc.js") :defer true}])
-      (code-head ctx)]
+      (code-head ctx)
+      ;; §11.3 item 14: LAST — the provider's script is the page's least
+      ;; important resource
+      (analytics-head ctx)]
      (into [:body {:class (str "lang-" (name lang)
                                (when-let [k (:page-kind ctx)] (str " page-" (name k))))}
             (search-config ctx)]
