@@ -10,34 +10,41 @@
 //   - print hides the chrome;
 //   - the site's overrides/custom.css is applied.
 //
-// Expected colours are read from the theme.css being served, so the test
-// follows the palette rather than restating it.
-
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
+// Expected colours are what the stylesheets being served compute (palette()
+// below), so the test follows the palette rather than restating it.
 
 const article = 'pages/643259/index.html';   // en, sidebar, TOC, comments
 
-function hexToRgb(hex) {
-  let h = hex.trim().replace('#', '');
-  if (h.length === 3) h = [...h].map((c) => c + c).join('');
-  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
-  return `rgb(${r}, ${g}, ${b})`;
-}
-
-// {mode → {var → value}} from theme.css's mode blocks
-function palette(css) {
-  const block = (sel, from = 0) => {
-    const i = css.indexOf(`\n${sel} {`, from);
-    if (i < 0) throw new Error(`no rule ${sel}`);
-    const body = css.slice(css.indexOf('{', i) + 1, css.indexOf('}', i));
-    return Object.fromEntries([...body.matchAll(/(--[A-Za-z0-9-]+)\s*:\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
-  };
-  return {
-    light: block(':root, .theme-mode-light'),
-    read: block('.theme-mode-read'),
-    dark: block('.theme-mode-dark'),
-  };
+// {mode → {var → computed colour}}: what the served stylesheets compute on
+// <html> in each mode (P4-B2a item 1). B1 parsed the first rule whose
+// selector was exactly `.theme-mode-dark` and so on, missing later and
+// compound rules; the browser is a cascade engine, so it is asked instead:
+// on a no-JS page (nothing rewrites the classes) <html> is given each
+// mode's class and a probe element paints each variable as a background,
+// which the browser resolves to rgb()/rgba(). Auto is read under a dark OS.
+const paletteVars = ['--bodyBg', '--mainBg', '--sidebarBg', '--blurBg', '--accent', '--codeBg', '--codeColor',
+                     '--pf-error-bg', '--pf-modal-backdrop'];
+async function palette(t, url, style = 'card') {
+  const out = {};
+  for (const [mode, os] of [['light', 'light'], ['read', 'light'], ['dark', 'light'], ['auto', 'dark']]) {
+    const page = await t.newPage({ colorScheme: os, javaScriptEnabled: false });
+    await page.goto(url, { waitUntil: 'load' });
+    out[mode] = await page.evaluate(({ mode, style, vars }) => {
+      document.documentElement.className = `theme-mode-${mode} theme-style-${style}`;
+      const probe = document.createElement('div');
+      document.body.appendChild(probe);
+      const v = {};
+      for (const name of vars) {
+        probe.style.background = `var(${name})`;
+        v[name] = getComputedStyle(probe).backgroundColor;
+      }
+      v['--pf-shadow-lg'] = getComputedStyle(document.documentElement).getPropertyValue('--pf-shadow-lg').trim();
+      probe.remove();
+      return v;
+    }, { mode, style, vars: paletteVars });
+    await page.close();
+  }
+  return out;
 }
 
 async function firstFrame(t, url, { os, stored, storageThrows = false, js = true }) {
@@ -66,11 +73,10 @@ async function firstFrame(t, url, { os, stored, storageThrows = false, js = true
 }
 
 export default async function modes(t) {
-  const css = await readFile(path.join(t.dist, 'clogem', 'css', 'theme.css'), 'utf8');
-  const pal = palette(css);
-  const bodyBg = Object.fromEntries(Object.entries(pal).map(([m, v]) => [m, hexToRgb(v['--bodyBg'])]));
-  const mainBg = Object.fromEntries(Object.entries(pal).map(([m, v]) => [m, hexToRgb(v['--mainBg'])]));
   const url = t.url(article);
+  const pal = await palette(t, url);
+  const bodyBg = Object.fromEntries(Object.entries(pal).map(([m, v]) => [m, v['--bodyBg']]));
+  const mainBg = Object.fromEntries(Object.entries(pal).map(([m, v]) => [m, v['--mainBg']]));
 
   // --- the first frame ----------------------------------------------------
   const matrix = [
