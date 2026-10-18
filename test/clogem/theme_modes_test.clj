@@ -235,7 +235,11 @@ console.log(JSON.stringify([
     (is (= "var(--mainBg)" (b "--pf-background")))
     (is (= "var(--textColor)" (b "--pf-text")))
     (is (= "var(--borderColor)" (b "--pf-border")))
-    (is (every? #(str/starts-with? % "var(--") (vals b)) "every one follows the mode")))
+    ;; P4-B2a item 2: the shadows and the backdrop are Pagefind's own
+    ;; values, per mode (page_style_test); every colour follows the palette
+    (is (every? #(str/starts-with? % "var(--")
+                (vals (remove #(re-find #"^--pf-(shadow-|scroll-shadow|modal-backdrop)" (key %)) b)))
+        "every colour follows the mode")))
 
 ;; ---------------------------------------------------------------------------
 ;; 2. The toggle and its strings (D-P4-3)

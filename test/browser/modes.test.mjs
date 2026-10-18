@@ -15,33 +15,43 @@
 
 const article = 'pages/643259/index.html';   // en, sidebar, TOC, comments
 
-// {mode → {var → computed colour}}: what the served stylesheets compute on
-// <html> in each mode (P4-B2a item 1). B1 parsed the first rule whose
-// selector was exactly `.theme-mode-dark` and so on, missing later and
-// compound rules; the browser is a cascade engine, so it is asked instead:
-// on a no-JS page (nothing rewrites the classes) <html> is given each
-// mode's class and a probe element paints each variable as a background,
-// which the browser resolves to rgb()/rgba(). Auto is read under a dark OS.
-const paletteVars = ['--bodyBg', '--mainBg', '--sidebarBg', '--blurBg', '--accent', '--codeBg', '--codeColor',
-                     '--pf-error-bg', '--pf-modal-backdrop'];
+// {mode → {var → computed value}}: what theme.css computes on <html> in
+// each mode (P4-B2a item 1). B1 parsed the first rule whose selector was
+// exactly `.theme-mode-dark` and so on, missing later and compound rules;
+// the browser is a cascade engine, so it is asked instead: on a no-JS page
+// (nothing rewrites the classes), with Pagefind's stylesheet removed (so
+// these are the theme's own values; item 2 checks that they beat it),
+// <html> is given each mode's class. Auto is read under a dark OS.
+const colourVars = ['--bodyBg', '--mainBg', '--sidebarBg', '--blurBg', '--accent', '--codeBg', '--codeColor',
+                    '--pf-error-bg', '--pf-modal-backdrop'];
+const plainVars = ['--pf-shadow-lg'];
+
+// runs in the page: a probe element paints each colour variable as its
+// background, which the browser resolves to rgb()/rgba(); the rest are read
+// as <html>'s computed custom property
+function readVars({ colours, plain }) {
+  const probe = document.createElement('div');
+  document.body.appendChild(probe);
+  const v = {};
+  for (const name of colours) {
+    probe.style.background = `var(${name})`;
+    v[name] = getComputedStyle(probe).backgroundColor;
+  }
+  for (const name of plain) v[name] = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  probe.remove();
+  return v;
+}
+
 async function palette(t, url, style = 'card') {
   const out = {};
   for (const [mode, os] of [['light', 'light'], ['read', 'light'], ['dark', 'light'], ['auto', 'dark']]) {
     const page = await t.newPage({ colorScheme: os, javaScriptEnabled: false });
     await page.goto(url, { waitUntil: 'load' });
-    out[mode] = await page.evaluate(({ mode, style, vars }) => {
+    await page.evaluate(({ mode, style }) => {
+      document.querySelectorAll('link[rel=stylesheet][href*="pagefind"]').forEach((l) => l.remove());
       document.documentElement.className = `theme-mode-${mode} theme-style-${style}`;
-      const probe = document.createElement('div');
-      document.body.appendChild(probe);
-      const v = {};
-      for (const name of vars) {
-        probe.style.background = `var(${name})`;
-        v[name] = getComputedStyle(probe).backgroundColor;
-      }
-      v['--pf-shadow-lg'] = getComputedStyle(document.documentElement).getPropertyValue('--pf-shadow-lg').trim();
-      probe.remove();
-      return v;
-    }, { mode, style, vars: paletteVars });
+    }, { mode, style });
+    out[mode] = await page.evaluate(readVars, { colours: colourVars, plain: plainVars });
     await page.close();
   }
   return out;
@@ -218,6 +228,23 @@ export default async function modes(t) {
     await modal.waitFor({ timeout: 5000 }).catch(() => {});
     const mbg = await modal.evaluate((el) => getComputedStyle(el).backgroundColor).catch(() => null);
     t.check(mbg === mainBg[mode], `${mode}: the search dialog is ${mbg}, want --mainBg ${mainBg[mode]}`);
+    await page.close();
+  }
+
+  // --- Pagefind's remaining variables follow the mode (P4-B2a item 2) ------
+  // Pagefind's :root block is linked after theme.css; its dark values sit
+  // under [data-pf-theme="dark"], which nothing sets
+  for (const mode of ['light', 'dark', 'read']) {
+    const page = await t.newPage({ colorScheme: 'light' });
+    await page.addInitScript((m) => { try { localStorage.setItem('clogem-mode', m); } catch (e) {} }, mode);
+    await page.goto(url, { waitUntil: 'load' });
+    t.check(await page.evaluate(() => !!document.querySelector('link[href*="pagefind-component-ui.css"]')),
+            `${mode}: Pagefind's stylesheet is linked`);
+    const got = await page.evaluate(readVars, { colours: ['--pf-error-bg', '--pf-modal-backdrop'], plain: ['--pf-shadow-lg'] });
+    for (const v of ['--pf-error-bg', '--pf-shadow-lg', '--pf-modal-backdrop']) {
+      t.check(!['', 'rgba(0, 0, 0, 0)'].includes(pal[mode][v]), `${mode}: the theme sets ${v}`);
+      t.check(got[v] === pal[mode][v], `${mode}: ${v} is ${got[v]}, want the theme's ${pal[mode][v]}`);
+    }
     await page.close();
   }
 

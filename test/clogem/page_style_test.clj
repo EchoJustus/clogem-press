@@ -67,3 +67,55 @@ html.theme-mode-dark { --f: 1; }
         (is (some #(re-find #"^light/card: --textColor on --blurBg over --bodyBg" %) fs) (pr-str fs))))
     (testing "--blurBg is a surface"
       (is (some #(str/starts-with? (first %) "--blurBg") (cp/surfaces (cp/palette css :light)))))))
+
+;; ---------------------------------------------------------------------------
+;; 2. Pagefind's remaining variables
+
+(def pagefind-b2a
+  "What Pagefind 1.5.2's pagefind-component-ui.css declares on :root beyond
+  the 11 B1 mapped; its dark values are only under [data-pf-theme=\"dark\"]."
+  ["--pf-error-bg" "--pf-error-border" "--pf-error-text" "--pf-error-text-secondary"
+   "--pf-shadow-sm" "--pf-shadow-md" "--pf-shadow-lg" "--pf-scroll-shadow" "--pf-modal-backdrop"])
+
+(def pagefind-dark
+  {"--pf-shadow-sm" "0 2px 8px rgba(0, 0, 0, 0.3)"
+   "--pf-shadow-md" "0 4px 12px rgba(0, 0, 0, 0.4)"
+   "--pf-shadow-lg" "0 16px 48px rgba(0, 0, 0, 0.5)"
+   "--pf-scroll-shadow" "rgba(255, 255, 255, 0.1)"
+   "--pf-modal-backdrop" "rgba(0, 0, 0, 0.7)"})
+
+(def pagefind-light
+  {"--pf-shadow-sm" "0 2px 8px rgba(0, 0, 0, 0.06)"
+   "--pf-shadow-md" "0 4px 12px rgba(0, 0, 0, 0.1)"
+   "--pf-shadow-lg" "0 16px 48px rgba(0, 0, 0, 0.2)"
+   "--pf-scroll-shadow" "rgba(0, 0, 0, 0.08)"
+   "--pf-modal-backdrop" "rgba(0, 0, 0, 0.5)"})
+
+(deftest pagefinds-remaining-variables-follow-the-mode
+  (let [rules (cp/parse (slurp theme-css))]
+    (doseq [m (keys cp/modes) s cp/styles
+            :let [p (cp/palette rules m s)
+                  what (str (name m) "/" (name s))]]
+      (testing (str what ": every one is set, at (0,1,1) or above (Pagefind's :root is linked later)")
+        (doseq [v pagefind-b2a]
+          (is (some? (p v)) (str what " " v))))
+      (testing (str what ": the error text reaches 4.5:1 on the error background")
+        (doseq [fg ["--pf-error-text" "--pf-error-text-secondary"]]
+          (let [r (cp/contrast (p fg) (cp/over (p "--pf-error-bg") cp/white))]
+            (is (>= r 4.5) (format "%s %s %s on %s is %.2f:1" what fg (p fg) (p "--pf-error-bg") r))))))
+    (testing "dark (and auto under a dark OS) gets Pagefind's dark shadows and backdrop; light and read its light ones"
+      (doseq [m [:dark :auto]]
+        (is (= pagefind-dark (select-keys (cp/palette rules m) (keys pagefind-dark))) (str m)))
+      (doseq [m [:light :read]]
+        (is (= pagefind-light (select-keys (cp/palette rules m) (keys pagefind-light))) (str m))))
+    (testing "the error colours are the palette's, per mode, in each mode's own block"
+      (let [css (slurp theme-css)]
+        (doseq [[what b] {"light" (cp/rule css ":root, .theme-mode-light")
+                          "read"  (cp/rule css ".theme-mode-read")
+                          "dark"  (cp/rule css ".theme-mode-dark")
+                          "auto"  (cp/rule css ".theme-mode-auto" ["(prefers-color-scheme: dark)"])
+                          "print" (cp/rule css "html[class]" ["print"])}]
+          (doseq [v ["--errorBg" "--errorBorder" "--errorText"]]
+            (is (contains? b v) (str what " " v))))
+        (is (not= ((cp/palette rules :light) "--pf-error-bg") ((cp/palette rules :dark) "--pf-error-bg"))
+            "dark's error box is not the pale #fef2f2")))))

@@ -12,11 +12,14 @@
  * `prefers-color-scheme: dark` block below, which must define exactly what
  * `.theme-mode-dark` defines (a test compares them).
  *
- * Every mode block defines vdoing's full variable set plus --accent and
- * --textColorSubtle (muted text). Text, muted and accent reach WCAG AA
+ * Every mode block defines vdoing's full variable set plus --accent,
+ * --textColorSubtle (muted text) and (P4-B2a) the --error* colours of
+ * Pagefind's error box. Text, link-hover, muted and accent reach WCAG AA
  * (4.5:1) on every surface (--bodyBg, --mainBg, --sidebarBg,
- * --customBlockBg), and --codeColor on --codeBg; `bb test` parses this file
- * and checks every pair (theme_modes_test.clj). Read mode's code block is
+ * --customBlockBg, and the translucent --blurBg composited over the page
+ * and over a card), and --codeColor on --codeBg, in both page styles;
+ * `bb test` merges every rule that applies to <html>, in cascade order,
+ * and checks every pair (test/clogem/css_palette.clj). Read mode's code block is
  * dark, as vdoing's is. Code blocks (Phase 4 C, §11.3 item 10) also take
  * --codeLineNumber (line numbers and the language label) and --codeHlBg (a
  * highlighted line): every Chroma token colour of highlight.css, the line
@@ -42,6 +45,9 @@
   --codeColor: #24292f;
   --codeLineNumber: #5f6873;
   --codeHlBg: #fffbdd;
+  --errorBg: #fef2f2;
+  --errorBorder: #fecaca;
+  --errorText: #b91c1c;
   color-scheme: light;
 }
 
@@ -62,6 +68,9 @@
   --codeColor: #dcdfe4;
   --codeLineNumber: #9aa3ad;
   --codeHlBg: #1e2620;
+  --errorBg: #f6e7df;
+  --errorBorder: #e8c4b4;
+  --errorText: #9f1d1d;
   color-scheme: light;
 }
 
@@ -80,6 +89,9 @@
   --codeColor: #dcdfe4;
   --codeLineNumber: #9aa3ad;
   --codeHlBg: #1a2620;
+  --errorBg: #2a1a1a;
+  --errorBorder: #5c2828;
+  --errorText: #f87171;
   color-scheme: dark;
 }
 
@@ -100,6 +112,9 @@
     --codeColor: #dcdfe4;
     --codeLineNumber: #9aa3ad;
     --codeHlBg: #1a2620;
+    --errorBg: #2a1a1a;
+    --errorBorder: #5c2828;
+    --errorText: #f87171;
     color-scheme: dark;
   }
 }
@@ -476,6 +491,36 @@ html[class] {
   --pf-hover: var(--customBlockBg);
   --pf-mark: var(--textColor);
   --pf-outline-focus: var(--accent);
+  /* P4-B2a: the rest of what Pagefind 1.5.2 reads. Its error colours fail
+   * AA (#dc2626 on #fef2f2 is 4.41:1), so they come from the palette;
+   * shadows and the backdrop are Pagefind's light values */
+  --pf-error-bg: var(--errorBg);
+  --pf-error-border: var(--errorBorder);
+  --pf-error-text: var(--errorText);
+  --pf-error-text-secondary: var(--textColor);
+  --pf-scroll-shadow: rgba(0, 0, 0, 0.08);
+  --pf-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --pf-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --pf-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.2);
+  --pf-modal-backdrop: rgba(0, 0, 0, 0.5);
+}
+/* Pagefind keys its dark values to [data-pf-theme="dark"], which nothing
+ * sets; these are they, at (0,1,1) so its later :root loses */
+html.theme-mode-dark {
+  --pf-scroll-shadow: rgba(255, 255, 255, 0.1);
+  --pf-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --pf-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --pf-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+  --pf-modal-backdrop: rgba(0, 0, 0, 0.7);
+}
+@media (prefers-color-scheme: dark) {
+  html.theme-mode-auto {
+    --pf-scroll-shadow: rgba(255, 255, 255, 0.1);
+    --pf-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+    --pf-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --pf-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+    --pf-modal-backdrop: rgba(0, 0, 0, 0.7);
+  }
 }
 
 /* ---- Phase 4 B1: reduced motion and print (D-P4-4) ---- */
@@ -505,6 +550,9 @@ html[class] {
     --codeColor: #24292f;
     --codeLineNumber: #5f6873;
     --codeHlBg: #fffbdd;
+    --errorBg: #fef2f2;
+    --errorBorder: #fecaca;
+    --errorText: #b91c1c;
     color-scheme: light;
   }
   .clogem-navbar, .clogem-sidebar, .clogem-toc, .clogem-mode, .clogem-search,
