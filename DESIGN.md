@@ -500,7 +500,9 @@ Build phases in detail:
 5. **Render + export** (`render.clj`, `theme/*`) — assemble `{uri → (fn [] hiccup)}` for every page
    variant + index page (per language) + catalogue + paginated lists, then export: `hiccup2.core/html`
    → `dist/` with clean URLs (`/pages/a1b2c3/index.html`, `/zh-Hans/pages/a1b2c3/index.html`), copy
-   assets, emit per-language Atom feeds + sitemap with hreflang alternates (+ `CNAME` if configured).
+   assets, emit per-language Atom feeds + sitemap with hreflang alternates, and copy the static
+   directory (`:content :static-dir`: `CNAME`, a favicon, verification files) to the output root
+   (§11.3 item 15).
    Full rebuild is the default correctness baseline; the page cache (§5.5) makes dev fast.
 6. **Search** (`search.clj`) — run Pagefind extended over `dist/`; output lands in `dist/pagefind/`,
    automatically split into one index per `<html lang>` value.
@@ -523,7 +525,7 @@ Build phases in detail:
   3. i18n string overrides — `i18n/<lang>.edn` in the content repo, deep-merged over theme defaults;
   4. `:html-modules` — raw HTML strings injected into the same 7 slots vdoing defines, with its 2
      show-modes (§1.2, corrected in §11.3 item 19; plus
-     `:head-extra` for analytics/fonts);
+     `:head-extra` for fonts — analytics has its own loader, `:analytics`, §11.3 item 14);
   5. Template override — quickblog's copy-on-first-use story: `clogem theme eject sidebar` copies
      `theme/sidebar.clj` into `overrides/`, which then shadows the built-in (user code is loaded onto
      the bb classpath ahead of the library).
@@ -541,7 +543,7 @@ bb dev
  ├─ http-kit run-server (port 1888)
  │    ├─ GET /__reload → SSE channel (as-channel; clients atom; "retry: 500")
  │    └─ *             → static file handler over dist/
- ├─ fswatcher pod on content/ assets/ i18n/ overrides/ site.edn  {:recursive true}
+ ├─ fswatcher pod on content/ assets/ i18n/ overrides/ [static-dir] site.edn  {:recursive true}
  │    └─ events → debounce (drain-until-100ms-quiet) → filter editor temp files
  │         ├─ content change  → re-parse that file → update model → re-render that variant
  │         │                    + its identity siblings (hreflang/variant bar changed)
@@ -594,7 +596,9 @@ deleting `overrides/custom.css` is a full reload. The reload is sent **before** 
 Pagefind runs in the background, one run at a time with requests during a run coalesced into one
 more, into `dist/.pagefind-staging-…/` (`--output-path`), which then replaces `dist/pagefind/` by two
 renames — the old bundle is served until the new one is complete. The pod is fetched and verified by
-`clogem.tools` and loaded from that path; its `watch` calls are 20 ms apart. The generator's theme
+`clogem.tools` and loaded from that path; its `watch` calls are 20 ms apart. The static directory is
+watched, recursively and whether it exists yet or not, when `:content :static-dir` names one (§11.3
+item 15). The generator's theme
 `resources/` are watched when they are on disk; `--reload-code` watches the theme's `.clj` too and
 `require … :reload`s a changed namespace before rebuilding. Both servers mount `dist/` at `:base` and
 listen on 127.0.0.1 unless given `--host`.
@@ -774,7 +778,8 @@ any more). Note what arrived: `:generator`, `:langs`, `:i18n`, `:analytics`, `:s
  :content {:dir "content" :category true :tag true :archive true
            :category-text "Notes" :extend-frontmatter {}
            :permalink-prefix "/pages/" :write-front-matter true
-           :permalinks-file "permalinks.edn"}
+           :permalinks-file "permalinks.edn"
+           :static-dir nil}               ; e.g. "public": copied to the output root (§11.3 item 15)
 
  :theme {:default-mode :auto          ; :auto | :light | :dark | :read (§11.2 item 49)
          :page-style :card :sidebar-open true
@@ -792,10 +797,12 @@ any more). Note what arrived: `:generator`, `:langs`, `:i18n`, `:analytics`, `:s
  :comments {:provider :giscus           ; one thread per article identity (§6.8)
             :repo "EchoJustus/EchoJustus.github.io"   ; owner/name (§11.2 item 49)
             :repo-id "…" :category "Announcements" :category-id "…"}
- :analytics {:provider :none}          ; :ga4 {:id} | :plausible {:domain :src} | :umami {…}
+ :analytics {:provider :none}          ; :ga4 {:id :consent-default} | :plausible {:src :init} or {:domain}
+                                       ;  | :umami {:website-id}; :src, :respect-dnt (§11.3 item 14)
  :seo   {:sitemap true :hreflang true :x-default :primary
          :feeds true                    ; one Atom feed per language (§6.6, §11.2 item 32)
-         :indexnow {:enabled false :key nil}}
+         :indexnow {:enabled false :key nil}
+         :verification {:google nil :bing nil}}   ; meta tags; a string or a vector (§11.3 item 15)
  :tools {:pagefind {:version "1.5.2" :sha256 {"x86_64-unknown-linux-musl" "…"}} ; per platform (§11.2 item 40)
          :chroma   {:version "2.27.0" :sha256 {"linux-amd64" "…"}}}    ; per platform too (§11.3 item 10)
  :highlight {:provider :chroma         ; :chroma (default) | :none — or `--no-highlight` (§11.3 item 10)
@@ -1520,7 +1527,7 @@ ported. For the record, with international equivalents:
 |---|---|
 | `baiduPush` npm script + `baiduPush.sh` + daily cron workflow | `sitemap.xml` (already designed) submitted via **Google Search Console** / **Bing Webmaster Tools**; optionally **IndexNow** (`bb indexnow`) for push-style notification — a near line-for-line port of vdoing's script (walk pages, collect `domain + permalink`, POST the list; ≤10,000 URLs per request). Off by default (**D-13**). |
 | `vuepress-plugin-baidu-autopush` (browser-side push) | nothing — a client-side ping to a search engine is not a pattern worth reviving. |
-| `vuepress-plugin-baidu-tongji` | `:analytics {:provider …}` slot: `:none` (default), `:ga4`, `:plausible`, `:umami` (the latter two self-hostable and privacy-first; Umami is MIT-licensed). One script tag, injected via `:head-extra`. |
+| `vuepress-plugin-baidu-tongji` | `:analytics {:provider …}` slot: `:none` (default), `:ga4`, `:plausible`, `:umami` (the latter two self-hostable and privacy-first; Umami is MIT-licensed). Loaded by the theme's own `js/analytics.js`, configured by its attributes — not through `:head-extra` (§11.3 item 14). |
 | `social.iconfontCssFile` → iconfont.cn | vendored inline SVGs (§5.3). |
 | twikoo / waline / artalk comment providers (v1 kept them as China-viable slots) | The pluggable `:comments {:provider …}` seam **stays** — it costs nothing and is good design — but **giscus is the only provider implemented**, since it is available from Singapore and needs no backend. |
 | `TZ: Asia/Shanghai` in CI (vdoing's workflow, for "last updated" rendering) | `TZ: Asia/Singapore`. |
@@ -1847,7 +1854,7 @@ order; each builds on A:
   Pagefind in the background (§11.3 item 12). *Done (with its fix round, P4-D.1).*
 - **B2 — Page styles and mobile layout** (2 d): card/line, a one-row navbar with a drawer, focus
   rings, monospace code on ta/zh pages (§11.3 item 9).
-- **F — Analytics, verification, static root** (1 d) (§11.3 items 14, 15).
+- **F — Analytics, verification, static root** (1 d) (§11.3 items 14, 15). *Done.*
 - **E1 — Blog identity, banner, htmlModules** (2.75 d) (§11.3 item 13).
 - **E2 — Article-page parity** (1.75 d): edit link, last-updated, update bar, `titleTag` rows,
   logo/repo, `pageClass`, a 404 page (§11.3 item 16).
@@ -1995,7 +2002,8 @@ the document). D-9 through D-15 are new, surfaced by v2's design work.
   **What I need from you:** should the directory names themselves be English (my assumption, given
   English-primary), or in some other language?
 - **D-13. Analytics.** ▶ `:none`. If you want numbers, Plausible or Umami are the privacy-first,
-  self-hostable options (each a single script tag through `:head-extra`); GA4 is supported but brings a
+  self-hostable options (each loaded by the theme's own `js/analytics.js`, not `:head-extra` — §11.3
+  item 14, as built in Phase 4 Task F); GA4 is supported but brings a
   third-party tracker to an otherwise dependency-free site. Separately: shall I enable the IndexNow
   task (off by default — it needs a key file published at the site root, and a static personal KB gains
   little over sitemap-based discovery)?
@@ -3266,10 +3274,57 @@ their own findings. Item 19 onward are corrections.
 14. **Analytics (F).** A self-hosted loader, with no inline script; never loaded in dev, only on the
     `:site :url` host; DNT/GPC respected by default; providers GA4, Plausible and Umami, default
     `:none`; GA4 gets an opt-in consent default; the docs cover CSP and the site owner's PDPA duty.
+    *Done in F.* `config/check-analytics!` reads `:analytics` (it replaces the "no effect" warning):
+    under `:none` nothing is said whatever the map holds; otherwise every problem — a provider
+    outside `#{:none :ga4 :plausible :umami}`, no `:site :url` (or no host in it), a `:src` that is
+    not `https://`, a GA4 `:id` not `G-…` (a `UA-` id is named: Universal Analytics no longer
+    collects), Plausible with neither `:domain` nor `:src`, a non-map `:init`, an Umami
+    `:website-id` that is not a UUID, a non-boolean `:respect-dnt` — is a **warning** that sets
+    `:provider :none`. A bad `:consent-default` warns and counts as `:denied`; `:consent-default`
+    for another provider, and `:init` beside Plausible's `:domain`, warn and are ignored. Plausible's
+    script is chosen by `:domain`, not by file name, so a proxied `pa-` script keeps working: with
+    it the legacy `script.js` (`data-domain`), without it the new per-site script, whose `:src` is
+    required. `layout/document` emits `<script src=…/clogem/js/analytics.js defer data-provider
+    data-host data-respect-dnt data-src …>` as the **last** child of `<head>` — `data-id` and
+    `data-consent-default` for GA4, `data-init` (`:init` as JSON, option names camelCased,
+    `:custom-properties`' keys as written) for new Plausible, `data-domain` for legacy, and
+    `data-website-id` for Umami — on every page `document` builds, and on none in `bb dev`;
+    `assets/skip?` ships the file only then. `data-host` is `:site :url`'s host via
+    `java.net.URL` (`URI` has no host for an IDN, and bb 1.13.219 lacks `java.net.IDN`); the
+    script compares `new URL("https://" + h).hostname` on both sides, which punycodes. GA4 follows
+    Google's consent-mode order (the default, then `js` and `config`, then `gtag/js`; `gtag` pushes
+    `arguments`); Plausible gets its own stub and `plausible.init`; Umami gets `data-domains` and,
+    unless DNT is off, `data-do-not-track`. Tested in `clogem.analytics-test` and
+    `test/browser/analytics.test.mjs` (host, DNT and GPC gates, consent order, `plausible.o`).
 15. **Verification and static root (F).** `:seo :verification {:google :bing}` emits meta tags;
     `:content :static-dir "public"` is copied to the `<base>` root, survives the stale-file sweep, and
     has collision errors; it serves CNAME, the favicon and the IndexNow key file. The IndexNow push
     is Phase 5.
+    *Done in F.* Verification: one `google-site-verification` / `msvalidate.01` meta per value (a
+    string or a vector of non-blank strings; anything else warns and is ignored), after the
+    description meta, on every `document` page, dev included; redirect stubs, `noindex`, get none.
+    The static directory is **opt-in** (default nil; `"public"` is the documented convention) and
+    lands at the root of the output directory — "the `<base>` root" is that root, since
+    `uri->file` strips the base. `config/check-static-dir!` (after `check-out-dir!`) warns and
+    switches the copy off for a value that is not a relative path inside the site, or is, holds or
+    sits inside `content/`, `assets/`, `i18n/`, `overrides/`, `.git` or the output directory —
+    `--out` included, so `:static-dir "public"` with `--out public` builds as before.
+    `render/static-outputs` reads every regular file (`fs/glob … {:hidden true}`: `.nojekyll`,
+    `.well-known/`, `.domains`; never a `.git` segment, never below a linked directory) into the
+    render's `:outputs` and `planned-outputs`, so the files are written atomically, skipped when
+    unchanged, kept by the sweep (they are in `files`) and checked by `check-output-collisions!`
+    (doctor, analysis) and `check-outputs!` (the write). `output-collisions` adds, for a static file
+    only: `:reserved` (under `clogem/`, `assets/` or `pagefind/` even with search off; on
+    `config/out-marker`; on a name carrying `render/temp-marker`, at any depth; on a top-level
+    `search/work-dir-prefix` name) and `:duplicate` (the same path as another output, case-folded,
+    but only for pairs that include a static file — folding the build's own outputs could fail a
+    site that builds on `main`; for `robots.txt` the hint names `assets/robots.txt`); a page
+    directory where a static file stands is the existing nested check, whose hint now names the
+    static file. A deleted static `.html` file leaves the output at the next build, in a directory
+    marked before it (D.4); any other deleted file stays until `bb clean`. CNAME matters to branch
+    deploys and other hosts; the Actions artifact flow ignores it. IndexNow's key file is just a
+    static `<key>.txt`. `bb dev` watches the static directory when it is on (`watch-specs`,
+    `watched-paths`). Tested in `clogem.static-test`.
 16. **Parity details (E2, and A).** `:content :edit-link {:repo :branch :dir}` plus `editLink: false`;
     `:theme :last-updated` from one `git log` pass; `:theme :sidebar-collapsed`, keeping
     `:sidebar-open`'s 0.2.0 meaning; right-menu-bar, page-button, content-bg-style, back-to-top,
@@ -3293,8 +3348,9 @@ their own findings. Item 19 onward are corrections.
     known key within Damerau-Levenshtein 2 — and on a `:planned` key ("planned, not implemented in
     0.2.0"). `config/vdoing-keys` maps vdoing's camelCase spellings (`pageStyle` → `:theme
     :page-style`, `htmlModules`, `bodyBgImg`, `updateBar`, `categoryText`, …) to ours, and names the
-    removed ones. A non-empty `:theme :html-modules`, an `:analytics :provider` other than `:none` and
-    `:seo :indexnow :enabled true` warn "has no effect in 0.2.0". `:comments :mapping :permalink`
+    removed ones. A non-empty `:theme :html-modules` and
+    `:seo :indexnow :enabled true` warn "has no effect in 0.2.0" (an `:analytics :provider` other
+    than `:none` did too, until F made it load; item 14). `:comments :mapping :permalink`
     stays silent. A pre-flight build with `:analytics {:provider :ga4 …}`, `:html-modules`,
     `:blogger`, `:footer` and `:bodyBgImg` used to produce zero warnings; the demo's `doctor` still
     reports exactly its one, and EchoJustus.github.io's `site.edn` none. **A task that makes the

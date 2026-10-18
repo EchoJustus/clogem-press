@@ -106,7 +106,17 @@
            ;; false → a purely read-only build; URLs then come from
            ;; permalinks.edn, falling back to a deterministic hash (§7.2).
            :write-front-matter true
-           :permalinks-file "permalinks.edn"}
+           :permalinks-file "permalinks.edn"
+           ;; §11.3 item 15: a directory whose files are copied, byte for byte
+           ;; and dotfiles included, to the ROOT of the output directory —
+           ;; CNAME, favicon.ico, a search console's verification file,
+           ;; an IndexNow <key>.txt, .nojekyll, .well-known/. Off (nil) unless
+           ;; set; "public" is the convention. A relative path inside the site,
+           ;; not content/, assets/, i18n/, overrides/, .git or the output
+           ;; directory (anything else warns, and nothing is copied). A file
+           ;; that would land where the build writes — a page, feed.xml,
+           ;; robots.txt, under clogem/, assets/ or pagefind/ — is an error.
+           :static-dir nil}
 
  ;; --------------------------------------------------------------- theme ----
  ;; Colour modes (§11.3 items 2–4): the mode a FIRST visit sees. The navbar's
@@ -246,14 +256,53 @@
  ;; title, so retitling alone leaves the thread invisible and lets the next
  ;; comment open a duplicate. See §6.8 / §7.4 step 8.
 
- :analytics {:provider :none}   ; :ga4 | :plausible | :umami   (D-13; Phase 4 Task F)
-                                ; anything but :none warns: no effect in 0.2.0
+ ;; ----------------------------------------------------------- analytics ----
+ ;; D-13, §11.3 item 14. Off under :none, whatever else is set. Otherwise the
+ ;; last child of <head> is dist/clogem/js/analytics.js (ours), which loads
+ ;; the provider's script only on the :site :url host (so never under
+ ;; `bb serve`, on localhost, a fork or a preview), never in `bb dev`, and —
+ ;; unless :respect-dnt false — not for a browser sending Do Not Track or
+ ;; Global Privacy Control. Every bad value warns and switches analytics off.
+ ;; README "Analytics" has the CSP each provider needs, and a note on PDPA.
+ :analytics {:provider :none   ; :none | :ga4 | :plausible | :umami
+             ;; :ga4 — the measurement id, "G-XXXXXXXXXX" (a UA- id no longer
+             ;; collects). GA4 sets _ga cookies.
+             :id nil
+             ;; :ga4 only — :granted | :denied. :denied starts consent mode with
+             ;; every storage type denied; your own consent UI then calls
+             ;; gtag('consent', 'update', {analytics_storage: 'granted'}).
+             ;; clogem-press ships no banner.
+             :consent-default nil
+             ;; :plausible — with :domain, the legacy script (data-domain);
+             ;; without it, the new one, and :src is required.
+             :domain nil
+             ;; the provider's script, https:// only. Defaults:
+             ;; :ga4 https://www.googletagmanager.com/gtag/js (?id= is added),
+             ;; :plausible (legacy) https://plausible.io/js/script.js,
+             ;; :umami https://cloud.umami.is/script.js. New Plausible: the
+             ;; site's own https://plausible.io/js/pa-XXXX.js, from its settings.
+             :src nil
+             ;; :umami — the website's id, a UUID
+             :website-id nil
+             ;; new :plausible only — plausible.init's options, kebab-cased:
+             ;; {:endpoint "…" :hash-based-routing true :outbound-links true
+             ;;  :file-downloads true                 ; or {:file-extensions ["pdf"]}
+             ;;  :form-submissions true :auto-capture-pageviews true :logging false
+             ;;  :custom-properties {"author" "me"}}  ; its keys are passed as written
+             :init nil
+             :respect-dnt true}
 
  :seo {:sitemap true :hreflang true
        :x-default :primary      ; x-default → the bare identity URL; the only value
        :feeds   true            ; /feed.xml + /<lang>/feed.xml, Atom (§6.6)
-       :indexnow {:enabled false :key nil}}   ; the push is Phase 5; :enabled true
-                                               ; warns: no effect in 0.2.0
+       :indexnow {:enabled false :key nil}   ; the push is Phase 5; :enabled true
+                                              ; warns: no effect in 0.2.0. The key
+                                              ; file is a <key>.txt in :static-dir.
+       ;; §11.3 item 15: the search consoles' meta-tag method, on every page —
+       ;; a string, or a vector of them for several owners. Each is the tag's
+       ;; content attribute. (The file method: put the file in :static-dir.)
+       :verification {:google nil    ; <meta name="google-site-verification">
+                      :bing   nil}}  ; <meta name="msvalidate.01">
 
  ;; --------------------------------------------------------------- build ----
  ;; Every page is rendered in memory, and every site asset read, before
