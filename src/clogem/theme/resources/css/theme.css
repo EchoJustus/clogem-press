@@ -48,6 +48,7 @@
   --errorBg: #fef2f2;
   --errorBorder: #fecaca;
   --errorText: #b91c1c;
+  --shadowColor: rgba(0, 0, 0, 0.1);
   color-scheme: light;
 }
 
@@ -71,11 +72,12 @@
   --errorBg: #f6e7df;
   --errorBorder: #e8c4b4;
   --errorText: #9f1d1d;
+  --shadowColor: rgba(0, 0, 0, 0.1);
   color-scheme: light;
 }
 
 .theme-mode-dark {
-  --bodyBg: #16181d;
+  --bodyBg: #22252b;
   --mainBg: #16181d;
   --sidebarBg: #1b1e24;
   --blurBg: #16181de6;
@@ -92,13 +94,14 @@
   --errorBg: #2a1a1a;
   --errorBorder: #5c2828;
   --errorText: #f87171;
+  --shadowColor: rgba(0, 0, 0, 0.4);
   color-scheme: dark;
 }
 
 /* the no-JS fallback for :auto — identical to .theme-mode-dark */
 @media (prefers-color-scheme: dark) {
   .theme-mode-auto {
-    --bodyBg: #16181d;
+    --bodyBg: #22252b;
     --mainBg: #16181d;
     --sidebarBg: #1b1e24;
     --blurBg: #16181de6;
@@ -115,9 +118,15 @@
     --errorBg: #2a1a1a;
     --errorBorder: #5c2828;
     --errorText: #f87171;
+    --shadowColor: rgba(0, 0, 0, 0.4);
     color-scheme: dark;
   }
 }
+
+/* P4-B2a: the line page style (vdoing's pageStyle: line) draws the page in
+ * the card's colour, in every mode. After every mode block, which it ties
+ * on specificity; print's html[class] (0,1,1) still wins. */
+.theme-style-line { --bodyBg: var(--mainBg); }
 
 * { box-sizing: border-box; }
 
@@ -246,7 +255,7 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
   .clogem-sidebar { order: 2; }
 }
 
-.clogem-sidebar { background: var(--sidebarBg); border-radius: 8px; padding: 1rem; align-self: start; }
+.clogem-sidebar { background: var(--sidebarBg); border-radius: 5px; padding: 1rem; align-self: start; }
 .clogem-sidebar__group h2 { font-size: 0.8rem; text-transform: uppercase;
   letter-spacing: 0.06em; color: var(--textColorSubtle); margin: 1rem 0 0.4rem; }
 .clogem-sidebar ul { list-style: none; margin: 0; padding: 0; }
@@ -474,6 +483,31 @@ img { max-width: 100%; height: auto; }
 .card-img-list .box-info { padding: 0.75rem; }
 .card-img-list .title { font-weight: 700; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
 
+/* ---- Phase 4 B2a: page styles (vdoing pageStyle, §11.3 item 1) ----
+ * `:theme :page-style` puts theme-style-card (the default) or
+ * theme-style-line on <html>. The boxes are the main column of every page
+ * kind, the sidebar, and the home page's right-bar sections and post
+ * cards. Card: --mainBg cards on the page's --bodyBg (darker in light and
+ * read, lighter in dark, as vdoing's), with vdoing's 5px radius and
+ * shadows. Line: the same boxes, flat — a 1px border, no shadow — on a
+ * page of the same colour (above). */
+.clogem-main { background: var(--mainBg); border-radius: 5px; padding: 1.25rem 1.5rem; align-self: start; }
+@media (max-width: 50rem) { .clogem-main { padding: 1rem; } }
+.clogem-home-right > section { background: var(--mainBg); border-radius: 5px; padding: 0.25rem 1rem 0.75rem; }
+.clogem-home-right > section + section { margin-top: 1rem; }
+.theme-style-card :is(.clogem-main, .clogem-sidebar, .clogem-home-right > section) {
+  box-shadow: 0 1px 2px var(--shadowColor);
+}
+.theme-style-card .clogem-post-card, .theme-style-line .clogem-post-card {
+  background: var(--mainBg); border-radius: 5px; border-bottom: 0;
+  padding: 1rem 1.25rem; margin: 0 0 1rem;
+}
+.theme-style-card .clogem-post-card { box-shadow: 0 0 4px var(--shadowColor); transition: box-shadow 0.2s; }
+.theme-style-card .clogem-post-card:hover { box-shadow: 0 1px 15px var(--shadowColor); }
+.theme-style-line :is(.clogem-main, .clogem-sidebar, .clogem-home-right > section, .clogem-post-card) {
+  border: 1px solid var(--borderColor); box-shadow: none;
+}
+
 /* ---- Phase 4 B1: Pagefind follows the mode (D-P4-5) ----
  * Pagefind's Component UI declares its --pf-* defaults on :root, and its
  * stylesheet is linked after this one; `html[class]` (0,1,1) outranks
@@ -560,6 +594,9 @@ html.theme-mode-dark {
   .clogem-shell, .clogem-shell--toc, .clogem-shell--single.clogem-shell--toc {
     display: block; max-width: none; padding: 0;
   }
+  /* P4-B2a: no shadow anywhere, and the page column is paper, not a box */
+  *, *::before, *::after { box-shadow: none !important; }
+  html[class] :is(.clogem-main, .clogem-home-right > section) { border: 0; padding: 0; border-radius: 0; }
   .clogem-content a { text-decoration: underline; }
   pre.clogem-code, pre.clogem-code > code { white-space: pre-wrap; overflow: visible; }
   pre.clogem-code > code { display: block; }

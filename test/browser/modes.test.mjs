@@ -324,6 +324,65 @@ export default async function modes(t) {
     await page.close();
   }
 
+  // --- card and line page styles (P4-B2a item 5) -----------------------------
+  // The demo builds with :page-style :card; <html>'s style class is switched
+  // in-page. Auto is the no-JS page under a dark OS, where theme-mode-auto
+  // stays and the dark media block applies.
+  const stylePages = [
+    [article, '.clogem-main', ['.clogem-sidebar']],
+    // the only demo home with a right bar; its post list is :simple
+    ['zh-Hans/index.html', '.clogem-main', ['.clogem-home-right > section']],
+    ['page/2/index.html', '.clogem-main', ['.clogem-post-card']],   // the detailed post list
+    ['categories/basics/index.html', '.clogem-main', []],
+    ['pages/559f0f/index.html', '.clogem-main', []],   // a catalogue
+  ];
+  for (const [rel, mainSel, others] of stylePages) {
+    for (const mode of ['light', 'dark', 'read', 'auto']) {
+      const auto = mode === 'auto';
+      const page = await t.newPage({ colorScheme: auto ? 'dark' : 'light', javaScriptEnabled: !auto });
+      if (!auto) await page.addInitScript((m) => { try { localStorage.setItem('clogem-mode', m); } catch (e) {} }, mode);
+      await page.goto(t.url(rel), { waitUntil: 'load' });
+      for (const style of ['card', 'line']) {
+        const r = await page.evaluate(({ style, mainSel, others }) => {
+          const h = document.documentElement;
+          h.className = h.className.replace(/\btheme-style-\S+/, `theme-style-${style}`);
+          const probe = document.createElement('div');
+          probe.style.background = 'var(--mainBg)';
+          document.body.appendChild(probe);
+          const mainBg = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          const box = (el) => { const c = getComputedStyle(el); return { bg: c.backgroundColor, shadow: c.boxShadow, border: c.borderTopWidth }; };
+          const main = document.querySelector(mainSel);
+          return {
+            cls: h.className, root: getComputedStyle(h).backgroundColor, mainBg,
+            main: main && box(main),
+            others: others.map((s) => [s, [...document.querySelectorAll(s)].map(box)]),
+          };
+        }, { style, mainSel, others });
+        const what = `${rel} ${mode} ${style}`;
+        if (!r.main) { t.check(false, `${what}: no ${mainSel}`); continue; }
+        t.check(new RegExp(`theme-mode-${auto ? 'auto' : mode}\\b`).test(r.cls), `${what}: <html class="${r.cls}">`);
+        if (style === 'card') {
+          t.check(r.main.bg === r.mainBg && r.main.bg !== r.root,
+                  `${what}: the main box is ${r.main.bg}, want --mainBg ${r.mainBg}, distinct from the page ${r.root}`);
+          t.check(r.main.shadow !== 'none', `${what}: the main box has a shadow (${r.main.shadow})`);
+        } else {
+          t.check(r.main.bg === r.root, `${what}: the main box ${r.main.bg} is the page's ${r.root}`);
+          t.check(r.main.shadow === 'none', `${what}: no shadow (${r.main.shadow})`);
+          t.check(r.main.border === '1px', `${what}: a 1px border (${r.main.border})`);
+        }
+        for (const [sel, bs] of r.others) {
+          t.check(bs.length > 0, `${what}: ${sel} is on the page`);
+          for (const b of bs) {
+            if (style === 'card') t.check(b.shadow !== 'none', `${what}: ${sel} has a shadow`);
+            else t.check(b.shadow === 'none' && b.border === '1px', `${what}: ${sel} is flat with a 1px border (${b.shadow}, ${b.border})`);
+          }
+        }
+      }
+      await page.close();
+    }
+  }
+
   // --- print -------------------------------------------------------------------
   {
     const page = await t.newPage({ colorScheme: 'dark' });
@@ -336,6 +395,17 @@ export default async function modes(t) {
     for (const [s, d] of Object.entries(shown)) t.check(d === 'none' || d === 'absent', `print hides ${s} (display ${d})`);
     const bg = await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor);
     t.check(bg === 'rgb(255, 255, 255)', `print uses the light palette even in dark mode: ${bg}`);
+    // P4-B2a: nothing has a shadow in print, in either page style
+    for (const style of ['card', 'line']) {
+      const shadowed = await page.evaluate((style) => {
+        const h = document.documentElement;
+        h.className = h.className.replace(/\btheme-style-\S+/, `theme-style-${style}`);
+        return [...document.querySelectorAll('*')]
+          .filter((e) => getComputedStyle(e).boxShadow !== 'none')
+          .map((e) => e.tagName.toLowerCase() + (e.className && typeof e.className === 'string' ? '.' + e.className.split(' ')[0] : ''));
+      }, style);
+      t.check(shadowed.length === 0, `print, ${style}: no shadow, but ${shadowed.slice(0, 5).join(', ')}`);
+    }
     await page.close();
   }
 

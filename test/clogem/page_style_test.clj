@@ -174,3 +174,75 @@ html.theme-mode-dark { --f: 1; }
     (let [js (slurp "src/clogem/theme/resources/js/mode.js")]
       (is (str/includes? js "if (!valid(root.getAttribute(\"data-mode\")))"))
       (is (str/includes? js "button.setAttribute(\"aria-label\", name)")))))
+
+;; ---------------------------------------------------------------------------
+;; 5. Card and line page styles
+
+(def boxes
+  "The boxes a page style draws: the main column of every page kind, the
+  sidebar, the home right-bar's sections and the home's post cards."
+  [".clogem-main" ".clogem-sidebar" ".clogem-home-right > section" ".clogem-post-card"])
+
+(defn- style-decls
+  "{property value} that every rule naming `box` under `.theme-style-<style>`
+  declares, merged in source order (for the shadow and the border)."
+  [rules style box]
+  (into {} (for [{:keys [selectors decls media]} rules
+                 :when (empty? media)
+                 sel selectors
+                 :when (and (str/starts-with? sel (str ".theme-style-" (name style) " "))
+                            (str/includes? sel box)
+                            (not (str/includes? sel ":hover")))
+                 [p v] decls]
+             [p v])))
+
+(deftest card-and-line-differ-in-every-mode
+  (let [css (slurp theme-css)
+        rules (cp/parse css)]
+    (testing "the palette passes for both styles in every mode (item 1's test)"
+      (is (= [] (cp/failures css))))
+    (testing "card: the page and the card are distinct colours in every mode — dark too (the owner's decision)"
+      (doseq [m [:light :read :dark :auto]
+              :let [p (cp/palette rules m :card)]]
+        (is (not= (cp/hex (p "--bodyBg")) (cp/hex (p "--mainBg"))) (str m))))
+    (testing "dark's page is lighter than its card, as vdoing's (rgb(39,39,43) on rgb(30,30,34))"
+      (let [p (cp/palette rules :dark :card)]
+        (is (> (cp/luminance (p "--bodyBg")) (cp/luminance (p "--mainBg"))))
+        (is (= "#16181d" (p "--mainBg")) "the card keeps B1's accepted value")))
+    (testing "line: the page is the card's colour in every mode"
+      (doseq [m (keys cp/modes)
+              :let [p (cp/palette rules m :line)]]
+        (is (= (p "--mainBg") (p "--bodyBg")) (str m))))
+    (testing "card: every box has a shadow; line: a 1px border and none"
+      (doseq [b boxes]
+        (let [card (style-decls rules :card b)
+              line (style-decls rules :line b)]
+          (is (re-find #"var\(--shadowColor\)" (str (card "box-shadow"))) (str "card " b ": " (pr-str card)))
+          (is (= "none" (line "box-shadow")) (str "line " b ": " (pr-str line)))
+          (is (= "1px solid var(--borderColor)" (line "border")) (str "line " b)))))
+    (testing "print: no shadow anywhere"
+      (is (some (fn [{:keys [media selectors decls]}]
+                  (and (= ["print"] media) (some #{"*"} selectors)
+                       (some #(= ["box-shadow" "none" true] %) decls)))
+                rules)))))
+
+(deftest page-style-reaches-every-page
+  (doseq [style [:card :line]]
+    (let [dir (fs/create-temp-dir {:prefix "clogem-style"})]
+      (try
+        (spit (fs/file dir "site.edn") (pr-str {:site {:title "S"} :search {:provider :none}
+                                                :theme {:page-style style}}))
+        (fs/create-dirs (fs/path dir "content" "01.Guide"))
+        (spit (fs/file dir "content" "index.md") "# Home\n")
+        (spit (fs/file dir "content" "01.Guide" "01.one.md")
+              "---\ntitle: One\ndate: 2026-02-01\npermalink: /pages/b2a001/\n---\nBody.\n")
+        (let [[_ ds] (binding [*out* (java.io.StringWriter.)]
+                       (diag/collecting ((requiring-resolve 'clogem.cli/build) {:site-dir (str dir) :no-write true})))
+              htmls (for [p (fs/glob (fs/path dir "dist") "**.html")] [(str p) (slurp (fs/file p))])]
+          (is (empty? (diag/warnings ds)) (pr-str (map :message (diag/warnings ds))))
+          (is (> (count htmls) 3))
+          (doseq [[p html] htmls
+                  :when (str/includes? html "clogem-navbar")]
+            (is (str/includes? html (str "<html class=\"theme-mode-auto theme-style-" (name style) "\"")) p)
+            (is (str/includes? html "<main class=\"clogem-main\"") (str p ": the box the style draws"))))
+        (finally (fs/delete-tree dir))))))
