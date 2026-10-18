@@ -390,6 +390,9 @@
      (when-not (search-ui-strings ctx)
        [:pagefind-modal])]))
 
+(defn default-mode [cfg] (get-in cfg [:theme :default-mode] :auto))
+(defn page-style [cfg] (get-in cfg [:theme :page-style] :card))
+
 (def modes
   "The colour modes in vdoing's toggle order, each with its icon."
   [[:auto :monitor] [:light :sun] [:dark :moon] [:read :book-open]])
@@ -401,18 +404,26 @@
   `hidden` — js/mode.js reveals it, so a reader without JS never meets a dead
   control — and the button shows the icon of the current mode, chosen in
   CSS from `<html data-mode>`, which the head script sets before the first
-  paint. No Popover API: older iOS Safari lacks it."
-  [ctx]
-  [:div.clogem-mode {:hidden true :data-clogem-mode ""}
-   (into [:button.clogem-mode__button {:type "button" :aria-expanded "false"
-                                       :aria-controls "clogem-mode-menu"
-                                       :aria-label (i18n/tr ctx :mode/label)
-                                       :title (i18n/tr ctx :mode/label)}]
-         (for [[m ic] modes] (icons/icon ctx ic {:class (str "is-" (name m))})))
-   (into [:ul#clogem-mode-menu.clogem-mode__menu {:hidden true}]
-         (for [[m ic] modes]
-           [:li [:button {:type "button" :data-mode (name m) :aria-pressed "false"}
-                 (icons/icon ctx ic) " " [:span (i18n/tr ctx (keyword "mode" (name m)))]]]))])
+  paint. No Popover API: older iOS Safari lacks it.
+
+  P4-B2a: the button is named for the current mode (`:mode/current`,
+  `Colour mode: {{mode}}`). The server can only know the default, so it
+  renders that; `data-label` carries the page language's pattern, with
+  `{{mode}}` left in, and js/mode.js fills it with the label of the mode
+  chosen (the menu's own text) on every change."
+  [{:keys [cfg] :as ctx}]
+  (let [current (fn [m] (i18n/tr ctx :mode/current {:mode (i18n/tr ctx (keyword "mode" (name m)))}))]
+    [:div.clogem-mode {:hidden true :data-clogem-mode ""}
+     (into [:button.clogem-mode__button {:type "button" :aria-expanded "false"
+                                         :aria-controls "clogem-mode-menu"
+                                         :aria-label (current (default-mode cfg))
+                                         :title (current (default-mode cfg))
+                                         :data-label (i18n/tr ctx :mode/current)}]
+           (for [[m ic] modes] (icons/icon ctx ic {:class (str "is-" (name m))})))
+     (into [:ul#clogem-mode-menu.clogem-mode__menu {:hidden true}]
+           (for [[m ic] modes]
+             [:li [:button {:type "button" :data-mode (name m) :aria-pressed "false"}
+                   (icons/icon ctx ic) " " [:span (i18n/tr ctx (keyword "mode" (name m)))]]]))]))
 
 (defn navbar
   [{:keys [cfg lang] :as ctx}]
@@ -784,8 +795,6 @@
                                      (.digest md (.getBytes ^String mode-script "UTF-8")))
          "'")))
 
-(defn default-mode [cfg] (get-in cfg [:theme :default-mode] :auto))
-(defn page-style [cfg] (get-in cfg [:theme :page-style] :card))
 
 ;; ---------------------------------------------------------------------------
 ;; Document

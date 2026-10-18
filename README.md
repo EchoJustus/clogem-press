@@ -209,6 +209,13 @@ The mode and page-style classes are on `<html>`, unqualified:
 `.theme-mode-dark`, `.theme-style-card`. (0.2.0 put them on `<body>`; CSS
 written as `body.theme-mode-dark` must drop `body`.)
 
+**Mode class or `[data-mode]`?** With JavaScript, `theme-mode-auto` is
+replaced by the *resolved* `theme-mode-light` or `theme-mode-dark`, so
+`.theme-mode-dark` covers both *Dark* and *Follow system* on a dark OS — style
+the palette with it. To style the reader's *choice*, use
+`[data-mode="auto"]`, `"light"`, `"dark"` or `"read"` on `<html>`.
+`.theme-mode-auto` exists only without JavaScript.
+
 **Your own CSS.** Put it in `overrides/custom.css` in your site. It ships as
 `dist/clogem/overrides/custom.css` with a cache-busting `?v=` and is linked
 **last**, after the theme's and Pagefind's stylesheets, so a rule of the same
@@ -259,7 +266,8 @@ script-src 'self' 'sha256-aykGrfu05czJ6oIj+Xn+Qrjxa7JG8hF3RGl0W0liGmw='
 Pagefind needs `worker-src 'self'` and `'wasm-unsafe-eval'` (DESIGN.md §6.8,
 §11.2 items 42 and 49). The copy button's strings are a
 `<script type="application/json">` data block, which CSP does not govern;
-`js/code.js` is a same-origin file.
+`js/code.js` is a same-origin file. A policy without the hash still gets the
+reader's mode: `js/mode.js` (same-origin) applies it, one frame late.
 
 ## Development
 

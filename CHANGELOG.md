@@ -5,7 +5,63 @@
 Phase 4, Task B1 — colour modes, an accessible palette, the mode toggle and
 icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
 (§11.3 items 7, 11, 16, 18), then Task C — code highlighting (§11.3 item
-10), then Task D — the dev loop (§11.3 item 12). The version stays 0.2.0.
+10), then Task D — the dev loop (§11.3 item 12), then Task B2a — the card
+and line page styles, focus rings and B1's follow-ups (the first half of
+B2, §11.3 item 1). The version stays 0.2.0. A site that already set
+`:theme :page-style :line` now gets that look: 0.2.0 and B1 accepted the
+value but drew card and line the same.
+
+**Task B2a — page styles** (§11.3 item 1, first half; B1's follow-ups):
+
+### Added (B2a)
+
+- **The mode button is named for the current mode** — "Colour mode: Dark",
+  "主题模式：深色模式" — in the page's language (the new `:mode/current`
+  string), and renamed on every change, another tab's included. It was
+  always "Colour mode".
+- **`js/mode.js` applies the reader's mode when the head script cannot
+  run** — a `Content-Security-Policy` without its `sha256` — as the head
+  script would: the stored mode, else `:default-mode`, else auto, and auto
+  follows the OS. Such a page used to stay in `:default-mode`, with
+  `clogem.getMode()` saying so. It is one frame late; the hash is still
+  the way to avoid that.
+
+### Changed (B2a)
+
+- **Pagefind follows the mode in full.** The error box, its text, the
+  shadows, the scroll shadow and the modal backdrop were Pagefind's light
+  values in every mode (its dark ones sit under `[data-pf-theme="dark"]`,
+  which nothing sets). Dark now gets Pagefind's dark shadows and 0.7
+  backdrop, and the error colours come from the palette (`--errorBg`,
+  `--errorBorder`, `--errorText`, new in every mode block): Pagefind's own
+  error text was 4.41:1 in light and 4.42:1 in dark; every mode's now
+  reaches 5.9:1 or better.
+
+### Documentation (B2a)
+
+- **`[data-mode]` versus the mode class.** With JavaScript,
+  `theme-mode-auto` is replaced by the resolved `theme-mode-light` or
+  `theme-mode-dark`, so `.theme-mode-dark` covers both *Dark* and *Follow
+  system* on a dark OS. To style the reader's *choice*, use
+  `[data-mode="auto"|"light"|"dark"|"read"]`; `.theme-mode-auto` exists
+  only without JavaScript (README, Theme).
+
+### Tests (B2a)
+
+- **The contrast tests read every rule.** They read the first rule whose
+  selector was exactly `.theme-mode-dark` (and so on), so a later or
+  compound rule was never checked, and took `#ffffffe6` as opaque.
+  `test/clogem/css_palette.clj` merges every rule that applies to `<html>`
+  in cascade order, for every mode (auto in its dark media block, and
+  print) and both page styles, resolves `var()`, and composites a
+  translucent colour over what lies under it; `--blurBg`, the navbar, is a
+  surface now. `highlight_test` shares it, and `modes.test.mjs` asks the
+  browser for the merged values.
+
+### Needs native review (B2a)
+
+- `:mode/current` in **Malay** (`Mod warna: {{mode}}`) and **Tamil**
+  (`வண்ணப் பயன்முறை: {{mode}}`).
 
 **Task D — the dev loop** (§11.3 item 12):
 

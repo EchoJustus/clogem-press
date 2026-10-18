@@ -196,6 +196,82 @@ export default async function modes(t) {
     await page.close();
   }
 
+  // --- the toggle names the current mode (P4-B2a item 3) --------------------
+  const name = (page) => page.evaluate(() => {
+    const b = document.querySelector('.clogem-mode__button');
+    return [b.getAttribute('aria-label'), b.getAttribute('title')];
+  });
+  for (const [u, want] of [[url, 'Colour mode: Dark'], [t.url('zh-Hans/index.html'), '主题模式：深色模式']]) {
+    const page = await t.newPage({ colorScheme: 'light' });
+    await page.addInitScript(() => { try { localStorage.setItem('clogem-mode', 'dark'); } catch (e) {} });
+    await page.goto(u, { waitUntil: 'load' });
+    const [label, title] = await name(page);
+    t.check(label === want && title === want, `with dark stored the toggle is named "${label}" / "${title}", want "${want}"`);
+    await page.close();
+  }
+  {
+    const page = await t.newPage({ colorScheme: 'light' });
+    await page.goto(url, { waitUntil: 'load' });
+    t.check((await name(page))[0] === 'Colour mode: Follow system', `nothing stored: ${(await name(page))[0]}`);
+    await page.focus('.clogem-mode__button');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowDown');
+    t.check(await page.evaluate(() => document.activeElement?.getAttribute('data-mode')) === 'light', 'ArrowDown reaches Light');
+    await page.keyboard.press('Enter');
+    t.check((await name(page))[0] === 'Colour mode: Light', `after choosing Light by keyboard: ${(await name(page))[0]}`);
+    // another page of the same reader (same context, so the same storage)
+    const other = await page.context().newPage();
+    await other.goto(url, { waitUntil: 'load' });
+    await other.evaluate(() => window.clogem.setMode('read'));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-mode') === 'read', null, { timeout: 2000 }).catch(() => {});
+    t.check((await name(page))[0] === 'Colour mode: Reading',
+            `another tab stores read: the first page's toggle is "${(await name(page))[0]}"`);
+    await other.close();
+    await page.close();
+  }
+
+  // --- a CSP that blocks the inline head script (P4-B2a item 3) --------------
+  // script-src 'self' without the script's sha256: only js/mode.js runs
+  const withCsp = async (page) => page.route('**/' + article.replace(/index\.html$/, ''), async (route) => {
+    const res = await route.fetch();
+    await route.fulfill({ response: res, headers: { ...res.headers(), 'content-security-policy': "script-src 'self'" } });
+  });
+  const state = (page) => page.evaluate(() => ({
+    cls: document.documentElement.className,
+    mode: document.documentElement.getAttribute('data-mode'),
+    bg: getComputedStyle(document.documentElement).backgroundColor,
+    pressed: [...document.querySelectorAll('#clogem-mode-menu button[aria-pressed="true"]')].map((b) => b.dataset.mode),
+    label: document.querySelector('.clogem-mode__button').getAttribute('aria-label'),
+  }));
+  {
+    const page = await t.newPage({ colorScheme: 'light' });
+    await page.addInitScript(() => { try { localStorage.setItem('clogem-mode', 'dark'); } catch (e) {} });
+    await withCsp(page);
+    await page.goto(url, { waitUntil: 'load' });
+    await page.waitForFunction(() => document.documentElement.hasAttribute('data-mode'), null, { timeout: 2000 }).catch(() => {});
+    const s = await state(page);
+    t.check(/\btheme-mode-dark\b/.test(s.cls) && !/theme-mode-auto/.test(s.cls), `CSP, dark stored: class "${s.cls}"`);
+    t.check(s.mode === 'dark', `CSP, dark stored: data-mode ${s.mode}`);
+    t.check(s.bg === bodyBg.dark, `CSP, dark stored: background ${s.bg}, want ${bodyBg.dark}`);
+    t.check(JSON.stringify(s.pressed) === '["dark"]', `CSP, dark stored: pressed ${s.pressed}`);
+    t.check(s.label === 'Colour mode: Dark', `CSP, dark stored: named "${s.label}"`);
+    await page.close();
+  }
+  {
+    const page = await t.newPage({ colorScheme: 'dark' });
+    await page.addInitScript(() => { try { localStorage.setItem('clogem-mode', 'auto'); } catch (e) {} });
+    await withCsp(page);
+    await page.goto(url, { waitUntil: 'load' });
+    await page.waitForFunction(() => document.documentElement.hasAttribute('data-mode'), null, { timeout: 2000 }).catch(() => {});
+    let s = await state(page);
+    t.check(/\btheme-mode-dark\b/.test(s.cls) && s.mode === 'auto', `CSP, auto stored, dark OS: ${JSON.stringify(s)}`);
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.waitForFunction(() => /\btheme-mode-light\b/.test(document.documentElement.className), null, { timeout: 2000 }).catch(() => {});
+    s = await state(page);
+    t.check(/\btheme-mode-light\b/.test(s.cls) && s.bg === bodyBg.light, `CSP, auto: an OS change to light is followed: ${JSON.stringify(s)}`);
+    await page.close();
+  }
+
   // --- a live OS change in auto mode ---------------------------------------
   {
     const page = await t.newPage({ colorScheme: 'light' });

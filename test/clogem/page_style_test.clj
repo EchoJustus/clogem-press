@@ -5,9 +5,31 @@
   the card and line page styles (item 5), focus rings (item 6) and the
   stylesheet's budget (item 8) — on theme.css's text and on temp sites.
   What needs a browser is in test/browser/modes.test.mjs."
-  (:require [clojure.string :as str]
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [clogem.css-palette :as cp]))
+            [hiccup2.core :as h]
+            [clogem.config :as config]
+            [clogem.css-palette :as cp]
+            [clogem.diag :as diag]
+            [clogem.i18n :as i18n]
+            [clogem.theme.layout :as layout]))
+
+(defn- with-site
+  "Load a temp site whose site.edn is `edn`; call (f cfg diagnostics)."
+  [edn f]
+  (let [dir (fs/create-temp-dir {:prefix "clogem-b2a"})]
+    (try
+      (spit (fs/file dir "site.edn") (pr-str edn))
+      (let [[cfg ds] (diag/collecting (config/load-config (str dir)))]
+        (f cfg ds))
+      (finally (fs/delete-tree dir)))))
+
+(def two-langs
+  {:site {:title "S"}
+   :langs {:default :en :priority [:en :zh-Hans]
+           :locales {:en {:label "English" :html-lang "en"}
+                     :zh-Hans {:label "简体中文" :html-lang "zh-Hans"}}}})
 
 (def theme-css "src/clogem/theme/resources/css/theme.css")
 
@@ -119,3 +141,36 @@ html.theme-mode-dark { --f: 1; }
             (is (contains? b v) (str what " " v))))
         (is (not= ((cp/palette rules :light) "--pf-error-bg") ((cp/palette rules :dark) "--pf-error-bg"))
             "dark's error box is not the pale #fef2f2")))))
+
+;; ---------------------------------------------------------------------------
+;; 3. The toggle names the current mode
+
+(deftest the-toggle-is-named-for-the-mode-in-the-pages-language
+  (with-site (assoc two-langs :theme {:default-mode :dark})
+    (fn [cfg _]
+      (let [cfg (assoc cfg :clogem/asset-versions {"icons.svg" "abcd1234"})
+            toggle (fn [lang] (str (h/html (layout/mode-toggle {:cfg cfg :lang lang :strings (i18n/load-strings cfg)}))))
+            en (toggle :en)
+            zh (toggle :zh-Hans)]
+        (testing "the server names the default mode; js/mode.js renames it on every change"
+          (is (str/includes? en "aria-label=\"Colour mode: Dark\""))
+          (is (str/includes? en "title=\"Colour mode: Dark\""))
+          (is (str/includes? zh "aria-label=\"主题模式：深色模式\"")))
+        (testing "the page language's pattern travels with the button, {{mode}} left in"
+          (is (str/includes? en "data-label=\"Colour mode: {{mode}}\""))
+          (is (str/includes? zh "data-label=\"主题模式：{{mode}}\"")))
+        (testing "B1's pinned markup still holds"
+          (is (re-find #"^<div class=\"clogem-mode\" data-clogem-mode=\"\" hidden=\"hidden\">" en))
+          (is (re-find #"aria-controls=\"clogem-mode-menu\" aria-expanded=\"false\"" en))))))
+  (testing "the string, in all five languages"
+    (is (= {:en "Colour mode: {{mode}}" :zh-Hans "主题模式：{{mode}}" :zh-Hant "主題模式：{{mode}}"
+            :ms "Mod warna: {{mode}}" :ta "வண்ணப் பயன்முறை: {{mode}}"}
+           (into {} (for [l [:en :zh-Hans :zh-Hant :ms :ta]] [l (:mode/current (i18n/theme-strings l))]))))
+    (doseq [l [:ms :ta]]
+      (is (re-find #"(?m)^ ;; Awaiting native review.*B2a.*\n :mode/current"
+                   (slurp (str "src/clogem/theme/resources/i18n/" (name l) ".edn")))
+          (str l ": marked for native review"))))
+  (testing "mode.js re-applies the stored mode when the head script did not run"
+    (let [js (slurp "src/clogem/theme/resources/js/mode.js")]
+      (is (str/includes? js "if (!valid(root.getAttribute(\"data-mode\")))"))
+      (is (str/includes? js "button.setAttribute(\"aria-label\", name)")))))

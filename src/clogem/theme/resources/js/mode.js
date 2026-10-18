@@ -22,6 +22,15 @@
  *
  * window.clogem is extended, never replaced: js/comments.js defines
  * setCommentsTheme on it.
+ *
+ * P4-B2a: the button is named for the current mode — its data-label
+ * pattern ("Colour mode: {{mode}}", in the page's language) filled with
+ * the menu's label for that mode — on every change, another tab's
+ * included. And a Content-Security-Policy that blocks the inline head
+ * script (one without its sha256) leaves <html> with no data-mode: then
+ * this file does what the head script would have — the stored mode, else
+ * data-default-mode, else auto; the resolved class; the OS listener —
+ * one frame late, but in the reader's mode.
  */
 (function () {
   "use strict";
@@ -51,11 +60,19 @@
     document.dispatchEvent(ev);
   }
 
-  var items = [];
+  var items = [], button = null;
   function sync() {
-    var m = ns.getMode();
+    var m = ns.getMode(), label = m;
     for (var i = 0; i < items.length; i++) {
-      items[i].setAttribute("aria-pressed", String(items[i].getAttribute("data-mode") === m));
+      var on = items[i].getAttribute("data-mode") === m;
+      items[i].setAttribute("aria-pressed", String(on));
+      if (on) label = items[i].textContent.trim();
+    }
+    var pattern = button && button.getAttribute("data-label");
+    if (pattern) {
+      var name = pattern.replace(/\{\{\s*mode\s*\}\}/g, label);
+      button.setAttribute("aria-label", name);
+      button.setAttribute("title", name);
     }
   }
 
@@ -75,6 +92,19 @@
     return true;
   };
 
+  // the head script did not run (a CSP without its hash): do its work
+  if (!valid(root.getAttribute("data-mode"))) {
+    var start;
+    try { start = localStorage.getItem(KEY); } catch (e) { /* blocked */ }
+    if (!valid(start)) start = root.getAttribute("data-default-mode");
+    apply(valid(start) ? start : "auto");
+    var follow = function () { if (ns.getMode() === "auto") apply("auto"); };
+    if (mq) {
+      if (mq.addEventListener) mq.addEventListener("change", follow);
+      else if (mq.addListener) mq.addListener(follow);
+    }
+  }
+
   // another tab chose a mode
   window.addEventListener("storage", function (e) {
     if (e.key === KEY && valid(e.newValue) && e.newValue !== ns.getMode()) {
@@ -86,7 +116,7 @@
 
   var box = document.querySelector("[data-clogem-mode]");
   if (!box) return;
-  var button = box.querySelector(".clogem-mode__button");
+  button = box.querySelector(".clogem-mode__button");
   var menu = button && document.getElementById(button.getAttribute("aria-controls"));
   if (!menu) return;
   items = Array.prototype.slice.call(menu.querySelectorAll("button[data-mode]"));

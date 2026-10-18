@@ -405,8 +405,8 @@
                     (let [err (java.io.StringWriter.)]
                       (binding [*out* (java.io.StringWriter.) *err* err]
                         (cli/build {:site-dir (str dir) :out (str out) :no-write true :clogem/dev? true}))
-                      (count (re-seq #"missing UI string key `:mode/label`" (str err)))))]
-        (with-redefs [i18n/theme-strings (fn [lang] (cond-> (orig lang) @gone? (dissoc :mode/label)))]
+                      (count (re-seq #"missing UI string key `:mode/current`" (str err)))))]
+        (with-redefs [i18n/theme-strings (fn [lang] (cond-> (orig lang) @gone? (dissoc :mode/current)))]
           (let [n (build)]
             (is (pos? n) "one per language")
             (testing "outside a dev session, every build warns"
