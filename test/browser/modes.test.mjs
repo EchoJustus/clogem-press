@@ -383,6 +383,51 @@ export default async function modes(t) {
     }
   }
 
+  // --- focus rings (P4-B2a item 6, D-P4-9) -----------------------------------
+  // Every stop of 40 Tabs draws the theme's ring: solid, at least 2px, in
+  // the ring colour — the code ring inside a code block. B1 left links,
+  // <summary> and heading anchors on Chromium's `auto 1px`.
+  for (const width of [1280, 360]) {
+    for (const mode of ['light', 'dark']) {
+      const page = await t.newPage({ colorScheme: 'light', viewport: { width, height: 800 } });
+      await page.addInitScript((m) => { try { localStorage.setItem('clogem-mode', m); } catch (e) {} }, mode);
+      await page.goto(t.url('pages/c0nta1/index.html'), { waitUntil: 'load' });
+      const ring = await page.evaluate(() => {
+        const probe = document.createElement('div');
+        document.body.appendChild(probe);
+        const read = (v) => { probe.style.color = `var(${v})`; return getComputedStyle(probe).color; };
+        const r = { ring: read('--focusRing'), code: read('--codeFocusRing'), accent: read('--accent'), codeColor: read('--codeColor') };
+        probe.remove();
+        return r;
+      });
+      t.check(ring.ring === ring.accent && ring.code === ring.codeColor,
+              `${width}px ${mode}: the ring is the accent and the code ring the code colour: ${JSON.stringify(ring)}`);
+      const kinds = new Set();
+      let bad = 0;
+      for (let i = 0; i < 40; i++) {
+        await page.keyboard.press('Tab');
+        const f = await page.evaluate(() => {
+          const e = document.activeElement;
+          if (!e || e === document.body) return null;
+          const c = getComputedStyle(e);
+          return {
+            what: e.tagName.toLowerCase() + (typeof e.className === 'string' && e.className ? '.' + e.className.split(' ')[0] : ''),
+            style: c.outlineStyle, width: parseFloat(c.outlineWidth), color: c.outlineColor, inCode: !!e.closest('pre'),
+          };
+        });
+        if (!f) continue;
+        kinds.add(f.what);
+        const want = f.inCode ? ring.code : ring.ring;
+        const ok = f.style === 'solid' && f.width >= 2 && f.color === want;
+        if (!ok && bad++ < 5) t.check(false, `${width}px ${mode}, stop ${i + 1} (${f.what}): outline ${f.style} ${f.width}px ${f.color}, want solid ≥2px ${want}`);
+      }
+      t.check(bad === 0, `${width}px ${mode}: every focus stop draws the ring (${bad} did not)`);
+      t.check(kinds.size >= 4, `${width}px ${mode}: Tab reached links, summaries, buttons…: ${[...kinds].join(' ')}`);
+      if (width === 1280) t.check(kinds.has('button.clogem-copy'), `${width}px ${mode}: a copy button was among the stops`);
+      await page.close();
+    }
+  }
+
   // --- print -------------------------------------------------------------------
   {
     const page = await t.newPage({ colorScheme: 'dark' });

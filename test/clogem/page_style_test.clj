@@ -246,3 +246,35 @@ html.theme-mode-dark { --f: 1; }
             (is (str/includes? html (str "<html class=\"theme-mode-auto theme-style-" (name style) "\"")) p)
             (is (str/includes? html "<main class=\"clogem-main\"") (str p ": the box the style draws"))))
         (finally (fs/delete-tree dir))))))
+
+;; ---------------------------------------------------------------------------
+;; 6. Focus rings (D-P4-9)
+
+(deftest one-focus-ring-reaches-3-to-1-everywhere
+  (let [css (slurp theme-css)
+        rules (cp/parse css)]
+    (testing "one :focus-visible rule for everything: 2px solid, 2px offset, the ring colour"
+      (is (= {"outline" "2px solid var(--focusRing)" "outline-offset" "2px"} (cp/rule rules ":focus-visible")))
+      (is (= {"outline-color" "var(--codeFocusRing)"} (cp/rule rules "pre.clogem-code :focus-visible"))
+          "inside a code block, the code ring colour"))
+    (testing "no per-control ring left to drift (B1 drew 2px/1px on four controls, Chromium's auto 1px elsewhere)"
+      (is (= 1 (count (filter #(some (fn [sel] (re-find #"focus-visible" sel)) (:selectors %))
+                              (filter #(some (fn [[p]] (= "outline" p)) (:decls %)) rules))))))
+    (testing "the banner's main column keeps drawing no ring (lang_test pins it)"
+      (is (str/includes? css ".clogem-main[tabindex=\"-1\"]:focus { outline: none; }")))
+    (testing "the ring reaches 3:1 (WCAG 1.4.11) on every surface — --blurBg included — and the code ring on --codeBg, in every mode and style"
+      (doseq [m (keys cp/modes) s cp/styles
+              :let [p (cp/palette rules m s)
+                    what (str (name m) "/" (name s))
+                    ss (cp/surfaces p)
+                    main (second (first (filter #(= "--mainBg" (first %)) ss)))
+                    code (cp/over (p "--codeBg") main)]]
+        (is (some? (p "--focusRing")) what)
+        (doseq [[sn bg] ss]
+          (let [r (cp/contrast (p "--focusRing") bg)]
+            (is (>= r 3.0) (format "%s: the ring %s on %s is %.2f:1" what (p "--focusRing") sn r))))
+        (let [r (cp/contrast (p "--codeFocusRing") code)]
+          (is (>= r 3.0) (format "%s: the code ring %s on --codeBg %s is %.2f:1" what (p "--codeFocusRing") (cp/hex code) r)))))
+    (testing "B1's ring in read mode's code block was 2.41:1"
+      (let [p (cp/palette rules :read)]
+        (is (< (cp/contrast (p "--accent") (p "--codeBg")) 3.0))))))

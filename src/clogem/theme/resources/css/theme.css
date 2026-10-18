@@ -160,6 +160,16 @@ body {
   line-height: 1.85;   /* taller than the Latin default — Tamil glyphs are tall */
 }
 
+/* P4-B2a (D-P4-9): one focus ring for everything focusable — links,
+ * <summary>, buttons, heading anchors, Pagefind's trigger — in the accent,
+ * which reaches 3:1 (WCAG 1.4.11) on every surface. Inside a code block
+ * the ring is --codeFocusRing, the code's own colour: the accent on read
+ * mode's dark block was 2.41:1. The scrollable <code> draws it inset,
+ * since its <pre> clips. */
+:focus-visible { outline: 2px solid var(--focusRing); outline-offset: 2px; }
+pre.clogem-code :focus-visible { outline-color: var(--codeFocusRing); }
+pre.clogem-code > code:focus-visible { outline-offset: -2px; }
+
 a { color: var(--accent); text-decoration: none; }
 a:hover { color: var(--textLightenColor); text-decoration: underline; }
 
@@ -230,9 +240,6 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
 }
 .clogem-mode__menu button:hover { background: var(--customBlockBg); }
 .clogem-mode__menu button[aria-pressed="true"] { color: var(--accent); font-weight: 600; }
-.clogem-mode__button:focus-visible, .clogem-mode__menu button:focus-visible {
-  outline: 2px solid var(--accent); outline-offset: 1px;
-}
 .clogem-navbar__menu li { padding: 0.2rem 0; }
 
 /* the list wraps, like the navbar around it: a long :label used to widen a
@@ -301,7 +308,6 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
   padding: 0.15rem 0.45rem; cursor: pointer;
 }
 .clogem-lang-banner__dismiss:hover { border-color: var(--borderColor); }
-.clogem-lang-banner__dismiss:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* D-P3-15: the giscus widget below the article */
 .clogem-comments { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--borderColor); }
@@ -309,6 +315,7 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
 .clogem-content :is(h2, h3, h4, h5, h6) { scroll-margin-top: 4rem; }
 .header-anchor { opacity: 0; margin-left: 0.35rem; text-decoration: none; }
 :is(h1, h2, h3, h4, h5, h6):hover .header-anchor { opacity: 0.5; }
+.header-anchor:focus-visible { opacity: 1; }   /* a ring on nothing is no ring */
 
 /* Code blocks (§11.3 item 10). The <code> is the scroll box, not the <pre>,
  * so the language label and the copy button (both pinned to the <pre>'s
@@ -354,7 +361,6 @@ pre.clogem-code.ln-w6 .line::before { width: 6ch; }
   background: transparent; color: var(--codeLineNumber); cursor: pointer; font: inherit;
 }
 .clogem-copy:hover { border-color: var(--codeLineNumber); }
-.clogem-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .clogem-copy.is-copied { color: var(--codeColor); }
 code, pre, kbd, samp { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
 code { font-size: 0.9em; }
@@ -524,7 +530,10 @@ html[class] {
   --pf-skeleton-shine: var(--bodyBg);
   --pf-hover: var(--customBlockBg);
   --pf-mark: var(--textColor);
-  --pf-outline-focus: var(--accent);
+  --pf-outline-focus: var(--focusRing);
+  /* P4-B2a: the focus ring (above), resolved per mode */
+  --focusRing: var(--accent);
+  --codeFocusRing: var(--codeColor);
   /* P4-B2a: the rest of what Pagefind 1.5.2 reads. Its error colours fail
    * AA (#dc2626 on #fef2f2 is 4.41:1), so they come from the palette;
    * shadows and the backdrop are Pagefind's light values */
