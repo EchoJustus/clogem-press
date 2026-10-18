@@ -278,3 +278,18 @@ html.theme-mode-dark { --f: 1; }
     (testing "B1's ring in read mode's code block was 2.41:1"
       (let [p (cp/palette rules :read)]
         (is (< (cp/contrast (p "--accent") (p "--codeBg")) 3.0))))))
+
+;; ---------------------------------------------------------------------------
+;; 8. Budget and print
+
+(defn- gzip-size [^bytes bs]
+  (let [out (java.io.ByteArrayOutputStream.)]
+    (with-open [g (java.util.zip.GZIPOutputStream. out)] (.write g bs))
+    (.size out)))
+
+(deftest theme-css-stays-within-its-budget
+  (testing "report 1's budget: theme.css at most 12 KB gzipped"
+    (let [bs (fs/read-all-bytes theme-css)
+          gz (gzip-size bs)]
+      (is (<= gz 12288) (str gz " bytes gzipped"))
+      (println (format "page-style: theme.css is %d bytes, %d gzipped (budget 12288)" (count bs) gz)))))

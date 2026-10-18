@@ -435,7 +435,8 @@ export default async function modes(t) {
     await page.goto(url, { waitUntil: 'load' });
     await page.emulateMedia({ media: 'print' });
     const shown = await page.evaluate(() => Object.fromEntries(
-      ['.clogem-navbar', '.clogem-sidebar', '.clogem-toc', '.clogem-mode', '.clogem-search', '.clogem-comments']
+      ['.clogem-navbar', '.clogem-sidebar', '.clogem-toc', '.clogem-mode', '.clogem-search', '.clogem-comments',
+       '.clogem-prev-next', '.header-anchor']
         .map((s) => [s, document.querySelector(s) ? getComputedStyle(document.querySelector(s)).display : 'absent'])));
     for (const [s, d] of Object.entries(shown)) t.check(d === 'none' || d === 'absent', `print hides ${s} (display ${d})`);
     const bg = await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor);
