@@ -726,6 +726,8 @@
   [cfg & [{:keys [reload-code?]}]]
   (->> [(config/content-dir cfg) (config/assets-dir cfg) (config/strings-dir cfg)
         (fs/path (config/site-dir cfg) "overrides")
+        ;; §11.3 item 15: only when it is on (nil otherwise)
+        (config/static-dir cfg)
         (fs/path (:clogem/config-file cfg))
         (theme-dir reload-code?)]
        (remove nil?)
@@ -750,7 +752,8 @@
 (defn watch-specs
   "Every path `bb dev` watches with the fswatcher pod, whether it exists yet
   or not, as {:path :recursive? :only}: the content, assets, i18n and
-  overrides directories and the theme's (recursively), and the config
+  overrides directories, the static directory when it is on (§11.3 item
+  15) and the theme's (recursively), and the config
   file's DIRECTORY, not recursively, `:only` that file. A watch on the
   file itself stays on its inode, so a save that replaces it by rename —
   `sed -i`, vim, emacs, any atomic-save editor — left every later edit
@@ -768,7 +771,9 @@
     (merge-specs
      (concat
       (for [p [(config/content-dir cfg) (config/assets-dir cfg) (config/strings-dir cfg)
-               (fs/path (config/site-dir cfg) "overrides")]]
+               (fs/path (config/site-dir cfg) "overrides")
+               (config/static-dir cfg)]
+            :when p]
         {:path (norm p) :recursive? true})
       (when cf [{:path (norm (fs/parent cf)) :recursive? false :only #{cf}}])
       (when target [{:path (norm (fs/parent target)) :recursive? false :only #{target}}])

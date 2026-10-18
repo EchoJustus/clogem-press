@@ -33,7 +33,8 @@
     clogem.theme-modes-test
     clogem.highlight-test
     ;; Phase 4 Task F
-    clogem.analytics-test])
+    clogem.analytics-test
+    clogem.static-test])
 
 (defn- highlighting-off-by-default!
   "§11.3 item 10 turns highlighting on by default, which would make every

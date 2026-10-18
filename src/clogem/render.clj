@@ -769,6 +769,34 @@
       (for [[p file] (site-assets cfg)]
         {:file file :bytes (read-asset p) :what (site-asset-what cfg p)})))))
 
+(defn- static-files
+  "[[source-path rel-path] …] for the static directory's files (§11.3 item
+  15), sorted: every regular file, dotfiles included (`.nojekyll`,
+  `.well-known/`, Codeberg's `.domains`), never under a `.git` segment, and
+  never below a linked directory (`fs/glob` does not follow links)."
+  [cfg]
+  (when-let [dir (config/static-dir cfg)]
+    (when (fs/directory? dir)
+      (for [p (sort (map str (fs/glob dir "**" {:hidden true})))
+            :let [rel (fs/relativize dir p)]
+            :when (and (not-any? #(= ".git" (str %)) (iterator-seq (.iterator ^java.nio.file.Path rel)))
+                       (fs/regular-file? p))]
+        [(fs/path p) rel]))))
+
+(defn- static-what [cfg p]
+  (let [src (site-rel cfg p)]
+    {:label (str "the static file " src) :source src :noun "a static file"}))
+
+(defn static-outputs
+  "The static directory's files as outputs ({:file :bytes :what :static?}),
+  each READ here, during the render, at the same path below the output
+  directory's root as below the static directory — `--base` changes
+  nothing on disk (`uri->file`)."
+  [cfg]
+  (let [out (config/out-dir cfg)]
+    (vec (for [[p rel] (static-files cfg)]
+           {:file (fs/path out rel) :bytes (read-asset p) :what (static-what cfg p) :static? true}))))
+
 (defn- html-file? [p]
   (boolean (re-find #"(?i)\.html$" (str (fs/file-name p)))))
 
@@ -1132,6 +1160,31 @@
 (defn- what-label [out {:keys [file what]}]
   (or (:label what) (out-rel out (normal-abs file))))
 
+(def ^:private build-dirs
+  "The top-level directories of `<out>` the build fills itself: no static
+  file may land in one, search on or off (§11.3 item 15)."
+  {"clogem"   ["which holds the theme's own files" nil]
+   "assets"   ["which holds the site's assets" "Put it in the assets directory (:content :assets-dir) instead."]
+   "pagefind" ["which the search step replaces whole" nil]})
+
+(defn- static-reserved
+  "Why the static output `o` lands on a path the build owns, or nil: in
+  `build-dirs`, on `config/out-marker`, on a name carrying `temp-marker`
+  (at any depth, as `sweep-temp-files!` matches it), or on a top-level
+  `.pagefind-…` name (`search/work-dir-name?`), as [why hint]. Case-folded."
+  [out o]
+  (let [segs  (map (comp u/lower str) (iterator-seq (.iterator ^java.nio.file.Path (fs/relativize out (normal-abs (:file o))))))
+        top   (first segs)]
+    (cond
+      (contains? build-dirs top)
+      (let [[why hint] (get build-dirs top)] [(str "inside " top "/, " why) hint])
+      (= top (u/lower config/out-marker))
+      [(str "on " config/out-marker ", the file that marks the output directory as the build's")]
+      (some #(str/includes? % (u/lower temp-marker)) segs)
+      [(str "on a name containing " temp-marker ", which the build gives its temp files and deletes")]
+      (search/work-dir-name? top)
+      [(str "on a " search/work-dir-prefix "… name, which the search step uses for its own directories")])))
+
 (defn output-collisions
   "Every output of this build that another output of this same build would
   have to contain: `/assets/demo.txt/` writes `<out>/assets/demo.txt/index.html`
@@ -1143,36 +1196,84 @@
   written. Each output's ancestors inside `out` are looked up, one map lookup
   each, in the set of this build's own outputs: what is already on disk is
   `check-outputs!`'s business. Returns [{:inner :outer :file}] — `:inner`
-  the output that would go inside `:outer`, `:file` the path both claim."
+  the output that would go inside `:outer`, `:file` the path both claim.
+
+  A `:static?` output (§11.3 item 15) also collides, as `:kind`:
+
+    :reserved  — with a path the build owns (`static-reserved`; `:outer` nil);
+    :duplicate — with another output at the same path, a page's
+                 `index.html`, `feed.xml`, `robots.txt` or a site asset.
+
+  Paths are case-folded (macOS, Windows) for a pair that includes a static
+  file — and only then: folding the build's own outputs could fail a site
+  that builds today."
   [out outputs]
-  (let [out     (normal-abs out)
-        by-file (into {} (map (fn [o] [(str (normal-abs (:file o))) o])) outputs)]
-    (vec
-     (for [o outputs
-           :when (not (:reserved? o))
-           :let [hit (loop [a (fs/parent (normal-abs (:file o)))]
-                       (when (and a (inside? out a))
-                         (if-let [h (get by-file (str a))]
-                           [a h]
-                           (recur (fs/parent a)))))]
-           :when hit]
-       {:inner o :outer (second hit) :file (first hit)}))))
+  (let [out      (normal-abs out)
+        written  (remove :reserved? outputs)
+        k        #(str (normal-abs (:file %)))
+        by-file  (into {} (map (fn [o] [(k o) o])) outputs)
+        statics  (filter :static? written)
+        reserved (into {} (keep (fn [o] (when-let [why (static-reserved out o)] [(k o) why]))) statics)
+        folded   #(u/lower (k %))
+        static-by-lower (into {} (map (fn [o] [(folded o) o])) statics)
+        all-by-lower    (into {} (map (fn [o] [(u/lower (k o)) o])) outputs)
+        lookup   (fn [o a]
+                   (let [s (str a)]
+                     (or (get by-file s)
+                         (get static-by-lower (u/lower s))
+                         (when (:static? o) (get all-by-lower (u/lower s))))))
+        nested   (for [o written
+                       :let [hit (loop [a (fs/parent (normal-abs (:file o)))]
+                                   (when (and a (inside? out a))
+                                     (if-let [h (lookup o a)]
+                                       [a h]
+                                       (recur (fs/parent a)))))]
+                       :when hit
+                       ;; a static file on a reserved path is reported as that
+                       :when (not-any? #(and (:static? %) (contains? reserved (k %))) [o (second hit)])]
+                   {:inner o :outer (second hit) :file (first hit)})
+        dups     (for [[_ os] (group-by folded written)
+                       :when (and (next os) (some :static? os))
+                       [i a] (map-indexed vector os)
+                       b     (drop (inc i) os)
+                       :when (or (:static? a) (:static? b))
+                       :let  [[inner outer] (if (:static? b) [b a] [a b])]
+                       :when (not (contains? reserved (k inner)))]
+                   {:kind :duplicate :inner inner :outer outer :file (normal-abs (:file inner))})]
+    (vec (concat
+          (for [o statics :let [why (get reserved (k o))] :when why]
+            {:kind :reserved :inner o :file (normal-abs (:file o)) :why why})
+          nested
+          dups))))
 
 (defn collision-message
   "What `output-collisions` found, in words naming both outputs and where
   each comes from."
-  [out {:keys [inner outer file]}]
-  (let [out   (normal-abs out)
-        page  (some #(when (= "a page" (get-in % [:what :noun])) %) [inner outer])]
-    (str (what-label out inner) " would put " (get-in inner [:what :noun] "a file")
-         " inside " (what-label out outer)
-         (if (:reserved? outer)
-           ", which is replaced whole on every build"
-           (str ": " (out-rel out file) " cannot be both a file and a directory"))
-         ". "
-         (if page
-           (str "Choose another permalink for " (get-in page [:what :uri]) ".")
-           "Rename one of them."))))
+  [out {:keys [inner outer file kind why]}]
+  (let [out    (normal-abs out)
+        page   (some #(when (= "a page" (get-in % [:what :noun])) %) [inner outer])
+        static (some #(when (:static? %) %) [inner outer])]
+    (case kind
+      :reserved
+      (str (what-label out inner) " would be written to " (out-rel out file) ", " (first why) ". "
+           (or (second why) (str "Rename or move " (get-in inner [:what :source]) ".")))
+      :duplicate
+      (str (what-label out inner) " and " (when (= "a page" (get-in outer [:what :noun])) "the page ")
+           (what-label out outer) " would both be written to "
+           (out-rel out file) ". "
+           (if (= "robots.txt" (u/lower (str (fs/relativize out (normal-abs (:file outer))))))
+             "To ship your own robots.txt, put it in the assets directory: assets/robots.txt already replaces the generated one."
+             (str "Rename or move " (get-in inner [:what :source]) ".")))
+      (str (what-label out inner) " would put " (get-in inner [:what :noun] "a file")
+           " inside " (what-label out outer)
+           (if (:reserved? outer)
+             ", which is replaced whole on every build"
+             (str ": " (out-rel out file) " cannot be both a file and a directory"))
+           ". "
+           (cond
+             static (str "Rename or move " (get-in static [:what :source]) ".")
+             page   (str "Choose another permalink for " (get-in page [:what :uri]) ".")
+             :else  "Rename one of them.")))))
 
 (defn- check-outputs!
   "Throw, before anything is swept or written, if two of this build's own
@@ -1252,8 +1353,9 @@
 (defn planned-outputs
   "Every file a build of `model` would write, as {:file :what}, plus its
   `reserved-outputs` — the pages (from the page map, none rendered), the
-  theme's and the site's assets (listed, not read), the feeds, the sitemap
-  and robots.txt (none produced)."
+  theme's and the site's assets (listed, not read), the feeds, the sitemap,
+  robots.txt (none produced) and the static directory's files (§11.3 item
+  15)."
   [model]
   (let [cfg   (:cfg model)
         out   (config/out-dir cfg)
@@ -1267,6 +1369,9 @@
           (for [[p file] (site-assets cfg)]
             {:file file :what (site-asset-what cfg p)})
           (map #(dissoc % :content) (seo-plan cfg model pages))
+          ;; §11.3 item 15: listed, not read
+          (for [[p rel] (static-files cfg)]
+            {:file (fs/path out rel) :what (static-what cfg p) :static? true})
           (reserved-outputs cfg)))))
 
 (defn check-output-collisions!
@@ -1286,7 +1391,8 @@
 
 (defn render-site
   "Render the whole site into memory: every page, the theme's and the site's
-  assets (their bytes read here), the feeds, the sitemap and robots.txt.
+  assets (their bytes read here), the feeds, the sitemap, robots.txt and
+  the static directory's files (§11.3 item 15).
   Writes nothing, so any failure here — a page that throws, an asset that
   cannot be read — leaves `dist/` untouched. The pages' diagnostics are
   emitted (in `diag/sorted` order) to the caller's sink. Returns
@@ -1321,7 +1427,8 @@
                           rendered)]
     {:outputs  (vec (concat page-outs
                             (asset-outputs cfg theme-files)
-                            (seo-outputs cfg model pages)))
+                            (seo-outputs cfg model pages)
+                            (static-outputs cfg)))
      :reserved (reserved-outputs cfg)
      :pages    (count page-outs)
      :articles (count (:articles model))
