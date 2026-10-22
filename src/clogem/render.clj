@@ -746,6 +746,11 @@
   [dir p]
   (or (= (str dir) (str p)) (str/starts-with? (str p) (str dir java.io.File/separator))))
 
+(defn- in-git?
+  "Is `p`, inside the directory `dir`, under a `.git` segment of it?"
+  [dir p]
+  (and (under? dir p) (boolean (some #(= ".git" (str %)) (fs/components (fs/relativize dir p))))))
+
 (defn- copied-tree
   "What the build copies from `dir` — the site's `assets/` or the static
   directory — as {:files [[source-path rel] …] :skipped [[path why] …]},
@@ -756,13 +761,19 @@
   inside the site or `dir`: a link to anything else — a file outside the
   site, a directory (never descended), a missing target — is skipped, and
   `:skipped` names it (item 2: its target's bytes used to be published).
+  Nor is a link into a `.git` of the site or of `dir` followed, the root
+  included: `.git/config` can hold a remote's credentials (P4-F.2 item 2).
   `hidden?` lists dotfiles; `keep?` filters the paths relative to `dir`."
   [cfg dir {:keys [hidden? keep?] :or {keep? (constantly true)}}]
   (when (fs/directory? dir)
     (let [site (fs/real-path (config/site-dir cfg))
           root (fs/real-path dir)]
-      (if (and (fs/sym-link? dir) (not (under? site root)))
+      (cond
+        (and (fs/sym-link? dir) (not (under? site root)))
         {:skipped [[dir (str "is a link to " root ", outside the site; nothing is copied from it")]]}
+        (and (fs/sym-link? dir) (in-git? site root))
+        {:skipped [[dir (str "is a link to " root ", inside a .git directory; nothing is copied from it")]]}
+        :else
         (reduce
          (fn [acc p]
            (let [rel (fs/relativize root p)
@@ -778,6 +789,8 @@
                               (fs/directory? target)      (str "is a link to the directory " target ", which is not followed")
                               (not (or (under? site target) (under? root target)))
                               (str "is a link to " target ", outside the site")
+                              (or (in-git? site target) (in-git? root target))
+                              (str "is a link to " target ", inside a .git directory")
                               (not (fs/regular-file? target)) (str "is a link to " target ", which is not a file"))]
                  (if why
                    (update acc :skipped conj [src (str why "; it is not copied")])
@@ -785,7 +798,12 @@
          {:files [] :skipped []}
          (sort (map str (fs/glob root "**" {:hidden (boolean hidden?)}))))))))
 
-(defn- assets-tree [cfg] (copied-tree cfg (config/assets-dir cfg) {}))
+(defn- assets-tree
+  "`copied-tree` for the site's `assets/`: never editor or OS junk
+  (`u/junk-file?`, P4-F.2 item 3; `main` copied it). Dotfiles are not
+  listed at all."
+  [cfg]
+  (copied-tree cfg (config/assets-dir cfg) {:keep? #(not (u/junk-file? %))}))
 
 (defn- site-assets
   "[[source-path output-file] …] for the site's own `assets/` tree, sorted."

@@ -83,7 +83,7 @@ have, a tree copied in with `cp -r`), a watched directory deleted and made
 again, and a `site.edn` saved by an editor that replaces the file, or that is
 a symbolic link to one elsewhere. Saves are collected until 100 ms pass
 quietly, so a burst of writes is one rebuild, and editor temp files (`.#x`,
-`x~`, `4913`, `*.swp`, `*.tmp`) are ignored; so are dev's own writes — the
+`x~`, `#x#`, `4913`, `*.swp`, `*.tmp`) are ignored; so are dev's own writes — the
 front matter and `permalinks.edn` a build fills in never trigger another. A rebuild of the demo takes about 0.3 s; the page reloads about 0.6 s
 after a save, and a stylesheet-only change swaps the CSS in place. Search is
 re-indexed in the background after the reload; a page that loaded the previous
@@ -208,11 +208,12 @@ directory's root — `public/.well-known/security.txt` becomes
 `dist/.well-known/security.txt` — dotfiles included; a `.git` inside it is
 never copied, and neither are editor and OS leftovers: the names `bb dev`
 ignores (`.CNAME.swp` and vim's other swap files, `CNAME~`, `.#CNAME`,
-`*.tmp`, `4913`, the build's own `.clogem-tmp-…` files) and `.DS_Store`, `Thumbs.db` and `desktop.ini`, skipped
+`#CNAME#`, `*.tmp`, `4913`, the build's own `.clogem-tmp-…` files) and `.DS_Store`, `Thumbs.db` and `desktop.ini`, skipped
 without a word. A linked file is copied (its target's bytes) only when the
-target is inside the site; a link to a file outside it, to a directory, or
-to nothing is skipped with a warning naming it. The same rule holds for
-`assets/`. A static directory that is itself a link (`public ->
+target is inside the site; a link to a file outside it, into a `.git`
+(`public/gitcfg -> ../.git/config`), to a directory, or
+to nothing is skipped with a warning naming it. The same rules hold for
+`assets/`, leftovers included. A static directory that is itself a link (`public ->
 web/static`) is copied from its target when that is inside the site, as is
 a linked `assets/`; a linked `assets/` whose target is outside the site
 warns and copies nothing. `--base` changes

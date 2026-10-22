@@ -421,7 +421,9 @@
             (finally (binding [*out* log *err* log] ((:stop! h))))))))))
 
 (deftest a-new-directory-s-batch-holds-its-dotfiles-but-not-git
-  (with-site site-edn {"d/.well-known/x" "x" "d/.nojekyll" "" "d/a~" "" "d/.git/HEAD" "h"}
+  (with-site site-edn {"d/.well-known/x" "x" "d/.nojekyll" "" "d/a~" "" "d/.git/HEAD" "h"
+                       ;; P4-F.2 item 5: junk the build never copies is no change
+                       "d/.DS_Store" "" "d/sub/Thumbs.db" "" "d/#a#" ""}
     (fn [dir _]
       (let [d (fs/path dir "public" "d")]
         (is (= #{"" ".well-known/x" ".nojekyll"}
@@ -502,7 +504,7 @@
   (testing "P4-F.1 item 4: vim's swap file, emacs' backup and lock, and
             Finder's and Explorer's files were copied, and never swept"
     (let [junk [".CNAME.swp" ".CNAME.swo" "CNAME~" ".#CNAME" "4913" "x.tmp" "a.clogem-tmp-1-2" ".DS_Store" "Thumbs.db" "desktop.ini"
-                ".well-known/.DS_Store"]]
+                ".well-known/.DS_Store" "#CNAME#"]]
       (with-site site-edn (into {"CNAME" "c" ".well-known/x" "x"} (map (fn [n] [n "j"])) junk)
         (fn [dir out]
           (let [[_ ds ws] (build! dir out)]
@@ -532,3 +534,83 @@
           (is (= 1 (count (re-seq #"would put a page inside the static file public/categories" (ex-message e)))) (ex-message e))
           (is (re-find #"/categories/ would put a page inside" (ex-message e))))
         (is (= 1 (count (filter #(re-find #"public/categories" %) (doctor-errors dir)))))))))
+
+;; ---------------------------------------------------------------------------
+;; P4-F.2
+
+(deftest polling-sees-edits-under-a-linked-static-or-assets-root
+  (testing "P4-F.2 item 1: the poller's walk never entered a linked root,
+            so an edit under public/ -> web/static or assets/ -> web/a
+            never rebuilt"
+    (with-site site-edn {}
+      (fn [dir out]
+        (fs/delete-tree (fs/path dir "public"))
+        (fs/create-dirs (fs/path dir "web" "static"))
+        (fs/create-dirs (fs/path dir "web" "a"))
+        (spit (fs/file dir "web" "static" "CNAME") "one")
+        (spit (fs/file dir "web" "a" "logo.png") "one")
+        (fs/create-sym-link (fs/path dir "public") (fs/path "web" "static"))
+        (fs/create-sym-link (fs/path dir "assets") (fs/path "web" "a"))
+        (let [log (java.io.StringWriter.)
+              h   (binding [*out* log *err* log]
+                    (dev/start-dev! {:site-dir (str dir) :port 1888 :no-write true :no-search true
+                                     :poll true :interval 50}
+                                    {:run-server! (fn [& _] (fn [& _] nil))
+                                     :notify! (fn [_]) :notify-error! (fn [_])}))]
+          (try
+            (is (wait-until #(str/includes? (str log) "watching by polling") 10000) (str log))
+            (is (wait-until #(= "one" (try (slurp (fs/file out "assets" "logo.png")) (catch Exception _ nil)))) (str log))
+            ;; past the first snapshot, and a new mtime
+            (Thread/sleep 300)
+            (spit (fs/file dir "web" "static" "CNAME") "two")
+            (is (wait-until #(= "two" (slurp (fs/file out "CNAME"))) 10000) (str log))
+            (spit (fs/file dir "web" "a" "logo.png") "two")
+            (is (wait-until #(= "two" (slurp (fs/file out "assets" "logo.png"))) 10000) (str log))
+            (finally (binding [*out* log *err* log] ((:stop! h))))))))))
+
+(deftest a-new-linked-directory-s-batch-is-named-below-the-link
+  (with-site site-edn {}
+    (fn [dir _]
+      (fs/delete-tree (fs/path dir "public"))
+      (fs/create-dirs (fs/path dir "web" "static" ".git"))
+      (spit (fs/file dir "web" "static" "CNAME") "c")
+      (spit (fs/file dir "web" "static" ".git" "HEAD") "h")
+      (fs/create-sym-link (fs/path dir "public") (fs/path "web" "static"))
+      (let [d (fs/path dir "public")]
+        (is (= #{(str d) (str (fs/path d "CNAME"))} (set (dev/new-dir-batch d dir))))))))
+
+(deftest a-link-into-git-is-not-copied
+  (testing "P4-F.2 item 2: a link to the site's own .git/config has a real
+            path inside the site, so it was published"
+    (with-site site-edn {"CNAME" "c"}
+      (fn [dir out]
+        (fs/create-dirs (fs/path dir ".git"))
+        (spit (fs/file dir ".git" "config") "[core]\n")
+        (fs/create-dirs (fs/path dir "assets"))
+        (doseq [d ["public" "assets"]]
+          (fs/create-sym-link (fs/path dir d "gitcfg") (fs/path ".." ".git" "config")))
+        (let [[_ ds ws] (build! dir out)]
+          (is (empty? (diag/errors ds)))
+          (is (not (fs/exists? (fs/path out "gitcfg"))))
+          (is (not (fs/exists? (fs/path out "assets" "gitcfg"))))
+          (is (= "c" (slurp (fs/file out "CNAME"))))
+          (doseq [d ["public" "assets"]]
+            (is (= 1 (count (filter #(re-find (re-pattern (str "^" d "/gitcfg is a link to .*, inside a \\.git directory; it is not copied\\.$")) %) ws)))
+                (pr-str ws)))
+          (is (= 2 (count ws)) (pr-str ws)))))))
+
+(deftest junk-in-assets-is-not-published
+  (testing "P4-F.2 items 3 and 4: assets/ copied editor and OS junk (as on
+            main), and neither directory skipped an Emacs auto-save file"
+    (let [junk ["CNAME~" "4913" "x.tmp" "Thumbs.db" "desktop.ini" "#CNAME#" "sub/desktop.ini"]]
+      (with-site site-edn {}
+        (fn [dir out]
+          (doseq [n (conj junk "logo.png")]
+            (fs/create-dirs (fs/parent (fs/path dir "assets" n)))
+            (spit (fs/file dir "assets" n) "j"))
+          (let [[_ ds ws] (build! dir out)]
+            (is (empty? (diag/errors ds)))
+            (is (empty? ws) "skipped silently"))
+          (is (= "j" (slurp (fs/file out "assets" "logo.png"))) "a normal file is copied")
+          (doseq [n junk]
+            (is (not (fs/exists? (fs/path out "assets" n))) n)))))))

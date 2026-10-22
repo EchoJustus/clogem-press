@@ -41,13 +41,18 @@ verification and a static root (§11.3 items 14, 15). The version stays 0.2.0.
   verification file, an IndexNow `<key>.txt`, `.nojekyll`,
   `.well-known/`. It never copies a `.git`, never follows a linked
   directory, and silently skips editor and OS leftovers — the names `bb
-  dev` ignores (`.CNAME.swp`, `CNAME~`, `.#CNAME`, `*.tmp`, `4913`) and
+  dev` ignores (`.CNAME.swp`, `CNAME~`, `.#CNAME`, Emacs' auto-save
+  `#CNAME#`, `*.tmp`, `4913`) and
   `.DS_Store`, `Thumbs.db`, `desktop.ini`. A linked file is copied only
-  when its target is inside the site; any other link is skipped with a
+  when its target is inside the site and not inside a `.git` (a link to
+  `.git/config`, which can hold a remote's credentials, is not
+  published); any other link is skipped with a
   warning naming it. A static directory that is itself a link inside the
   site (`public -> web/static`) is copied from its target. Unchanged files are not rewritten, and `bb dev` rebuilds
   when one changes — a dotfile too, when it polls (`--poll`, or its
-  fallback), which never saw one before P4-F.1. A static file where the build writes — a page,
+  fallback), which never saw one before P4-F.1, and a file under a linked
+  static directory or a linked `assets/` (P4-F.2). Polling skips a `.git`
+  without listing it, and a `.DS_Store` write no longer rebuilds. A static file where the build writes — a page,
   `feed.xml`, `sitemap.xml`, `robots.txt`, a site asset, anything under
   `clogem/`, `assets/` or `pagefind/`, the `.clogem-output` marker, a
   temp-file or `.pagefind-…` name, or a page's directory — is an error
@@ -83,7 +88,15 @@ verification and a static root (§11.3 items 14, 15). The version stays 0.2.0.
   is skipped with a warning naming it — the build does not fail. A linked
   `assets/` directory inside the site is now copied from its target
   (0.2.0 copied nothing from it, silently); one whose target is outside
-  the site warns and copies nothing.
+  the site warns and copies nothing. A link into a `.git` is skipped
+  the same way.
+- **The site's `assets/` no longer publishes editor and OS leftovers**
+  (hardening behaviour 0.2.0 already had): `CNAME~`, `#logo#`, `4913`,
+  `*.tmp`, `Thumbs.db`, `desktop.ini` and the other names the static
+  directory skips are not copied, silently. Dotfiles in `assets/` were
+  never copied.
+- **`bb dev` ignores Emacs' auto-save files** (`#x#`), as it already did
+  its lock and backup files.
 
 ### Documentation (F)
 

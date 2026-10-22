@@ -800,21 +800,42 @@
           (fs/directory? p {:nofollow-links true})))))
 
 (defn- tree-files
-  "Every path below the directory `dir`, dotfiles included — the static
+  "Every file below the directory `dir`, dotfiles included — the static
   directory's `.nojekyll`, `.well-known/` and `.domains` are outputs
-  (P4-F.1 item 1) — but none under a `.git` segment and no `editor-temp?`
-  name: neither is a change to rebuild for."
-  [dir]
-  (remove (fn [f]
-            (or (editor-temp? f)
-                (some #(= ".git" (str %)) (fs/components (fs/relativize dir f)))))
-          (fs/glob dir "**" {:hidden true})))
+  (P4-F.1 item 1) — but none under a `.git` segment, which is pruned from
+  the walk, not listed and then dropped (P4-F.2 item 5: a 20,000-file
+  `.git` cost every pass a quarter of a second), and no `u/junk-file?`
+  name: neither is a change to rebuild for, nor a `.DS_Store` the build
+  never copies. A `dir` that is a link whose real path is inside `site`
+  is walked at that real path, as the build copies it (P4-F.2 item 1:
+  the walk never enters a linked root, so polling saw no edit under it);
+  the paths are still named below `dir`."
+  [dir & [site]]
+  (let [root (if (and site (fs/sym-link? dir))
+               (let [r (try (fs/real-path dir) (catch Exception _ nil))
+                     s (try (str (fs/real-path site)) (catch Exception _ nil))]
+                 (if (and r s (or (= s (str r)) (str/starts-with? (str r) (str s File/separator))))
+                   r
+                   dir))
+               dir)
+        acc  (volatile! [])
+        git? #(= ".git" (str (fs/file-name %)))]
+    (when (and (fs/directory? root) (not (fs/sym-link? root)))
+      (fs/walk-file-tree root
+                         {:pre-visit-dir (fn [d _] (if (and (git? d) (not= (str d) (str root))) :skip-subtree :continue))
+                          :visit-file    (fn [f _]
+                                           (when-not (or (git? f) (u/junk-file? f))
+                                             (vswap! acc conj f))
+                                           :continue)}))
+    (if (= root dir)
+      @acc
+      (mapv #(fs/path dir (fs/relativize root %)) @acc))))
 
 (defn- snapshot
-  [paths]
+  [paths & [site]]
   (into {}
         (for [p paths
-              f (if (fs/directory? p) (tree-files p) [p])
+              f (if (fs/directory? p) (tree-files p site) [p])
               ;; a file deleted between the listing and the stat is simply
               ;; not in this snapshot
               :let [t (try (when (fs/regular-file? f)
@@ -832,18 +853,20 @@
   `:content :dir` is followed without a restart. A `Throwable` in one pass
   is reported and the loop goes on: an `Error` used to end the polling
   thread silently, and with it every rebuild. `on-baseline` is called
-  once the first snapshot is taken: a change before it is never seen."
-  [paths-fn interval on-change & [{:keys [stop? on-baseline] :or {stop? (constantly false)}}]]
+  once the first snapshot is taken: a change before it is never seen.
+  `site-fn`, called on every pass, gives the site directory, inside which
+  a linked root is walked at its real path (`tree-files`)."
+  [paths-fn interval on-change & [{:keys [stop? on-baseline site-fn] :or {stop? (constantly false) site-fn (constantly nil)}}]]
   (let [roots #(set (map norm %))
         r0    (roots (paths-fn))
-        s0    (snapshot r0)]
+        s0    (snapshot r0 (site-fn))]
     (when on-baseline (on-baseline))
     (loop [prev-roots r0
            prev       s0]
       (Thread/sleep (long interval))
       (when-not (stop?)
         (let [rs  (try (roots (paths-fn)) (catch Throwable _ prev-roots))
-              now (try (snapshot rs)
+              now (try (snapshot rs (site-fn))
                        (catch Throwable t
                          (println "clogem-press: polling failed —" (or (ex-message t) (str t)))
                          prev))
@@ -1239,11 +1262,12 @@
 (defn new-dir-batch
   "What a directory `register-dir!` has just registered changes: itself and
   every file under it now. Files created between the directory and its
-  registration were seen by no watch, so they are rescanned."
-  [dir]
+  registration were seen by no watch, so they are rescanned — a linked
+  directory's at its real path when that is inside `site` (`tree-files`)."
+  [dir & [site]]
   (into [(str dir)]
         (comp (filter #(fs/regular-file? % {:nofollow-links true})) (map str))
-        (try (doall (tree-files dir)) (catch Exception _ nil))))
+        (try (doall (tree-files dir site)) (catch Exception _ nil))))
 
 (defn one-line
   "An error message as one line for dev's terminal: without the
@@ -1660,6 +1684,7 @@
         watch-cfg (atom cfg)
         theme     (theme-dir reload-code)
         paths     #(watched-paths @watch-cfg {:reload-code? reload-code})
+        site-fn   #(config/site-dir @watch-cfg)
         specs     (atom (watch-specs cfg {:reload-code? reload-code}))
         state     (atom {:ever-ok? false})
         session   (atom #{})
@@ -1762,7 +1787,8 @@
           start-polling! (fn []
                            (when-not @stopping
                              (println (format "clogem-press: watching by polling every %d ms" interval))
-                             (spawn #(poll* paths interval submit! {:stop? (fn [] @stopping)}))))
+                             (spawn #(poll* paths interval submit! {:stop?   (fn [] @stopping)
+                                                                     :site-fn site-fn}))))
           ;; the system's inotify limit, reached mid-session: polling from
           ;; here on, with the pod's watches all released (P4-D.3 item 5).
           ;; The change that hit the limit, and the rest of its batch, are
@@ -1776,6 +1802,7 @@
                                     (unload-pod! @pod-id)
                                     (spawn #(poll* paths interval submit!
                                                    {:stop?       (fn [] @stopping)
+                                                    :site-fn     site-fn
                                                     :on-baseline (fn [] (submit! (mapv str (paths))))}))))
           ;; pod events: a directory the pod must be told about goes to
           ;; the follower (pod calls never run on the pod's callback
@@ -1831,7 +1858,7 @@
                                          ;; a single-file watch's directory — a site.edn
                                          ;; link's new target — is not (P4-D.3 item 16)
                                          (when-let [new (seq (filter #(get-in @registered [% :spec :recursive?]) (distinct new)))]
-                                           (submit! (vec (mapcat new-dir-batch new)))))
+                                           (submit! (vec (mapcat #(new-dir-batch % (site-fn)) new)))))
                                        false
                                        (catch Throwable t
                                          (if (::exhausted (ex-data t))

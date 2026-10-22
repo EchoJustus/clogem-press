@@ -12,14 +12,15 @@
 
 (defn editor-temp?
   "Is `p` a file an editor or this program writes on the way to a save —
-  never a change to rebuild for? Emacs lock and backup files (`.#x`, `x~`),
-  vim's swap files and its `4913` write probe, `*.tmp`, the build's own
+  never a change to rebuild for? Emacs lock, backup and auto-save files
+  (`.#x`, `x~`, `#x#`), vim's swap files and its `4913` write probe, `*.tmp`, the build's own
   atomic-write temp files (`.clogem-tmp-…`) and the watcher's probe."
   [p]
   (let [n (.getName (io/file (str p)))]
     (boolean
      (or (str/starts-with? n ".#")
          (str/ends-with? n "~")
+         (re-matches #"#.*#" n)
          (= n "4913")
          (re-find #"(?i)\.(swp|swo|swx|tmp)$" n)
          (str/includes? n ".clogem-tmp-")
