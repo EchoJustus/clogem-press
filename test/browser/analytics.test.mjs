@@ -9,6 +9,12 @@
 // quiet. Each provider's script URL is fulfilled with a stub that records
 // `document.currentScript`'s attributes, so no request leaves the test:
 // every request is to one of the routed origins, or the test fails.
+// That check sees the requests the PAGE makes and Playwright reports as
+// finished — routed ones are fulfilled in-process, anything else is aborted
+// by t.newPage's route. It cannot see what Chromium does below the page: a
+// speculative preconnect or DNS lookup for a routed host, or the browser's
+// own service connections. So it shows that the page sent nothing out, not
+// that the browser opened no socket.
 //
 // When `bb` is not on PATH it says so and skips; CI's browser job has bb.
 
@@ -94,6 +100,10 @@ async function open(t, dist, origin, { init } = {}) {
 
 const dnt = () => Object.defineProperty(Navigator.prototype, 'doNotTrack', { get: () => '1' });
 const gpc = () => Object.defineProperty(Navigator.prototype, 'globalPrivacyControl', { get: () => true });
+// the gate's other two DNT signals (P4-F.1 item 6): old Safari's and old
+// IE/Edge's
+const winDnt = () => { window.doNotTrack = '1'; };
+const msDnt = () => Object.defineProperty(Navigator.prototype, 'msDoNotTrack', { get: () => '1' });
 
 async function stubs(page, expectLoad) {
   if (expectLoad) {
@@ -146,7 +156,8 @@ export default async function (t) {
       t.check(s.length === 0, `ga4: loaded at ${LOCAL}: ${JSON.stringify(s)}`);
       t.check(await page.evaluate(() => window.dataLayer === undefined), `ga4: dataLayer set at ${LOCAL}`);
     }
-    for (const [name, init] of [['DNT', dnt], ['GPC', gpc]]) {
+    for (const [name, init] of [['DNT', dnt], ['window.doNotTrack', winDnt], ['navigator.msDoNotTrack', msDnt],
+                                ['GPC', gpc]]) {
       const { page, s } = await visit('ga4', HOST, { init, expectLoad: false });
       t.check(s.length === 0, `ga4: loaded under ${name}: ${JSON.stringify(s)}`);
       t.check(await page.evaluate(() => window.dataLayer === undefined), `ga4: dataLayer set under ${name}`);

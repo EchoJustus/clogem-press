@@ -96,6 +96,10 @@ verification and a static root (§11.3 items 14, 15). The version stays 0.2.0.
   `:content :static-dir` key. DESIGN.md §5.2, §5.3, §5.4, §5.6, §6.10,
   D-13, §8 and §11.3 items 14–16 record what was built.
 - `test/browser/analytics.test.mjs`, listed in `test/browser/README.md`.
+  It covers all four Do Not Track signals the loader reads —
+  `navigator.doNotTrack`, `window.doNotTrack`, `navigator.msDoNotTrack`
+  and Global Privacy Control — and says what its "no request leaves the
+  test" check can and cannot see.
 
 **Task D — the dev loop** (§11.3 item 12):
 
