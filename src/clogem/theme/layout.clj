@@ -854,15 +854,23 @@
 (defn plausible-init
   "`:analytics :init` as plausible.init takes it: every option name
   camelCased, `:file-downloads`' own included; the keys inside
-  `:custom-properties` are the site's data, left as written."
+  `:custom-properties` are the site's data, left as written. An option
+  `config/known-keys` does not know was warned about as ignored, so it is
+  dropped (P4-F.1 item 7)."
   [init]
-  (into (sorted-map)
-        (for [[k v] init]
-          [(camel k)
-           (cond
-             (= :custom-properties k) v
-             (map? v) (into (sorted-map) (for [[k2 v2] v] [(camel k2) v2]))
-             :else v)])))
+  (let [known? (fn [path k] (= :ok (get-in config/known-keys [path k])))]
+    (into (sorted-map)
+          (for [[k v] init
+                :when (known? [:analytics :init] k)]
+            [(camel k)
+             (cond
+               (= :custom-properties k) v
+               (map? v) (into (sorted-map)
+                              (for [[k2 v2] v
+                                    :when (or (nil? (get config/known-keys [:analytics :init k]))
+                                              (known? [:analytics :init k] k2))]
+                                [(camel k2) v2]))
+               :else v)]))))
 
 (defn analytics-attrs
   "The data-* attributes of the analytics loader's tag (all strings), or

@@ -89,6 +89,13 @@
 (defn- load-site [dir & [overrides]]
   (diag/collecting (config/load-config (str dir) nil overrides)))
 
+(defn- load-cfg
+  "`dir`'s config, asserting it loads with no error."
+  [dir]
+  (let [[cfg ds] (load-site dir)]
+    (is (empty? (diag/errors ds)) (pr-str ds))
+    cfg))
+
 (deftest a-bad-static-dir-warns-and-is-off
   (with-site site-edn {"CNAME" "c"}
     (fn [dir out]
@@ -124,7 +131,9 @@
       (testing "a static directory that is a file"
         (spit (fs/file dir "notadir") "x")
         (spit (fs/file dir "site.edn") (pr-str (assoc-in site-edn [:content :static-dir] "notadir")))
-        (is (re-find #"which is not a directory" (:message (first (diag/warnings (second (load-site dir)))))))))))
+        (let [[_ ds] (load-site dir)]
+          (is (empty? (diag/errors ds)))
+          (is (re-find #"which is not a directory" (:message (first (diag/warnings ds))))))))))
 
 (deftest a-good-static-dir-is-silent-and-need-not-exist-yet
   (with-site site-edn {}
@@ -312,7 +321,7 @@
 (deftest dev-watches-the-static-dir-only-when-it-is-on
   (with-site site-edn {}
     (fn [dir _]
-      (let [cfg (first (load-site dir))]
+      (let [cfg (load-cfg dir)]
         (is (= {:path (str (fs/normalize (fs/absolutize (fs/path dir "public")))) :recursive? true}
                (spec-for (dev/watch-specs cfg) (fs/path dir "public"))))
         (fs/delete-tree (fs/path dir "public"))
@@ -324,7 +333,7 @@
       (doseq [edn [(update site-edn :content dissoc :static-dir)
                    (assoc-in site-edn [:content :static-dir] "content")]]
         (spit (fs/file dir "site.edn") (pr-str edn))
-        (let [cfg (first (load-site dir))]
+        (let [cfg (load-cfg dir)]
           (is (nil? (spec-for (dev/watch-specs cfg) (fs/path dir "public"))))
           (is (not-any? #{(str (fs/path dir "public"))} (map str (dev/watched-paths cfg)))))))))
 

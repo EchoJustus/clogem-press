@@ -149,7 +149,7 @@
                     ["https://user:pw@s.example:8443/" "s.example"]
                     ["https://例え.テスト" "例え.テスト"]
                     ["https://xn--r8jz45g.xn--zckzah/" "xn--r8jz45g.xn--zckzah"]]]
-    (is (= host (config/site-host (first (load-site {:site {:url u}})))) u)))
+    (is (= host (config/site-host (first (warnings {:site {:url u}})))) u)))
 
 ;; ---------------------------------------------------------------------------
 ;; Verification (item 3, config half)
@@ -329,3 +329,20 @@
                                  :custom-properties {:my-key 1 "A_b" 2}})))
   (is (= "{\"customProperties\":{\"my-key\":1},\"fileDownloads\":true}"
          (json/generate-string (layout/plausible-init {:file-downloads true :custom-properties {:my-key 1}})))))
+
+(deftest an-ignored-init-option-is-not-passed-on
+  (testing "P4-F.1 item 7: an unknown :init option warned \"is ignored\" but
+            still reached plausible.init"
+    (let [[cfg ws] (warnings (assoc url :analytics {:provider :plausible :src "https://p.example/js/pa-x.js"
+                                                    :init {:hash-routing true :logging false
+                                                           :file-downloads {:file-extensions ["pdf"] :bogus 1}}}))]
+      (is (= 2 (count ws)) (pr-str ws))
+      (is (= {"logging" false "fileDownloads" {"fileExtensions" ["pdf"]}}
+             (json/parse-string (:data-init (layout/analytics-attrs cfg))))))))
+
+(deftest the-legacy-domain-is-trimmed
+  (testing "P4-F.1 item 7: :domain was not trimmed, unlike :src"
+    (let [[cfg ws] (warnings (assoc url :analytics {:provider :plausible :domain "  s.example\n"}))]
+      (is (empty? ws))
+      (is (= "s.example" (:domain (config/analytics cfg))))
+      (is (= "s.example" (:data-domain (layout/analytics-attrs cfg)))))))

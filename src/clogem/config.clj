@@ -1007,6 +1007,8 @@
                   #(cond-> (assoc % :src (str/trim (or src (analytics-default-src p)))
                                   :respect-dnt (if (false? respect-dnt) false true))
                      true          (dissoc :consent-default)
+                     ;; trimmed, as :src is (P4-F.1 item 7)
+                     (string? domain) (assoc :domain (str/trim domain))
                      consent       (assoc :consent-default consent))))))))
 
 (defn- check-verification!

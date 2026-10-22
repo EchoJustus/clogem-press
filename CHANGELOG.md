@@ -25,7 +25,9 @@ verification and a static root (§11.3 items 14, 15). The version stays 0.2.0.
   options as `:init`, or `:domain` for the legacy script; Umami takes
   `:website-id`. `:src` overrides a provider's script URL (`https://`
   only). Under `:none` no file ships and no page changes. Every bad value
-  is a warning that switches analytics off, never an error. README
+  is a warning that switches analytics off, never an error. An `:init`
+  option it does not know warns and is not passed to `plausible.init`;
+  `:src` and `:domain` are trimmed. README
   "Analytics" lists the CSP each provider needs and notes the site
   owner's duty under the PDPA.
 - **Search-console verification**: `:seo {:verification {:google … :bing
