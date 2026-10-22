@@ -50,12 +50,14 @@
       (finally (fs/delete-tree dir)))))
 
 (defn- build!
-  "Build `dir` into `out`: [what it printed, its diagnostics]."
+  "Build `dir` into `out`: [what it printed, its config's diagnostics,
+  the warnings it printed (one per line)]."
   [dir out & [opts]]
-  (let [sink (atom [])]
-    (binding [diag/*sink* sink *err* (java.io.StringWriter.)]
+  (let [sink (atom []) err (java.io.StringWriter.)]
+    (binding [diag/*sink* sink *err* err]
       [(with-out-str (cli/build (merge {:site-dir (str dir) :out (str out) :no-write true :no-search true} opts)))
-       @sink])))
+       @sink
+       (vec (keep #(second (re-matches #"warning: (.*)" %)) (str/split-lines (str err))))])))
 
 (defn- build-error
   "The ExceptionInfo `build` raises, or nil."
@@ -220,7 +222,7 @@
 (def ^:private collisions
   "[public/ files, what the error must say]: one per collision kind."
   [[{"robots.txt" "User-agent: *"}
-    #"the static file public/robots.txt and the generated /robots.txt would both be written to dist/robots.txt\. To ship your own robots.txt, put it in the assets directory: assets/robots.txt already replaces the generated one\."]
+    #"the static file public/robots.txt and the generated /robots.txt would both be written to dist/robots.txt\. To ship your own robots.txt, move public/robots.txt into the assets directory: a robots.txt there replaces the generated one\."]
    [{"index.html" "<p>home</p>"}
     #"the static file public/index.html and the page / would both be written to dist/index.html\. Rename or move public/index.html\."]
    [{"Pages/T00001/index.html" "x"}
@@ -232,12 +234,23 @@
    [{"clogem/js/mode.js" "x"}
     #"the static file public/clogem/js/mode.js would be written to dist/clogem/js/mode.js, inside clogem/, which holds the theme's own files\. Rename or move public/clogem/js/mode.js\."]
    [{"assets/logo.png" "x"}
-    #"the static file public/assets/logo.png would be written to dist/assets/logo.png, inside assets/, which holds the site's assets\. Put it in the assets directory \(:content :assets-dir\) instead\."]
+    #"the static file public/assets/logo.png would be written to dist/assets/logo.png, inside assets/, which holds the site's assets\. Move it into the assets directory \(:content :assets-dir\) instead, which the build copies to assets/\."]
+   ;; P4-F.1 item 7: a file no theme file shares a path with — the
+   ;; clogem/ check itself, not a duplicate
+   [{"clogem/extra.txt" "x"}
+    #"the static file public/clogem/extra.txt would be written to dist/clogem/extra.txt, inside clogem/, which holds the theme's own files\. Rename or move public/clogem/extra.txt\."]
+   [{"clogem" "x"}
+    #"the static file public/clogem would be written to dist/clogem, where the build's own directory clogem/ goes, which holds the theme's own files\. Rename or move public/clogem\."]
+   [{"assets" "x"}
+    #"the static file public/assets would be written to dist/assets, where the build's own directory assets/ goes, which holds the site's assets\. Rename or move public/assets\."]
+   [{"pagefind" "x"}
+    #"the static file public/pagefind would be written to dist/pagefind, where the build's own directory pagefind/ goes, which the search step replaces whole\. Rename or move public/pagefind\."]
    [{"pagefind/x.js" "x"}
     #"would be written to dist/pagefind/x.js, inside pagefind/, which the search step replaces whole"]
    [{".clogem-output" "x"}
     #"the static file public/\.clogem-output would be written to dist/\.clogem-output, on \.clogem-output, the file that marks the output directory as the build's"]
-   [{"deep/a.clogem-tmp-1-2" "x"}
+   ;; a FILE so named is editor-temp? junk, skipped (P4-F.1 item 4)
+   [{"deep/a.clogem-tmp-1-2/x" "x"}
     #"on a name containing \.clogem-tmp-, which the build gives its temp files and deletes"]
    [{".pagefind-prev-1-2-3/x" "x"}
     #"on a \.pagefind-… name, which the search step uses for its own directories"]
@@ -404,3 +417,109 @@
       (let [d (fs/path dir "public" "d")]
         (is (= #{"" ".well-known/x" ".nojekyll"}
                (set (map #(str/replace (str (fs/relativize d %)) "\\" "/") (dev/new-dir-batch d)))))))))
+
+;; ---------------------------------------------------------------------------
+;; P4-F.1 items 2-4: links and junk
+
+(defn- doctor-err
+  "What `doctor` printed to stderr for `dir`."
+  [dir]
+  (let [err (java.io.StringWriter.)]
+    (binding [*err* err]
+      (try (with-out-str (cli/doctor {:site-dir (str dir)})) (catch clojure.lang.ExceptionInfo _ nil)))
+    (str err)))
+
+(deftest a-linked-file-is-copied-only-from-inside-the-site
+  (testing "P4-F.1 item 2: fs/regular-file? follows links, so a link to a
+            file outside the site published its bytes — in public/ and,
+            on main already, in assets/"
+    (with-site site-edn {"CNAME" "c"}
+      (fn [dir out]
+        (let [outside (fs/create-temp-dir {:prefix "clogem-outside"})]
+          (try
+            (spit (fs/file outside "secret.txt") "secret")
+            (spit (fs/file dir "notes.txt") "inside")
+            (fs/create-dirs (fs/path dir "assets"))
+            (doseq [d ["public" "assets"]]
+              (fs/create-sym-link (fs/path dir d "leak.txt") (fs/path outside "secret.txt"))
+              (fs/create-sym-link (fs/path dir d "in.txt") (fs/path dir "notes.txt")))
+            (let [[_ ds ws] (build! dir out)]
+              (is (empty? (diag/errors ds)))
+              (is (= "inside" (slurp (fs/file out "in.txt"))) "an inside link is copied")
+              (is (= "inside" (slurp (fs/file out "assets" "in.txt"))))
+              (is (not (fs/exists? (fs/path out "leak.txt"))) "an outside link is not")
+              (is (not (fs/exists? (fs/path out "assets" "leak.txt"))))
+              (doseq [d ["public" "assets"]]
+                (is (= 1 (count (filter #(str/starts-with? % (str d "/leak.txt is a link to ")) ws))) (pr-str ws))
+                (is (some #(re-find (re-pattern (str "^" d "/leak\\.txt .*, outside the site; it is not copied\\.$")) %) ws)))
+              (is (= 2 (count ws)) (pr-str ws)))
+            (is (re-find #"public/leak\.txt is a link to .*outside the site" (doctor-err dir)) "doctor warns too")
+            (finally (fs/delete-tree outside))))))))
+
+(deftest a-linked-static-or-assets-root-is-walked-when-inside-the-site
+  (testing "P4-F.1 item 3: fs/glob does not walk a linked root, so a linked
+            public/ (and, on main already, assets/) copied nothing, silently"
+    (with-site site-edn {}
+      (fn [dir out]
+        (fs/delete-tree (fs/path dir "public"))
+        (fs/create-dirs (fs/path dir "web" "static" ".well-known"))
+        (fs/create-dirs (fs/path dir "web" "a"))
+        (spit (fs/file dir "web" "static" "CNAME") "linked")
+        (spit (fs/file dir "web" "static" ".well-known" "x") "x")
+        (spit (fs/file dir "web" "a" "logo.png") "logo")
+        (fs/create-sym-link (fs/path dir "public") (fs/path "web" "static"))
+        (fs/create-sym-link (fs/path dir "assets") (fs/path "web" "a"))
+        (let [[_ ds ws] (build! dir out)]
+          (is (empty? (diag/errors ds)))
+          (is (empty? ws) (pr-str ws))
+          (is (= "linked" (slurp (fs/file out "CNAME"))))
+          (is (= "x" (slurp (fs/file out ".well-known" "x"))))
+          (is (= "logo" (slurp (fs/file out "assets" "logo.png")))))))
+    (testing "a linked assets/ outside the site warns and copies nothing"
+      (with-site site-edn {}
+        (fn [dir out]
+          (let [outside (fs/create-temp-dir {:prefix "clogem-outside"})]
+            (try
+              (spit (fs/file outside "logo.png") "logo")
+              (fs/create-sym-link (fs/path dir "assets") outside)
+              (let [[_ ds ws] (build! dir out)]
+                (is (empty? (diag/errors ds)))
+                (is (= 1 (count ws)) (pr-str ws))
+                (is (re-find #"^assets is a link to .*, outside the site; nothing is copied from it" (str (first ws))))
+                (is (not (fs/exists? (fs/path out "assets" "logo.png")))))
+              (finally (fs/delete-tree outside)))))))))
+
+(deftest editor-and-os-junk-is-not-published
+  (testing "P4-F.1 item 4: vim's swap file, emacs' backup and lock, and
+            Finder's and Explorer's files were copied, and never swept"
+    (let [junk [".CNAME.swp" ".CNAME.swo" "CNAME~" ".#CNAME" "4913" "x.tmp" "a.clogem-tmp-1-2" ".DS_Store" "Thumbs.db" "desktop.ini"
+                ".well-known/.DS_Store"]]
+      (with-site site-edn (into {"CNAME" "c" ".well-known/x" "x"} (map (fn [n] [n "j"])) junk)
+        (fn [dir out]
+          (let [[_ ds ws] (build! dir out)]
+            (is (empty? (diag/errors ds)))
+            (is (empty? ws) "skipped silently"))
+          (is (= "c" (slurp (fs/file out "CNAME"))))
+          (is (fs/exists? (fs/path out ".well-known" "x")))
+          (doseq [n junk]
+            (is (not (fs/exists? (fs/path out n))) n)))))))
+
+(deftest a-static-robots-txt-beside-the-site-s-own-says-so
+  (testing "P4-F.1 item 7: the hint told an owner who already had
+            assets/robots.txt to create assets/robots.txt"
+    (with-site site-edn {"robots.txt" "User-agent: *"}
+      (fn [dir out]
+        (fs/create-dirs (fs/path dir "assets"))
+        (spit (fs/file dir "assets" "robots.txt") "User-agent: *")
+        (let [m (ex-message (build-error dir out))]
+          (is (re-find #"the static file public/robots.txt and /robots.txt \(copied from the site asset assets/robots.txt\) would both be written to dist/robots.txt\. Your assets/robots.txt already ships as /robots.txt: delete public/robots.txt, or merge it into assets/robots.txt\." m) m))))))
+
+(deftest a-static-file-where-pages-go-is-one-error
+  (testing "P4-F.1 item 7: public/categories gave one error per page below
+            /categories/"
+    (with-site site-edn {"categories" "x"}
+      (fn [dir out]
+        (let [e (build-error dir out)]
+          (is (= 1 (count (re-seq #"would put a page inside the static file public/categories" (ex-message e)))) (ex-message e))
+          (is (re-find #"/categories/ would put a page inside" (ex-message e))))
+        (is (= 1 (count (filter #(re-find #"public/categories" %) (doctor-errors dir)))))))))

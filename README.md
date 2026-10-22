@@ -206,21 +206,40 @@ directory, which a site switches on in `site.edn`:
 Every file under it is copied byte for byte to the same path below the output
 directory's root — `public/.well-known/security.txt` becomes
 `dist/.well-known/security.txt` — dotfiles included; a `.git` inside it is
-never copied, and a linked directory is never followed. `--base` changes
+never copied, and neither are editor and OS leftovers: the names `bb dev`
+ignores (`.CNAME.swp` and vim's other swap files, `CNAME~`, `.#CNAME`,
+`*.tmp`, `4913`, the build's own `.clogem-tmp-…` files) and `.DS_Store`, `Thumbs.db` and `desktop.ini`, skipped
+without a word. A linked file is copied (its target's bytes) only when the
+target is inside the site; a link to a file outside it, to a directory, or
+to nothing is skipped with a warning naming it. The same rule holds for
+`assets/`. A static directory that is itself a link (`public ->
+web/static`) is copied from its target when that is inside the site, as is
+a linked `assets/`; a linked `assets/` whose target is outside the site
+warns and copies nothing. `--base` changes
 nothing on disk: a project site's `dist/` is served at its base, so
 `public/CNAME` is `/my-project/CNAME` there. Files are written only when
 their bytes change, and `bb dev` rebuilds when one is added or edited.
 
 It is a warning, and nothing is copied, when the static directory is not a
-relative path inside the site, or is, holds or sits inside `content/`,
-`assets/`, `i18n/`, `overrides/`, a `.git`, or the output directory
-(`:build :out` or `--out`). It is an error, before anything is written and
+relative path inside the site, sits inside a `.git` (the site's own, or a
+`.git` in its path), or is, holds or sits inside `content/`, `assets/`,
+`i18n/`, `overrides/` or the output directory (`:build :out` or `--out`).
+It is an error, before anything is written and
 in `bb doctor`, when a static file would land where the build writes: at
 the same path as a page, `feed.xml`, `sitemap.xml`, `robots.txt` (the
 generated one, or `assets/robots.txt`, which already replaces it) or a site
 asset; inside `clogem/`, `assets/` or `pagefind/`; on `.clogem-output`, a
 `.clogem-tmp-…` name or a top-level `.pagefind-…` name; or where a page's
-directory goes (a file `public/categories`).
+directory goes (a file `public/categories`). Each error says how to fix
+it.
+
+**Upgrading a site that already set `:content :static-dir`.** 0.2.0
+accepted the key, warned that it was planned, and copied nothing; now the
+directory is copied, so a file in it that collides fails the build where
+0.2.0 built. Setting the key is the opt-in, and a collision stays an error:
+move a file such as `public/assets/logo.png` to `assets/logo.png`, and
+ship your own `robots.txt` as `assets/robots.txt` (delete
+`public/robots.txt`, or merge it into the one already in `assets/`).
 
 A static `.html` file deleted from the static directory disappears from the
 output at the next build, as any `.html` the build no longer writes does

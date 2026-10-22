@@ -609,18 +609,10 @@
 
 (defn editor-temp?
   "Is `p` a file an editor or this program writes on the way to a save —
-  never a change to rebuild for? Emacs lock and backup files (`.#x`, `x~`),
-  vim's swap files and its `4913` write probe, `*.tmp`, the build's own
-  atomic-write temp files (`.clogem-tmp-…`) and the watcher's probe."
+  never a change to rebuild for? `clogem.util/editor-temp?`, which the
+  static directory's copy skips too (P4-F.1 item 4)."
   [p]
-  (let [n (str (fs/file-name (str p)))]
-    (boolean
-     (or (str/starts-with? n ".#")
-         (str/ends-with? n "~")
-         (= n "4913")
-         (re-find #"(?i)\.(swp|swo|swx|tmp)$" n)
-         (str/includes? n ".clogem-tmp-")
-         (str/starts-with? n ".clogem-watch-probe-")))))
+  (u/editor-temp? p))
 
 (def quiet-ms
   "§5.4's debounce: a batch is drained once this long passes with no event."

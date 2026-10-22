@@ -37,14 +37,20 @@ verification and a static root (§11.3 items 14, 15). The version stays 0.2.0.
   set) copies every file under it, dotfiles included, byte for byte to
   the root of the output directory — `CNAME`, `favicon.ico`, a
   verification file, an IndexNow `<key>.txt`, `.nojekyll`,
-  `.well-known/`. It never copies a `.git` and never follows a linked
-  directory. Unchanged files are not rewritten, and `bb dev` rebuilds
+  `.well-known/`. It never copies a `.git`, never follows a linked
+  directory, and silently skips editor and OS leftovers — the names `bb
+  dev` ignores (`.CNAME.swp`, `CNAME~`, `.#CNAME`, `*.tmp`, `4913`) and
+  `.DS_Store`, `Thumbs.db`, `desktop.ini`. A linked file is copied only
+  when its target is inside the site; any other link is skipped with a
+  warning naming it. A static directory that is itself a link inside the
+  site (`public -> web/static`) is copied from its target. Unchanged files are not rewritten, and `bb dev` rebuilds
   when one changes — a dotfile too, when it polls (`--poll`, or its
   fallback), which never saw one before P4-F.1. A static file where the build writes — a page,
   `feed.xml`, `sitemap.xml`, `robots.txt`, a site asset, anything under
   `clogem/`, `assets/` or `pagefind/`, the `.clogem-output` marker, a
   temp-file or `.pagefind-…` name, or a page's directory — is an error
-  before anything is written, and in `bb doctor`. A static directory
+  before anything is written, and in `bb doctor`, once per static file;
+  each error says how to fix it. A static directory
   that is not a relative path inside the site, or overlaps a source
   directory or the output directory, warns and is not copied.
 
@@ -61,6 +67,21 @@ verification and a static root (§11.3 items 14, 15). The version stays 0.2.0.
   set on a site with no `:site :url` warns that analytics needs it.
   `:analytics :init`, `:consent-default` and `:respect-dnt` are known keys
   (they used to warn "is not an analytics option").
+- **A site that set `:content :static-dir` on 0.2.0 can stop building.**
+  0.2.0 warned that the key was planned and copied nothing; now the
+  directory is copied, and a file in it that collides with the build's
+  own output — `public/robots.txt`, `public/assets/logo.png` — is an
+  error where 0.2.0 built. Setting the key is the opt-in, so a collision
+  stays an error; the message says what to do: move the file into
+  `assets/`, or ship `robots.txt` as `assets/robots.txt` (README "Static
+  files", "Upgrading").
+- **The site's `assets/` no longer publishes a link's target from outside
+  the site** (hardening behaviour 0.2.0 already had): a linked file is
+  copied only when its real path is inside the site, and any other link
+  is skipped with a warning naming it — the build does not fail. A linked
+  `assets/` directory inside the site is now copied from its target
+  (0.2.0 copied nothing from it, silently); one whose target is outside
+  the site warns and copies nothing.
 
 ### Documentation (F)
 

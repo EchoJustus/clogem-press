@@ -3306,11 +3306,17 @@ their own findings. Item 19 onward are corrections.
     The static directory is **opt-in** (default nil; `"public"` is the documented convention) and
     lands at the root of the output directory — "the `<base>` root" is that root, since
     `uri->file` strips the base. `config/check-static-dir!` (after `check-out-dir!`) warns and
-    switches the copy off for a value that is not a relative path inside the site, or is, holds or
-    sits inside `content/`, `assets/`, `i18n/`, `overrides/`, `.git` or the output directory —
+    switches the copy off for a value that is not a relative path inside the site, sits inside a
+    `.git`, or is, holds or sits inside `content/`, `assets/`, `i18n/`, `overrides/` or the output
+    directory —
     `--out` included, so `:static-dir "public"` with `--out public` builds as before.
     `render/static-outputs` reads every regular file (`fs/glob … {:hidden true}`: `.nojekyll`,
-    `.well-known/`, `.domains`; never a `.git` segment, never below a linked directory) into the
+    `.well-known/`, `.domains`; never a `.git` segment, never below a linked directory, never
+    `util/junk-file?` — dev's `editor-temp?` names and `.DS_Store`, `Thumbs.db`, `desktop.ini`,
+    P4-F.1 item 4). `render/copied-tree`, shared with the site's `assets/` (P4-F.1 items 2, 3), walks
+    a linked root at its real path when that is inside the site, and copies a linked file only when
+    its real path is inside the site or the copied directory; every other link is skipped and named
+    once by `warn-skipped-links!`, which `check-output-collisions!` runs) into the
     render's `:outputs` and `planned-outputs`, so the files are written atomically, skipped when
     unchanged, kept by the sweep (they are in `files`) and checked by `check-output-collisions!`
     (doctor, analysis) and `check-outputs!` (the write). `output-collisions` adds, for a static file
@@ -3318,9 +3324,12 @@ their own findings. Item 19 onward are corrections.
     `config/out-marker`; on a name carrying `render/temp-marker`, at any depth; on a top-level
     `search/work-dir-prefix` name) and `:duplicate` (the same path as another output, case-folded,
     but only for pairs that include a static file — folding the build's own outputs could fail a
-    site that builds on `main`; for `robots.txt` the hint names `assets/robots.txt`); a page
-    directory where a static file stands is the existing nested check, whose hint now names the
-    static file. A deleted static `.html` file leaves the output at the next build, in a directory
+    site that builds on `main`; for `robots.txt` the hint names `assets/robots.txt`, or says the
+    site's own already ships); a page directory where a static file stands is the existing nested
+    check, whose hint now names the static file, reported once per static file. Every collision is
+    an error: setting `:static-dir` is the opt-in, so a 0.2.0 site that set it can stop building
+    (P4-F.1 item 5, CHANGELOG). The poller (`dev/snapshot`) and `new-dir-batch` list dotfiles too,
+    skipping `.git` and `editor-temp?` names (P4-F.1 item 1). A deleted static `.html` file leaves the output at the next build, in a directory
     marked before it (D.4); any other deleted file stays until `bb clean`. CNAME matters to branch
     deploys and other hosts; the Actions artifact flow ignores it. IndexNow's key file is just a
     static `<key>.txt`. `bb dev` watches the static directory when it is on (`watch-specs`,

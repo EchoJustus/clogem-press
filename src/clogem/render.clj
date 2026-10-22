@@ -741,15 +741,58 @@
 
 (defn- theme-file-what [rel] {:label (str "the theme file clogem/" rel)})
 
+(defn- under?
+  "Is `p` the directory `dir` or inside it?"
+  [dir p]
+  (or (= (str dir) (str p)) (str/starts-with? (str p) (str dir java.io.File/separator))))
+
+(defn- copied-tree
+  "What the build copies from `dir` — the site's `assets/` or the static
+  directory — as {:files [[source-path rel] …] :skipped [[path why] …]},
+  the files sorted. A `dir` that is itself a link is walked at its real
+  path when that is inside the site, and copies nothing otherwise (P4-F.1
+  item 3: `fs/glob` does not walk a linked root, so it used to copy
+  nothing, silently). A linked file is copied only when its real path is
+  inside the site or `dir`: a link to anything else — a file outside the
+  site, a directory (never descended), a missing target — is skipped, and
+  `:skipped` names it (item 2: its target's bytes used to be published).
+  `hidden?` lists dotfiles; `keep?` filters the paths relative to `dir`."
+  [cfg dir {:keys [hidden? keep?] :or {keep? (constantly true)}}]
+  (when (fs/directory? dir)
+    (let [site (fs/real-path (config/site-dir cfg))
+          root (fs/real-path dir)]
+      (if (and (fs/sym-link? dir) (not (under? site root)))
+        {:skipped [[dir (str "is a link to " root ", outside the site; nothing is copied from it")]]}
+        (reduce
+         (fn [acc p]
+           (let [rel (fs/relativize root p)
+                 src (fs/path dir rel)]
+             (cond
+               (not (keep? rel)) acc
+               (not (fs/sym-link? p))
+               (cond-> acc (fs/regular-file? p {:nofollow-links true}) (update :files conj [src rel]))
+               :else
+               (let [target (try (fs/real-path p) (catch Exception _ nil))
+                     why    (cond
+                              (nil? target)               "is a link whose target does not exist"
+                              (fs/directory? target)      (str "is a link to the directory " target ", which is not followed")
+                              (not (or (under? site target) (under? root target)))
+                              (str "is a link to " target ", outside the site")
+                              (not (fs/regular-file? target)) (str "is a link to " target ", which is not a file"))]
+                 (if why
+                   (update acc :skipped conj [src (str why "; it is not copied")])
+                   (update acc :files conj [src rel]))))))
+         {:files [] :skipped []}
+         (sort (map str (fs/glob root "**" {:hidden (boolean hidden?)}))))))))
+
+(defn- assets-tree [cfg] (copied-tree cfg (config/assets-dir cfg) {}))
+
 (defn- site-assets
   "[[source-path output-file] …] for the site's own `assets/` tree, sorted."
   [cfg]
-  (let [out  (config/out-dir cfg)
-        user (config/assets-dir cfg)]
-    (when (fs/directory? user)
-      (for [p (sort (map str (fs/glob user "**")))
-            :when (fs/regular-file? p)]
-        [(fs/path p) (fs/path out "assets" (fs/relativize user p))]))))
+  (let [out (config/out-dir cfg)]
+    (for [[p rel] (:files (assets-tree cfg))]
+      [p (fs/path out "assets" rel)])))
 
 (defn- site-asset-what [cfg p] {:label (str "the site asset " (site-rel cfg p))})
 
@@ -769,19 +812,30 @@
       (for [[p file] (site-assets cfg)]
         {:file file :bytes (read-asset p) :what (site-asset-what cfg p)})))))
 
-(defn- static-files
-  "[[source-path rel-path] …] for the static directory's files (§11.3 item
-  15), sorted: every regular file, dotfiles included (`.nojekyll`,
-  `.well-known/`, Codeberg's `.domains`), never under a `.git` segment, and
-  never below a linked directory (`fs/glob` does not follow links)."
+(defn- static-tree
+  "`copied-tree` for the static directory (§11.3 item 15): every regular
+  file, dotfiles included (`.nojekyll`, `.well-known/`, Codeberg's
+  `.domains`), never under a `.git` segment, and never editor or OS junk
+  (`u/junk-file?`: `.CNAME.swp`, `CNAME~`, `.DS_Store`, P4-F.1 item 4)."
   [cfg]
   (when-let [dir (config/static-dir cfg)]
-    (when (fs/directory? dir)
-      (for [p (sort (map str (fs/glob dir "**" {:hidden true})))
-            :let [rel (fs/relativize dir p)]
-            :when (and (not-any? #(= ".git" (str %)) (iterator-seq (.iterator ^java.nio.file.Path rel)))
-                       (fs/regular-file? p))]
-        [(fs/path p) rel]))))
+    (copied-tree cfg dir {:hidden? true
+                          :keep?   (fn [rel]
+                                     (and (not-any? #(= ".git" (str %)) (fs/components rel))
+                                          (not (u/junk-file? rel))))})))
+
+(defn- static-files
+  "[[source-path rel-path] …] for the static directory's files, sorted."
+  [cfg]
+  (:files (static-tree cfg)))
+
+(defn warn-skipped-links!
+  "Warn, once per link, about every linked file or directory the build
+  does not copy from the site's `assets/` or the static directory
+  (`copied-tree`). Run with the collision check, in `build` and `doctor`."
+  [cfg]
+  (doseq [[p why] (concat (:skipped (assets-tree cfg)) (:skipped (static-tree cfg)))]
+    (diag/warn! nil (str (site-rel cfg p) " " why "."))))
 
 (defn- static-what [cfg p]
   (let [src (site-rel cfg p)]
@@ -940,8 +994,9 @@
       (when (= "/" (config/base-path cfg))
         (cond
           (fs/regular-file? user-robots)
-          [(out "/robots.txt" (str "/robots.txt (copied from the site asset " (site-rel cfg user-robots) ")")
-                #(slurp (fs/file user-robots)))]
+          [(assoc-in (out "/robots.txt" (str "/robots.txt (copied from the site asset " (site-rel cfg user-robots) ")")
+                          #(slurp (fs/file user-robots)))
+                     [:what :asset] (site-rel cfg user-robots))]
           url?
           [(out "/robots.txt" "the generated /robots.txt" #(seo/robots-txt cfg))]))))))
 
@@ -1164,7 +1219,8 @@
   "The top-level directories of `<out>` the build fills itself: no static
   file may land in one, search on or off (§11.3 item 15)."
   {"clogem"   ["which holds the theme's own files" nil]
-   "assets"   ["which holds the site's assets" "Put it in the assets directory (:content :assets-dir) instead."]
+   "assets"   ["which holds the site's assets"
+               "Move it into the assets directory (:content :assets-dir) instead, which the build copies to assets/."]
    "pagefind" ["which the search step replaces whole" nil]})
 
 (defn- static-reserved
@@ -1177,7 +1233,11 @@
         top   (first segs)]
     (cond
       (contains? build-dirs top)
-      (let [[why hint] (get build-dirs top)] [(str "inside " top "/, " why) hint])
+      (let [[why hint] (get build-dirs top)]
+        (if (next segs)
+          [(str "inside " top "/, " why) hint]
+          ;; a top-level FILE named clogem, assets or pagefind (P4-F.1 item 7)
+          [(str "where the build's own directory " top "/ goes, " why)]))
       (= top (u/lower config/out-marker))
       [(str "on " config/out-marker ", the file that marks the output directory as the build's")]
       (some #(str/includes? % (u/lower temp-marker)) segs)
@@ -1232,6 +1292,13 @@
                        ;; a static file on a reserved path is reported as that
                        :when (not-any? #(and (:static? %) (contains? reserved (k %))) [o (second hit)])]
                    {:inner o :outer (second hit) :file (first hit)})
+        ;; a static file where a page's directory goes is one error, not
+        ;; one per page below it (P4-F.1 item 7): the shallowest is named
+        firsts   (->> (filter #(:static? (:outer %)) nested)
+                      (group-by #(k (:outer %)))
+                      (map (fn [[_ cs]] (first (sort-by (juxt #(count (k (:inner %))) #(k (:inner %))) cs))))
+                      set)
+        nested   (filter #(or (not (:static? (:outer %))) (contains? firsts %)) nested)
         dups     (for [[_ os] (group-by folded written)
                        :when (and (next os) (some :static? os))
                        [i a] (map-indexed vector os)
@@ -1261,9 +1328,16 @@
       (str (what-label out inner) " and " (when (= "a page" (get-in outer [:what :noun])) "the page ")
            (what-label out outer) " would both be written to "
            (out-rel out file) ". "
-           (if (= "robots.txt" (u/lower (str (fs/relativize out (normal-abs (:file outer))))))
-             "To ship your own robots.txt, put it in the assets directory: assets/robots.txt already replaces the generated one."
-             (str "Rename or move " (get-in inner [:what :source]) ".")))
+           (cond
+             (not= "robots.txt" (u/lower (str (fs/relativize out (normal-abs (:file outer))))))
+             (str "Rename or move " (get-in inner [:what :source]) ".")
+             ;; P4-F.1 item 7: the owner may already ship their own
+             (get-in outer [:what :asset])
+             (str "Your " (get-in outer [:what :asset]) " already ships as /robots.txt: delete "
+                  (get-in inner [:what :source]) ", or merge it into " (get-in outer [:what :asset]) ".")
+             :else
+             (str "To ship your own robots.txt, move " (get-in inner [:what :source])
+                  " into the assets directory: a robots.txt there replaces the generated one.")))
       (str (what-label out inner) " would put " (get-in inner [:what :noun] "a file")
            " inside " (what-label out outer)
            (if (:reserved? outer)
@@ -1379,11 +1453,13 @@
   (`output-collisions`) — what `doctor` and the build's analysis run, so a
   permalink such as `/assets/demo.txt/` or `/robots.txt/` is a content error
   before anything is rendered. The page map's own diagnostics are not
-  repeated here. Returns the collisions."
+  repeated here; the links the copy skips are warned about
+  (`warn-skipped-links!`). Returns the collisions."
   [model]
   (let [out    (config/out-dir (:cfg model))
         [plan] (diag/collecting (planned-outputs model))
         cs     (output-collisions out plan)]
+    (warn-skipped-links! (:cfg model))
     (doseq [{:keys [inner outer] :as c} cs]
       (diag/error! (or (get-in inner [:what :source]) (get-in outer [:what :source]))
                    (collision-message out c)))
