@@ -807,11 +807,22 @@
      (and (some #(and (:recursive? %) (in-dir? (:path %) p)) specs)
           (fs/directory? p {:nofollow-links true})))))
 
+(defn- tree-files
+  "Every path below the directory `dir`, dotfiles included — the static
+  directory's `.nojekyll`, `.well-known/` and `.domains` are outputs
+  (P4-F.1 item 1) — but none under a `.git` segment and no `editor-temp?`
+  name: neither is a change to rebuild for."
+  [dir]
+  (remove (fn [f]
+            (or (editor-temp? f)
+                (some #(= ".git" (str %)) (fs/components (fs/relativize dir f)))))
+          (fs/glob dir "**" {:hidden true})))
+
 (defn- snapshot
   [paths]
   (into {}
         (for [p paths
-              f (if (fs/directory? p) (fs/glob p "**") [p])
+              f (if (fs/directory? p) (tree-files p) [p])
               ;; a file deleted between the listing and the stat is simply
               ;; not in this snapshot
               :let [t (try (when (fs/regular-file? f)
@@ -1240,7 +1251,7 @@
   [dir]
   (into [(str dir)]
         (comp (filter #(fs/regular-file? % {:nofollow-links true})) (map str))
-        (try (fs/glob dir "**") (catch Exception _ nil))))
+        (try (doall (tree-files dir)) (catch Exception _ nil))))
 
 (defn one-line
   "An error message as one line for dev's terminal: without the

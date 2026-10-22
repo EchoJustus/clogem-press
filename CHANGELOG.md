@@ -39,7 +39,8 @@ verification and a static root (§11.3 items 14, 15). The version stays 0.2.0.
   verification file, an IndexNow `<key>.txt`, `.nojekyll`,
   `.well-known/`. It never copies a `.git` and never follows a linked
   directory. Unchanged files are not rewritten, and `bb dev` rebuilds
-  when one changes. A static file where the build writes — a page,
+  when one changes — a dotfile too, when it polls (`--poll`, or its
+  fallback), which never saw one before P4-F.1. A static file where the build writes — a page,
   `feed.xml`, `sitemap.xml`, `robots.txt`, a site asset, anything under
   `clogem/`, `assets/` or `pagefind/`, the `.clogem-output` marker, a
   temp-file or `.pagefind-…` name, or a page's directory — is an error

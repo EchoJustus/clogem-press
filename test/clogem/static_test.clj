@@ -374,3 +374,33 @@
                     (str log))
                 (is (wait-until #(> (count @reloads) n0)) "and the browser is told to reload"))
               (finally (binding [*out* log *err* log] ((:stop! h)))))))))))
+
+(deftest polling-sees-the-static-dir-s-dotfiles
+  (testing "P4-F.1 item 1: the poller's snapshot globbed without
+            {:hidden true}, so an edit to .nojekyll or .well-known/ never
+            rebuilt"
+    (with-site site-edn {"CNAME" "c" ".nojekyll" "" ".well-known/x" "one"}
+      (fn [dir out]
+        (let [log (java.io.StringWriter.)
+              h   (binding [*out* log *err* log]
+                    (dev/start-dev! {:site-dir (str dir) :port 1888 :no-write true :no-search true
+                                     :poll true :interval 50}
+                                    {:run-server! (fn [& _] (fn [& _] nil))
+                                     :notify! (fn [_]) :notify-error! (fn [_])}))]
+          (try
+            (is (wait-until #(str/includes? (str log) "watching by polling") 10000) (str log))
+            (is (wait-until #(= "one" (try (slurp (fs/file out ".well-known" "x")) (catch Exception _ nil)))) (str log))
+            ;; past the first snapshot, and a new mtime
+            (Thread/sleep 300)
+            (spit (fs/file dir "public" ".nojekyll") "jekyll")
+            (is (wait-until #(= "jekyll" (slurp (fs/file out ".nojekyll"))) 10000) (str log))
+            (spit (fs/file dir "public" ".well-known" "x") "two")
+            (is (wait-until #(= "two" (slurp (fs/file out ".well-known" "x"))) 10000) (str log))
+            (finally (binding [*out* log *err* log] ((:stop! h))))))))))
+
+(deftest a-new-directory-s-batch-holds-its-dotfiles-but-not-git
+  (with-site site-edn {"d/.well-known/x" "x" "d/.nojekyll" "" "d/a~" "" "d/.git/HEAD" "h"}
+    (fn [dir _]
+      (let [d (fs/path dir "public" "d")]
+        (is (= #{"" ".well-known/x" ".nojekyll"}
+               (set (map #(str/replace (str (fs/relativize d %)) "\\" "/") (dev/new-dir-batch d)))))))))
