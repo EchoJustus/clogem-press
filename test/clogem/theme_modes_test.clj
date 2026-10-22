@@ -217,7 +217,9 @@ console.log(JSON.stringify([
                    ".clogem-comments" ".clogem-lang-banner" ".clogem-prev-next" ".header-anchor" ".clogem-copy"]]
           (is (str/includes? print c) (str c " is hidden in print")))
         (is (str/includes? print "--bodyBg: #ffffff") "print uses a light palette")
-        (is (str/includes? print "*, *::before, *::after { box-shadow: none !important; }") "P4-B2a: no shadow in print")))
+        ;; P4-B2a.1: the boxes lose their shadow (page_style_test), not `*`:
+        ;; a highlighted code line keeps its inset bar
+        (is (not (str/includes? print "*, *::before, *::after { box-shadow")) "no blanket shadow rule in print")))
     (testing "language font rules are zero-specificity, so code keeps its monospace stack"
       (is (str/includes? css ":where(:lang(ta))"))
       (is (str/includes? css ":where(:lang(zh-Hans))"))

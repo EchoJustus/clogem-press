@@ -227,6 +227,12 @@ export default async function modes(t) {
     t.check((await name(page))[0] === 'Colour mode: Reading',
             `another tab stores read: the first page's toggle is "${(await name(page))[0]}"`);
     await other.close();
+    // P4-B2a.1 item 7: a label is text, not a replacement pattern
+    await page.evaluate(() => {
+      document.querySelector('#clogem-mode-menu button[data-mode="dark"]').lastChild.textContent = "Dark $& $1 $$ $'";
+      window.clogem.setMode('dark');
+    });
+    t.check((await name(page))[0] === "Colour mode: Dark $& $1 $$ $'", `a label with $& in it: "${(await name(page))[0]}"`);
     await page.close();
   }
 
@@ -321,6 +327,26 @@ export default async function modes(t) {
       t.check(!['', 'rgba(0, 0, 0, 0)'].includes(pal[mode][v]), `${mode}: the theme sets ${v}`);
       t.check(got[v] === pal[mode][v], `${mode}: ${v} is ${got[v]}, want the theme's ${pal[mode][v]}`);
     }
+    // P4-B2a.1 item 10: in light and read most of the theme's values equal
+    // Pagefind's, so a mapping that loses to its :root reads the same. Set
+    // every --pf-* the theme maps to a sentinel in Pagefind's :root rule:
+    // none may show through on <html>.
+    const lost = await page.evaluate(() => {
+      const sheets = [...document.styleSheets];
+      const theme = sheets.find((s) => /\/theme\.css/.test(s.href || ''));
+      const pf = sheets.find((s) => /pagefind-component-ui\.css/.test(s.href || ''));
+      // whatever rule the theme declares it in
+      const all = (rules) => [...rules].flatMap((r) => [...(r.style ? [r] : []), ...(r.cssRules ? all(r.cssRules) : [])]);
+      const mapped = [...new Set(all(theme.cssRules).flatMap((r) => [...r.style])
+        .filter((p) => p.startsWith('--pf-')))];
+      const root = [...pf.cssRules].find((r) => r.selectorText === ':root');
+      const tried = mapped.filter((p) => root.style.getPropertyValue(p) !== '');
+      for (const p of tried) root.style.setProperty(p, 'clogem-sentinel');
+      const h = getComputedStyle(document.documentElement);
+      return { tried: tried.length, lost: tried.filter((p) => h.getPropertyValue(p).trim() === 'clogem-sentinel') };
+    });
+    t.check(lost.tried >= 20, `${mode}: the theme maps ${lost.tried} of Pagefind's :root variables`);
+    t.check(lost.lost.length === 0, `${mode}: Pagefind's :root wins over the theme's ${lost.lost.join(', ')}`);
     await page.close();
   }
 
@@ -328,15 +354,19 @@ export default async function modes(t) {
   // The demo builds with :page-style :card; <html>'s style class is switched
   // in-page. Auto is the no-JS page under a dark OS, where theme-mode-auto
   // stays and the dark media block applies.
+  // [page, is .clogem-main a box?, the other boxes]
   const stylePages = [
-    [article, '.clogem-main', ['.clogem-sidebar']],
+    [article, true, ['.clogem-sidebar']],
     // the only demo home with a right bar; its post list is :simple
-    ['zh-Hans/index.html', '.clogem-main', ['.clogem-home-right > section']],
-    ['page/2/index.html', '.clogem-main', ['.clogem-post-card']],   // the detailed post list
-    ['categories/basics/index.html', '.clogem-main', []],
-    ['pages/559f0f/index.html', '.clogem-main', []],   // a catalogue
+    ['zh-Hans/index.html', true, ['.clogem-home-right > section']],
+    // the detailed post list: cards on the page, not in a card; the home's
+    // own text is the card above them (P4-B2a.1 item 3)
+    ['page/2/index.html', false, ['.clogem-main--posts > .clogem-content', '.clogem-post-card']],
+    ['categories/basics/index.html', true, []],
+    ['pages/559f0f/index.html', true, []],   // a catalogue
   ];
-  for (const [rel, mainSel, others] of stylePages) {
+  const mainSel = '.clogem-main';
+  for (const [rel, mainIsBox, others] of stylePages) {
     for (const mode of ['light', 'dark', 'read', 'auto']) {
       const auto = mode === 'auto';
       const page = await t.newPage({ colorScheme: auto ? 'dark' : 'light', javaScriptEnabled: !auto });
@@ -347,22 +377,26 @@ export default async function modes(t) {
           const h = document.documentElement;
           h.className = h.className.replace(/\btheme-style-\S+/, `theme-style-${style}`);
           const probe = document.createElement('div');
-          probe.style.background = 'var(--mainBg)';
           document.body.appendChild(probe);
-          const mainBg = getComputedStyle(probe).backgroundColor;
+          const read = (v) => { probe.style.background = `var(${v})`; return getComputedStyle(probe).backgroundColor; };
+          const mainBg = read('--mainBg'), sidebarBg = read('--sidebarBg');
           probe.remove();
           const box = (el) => { const c = getComputedStyle(el); return { bg: c.backgroundColor, shadow: c.boxShadow, border: c.borderTopWidth }; };
           const main = document.querySelector(mainSel);
           return {
             cls: h.className, root: getComputedStyle(h).backgroundColor, mainBg,
             main: main && box(main),
-            others: others.map((s) => [s, [...document.querySelectorAll(s)].map(box)]),
+            // each box's own background: the sidebar's is --sidebarBg
+            others: others.map((s) => [s, s === '.clogem-sidebar' ? sidebarBg : mainBg, [...document.querySelectorAll(s)].map(box)]),
           };
         }, { style, mainSel, others });
         const what = `${rel} ${mode} ${style}`;
         if (!r.main) { t.check(false, `${what}: no ${mainSel}`); continue; }
         t.check(new RegExp(`theme-mode-${auto ? 'auto' : mode}\\b`).test(r.cls), `${what}: <html class="${r.cls}">`);
-        if (style === 'card') {
+        if (!mainIsBox) {
+          t.check(r.main.bg === 'rgba(0, 0, 0, 0)' && r.main.shadow === 'none' && r.main.border === '0px',
+                  `${what}: the post cards' column is no box (${r.main.bg}, ${r.main.shadow}, ${r.main.border})`);
+        } else if (style === 'card') {
           t.check(r.main.bg === r.mainBg && r.main.bg !== r.root,
                   `${what}: the main box is ${r.main.bg}, want --mainBg ${r.mainBg}, distinct from the page ${r.root}`);
           t.check(r.main.shadow !== 'none', `${what}: the main box has a shadow (${r.main.shadow})`);
@@ -371,10 +405,12 @@ export default async function modes(t) {
           t.check(r.main.shadow === 'none', `${what}: no shadow (${r.main.shadow})`);
           t.check(r.main.border === '1px', `${what}: a 1px border (${r.main.border})`);
         }
-        for (const [sel, bs] of r.others) {
+        for (const [sel, want, bs] of r.others) {
           t.check(bs.length > 0, `${what}: ${sel} is on the page`);
           for (const b of bs) {
-            if (style === 'card') t.check(b.shadow !== 'none', `${what}: ${sel} has a shadow`);
+            // P4-B2a.1 item 2: every box draws its own background
+            t.check(b.bg === want, `${what}: ${sel} is ${b.bg}, want ${want}`);
+            if (style === 'card') t.check(b.shadow !== 'none' && b.bg !== r.root, `${what}: ${sel} is a card on the page ${r.root} (${b.bg}, ${b.shadow})`);
             else t.check(b.shadow === 'none' && b.border === '1px', `${what}: ${sel} is flat with a 1px border (${b.shadow}, ${b.border})`);
           }
         }
@@ -413,17 +449,24 @@ export default async function modes(t) {
           return {
             what: e.tagName.toLowerCase() + (typeof e.className === 'string' && e.className ? '.' + e.className.split(' ')[0] : ''),
             style: c.outlineStyle, width: parseFloat(c.outlineWidth), color: c.outlineColor, inCode: !!e.closest('pre'),
+            offset: c.outlineOffset, opacity: c.opacity,
           };
         });
         if (!f) continue;
         kinds.add(f.what);
         const want = f.inCode ? ring.code : ring.ring;
-        const ok = f.style === 'solid' && f.width >= 2 && f.color === want;
-        if (!ok && bad++ < 5) t.check(false, `${width}px ${mode}, stop ${i + 1} (${f.what}): outline ${f.style} ${f.width}px ${f.color}, want solid ≥2px ${want}`);
+        // P4-B2a.1 item 5: a heading anchor is shown when focused, and the
+        // scrollable <code> draws its ring inset (its <pre> clips)
+        const ok = f.style === 'solid' && f.width >= 2 && f.color === want
+          && (f.what !== 'a.header-anchor' || f.opacity === '1')
+          && (!(f.inCode && f.what.startsWith('code')) || f.offset === '-2px');
+        if (!ok && bad++ < 5) t.check(false, `${width}px ${mode}, stop ${i + 1} (${f.what}): outline ${f.style} ${f.width}px ${f.color} offset ${f.offset}, opacity ${f.opacity}; want solid ≥2px ${want}`);
       }
       t.check(bad === 0, `${width}px ${mode}: every focus stop draws the ring (${bad} did not)`);
       t.check(kinds.size >= 4, `${width}px ${mode}: Tab reached links, summaries, buttons…: ${[...kinds].join(' ')}`);
-      if (width === 1280) t.check(kinds.has('button.clogem-copy'), `${width}px ${mode}: a copy button was among the stops`);
+      t.check(kinds.has('button.clogem-copy'), `${width}px ${mode}: a copy button was among the stops`);
+      t.check(kinds.has('a.header-anchor') && [...kinds].some((k) => k.startsWith('code')),
+              `${width}px ${mode}: a heading anchor and a scrollable <code> were among the stops`);
       await page.close();
     }
   }
@@ -441,18 +484,56 @@ export default async function modes(t) {
     for (const [s, d] of Object.entries(shown)) t.check(d === 'none' || d === 'absent', `print hides ${s} (display ${d})`);
     const bg = await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor);
     t.check(bg === 'rgb(255, 255, 255)', `print uses the light palette even in dark mode: ${bg}`);
-    // P4-B2a: nothing has a shadow in print, in either page style
+    await page.close();
+  }
+  // P4-B2a: print draws no box, in either page style — no shadow, no
+  // border, and no transition into that (P4-B2a.1 item 4). Only the boxes:
+  // a highlighted code line keeps its inset accent bar, its only marker
+  // when backgrounds are not printed (P4-B2a.1 item 1).
+  const printBoxes = ['.clogem-main', '.clogem-home-right > section', '.clogem-post-card', '.clogem-main--posts > .clogem-content'];
+  for (const rel of [article, 'zh-Hans/index.html', 'page/2/index.html', 'pages/eed953/index.html']) {
     for (const style of ['card', 'line']) {
-      const shadowed = await page.evaluate((style) => {
+      const page = await t.newPage({ colorScheme: 'light' });
+      await page.goto(t.url(rel), { waitUntil: 'load' });
+      await page.evaluate((style) => {
         const h = document.documentElement;
         h.className = h.className.replace(/\btheme-style-\S+/, `theme-style-${style}`);
-        return [...document.querySelectorAll('*')]
-          .filter((e) => getComputedStyle(e).boxShadow !== 'none')
-          .map((e) => e.tagName.toLowerCase() + (e.className && typeof e.className === 'string' ? '.' + e.className.split(' ')[0] : ''));
       }, style);
-      t.check(shadowed.length === 0, `print, ${style}: no shadow, but ${shadowed.slice(0, 5).join(', ')}`);
+      await page.emulateMedia({ media: 'print' });
+      const r = await page.evaluate((sels) => {
+        const name = (e) => e.tagName.toLowerCase() + (e.className && typeof e.className === 'string' ? '.' + e.className.split(' ').join('.') : '');
+        const probe = document.createElement('div');
+        document.body.appendChild(probe);
+        probe.style.color = 'var(--accent)';
+        const accent = getComputedStyle(probe).color;
+        probe.remove();
+        const boxes = sels.flatMap((s) => [...document.querySelectorAll(s)]).map((e) => {
+          const c = getComputedStyle(e);
+          return { what: name(e), shadow: c.boxShadow, transition: c.transitionDuration,
+                   border: [c.borderTopWidth, c.borderRightWidth, c.borderBottomWidth, c.borderLeftWidth].join(' ') };
+        });
+        // what prints: a hidden element's shadow is not drawn
+        const shadowed = [...document.querySelectorAll('*')]
+          .filter((e) => e.checkVisibility() && getComputedStyle(e).boxShadow !== 'none');
+        return {
+          accent, boxes,
+          others: shadowed.filter((e) => !e.matches('pre.clogem-code .line.hl')).map(name),
+          hl: [...document.querySelectorAll('pre.clogem-code .line.hl')].map((e) => getComputedStyle(e).boxShadow),
+        };
+      }, printBoxes);
+      const what = `print, ${rel} ${style}`;
+      t.check(r.boxes.length > 0, `${what}: a box to check`);
+      for (const b of r.boxes) {
+        t.check(b.shadow === 'none' && b.border === '0px 0px 0px 0px' && /^0s(, 0s)*$/.test(b.transition),
+                `${what}: ${b.what} is no box (shadow ${b.shadow}, border ${b.border}, transition ${b.transition})`);
+      }
+      t.check(r.others.length === 0, `${what}: no shadow but a highlighted line's, yet ${r.others.slice(0, 5).join(', ')}`);
+      if (rel.includes('eed953')) {
+        const bar = `${r.accent} 3px 0px 0px 0px inset`;
+        t.check(r.hl.length > 0 && r.hl.every((x) => x === bar), `${what}: each highlighted line keeps its bar ${bar}: ${r.hl.join(' | ')}`);
+      }
+      await page.close();
     }
-    await page.close();
   }
 
   // --- overrides/custom.css is applied, last --------------------------------

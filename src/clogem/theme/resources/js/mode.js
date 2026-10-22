@@ -70,7 +70,8 @@
     }
     var pattern = button && button.getAttribute("data-label");
     if (pattern) {
-      var name = pattern.replace(/\{\{\s*mode\s*\}\}/g, label);
+      // a function, so a `$&` or `$1` in a label is not a replacement pattern
+      var name = pattern.replace(/\{\{\s*mode\s*\}\}/g, function () { return label; });
       button.setAttribute("aria-label", name);
       button.setAttribute("title", name);
     }

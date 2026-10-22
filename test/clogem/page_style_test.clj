@@ -180,18 +180,35 @@ html.theme-mode-dark { --f: 1; }
 
 (def boxes
   "The boxes a page style draws: the main column of every page kind, the
-  sidebar, the home right-bar's sections and the home's post cards."
-  [".clogem-main" ".clogem-sidebar" ".clogem-home-right > section" ".clogem-post-card"])
+  sidebar, the home right-bar's sections and the home's post cards — and,
+  above the post cards, whose column is no box (P4-B2a.1 item 3), the
+  home's own text."
+  [".clogem-main" ".clogem-sidebar" ".clogem-home-right > section" ".clogem-post-card"
+   ".clogem-main--posts > .clogem-content"])
+
+(def box-backgrounds
+  "The background each box draws in both styles (P4-B2a.1 item 2)."
+  {".clogem-main" "var(--mainBg)" ".clogem-sidebar" "var(--sidebarBg)"
+   ".clogem-home-right > section" "var(--mainBg)" ".clogem-post-card" "var(--mainBg)"
+   ".clogem-main--posts > .clogem-content" "var(--mainBg)"})
+
+(defn- names-box?
+  "Is `box` the subject of selector `sel` — of it or of one of its `:is()`
+  arguments — and not `.clogem-main--posts` for `.clogem-main`, nor a
+  descendant of `box`?"
+  [sel box]
+  (boolean (re-find (re-pattern (str "(?:^|[\\s(,])" (java.util.regex.Pattern/quote box) "(?=\\s*(?:$|[),]))")) sel)))
 
 (defn- style-decls
   "{property value} that every rule naming `box` under `.theme-style-<style>`
-  declares, merged in source order (for the shadow and the border)."
+  — or, with style nil, every rule naming it — declares, merged in source
+  order (for the shadow, the border and the background)."
   [rules style box]
   (into {} (for [{:keys [selectors decls media]} rules
                  :when (empty? media)
                  sel selectors
-                 :when (and (str/starts-with? sel (str ".theme-style-" (name style) " "))
-                            (str/includes? sel box)
+                 :when (and (if style (str/starts-with? sel (str ".theme-style-" (name style) " ")) true)
+                            (names-box? sel box)
                             (not (str/includes? sel ":hover")))
                  [p v] decls]
              [p v])))
@@ -220,11 +237,42 @@ html.theme-mode-dark { --f: 1; }
           (is (re-find #"var\(--shadowColor\)" (str (card "box-shadow"))) (str "card " b ": " (pr-str card)))
           (is (= "none" (line "box-shadow")) (str "line " b ": " (pr-str line)))
           (is (= "1px solid var(--borderColor)" (line "border")) (str "line " b)))))
-    (testing "print: no shadow anywhere"
-      (is (some (fn [{:keys [media selectors decls]}]
-                  (and (= ["print"] media) (some #{"*"} selectors)
-                       (some #(= ["box-shadow" "none" true] %) decls)))
-                rules)))))
+    (testing "every box draws its own background, in both styles (P4-B2a.1 item 2)"
+      (doseq [[b bg] box-backgrounds]
+        (is (= bg ((style-decls rules nil b) "background")) b)))
+    (testing "a home's post cards sit on the page: their column is no box (P4-B2a.1 item 3)"
+      (is (= {"background" "none" "border" "0" "border-radius" "0" "box-shadow" "none" "padding" "0"}
+             (cp/rule rules "html[class] .clogem-main.clogem-main--posts"))))
+    (testing "print draws no box — no shadow, border or transition — and only the boxes lose their shadow (P4-B2a.1 items 1, 4)"
+      (let [print-rules (filter #(= ["print"] (:media %)) rules)
+            dropped (fn [b] (some (fn [{:keys [selectors decls]}]
+                                    (and (some #(names-box? % b) selectors)
+                                         (= {"border" "0" "box-shadow" "none" "transition" "none"}
+                                            (select-keys (into {} (map (comp vec (partial take 2)) decls))
+                                                         ["border" "box-shadow" "transition"]))))
+                                  print-rules))]
+        (doseq [b (remove #{".clogem-sidebar"} boxes)]   ; print hides the sidebar
+          (is (dropped b) (str "print " b)))
+        (is (not-any? (fn [{:keys [selectors decls]}]
+                        (and (some #(re-find #"(^|[\s,])\*" %) selectors)
+                             (some #(= "box-shadow" (first %)) decls)))
+                      print-rules)
+            "no blanket rule: a highlighted code line keeps its inset bar")))))
+
+(deftest the-post-list-column-is-marked-only-with-post-cards
+  (let [dir (fs/create-temp-dir {:prefix "clogem-style"})]
+    (try
+      (spit (fs/file dir "site.edn") (pr-str {:site {:title "S"} :search {:provider :none}}))
+      (fs/create-dirs (fs/path dir "content" "_posts"))
+      (spit (fs/file dir "content" "index.md") "---\nhome: true\n---\n# Home\n")
+      (spit (fs/file dir "content" "_posts" "2026-02-01-one.md")
+            "---\ntitle: One\ndate: 2026-02-01\npermalink: /pages/b2a002/\n---\nBody.\n")
+      (binding [*out* (java.io.StringWriter.)]
+        (diag/collecting ((requiring-resolve 'clogem.cli/build) {:site-dir (str dir) :no-write true})))
+      (let [main (fn [p] (re-find #"<main class=\"[^\"]*\"" (slurp (fs/file dir "dist" p))))]
+        (is (= "<main class=\"clogem-main clogem-main--posts\"" (main "index.html")) "detailed, with posts")
+        (is (= "<main class=\"clogem-main\"" (main "pages/b2a002/index.html")) "an article"))
+      (finally (fs/delete-tree dir)))))
 
 (deftest page-style-reaches-every-page
   (doseq [style [:card :line]]
@@ -244,7 +292,7 @@ html.theme-mode-dark { --f: 1; }
           (doseq [[p html] htmls
                   :when (str/includes? html "clogem-navbar")]
             (is (str/includes? html (str "<html class=\"theme-mode-auto theme-style-" (name style) "\"")) p)
-            (is (str/includes? html "<main class=\"clogem-main\"") (str p ": the box the style draws"))))
+            (is (re-find #"<main class=\"clogem-main[\" ]" html) (str p ": the box the style draws"))))
         (finally (fs/delete-tree dir))))))
 
 ;; ---------------------------------------------------------------------------
@@ -256,7 +304,11 @@ html.theme-mode-dark { --f: 1; }
     (testing "one :focus-visible rule for everything: 2px solid, 2px offset, the ring colour"
       (is (= {"outline" "2px solid var(--focusRing)" "outline-offset" "2px"} (cp/rule rules ":focus-visible")))
       (is (= {"outline-color" "var(--codeFocusRing)"} (cp/rule rules "pre.clogem-code :focus-visible"))
-          "inside a code block, the code ring colour"))
+          "inside a code block, the code ring colour")
+      (is (= {"outline-offset" "-2px"} (cp/rule rules "pre.clogem-code > code:focus-visible"))
+          "the scrollable <code> draws it inset: its <pre> clips (P4-B2a.1 item 5)")
+      (is (= {"opacity" "1"} (cp/rule rules ".header-anchor:focus-visible"))
+          "a focused heading anchor is shown: a ring on nothing is no ring (P4-B2a.1 item 5)"))
     (testing "no per-control ring left to drift (B1 drew 2px/1px on four controls, Chromium's auto 1px elsewhere)"
       (is (= 1 (count (filter #(some (fn [sel] (re-find #"focus-visible" sel)) (:selectors %))
                               (filter #(some (fn [[p]] (= "outline" p)) (:decls %)) rules))))))
@@ -275,9 +327,10 @@ html.theme-mode-dark { --f: 1; }
             (is (>= r 3.0) (format "%s: the ring %s on %s is %.2f:1" what (p "--focusRing") sn r))))
         (let [r (cp/contrast (p "--codeFocusRing") code)]
           (is (>= r 3.0) (format "%s: the code ring %s on --codeBg %s is %.2f:1" what (p "--codeFocusRing") (cp/hex code) r)))))
-    (testing "B1's ring in read mode's code block was 2.41:1"
-      (let [p (cp/palette rules :read)]
-        (is (< (cp/contrast (p "--accent") (p "--codeBg")) 3.0))))))
+    (testing "read mode's code ring is the code colour, at least 4.5:1 on its block whatever the accent reaches there (B1's accent ring was 2.41:1)"
+      (let [p (cp/palette rules :read)
+            r (cp/contrast (p "--codeFocusRing") (p "--codeBg"))]
+        (is (>= r 4.5) (format "%.2f:1" r))))))
 
 ;; ---------------------------------------------------------------------------
 ;; 8. Budget and print
@@ -287,9 +340,15 @@ html.theme-mode-dark { --f: 1; }
     (with-open [g (java.util.zip.GZIPOutputStream. out)] (.write g bs))
     (.size out)))
 
+(def gzip-budget
+  "Report 1's budget for theme.css, in gzipped bytes: one number, asserted
+  and printed (P4-B2a.1 item 6)."
+  12288)
+
 (deftest theme-css-stays-within-its-budget
   (testing "report 1's budget: theme.css at most 12 KB gzipped"
     (let [bs (fs/read-all-bytes theme-css)
           gz (gzip-size bs)]
-      (is (<= gz 12288) (str gz " bytes gzipped"))
-      (println (format "page-style: theme.css is %d bytes, %d gzipped (budget 12288)" (count bs) gz)))))
+      (is (= 12288 gzip-budget) "raising the budget is a decision, not a test edit")
+      (is (<= gz gzip-budget) (str gz " bytes gzipped"))
+      (println (format "page-style: theme.css is %d bytes, %d gzipped (budget %d)" (count bs) gz gzip-budget)))))
