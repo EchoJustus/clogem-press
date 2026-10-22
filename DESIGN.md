@@ -2917,8 +2917,14 @@ their own findings. Item 19 onward are corrections.
    shadow, and `--bodyBg: var(--mainBg)` in every mode. The owner decided dark gets a page distinct
    from the card: dark and the auto block now have `--bodyBg #22252b` on `--mainBg #16181d` (1.16:1;
    vdoing's body is lighter than its main too, 1.12:1); text 10.74, link-hover 7.66, muted 6.01 and
-   accent 5.58 on it. Print draws no shadow. theme.css is 29,966 B, 8,254 B gzipped (it was 25,351 /
+   accent 5.58 on it. Print draws no shadow. theme.css is 30,785 B, 8,455 B gzipped (after P4-B2a.1) (it was 25,351 /
    6,980); `bb test` holds it to 12,288 B gzipped.
+   *P4-B2a.1:* a home whose main column lists post cards marks it `.clogem-main--posts`, which is no
+   box — vdoing's post list is `.card-box` items on `--bodyBg`, with no enclosing card — and the
+   home's own text above the list is the card instead. Print draws no box in either style: the
+   boxes lose their shadow, border, radius, padding and transition (decorative borders are dropped,
+   as card has none to drop). The print rule names the boxes, not `*`: a `{2}`-highlighted code
+   line keeps its `inset 3px` accent bar, its only marker when backgrounds are not printed.
 5. **Pagefind's `--pf-*` variables** are mapped to the palette (B1).
    *Done (B1).* Pagefind 1.5.2's `pagefind-component-ui.css` declares its defaults on `:root` (and a
    dark set on `[data-pf-theme="dark"]`, which nothing sets) and is linked after theme.css, so the

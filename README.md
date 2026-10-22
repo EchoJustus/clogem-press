@@ -209,8 +209,11 @@ printing uses the light palette and drops the chrome.
 default) draws the main column of every page, the sidebar, and the home page's
 right-bar sections and post cards as cards — the card colour, a small radius
 and a shadow — on a page of a contrasting colour: darker in light and reading
-mode, lighter in dark. `:line` draws the same boxes flat, with a 1px border
-and no shadow, on a page of the card's own colour. Print draws no shadow.
+mode, lighter in dark. A home's post cards sit on the page, as vdoing's do, not
+in a card: their column is no box, and the home's own text above them is the
+card. `:line` draws the same boxes flat, with a 1px border and no shadow, on a
+page of the card's own colour. Print draws no box in either style — no shadow,
+border, radius or padding — but keeps a highlighted code line's accent bar.
 Everything focusable draws one keyboard focus ring: 2px, in the accent (in the
 code colour inside a code block), at 3:1 or better on what is behind it.
 

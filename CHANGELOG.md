@@ -19,9 +19,13 @@ value but drew card and line the same.
   :page-style :card`, the default, draws the main column of every page
   kind, the sidebar, and the home page's right-bar sections and post cards
   as `--mainBg` cards with a 5px radius and vdoing's shadows, on a page of
-  a contrasting colour. `:line` draws the same boxes flat — a 1px border,
-  no shadow — on a page of the card's colour, in every mode. Print draws no
-  shadow. Both values were accepted since 0.2.0 and drew the same thing.
+  a contrasting colour. A home's post cards sit on the page, as vdoing's
+  do: their column is no box, and the home's own text above them is the
+  card. `:line` draws the same boxes flat — a 1px border, no shadow — on a
+  page of the card's colour, in every mode. Print draws no box in either
+  style: no shadow, border, radius, padding or transition on the boxes. A
+  highlighted code line keeps its accent bar in print. Both values were
+  accepted since 0.2.0 and drew the same thing.
 - **The mode button is named for the current mode** — "Colour mode: Dark",
   "主题模式：深色模式" — in the page's language (the new `:mode/current`
   string), and renamed on every change, another tab's included. It was
@@ -88,11 +92,29 @@ value but drew card and line the same.
   surface now. `highlight_test` shares it, and `modes.test.mjs` asks the
   browser for the merged values.
 - **`theme.css` has a budget**: at most 12,288 B gzipped, checked by `bb
-  test`. It is 29,966 B, 8,254 B gzipped (25,351 B and 6,980 B before
+  test`. It is 30,785 B, 8,455 B gzipped (25,351 B and 6,980 B before
   B2a). The print tests now cover everything the print rule hides.
 - `page_style_test` (new) and `modes.test.mjs` cover the page styles, focus
-  rings, Pagefind's variables and the toggle's name; each new check fails
-  on the code before B2a.
+  rings, Pagefind's variables and the toggle's name. The checks of what B2a
+  changes — the two styles, the dark page, the toggle's name, Pagefind's
+  added variables, the one focus ring — fail on the code before it
+  (`d037142`). The others pass there too and guard against regressions:
+  the palette reader's own tests, the real palette in every mode, B1's
+  toggle markup, the style class on every page, the banner column's
+  missing ring, the gzip budget, and in the browser B1's first frame,
+  toggle and print chrome.
+- **Fix round P4-B2a.1.** The print rule dropped every shadow, a
+  highlighted code line's accent bar too (it printed on 0.2.0), and a post
+  card's shadow faded out after the switch to print; it now names the
+  boxes, with `transition: none`. The mode button's name no longer expands
+  a `$&` in a mode label. Tests: every box's own background (the sidebar's
+  `--sidebarBg`, the rest `--mainBg`) in every mode and style, the post
+  cards' column being no box, print on four pages in both styles (no box,
+  the highlighted line's bar), a focused heading anchor shown and the
+  scrollable `<code>`'s inset ring, one gzip budget constant, read mode's
+  code ring at 4.5:1 or more (it pinned the accent's 2.41:1), and every
+  `--pf-*` the theme maps beating Pagefind's `:root` in light, dark and
+  read (set to a sentinel there, none shows through).
 
 ### Needs native review (B2a)
 
