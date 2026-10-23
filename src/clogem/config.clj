@@ -101,7 +101,10 @@
              :sidebar-open true          ; true → every sidebar group open; false → only the active trail
              :sidebar-depth 2            ; TOC depth: h2–h3 (front matter `sidebarDepth` overrides)
              :per-page 10                ; homepage / category / tag pagination
-             :fonts {:tamil :system}}    ; :system | :self-hosted (§6.9, D-P3-12)
+             :fonts {:tamil :system}     ; :system | :self-hosted (§6.9, D-P3-12)
+             ;; P4-B2b: the page chrome (`check-page-chrome!`)
+             :sidebar-collapsed false :right-menu-bar true :page-button true
+             :content-bg-style nil :back-to-top true}
    :nav     []
    :search   {:provider :none}           ; :none | :pagefind (§6.7, D-P3-8)
    :highlight highlight-defaults          ; :provider :chroma | :none (§11.3 item 10)
@@ -529,11 +532,13 @@
 (def vdoing-keys
   "vdoing's `themeConfig` spellings (camelCase, and a few that live in
   another section here) → [the clogem-press path, its status, an optional
-  note]. Status is `known-keys`' :ok or :planned, or
+  note, an optional hint]. Status is `known-keys`' :ok or :planned, or
 
     :dropped  — an option Phase 4 removed (DESIGN.md §8);
     :deferred — one deferred past v1 (DESIGN.md §8's deferred list);
-    :implicit — what clogem-press always does, so there is nothing to set.
+    :implicit — what clogem-press always does, so there is nothing to set:
+                its note completes \"clogem-press …\" (what it always
+                does), and its hint is the warning's.
 
   Consulted only for a key that is not known where it was written, so a
   site migrated from vdoing gets the spelling to use. Every key vdoing's
@@ -581,7 +586,15 @@
    "searchMaxSuggestions"    [nil :dropped]
    "displayAllHeaders"       [nil :dropped]
    "sidebarHoverTriggerOpen" [nil :dropped]
-   "sidebar"                 [nil :implicit]})
+   "sidebar"                 [nil :implicit
+                              "always generates the structured sidebar from the numbered directory tree (vdoing's 'structuring' mode)"
+                              (str "Remove it. Custom sidebar arrays and sidebar: 'auto' are not supported "
+                                   "(DESIGN.md §8). vdoing's `collapsable: false` corresponds to :theme :sidebar-open true.")]
+   ;; vdoing reads it from themeConfig (vdoing/index.js); clogem-press has
+   ;; no key for it (P4-B2b)
+   "smoothScroll"            [nil :implicit
+                              "always scrolls smoothly unless the reader asks for reduced motion"
+                              "Remove it. In-page jumps are smooth unless the reader's system asks for reduced motion."]})
 
 (defn a-or-an
   "`word` with its indefinite article: \"an analytics\", \"a locale\"."
@@ -616,7 +629,7 @@
   [path k known]
   (let [kn  (key-name k)
         p   (path-str (conj path k))
-        [target status note] (get vdoing-keys kn)
+        [target status note hint] (get vdoing-keys kn)
         retired (get retired-keys (conj path k))
         nearest (when-not (or status retired)
                   (some->> (keys known)
@@ -645,10 +658,7 @@
                            (when note (str "; " note)) "."))
 
       (= :implicit status)
-      (diag/warn! nil (str p " is not needed: clogem-press always generates the structured sidebar "
-                           "from the numbered directory tree (vdoing's 'structuring' mode); it is ignored.")
-                  (str "Remove it. Custom sidebar arrays and sidebar: 'auto' are not supported "
-                       "(DESIGN.md §8). vdoing's `collapsable: false` corresponds to :theme :sidebar-open true."))
+      (diag/warn! nil (str p " is not needed: clogem-press " note "; it is ignored.") hint)
 
       :else
       (diag/warn! nil (str p " is not " (a-or-an (section-label path)) " option and is ignored.")
@@ -764,6 +774,33 @@
                                (str/join ", " (map pr-str (sort page-styles))) "; using :card.")
                       "It names vdoing's page style: :card (content on cards) or :line (DESIGN.md §1.2).")
           (assoc-in cfg [:theme :page-style] :card)))))
+
+(def page-chrome-keys
+  "P4-B2b: the page chrome's `:theme` keys, as [key valid? what-it-must-be
+  vdoing's-key]; their defaults are in `defaults`."
+  [[:sidebar-collapsed boolean? "true or false" "sidebarOpen, inverted"]
+   [:right-menu-bar    boolean? "true or false" "rightMenuBar"]
+   [:page-button       boolean? "true or false" "pageButton"]
+   [:content-bg-style  #(and (integer? %) (<= 1 % 6)) "nil or an integer from 1 to 6" "contentBgStyle"]
+   [:back-to-top       boolean? "true or false" nil]])
+
+(defn- check-page-chrome!
+  "`page-chrome-keys`: nil is the default, silently; anything else that is
+  not valid is a WARNING, repaired to the default — a site that set one of
+  these while they were planned must not start failing."
+  [cfg]
+  (reduce (fn [cfg [k ok? what vdoing]]
+            (let [v       (get-in cfg [:theme k])
+                  default (get-in defaults [:theme k])]
+              (cond
+                (nil? v) (assoc-in cfg [:theme k] default)
+                (ok? v)  cfg
+                :else
+                (do (diag/warn! nil (str ":theme " k " is " (pr-str v) ", but it must be " what
+                                         "; using " (pr-str default) ".")
+                                (str "See config.example.edn" (when vdoing (str " (vdoing's " vdoing ")")) "."))
+                    (assoc-in cfg [:theme k] default)))))
+          cfg page-chrome-keys))
 
 (defn- check-i18n-comments!
   "D-P3-14 / D-P3-15: the stored-preference behaviour, the comments
@@ -1137,7 +1174,7 @@
     (when (< (count priority) (count locales))
       (diag/warn! nil ":langs :priority does not cover every locale; missing ones were appended.")))
   (-> cfg check-theme! check-floor! check-fallback! check-site-url! check-x-default! check-search!
-      check-i18n-comments! check-out-dir! check-no-effect! check-highlight!
+      check-i18n-comments! check-out-dir! check-no-effect! check-highlight! check-page-chrome!
       ;; Task F; the static directory after the output directory it must avoid
       check-analytics! check-verification! check-static-dir!))
 

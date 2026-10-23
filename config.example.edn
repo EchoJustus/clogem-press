@@ -129,6 +129,10 @@
  ;; dist/clogem/overrides/custom.css, cache-busted, linked LAST — after the
  ;; theme's and Pagefind's stylesheets. Write `.theme-mode-dark { … }`, not
  ;; `body.theme-mode-dark` (0.2.0's classes were on <body>).
+ ;;
+ ;; Smooth scrolling has no key: in-page jumps are always smooth, unless the
+ ;; reader's system asks for reduced motion (vdoing's `smoothScroll` is
+ ;; ignored, with a warning to remove it).
  :theme {:default-mode :auto          ; :auto | :light | :dark | :read; anything else
                                       ; is a config error (giscus starts :read as light)
          :page-style   :card          ; :card | :line — vdoing's pageStyle. :card: the main

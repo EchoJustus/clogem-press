@@ -266,3 +266,68 @@
       (is (not (re-find #"\.style\b|setAttribute\(\"style" js)) "styles through the CSSOM, never a style attribute")
       (is (str/includes? js "window.clogem = window.clogem || {}") "extends window.clogem, never replaces it")
       (is (str/includes? js "e.defaultPrevented") "mode.js's own Escape wins"))))
+
+;; ---------------------------------------------------------------------------
+;; 8. One warning check for the page chrome's :theme keys; smoothScroll
+
+(defn- load-site
+  "Load `edn` as a site.edn: [cfg diagnostics]."
+  [edn]
+  (let [dir (fs/create-temp-dir {:prefix "clogem-b2b-cfg"})]
+    (spit (fs/file dir "site.edn") (pr-str edn))
+    (try (diag/collecting (config/load-config (str dir)))
+         (finally (fs/delete-tree dir)))))
+
+(def ^:private chrome-keys
+  "The page chrome's keys still :planned in `config/known-keys`: the tests
+  below see them as items 9–13 make them, :ok. Each item takes its key
+  out of this set when it flips it."
+  #{:sidebar-collapsed :right-menu-bar :page-button :content-bg-style :back-to-top})
+
+(defn- as-ok [known]
+  (reduce #(assoc-in %1 [[:theme] %2] :ok) known chrome-keys))
+
+(deftest the-chrome-keys-warn-and-repair
+  (with-redefs [config/known-keys (as-ok config/known-keys)]
+    (doseq [[k default bad good] [[:sidebar-collapsed false ["yes" 1 :on] [true false]]
+                                  [:right-menu-bar true ["yes" 1 :on] [true false]]
+                                  [:page-button true ["yes" 1 :on] [true false]]
+                                  [:back-to-top true ["yes" 1 :on] [true false]]
+                                  [:content-bg-style nil [0 7 1.5 "1" :grid true] [1 2 3 4 5 6]]]]
+      (testing (str k)
+        (doseq [v bad]
+          (let [[cfg ds] (load-site {:theme {k v}})
+                ws (diag/warnings ds)]
+            (is (empty? (diag/errors ds)) (pr-str k v))
+            (is (= 1 (count ws)) (pr-str k v (map :message ws)))
+            (let [m (:message (first ws))]
+              (is (str/starts-with? m (str ":theme " k " is " (pr-str v) ", but it must be ")) m)
+              (is (str/ends-with? m (str "; using " (pr-str default) ".")) m))
+            (is (= default (get-in cfg [:theme k])) (pr-str k v))))
+        (testing "the message names what the value must be"
+          (let [[_ ds] (load-site {:theme {k (first bad)}})]
+            (is (str/includes? (:message (first (diag/warnings ds)))
+                               (if (= k :content-bg-style) "nil or an integer from 1 to 6" "true or false")))))
+        (doseq [v (conj good nil)]
+          (let [[cfg ds] (load-site {:theme {k v}})]
+            (is (= [] (map :message (diag/warnings ds))) (pr-str k v))
+            (is (empty? (diag/errors ds)))
+            (is (= (if (nil? v) default v) (get-in cfg [:theme k])) (pr-str k v))))))
+    (testing "the defaults, with nothing set"
+      (let [[cfg ds] (load-site {})]
+        (is (= [false true true nil true]
+               (map #(get-in cfg [:theme %]) [:sidebar-collapsed :right-menu-bar :page-button :content-bg-style :back-to-top])))
+        (is (empty? (remove #(str/includes? (str (:message %)) "no site config") (diag/warnings ds))))))))
+
+(deftest smooth-scroll-is-known-and-ignored
+  (doseq [[edn want] [[{:theme {:smoothScroll true}}
+                       ":theme :smoothScroll is not needed: clogem-press always scrolls smoothly unless the reader asks for reduced motion; it is ignored."]
+                      [{:smoothScroll false}
+                       ":smoothScroll is not needed: clogem-press always scrolls smoothly unless the reader asks for reduced motion; it is ignored."]]]
+    (let [[cfg ds] (load-site edn)
+          ws (diag/warnings ds)]
+      (is (empty? (diag/errors ds)))
+      (is (= [want] (map :message ws)))
+      (is (= "Remove it. In-page jumps are smooth unless the reader's system asks for reduced motion." (:hint (first ws))))
+      (is (not (contains? (:theme cfg) :smooth-scroll)) "there is no :smooth-scroll key")))
+  (is (nil? (get-in config/known-keys [[:theme] :smooth-scroll]))))

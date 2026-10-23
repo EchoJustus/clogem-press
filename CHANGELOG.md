@@ -58,6 +58,16 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   so at 1280 px main is 680 px and the article 632 (615 beside a 17 px
   scrollbar); it was 376 and 328. The TOC is at most the viewport less
   `--navbarHeight` and 6.2rem tall and scrolls inside itself.
+- **One check for the page chrome's `:theme` keys** (`:sidebar-collapsed`,
+  `:right-menu-bar`, `:page-button`, `:content-bg-style`, `:back-to-top`):
+  `nil` is the default, and a bad value (`"yes"` for a boolean, `7` for
+  `:content-bg-style`) is one warning naming the key, the value, what it
+  must be and the default it falls back to — never an error, since 0.2.0
+  accepted any value for these planned keys.
+- **vdoing's `smoothScroll`** is now a known key, in `:theme` or at the top
+  level: one warning says clogem-press always scrolls smoothly unless the
+  reader asks for reduced motion, and that it is ignored (it used to be
+  reported as an unknown option).
 
 ### Changed (B2b)
 
@@ -129,6 +139,10 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   (`test/clogem/css_palette.clj`) learnt a leading `not` and
   `(scripting: …)`, through `:scripting?` (default true; `initial-only` is
   false, as in Chromium).
+- `bb test`: every bad value of the five chrome keys (`"yes"`, `1`, `:on`;
+  `0`, `7`, `1.5`, `"1"`, `:grid`, `true`) warns once and is repaired, and
+  good values and `nil` are quiet; `smoothScroll` in `:theme` and at the top
+  level warns once with its pinned message.
 
 ### Needs native review (B2b)
 

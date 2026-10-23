@@ -295,7 +295,8 @@ offset below, so keep the top level short and put the rest in a dropdown
 `…/#id` — and every focus move by Tab lands 0.75rem below the navbar (the
 root's `scroll-padding-top`), headings or not. Scrolling is smooth unless
 the reader's system asks for reduced motion; there is no key for it
-(vdoing's `smoothScroll`, off by default there, is not read).
+(vdoing's `smoothScroll`, off by default there, is known and ignored: a
+site that sets it is told to remove it).
 
 **Mobile layout.** At 50rem (800 px) and below the navbar is one sticky
 row: a menu button, the brand (cut short with an ellipsis), the search

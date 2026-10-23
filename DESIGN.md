@@ -3016,8 +3016,8 @@ their own findings. Item 19 onward are corrections.
    and the root's `scroll-padding-top: calc(var(--navbarHeight) + 0.75rem)` replaces the h2–h6
    `scroll-margin-top`, so the home's `h1`, any `id`, `scrollIntoView()` and focus scrolling land
    below it too; `toc.js` measures the navbar's bottom. Smooth scrolling is always on, under
-   `prefers-reduced-motion: no-preference` only (vdoing's `smoothScroll` is off by default and is
-   not read). Above 50rem the language switcher is a `<details>` dropdown whose list is its next
+   `prefers-reduced-motion: no-preference` only (vdoing's `smoothScroll` is off by default; here it
+   is *implicit*, a known key that warns and is ignored). Above 50rem the language switcher is a `<details>` dropdown whose list is its next
    sibling (CSS cannot show a closed `<details>`' content where `::details-content` is missing), and
    the search trigger is its icon alone at ≤ 64rem. "Above 50rem" is written
    `not all and (max-width: 50rem)`, so no fractional width between 800 and 801 px falls in a gap.
@@ -3451,6 +3451,12 @@ their own findings. Item 19 onward are corrections.
     covers every key vdoing's `themeConfig` declares. Retired clogem keys have their own message
     (`config/retired-keys`: `:generator :ref`, D-14; `:tools :chroma :style`, now `:highlight`). A
     scalar `:theme :html-modules` warns instead of crashing every task.
+    *B2b.* The page chrome's five `:theme` keys (`:sidebar-collapsed`, `:right-menu-bar`,
+    `:page-button`, `:content-bg-style`, `:back-to-top`) have one check, `config/check-page-chrome!`:
+    nil is the default, and any other bad value is a **warning** that names the key, the value, what
+    it must be and the default, which it is repaired to. vdoing's `smoothScroll` is *implicit*:
+    smooth scrolling is always on unless the reader asks for reduced motion, and there is no key.
+    An `:implicit` entry of `vdoing-keys` carries its own note and hint.
     *Unknown-key warnings — done in A (part of D-P4-16).* `config/known-keys` is the one table of
     every section's keys ({path → {key :ok|:planned}}, `:*` for any key); `check-keys!` walks the
     site.edn as written and warns, never errors, on an unknown key — naming its path and the nearest
