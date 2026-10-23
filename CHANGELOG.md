@@ -93,6 +93,12 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   `title` and no `rel`. Unlike vdoing's, which show from 961 px over the
   content, they show only from 84rem (1344 px), 50 px wide and 80 px from
   88rem, where they cover no box. Print hides them; `false` omits them.
+- **Background patterns** (`:theme :content-bg-style`, vdoing's
+  `contentBgStyle`, default `nil`): `1`–`6` draw vdoing's grid, horizontal,
+  vertical, two diagonal and dotted patterns on the main column of articles
+  and catalogues (the class `clogem-bg-style-N`), in a new `--linesColor`,
+  set in every mode: `rgba(50, 0, 0, 0.05)` in light and read,
+  `rgba(125, 125, 125, 0.05)` in dark. Print draws none.
 
 ### Changed (B2b)
 
@@ -187,6 +193,15 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   1344, 1407, 1408 and 1440 both are visible, centred, 50 or 80 px wide at
   the edges, meet no sidebar, main or TOC box and leave every visible link's
   centre clickable; hover, 40 Tab stops, and hidden at 1343, 900 and 360.
+- `bb test`: each of `1`–`6` marks the article, post and catalogue mains of a
+  temp site and no home, category, tag, archive or `/page/2/` page; the
+  default and every bad value mark none. Every mode block declares
+  `--linesColor` (`full-set`), the patterns use no `background` shorthand,
+  and the contrast check gains the surface "--linesColor over --mainBg": the
+  real values pass and `rgba(0,0,0,0.6)` fails. `layout.test.mjs`: on an
+  article and a catalogue, each pattern's gradient functions, pattern 1
+  centred, the background colour still `--mainBg`, dark lines in dark mode,
+  none in print; `modes.test.mjs`' print check draws no pattern.
 
 ### Needs native review (B2b)
 

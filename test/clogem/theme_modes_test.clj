@@ -155,7 +155,9 @@ console.log(JSON.stringify([
   checked in highlight_test.clj, against every token colour."
   #{"--bodyBg" "--mainBg" "--sidebarBg" "--blurBg" "--customBlockBg" "--textColor"
     "--textLightenColor" "--borderColor" "--codeBg" "--codeColor" "--accent" "--textColorSubtle"
-    "--codeLineNumber" "--codeHlBg"})
+    "--codeLineNumber" "--codeHlBg"
+    ;; P4-B2b: the background patterns' lines
+    "--linesColor"})
 
 (defn- mode-blocks
   "{mode {property value}} — what each mode's OWN block declares (the full

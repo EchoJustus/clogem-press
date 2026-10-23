@@ -475,7 +475,7 @@
                            :title-badge :planned
                            :title-badge-icons :planned :blogger :planned :footer :planned
                            :update-bar :planned :right-menu-bar :ok :page-button :ok
-                           :content-bg-style :planned :last-updated :planned
+                           :content-bg-style :ok :last-updated :planned
                            :sidebar-collapsed :ok :back-to-top :planned :logo :planned
                            :repo :planned}
    [:theme :fonts]        {:tamil :ok}
@@ -573,7 +573,7 @@
    "updateBar"               [[:theme :update-bar] :planned]
    "rightMenuBar"            [[:theme :right-menu-bar] :ok]
    "pageButton"              [[:theme :page-button] :ok]
-   "contentBgStyle"          [[:theme :content-bg-style] :planned]
+   "contentBgStyle"          [[:theme :content-bg-style] :ok]
    "lastUpdated"             [[:theme :last-updated] :planned]
    "logo"                    [[:theme :logo] :planned]
    "repo"                    [[:theme :repo] :planned]

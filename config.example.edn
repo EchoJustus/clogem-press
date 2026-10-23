@@ -159,6 +159,10 @@
                                       ; again, as chevrons fixed at the window's edges,
                                       ; shown from 84rem (1344 px), where they cover
                                       ; nothing; false omits them
+         :content-bg-style nil        ; vdoing's contentBgStyle: nil, or 1–6 for a faint
+                                      ; pattern on the article and catalogue column:
+                                      ; 1 grid, 2 horizontal lines, 3 vertical lines,
+                                      ; 4 and 5 the two diagonals, 6 dots
          :per-page 10                 ; a positive integer: articles per page on the
                                       ; homepage and on category / tag pages (/page/2/, …)
          :fonts {:tamil :system}      ; :system | :self-hosted  (§6.9, D-P3-12)

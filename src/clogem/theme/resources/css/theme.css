@@ -49,6 +49,7 @@
   --errorBorder: #fecaca;
   --errorText: #b91c1c;
   --shadowColor: rgba(0, 0, 0, 0.1);
+  --linesColor: rgba(50, 0, 0, 0.05);
   color-scheme: light;
 }
 
@@ -73,6 +74,7 @@
   --errorBorder: #e8c4b4;
   --errorText: #9f1d1d;
   --shadowColor: rgba(0, 0, 0, 0.1);
+  --linesColor: rgba(50, 0, 0, 0.05);
   color-scheme: light;
 }
 
@@ -95,6 +97,7 @@
   --errorBorder: #5c2828;
   --errorText: #f87171;
   --shadowColor: rgba(0, 0, 0, 0.4);
+  --linesColor: rgba(125, 125, 125, 0.05);
   color-scheme: dark;
 }
 
@@ -119,6 +122,7 @@
     --errorBorder: #5c2828;
     --errorText: #f87171;
     --shadowColor: rgba(0, 0, 0, 0.4);
+    --linesColor: rgba(125, 125, 125, 0.05);
     color-scheme: dark;
   }
 }
@@ -608,6 +612,16 @@ img { max-width: 100%; height: auto; }
  * page of the same colour (above). */
 .clogem-main { background: var(--mainBg); border-radius: 5px; padding: 1.25rem 1.5rem; align-self: start; }
 @media (max-width: 50rem) { .clogem-main { padding: 1rem; } }
+/* P4-B2b: vdoing's contentBgStyle patterns (Page.vue), on the main column of
+ * articles and catalogues (`:theme :content-bg-style` 1–6), in --linesColor
+ * over the card. Longhands only: the card's `background` above stays */
+.clogem-main.clogem-bg-style-1 { background-image: linear-gradient(90deg, var(--linesColor) 3%, transparent 3%),
+  linear-gradient(0deg, var(--linesColor) 3%, transparent 3%); background-position: center center; background-size: 20px 20px; }
+.clogem-main.clogem-bg-style-2 { background-image: repeating-linear-gradient(0deg, var(--linesColor) 0, var(--linesColor) 1px, transparent 0, transparent 50%); background-size: 30px 30px; }
+.clogem-main.clogem-bg-style-3 { background-image: repeating-linear-gradient(90deg, var(--linesColor) 0, var(--linesColor) 1px, transparent 0, transparent 50%); background-size: 30px 30px; }
+.clogem-main.clogem-bg-style-4 { background-image: repeating-linear-gradient(-45deg, var(--linesColor) 0, var(--linesColor) 1px, transparent 0, transparent 50%); background-size: 20px 20px; }
+.clogem-main.clogem-bg-style-5 { background-image: repeating-linear-gradient(45deg, var(--linesColor) 0, var(--linesColor) 1px, transparent 0, transparent 50%); background-size: 20px 20px; }
+.clogem-main.clogem-bg-style-6 { background-image: radial-gradient(var(--linesColor) 1px, transparent 1px); background-size: 10px 10px; }
 .clogem-home-right > section { background: var(--mainBg); border-radius: 5px; padding: 0.25rem 1rem 0.75rem; }
 .clogem-home-right > section + section { margin-top: 1rem; }
 /* P4-B2a.1: a home whose main column lists post cards is no box itself —
@@ -730,6 +744,7 @@ html.theme-mode-dark {
                   .clogem-main--posts > .clogem-content) {
     border: 0; padding: 0; border-radius: 0; box-shadow: none; transition: none;
   }
+  html[class] .clogem-main { background-image: none; }   /* no pattern */
   .clogem-content a { text-decoration: underline; }
   pre.clogem-code, pre.clogem-code > code { white-space: pre-wrap; overflow: visible; }
   pre.clogem-code > code { display: block; }

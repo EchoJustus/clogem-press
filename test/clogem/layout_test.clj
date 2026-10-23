@@ -285,7 +285,7 @@
   "The page chrome's keys still :planned in `config/known-keys`: the tests
   below see them as items 9–13 make them, :ok. Each item takes its key
   out of this set when it flips it."
-  #{:content-bg-style :back-to-top})
+  #{:back-to-top})
 
 (defn- as-ok [known]
   (reduce #(assoc-in %1 [[:theme] %2] :ok) known chrome-keys))
@@ -510,3 +510,70 @@
       (is (= ["fixed" "flex" "50px" "70px" "0.55" "5"] (map d ["position" "display" "width" "height" "opacity" "z-index"]))))
     (is (= "1" ((of ["(min-width: 84rem)"] ".clogem-page-button:hover") "opacity")))
     (is (= "80px" ((of ["(min-width: 88rem)"] ".clogem-page-button") "width")))))
+
+;; ---------------------------------------------------------------------------
+;; 12. Background patterns: :theme :content-bg-style
+
+(def ^:private bg-files
+  "A site with an article, a catalogue, two tagged posts (so /page/2/ at one
+  per page), category, tag and archive pages."
+  {"index.md" "# Home\n"
+   "01.Guide/01.t.md" (str/replace a-toc-article "title: T\n" "title: T\ntags:\n  - x\n")
+   "00.Catalogue/01.c.md" (str "---\ntitle: C\narticle: false\nsidebar: false\npageComponent:\n  name: Catalogue\n"
+                               "  data:\n    path: 01.Guide\ndate: \"2026-02-01 00:00:00\"\npermalink: /pages/c00001/\n---\n\nC\n")
+   "_posts/p.md" (str/replace a-post "title: P\n" "title: P\ntags:\n  - x\n")
+   "_posts/q.md" (-> a-post (str/replace "title: P\n" "title: Q\ntags:\n  - x\n") (str/replace "p00001" "q00001")
+                     (str/replace "2026-02-02" "2026-02-03"))})
+
+(defn- main-tag [page] (re-find #"<main[^>]*>" page))
+
+(deftest content-bg-style-marks-article-and-catalogue-mains
+  (doseq [n (range 1 7)]
+    (let [ps (build-temp (assoc one-lang :theme {:content-bg-style n :per-page 1}) bg-files)
+          want (str "<main class=\"clogem-main clogem-bg-style-" n "\">")]
+      (testing (str n)
+        (doseq [rel ["pages/t00001/index.html" "pages/p00001/index.html" "pages/c00001/index.html"]]
+          (is (= want (main-tag (ps rel))) (str n " " rel)))
+        (is (contains? ps "page/2/index.html"))
+        (doseq [[rel page] ps
+                :when (not (re-find #"^pages/" rel))]
+          (is (not (str/includes? page "clogem-bg-style")) (str n " " rel)))
+        (is (some #(re-find #"^(categories|tags|archives)/" (key %)) ps)))))
+  (testing "the default, and every bad value, put none (and the bad ones warn)"
+    (let [ps (build-temp (assoc one-lang :theme {:per-page 1}) bg-files)]
+      (is (= "<main class=\"clogem-main\">" (main-tag (ps "pages/t00001/index.html"))))
+      (is (not-any? #(str/includes? (val %) "clogem-bg-style") ps)))
+    (doseq [v [0 7 1.5 "1" :grid true]]
+      (let [ps (build-temp (assoc one-lang :theme {:content-bg-style v}) bg-files)]
+        (is (not-any? #(str/includes? (val %) "clogem-bg-style") ps) (pr-str v)))
+      (let [[cfg ds] (load-site {:theme {:content-bg-style v}})]
+        (is (= 1 (count (diag/warnings ds))) (pr-str v))
+        (is (nil? (get-in cfg [:theme :content-bg-style])))))))
+
+(deftest the-patterns-css
+  (let [css (slurp theme-css)
+        rules (cp/parse css)
+        decl (fn [sel p] ((cp/rule rules sel) p))]
+    (testing "vdoing's six patterns, in longhands only"
+      (is (= 2 (count (re-seq #"linear-gradient\(" (decl ".clogem-main.clogem-bg-style-1" "background-image")))))
+      (is (= "center center" (decl ".clogem-main.clogem-bg-style-1" "background-position")))
+      (doseq [[n deg size] [[2 "0deg" "30px 30px"] [3 "90deg" "30px 30px"] [4 "-45deg" "20px 20px"] [5 "45deg" "20px 20px"]]]
+        (is (str/starts-with? (decl (str ".clogem-main.clogem-bg-style-" n) "background-image")
+                              (str "repeating-linear-gradient(" deg ", var(--linesColor) 0")) (str n))
+        (is (= size (decl (str ".clogem-main.clogem-bg-style-" n) "background-size")) (str n)))
+      (is (str/starts-with? (decl ".clogem-main.clogem-bg-style-6" "background-image") "radial-gradient(var(--linesColor) 1px"))
+      (doseq [r rules :when (some #(str/includes? % "clogem-bg-style") (:selectors r))]
+        (is (not-any? #(= "background" (first %)) (:decls r)) (pr-str (:selectors r)))))
+    (testing "--linesColor in every mode: vdoing's light value in light and read, its dark one in dark and auto"
+      (is (= "rgba(50, 0, 0, 0.05)" ((cp/palette rules :light) "--linesColor") ((cp/palette rules :read) "--linesColor")))
+      (is (= "rgba(125, 125, 125, 0.05)" ((cp/palette rules :dark) "--linesColor") ((cp/palette rules :auto) "--linesColor"))))
+    (testing "print draws no pattern"
+      (is (= "none" ((into {} (for [r rules :when (= ["print"] (:media r)) :when (some #{"html[class] .clogem-main"} (:selectors r))
+                                     [p v] (:decls r)] [p v])) "background-image"))))
+    (testing "the palette checks the lines on the card: the real values pass, strong lines fail"
+      (is (some #(= "--linesColor over --mainBg" (first %)) (cp/surfaces (cp/palette rules :light))))
+      (is (= [] (cp/failures css)))
+      (let [strong (str/replace-first css "  --linesColor: rgba(50, 0, 0, 0.05);" "  --linesColor: rgba(50, 0, 0, 0.05);\n  --linesColor: rgba(0,0,0,0.6);")]
+        (is (not= css strong))
+        (is (seq (cp/failures strong)))
+        (is (some #(str/includes? % "--linesColor over --mainBg") (cp/failures strong)))))))

@@ -339,6 +339,14 @@ duplicates for the mouse: screen readers and the keyboard use the
 previous/next links at the end of the article. `:theme :page-button false`
 omits them.
 
+**Background patterns.** `:theme :content-bg-style` (vdoing's
+`contentBgStyle`) draws a faint pattern on the column of articles and
+catalogue pages: `1` a grid, `2` horizontal lines, `3` vertical lines, `4`
+and `5` the two diagonals, `6` dots; the default, `nil`, draws none. The
+lines are `--linesColor` (5% opaque, lighter in dark mode), which you can
+set in `overrides/custom.css`; `bb test` checks that text keeps 4.5:1 on
+them. Print draws no pattern.
+
 The mode and page-style classes are on `<html>`, unqualified:
 `.theme-mode-dark`, `.theme-style-card`. (0.2.0 put them on `<body>`; CSS
 written as `body.theme-mode-dark` must drop `body`.)

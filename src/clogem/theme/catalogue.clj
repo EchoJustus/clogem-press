@@ -53,7 +53,7 @@
      (assoc ctx :title (:title variant))
      (layout/navbar ctx)
      [:div.clogem-shell.clogem-shell--single
-      [:main.clogem-main
+      [:main.clogem-main (layout/content-bg ctx)
        (layout/breadcrumbs ctx group)
        [:article.clogem-article.clogem-catalogue
         (layout/pagefind ctx :data-pagefind-body)       ; D-P3-9

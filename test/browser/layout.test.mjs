@@ -15,6 +15,7 @@
 //   7. the home's text card pads like every other main at 50rem and below.
 //  10. the sidebar's collapse button (js/nav.js), above 50rem only;
 //  11. the page buttons, from 84rem only, never over a box or a link;
+//  12. the background patterns on the main column;
 //
 // Smooth scrolling is on in every test, and focus scrolling animates too:
 // positions are read under `reducedMotion: 'reduce'`, or once scrollY has
@@ -1096,6 +1097,53 @@ async function item11(t) {
   await page.close();
 }
 
+// ---------------------------------------------------------------------------
+// 12. Background patterns
+
+// runs in the page: gives main pattern `n` and reads what it computes
+function patternState(n) {
+  const main = document.querySelector('main.clogem-main');
+  main.classList.remove(...[1, 2, 3, 4, 5, 6].map((i) => `clogem-bg-style-${i}`));
+  if (n) main.classList.add(`clogem-bg-style-${n}`);
+  const c = getComputedStyle(main);
+  const probe = document.createElement('div');
+  probe.style.backgroundColor = 'var(--mainBg)';
+  main.appendChild(probe);
+  const mainBg = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  return { image: c.backgroundImage, position: c.backgroundPosition, size: c.backgroundSize, color: c.backgroundColor, mainBg,
+           lines: c.getPropertyValue('--linesColor').trim() };
+}
+
+async function item12(t) {
+  for (const rel of [article, 'pages/559f0f/']) {
+    const page = await t.newPage({ viewport: { width: 1280, height: 740 }, colorScheme: 'light' });
+    await open(page, t, rel);
+    const none = await page.evaluate(patternState, 0);
+    t.check(none.image === 'none', `/${rel}: no pattern by default (${none.image})`);
+    for (const n of [1, 2, 3, 4, 5, 6]) {
+      const s = await page.evaluate(patternState, n);
+      const fns = s.image.match(/(repeating-linear|radial|linear)-gradient\(/g) || [];
+      const want = n === 1 ? ['linear-gradient(', 'linear-gradient('] : n === 6 ? ['radial-gradient('] : ['repeating-linear-gradient('];
+      t.check(fns.join() === want.join(), `/${rel} pattern ${n}: ${fns.join(' ')}, want ${want.join(' ')}`);
+      t.check(s.image.includes('rgba(50, 0, 0, 0.05)'), `/${rel} pattern ${n}: drawn in light's --linesColor (${s.image.slice(0, 80)}…)`);
+      t.check(s.color === s.mainBg, `/${rel} pattern ${n}: background-color ${s.color} is --mainBg ${s.mainBg}`);
+      if (n === 1) t.check(s.position.split(', ').every((p) => p === '50% 50%'), `/${rel} pattern 1: each layer at 50% 50% (${s.position})`);
+    }
+    // dark mode: the dark lines
+    await page.evaluate(() => { const h = document.documentElement; h.className = h.className.replace(/\btheme-mode-\S+/, 'theme-mode-dark'); });
+    const dark = await page.evaluate(patternState, 3);
+    t.check(dark.lines === 'rgba(125, 125, 125, 0.05)' && dark.image.includes('rgba(125, 125, 125, 0.05)'),
+            `/${rel} dark: --linesColor is ${dark.lines}`);
+    t.check(dark.color === dark.mainBg, `/${rel} dark: background-color ${dark.color} is --mainBg ${dark.mainBg}`);
+    // print: no pattern
+    await page.emulateMedia({ media: 'print' });
+    const printed = await page.evaluate(patternState, 6);
+    t.check(printed.image === 'none', `/${rel} print: background-image ${printed.image}`);
+    await page.close();
+  }
+}
+
 export default async function layout(t) {
   await item1(t);
   await item2(t);
@@ -1106,4 +1154,5 @@ export default async function layout(t) {
   await item7(t);
   await item10(t);
   await item11(t);
+  await item12(t);
 }

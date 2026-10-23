@@ -231,6 +231,14 @@
        [:a.clogem-prev-next__next {:href (href ctx (:href next)) :rel "next" :lang (config/html-lang cfg (:lang next))}
         [:span (i18n/tr ctx :page/next)] " " (:title next)])]))
 
+(defn content-bg
+  "`:theme :content-bg-style` 1–6 (vdoing's `contentBgStyle`): the main
+  column's attributes for that pattern, on articles and catalogues; nil
+  without one, so `<main class=\"clogem-main\"` stays as it was."
+  [{:keys [cfg]}]
+  (when-let [n (get-in cfg [:theme :content-bg-style])]
+    {:class (str "clogem-bg-style-" n)}))
+
 (defn page-buttons
   "vdoing's page buttons (`pageButton`, PageNav.vue): `prev-next`'s targets
   again, as two chevrons fixed at the viewport's edges. Duplicates of the

@@ -3475,6 +3475,13 @@ their own findings. Item 19 onward are corrections.
     shell's gutter, `(100vw − 80rem) / 2 + 1.25rem`, is 52 px — 50 px wide, and 80 px from 88rem
     (an 84 px gutter). Beside a classic scrollbar they reach a few px into the sidebar's and the
     TOC's padding, never onto a link (owner's decision).
+    vdoing's `contentBgStyle` (`:content-bg-style`, nil or 1–6) puts `clogem-bg-style-N` on the main
+    column of articles and catalogues, where vdoing's `Page.vue` draws it, and nowhere else: its six
+    patterns in `background-image`/`background-size`/`background-position` only (`0deg` for vdoing's
+    unitless `0`), never the shorthand, over the card's own `background`. `--linesColor` is in every
+    mode block, vdoing's `rgba(50, 0, 0, 0.05)` in light and read and `rgba(125, 125, 125, 0.05)` in
+    dark and auto; the palette check composites it over the card as one more surface. Print draws
+    none.
     *Unknown-key warnings — done in A (part of D-P4-16).* `config/known-keys` is the one table of
     every section's keys ({path → {key :ok|:planned}}, `:*` for any key); `check-keys!` walks the
     site.edn as written and warns, never errors, on an unknown key — naming its path and the nearest

@@ -17,7 +17,7 @@
      (layout/navbar (assoc ctx :sidebar? (layout/sidebar? ctx)))
      (layout/shell
       ctx
-      [:main.clogem-main
+      [:main.clogem-main (layout/content-bg ctx)
        (layout/sidebar-toggle ctx)
        (layout/breadcrumbs ctx group)
        ;; D-P3-9: only an article's own body is indexed; once any page

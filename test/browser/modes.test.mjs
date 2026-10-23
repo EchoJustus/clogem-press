@@ -499,7 +499,11 @@ export default async function modes(t) {
     await page.goto(rel ? t.url(rel) : url, { waitUntil: 'load' });
     const screen = await page.evaluate(display, onScreen);
     for (const [s, d] of Object.entries(screen)) t.check(d !== 'none' && d !== 'absent', `${viewport.width}px: ${s} is drawn on screen (display ${d})`);
+    // P4-B2b item 12: a background pattern on screen, none in print
+    const pattern = () => { const m = document.querySelector('main.clogem-main'); m.classList.add('clogem-bg-style-1'); return getComputedStyle(m).backgroundImage; };
+    t.check((await page.evaluate(pattern)) !== 'none', `${viewport.width}px: the pattern is drawn on screen`);
     await page.emulateMedia({ media: 'print' });
+    t.check((await page.evaluate(pattern)) === 'none', `${viewport.width}px: print draws no background pattern`);
     const shown = await page.evaluate(display,
       ['.clogem-navbar', '.clogem-sidebar', '.clogem-toc', '.clogem-mode', '.clogem-search', '.clogem-comments',
        '.clogem-prev-next', '.header-anchor', ...onScreen]);
