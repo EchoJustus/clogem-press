@@ -502,8 +502,396 @@ async function item3(t) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 4–6. At 50rem and below: one row, the drawer, js/nav.js and the fallbacks
+
+const mobilePages = ['', 'zh-Hans/', 'ms/', 'ta/', article, 'zh-Hans/pages/c0nta1/', 'ta/pages/e19a7c/', 'ms/categories/'];
+
+// runs in the page: opens the drawer and every <details> in it
+function openAll() {
+  const tg = document.querySelector('.clogem-navbar__toggle');
+  if (tg) tg.open = true;
+  document.querySelectorAll('#clogem-drawer details, .clogem-navbar details').forEach((d) => { d.open = true; });
+}
+
+// runs in the page: the overflow conditions with the drawer open
+function drawerFits() {
+  const d = document.getElementById('clogem-drawer');
+  const r = d.getBoundingClientRect();
+  return { doc: document.documentElement.scrollWidth - innerWidth, sw: d.scrollWidth, cw: d.clientWidth,
+           bottom: r.bottom, innerHeight, right: r.right, innerWidth };
+}
+
+const isOpen = (page) => page.evaluate(() => document.querySelector('.clogem-navbar__toggle').open);
+const focusIn = (page, sel) => page.evaluate((sel) => !!document.activeElement && !!document.activeElement.closest(sel), sel);
+const asides = (page) => page.evaluate(() => ({ n: document.querySelectorAll('aside.clogem-sidebar').length,
+                                                ids: document.querySelectorAll('#clogem-drawer').length }));
+
+async function item4(t) {
+  await heights(t, [320, 360, 768]);
+  await anchorsAt(t, [320, 360, 768]);
+  await nonHeading(t, [360]);
+  for (const width of [320, 360, 768]) {
+    const page = await t.newPage({ viewport: { width, height: 740 } });
+    for (const rel of mobilePages) {
+      await open(page, t, rel);
+      const what = `${width}px /${rel}`;
+      const s = await page.evaluate(navbarState);
+      checkRow(t, s, what);
+      t.check(s.boxes.some((b) => b.n === 'menu'), `${what}: the menu summary is rendered`);
+      const can = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight >= 600);
+      if (can) {
+        t.check(await scrollTop(page, 600) === 600, `${what}: scrollY reached 600`);
+        const top = await page.evaluate(() => document.querySelector('.clogem-navbar').getBoundingClientRect().top);
+        t.check(top === 0, `${what}: scrolled 600 px, the navbar's top is ${top}`);
+        await scrollTop(page, 0);
+      }
+      // closed: only the toggle, the brand, search and mode are controls
+      const c = await page.evaluate(() => {
+        const nb = document.querySelector('.clogem-navbar');
+        const shown = [...nb.querySelectorAll('a[href], button, summary')].filter((e) => e.checkVisibility());
+        const name = (e) => e.matches('.clogem-navbar__toggle > summary') ? 'menu' : e.matches('.clogem-navbar__brand') ? 'brand'
+          : e.matches('button.pf-trigger-btn') ? 'search' : e.matches('.clogem-mode__button') ? 'mode' : e.outerHTML.slice(0, 60);
+        const br = nb.querySelector('.clogem-navbar__brand');
+        const bb = br.getBoundingClientRect();
+        const overlaps = shown.filter((e) => e !== br).filter((e) => { const r = e.getBoundingClientRect();
+          return r.left < bb.right - 0.5 && r.right > bb.left + 0.5 && r.top < bb.bottom && r.bottom > bb.top; }).map(name);
+        return { shown: shown.map(name), overlaps, ellipsis: getComputedStyle(br).textOverflow };
+      });
+      t.check(c.shown.join(' ') === 'menu brand search mode', `${what}: closed, the controls are ${c.shown.join(' ')}`);
+      t.check(c.overlaps.length === 0 && c.ellipsis === 'ellipsis', `${what}: the brand overlaps ${c.overlaps.join(', ') || 'nothing'}, text-overflow ${c.ellipsis}`);
+      let into = false;
+      await page.evaluate(() => document.activeElement && document.activeElement.blur());
+      for (let i = 0; i < 15; i++) {
+        await page.keyboard.press('Tab');
+        if (await focusIn(page, '#clogem-drawer')) into = true;
+      }
+      t.check(!into, `${what}: 15 Tabs from the top never enter the closed drawer`);
+    }
+    await page.close();
+  }
+
+  // open, at 320, with everything in it open: nothing overflows, the
+  // drawer fits the viewport and its last link can be focused in it
+  {
+    const page = await t.newPage({ viewport: { width: 320, height: 740 } });
+    for (const rel of mobilePages) {
+      await open(page, t, rel);
+      await page.evaluate(openAll);
+      const f = await page.evaluate(drawerFits);
+      const what = `320px /${rel}, the drawer open`;
+      t.check(f.doc <= 0, `${what}: the page overflows by ${f.doc}`);
+      t.check(f.sw <= f.cw, `${what}: the drawer's scrollWidth ${f.sw} > clientWidth ${f.cw}`);
+      t.check(f.bottom <= f.innerHeight, `${what}: the drawer's bottom ${f.bottom} is below the viewport (${f.innerHeight})`);
+      const last = await page.evaluate(() => {
+        const d = document.getElementById('clogem-drawer');
+        const all = [...d.querySelectorAll('a[href]')].filter((e) => e.checkVisibility());
+        const a = all[all.length - 1];
+        a.focus();
+        const r = a.getBoundingClientRect(), dr = d.getBoundingClientRect();
+        return { focused: document.activeElement === a, inside: r.top >= dr.top - 0.5 && r.bottom <= dr.bottom + 0.5 };
+      });
+      t.check(last.focused && last.inside, `${what}: the last link, focused, lies inside the drawer (${JSON.stringify(last)})`);
+    }
+    // the mode menu fits at 320
+    for (const rel of homes) {
+      await open(page, t, rel);
+      await page.locator('.clogem-mode__button').click();
+      const m = await page.evaluate(() => { const r = document.getElementById('clogem-mode-menu').getBoundingClientRect(); return [r.left, r.right]; });
+      t.check(m[0] >= 0 && m[1] <= 320, `320px /${rel}: the open mode menu spans ${m[0]}–${m[1]}`);
+    }
+    await page.close();
+  }
+
+  // reduced motion: nothing animates when the drawer opens
+  {
+    const page = await t.newPage({ viewport: { width: 360, height: 740 }, reducedMotion: 'reduce' });
+    await open(page, t, article);
+    await page.locator('.clogem-navbar__toggle > summary').click();
+    const r = await page.evaluate(() => {
+      const d = document.getElementById('clogem-drawer');
+      const els = [d, ...d.querySelectorAll('*'), document.querySelector('.clogem-navbar__toggle')];
+      return { anims: d.getAnimations({ subtree: true }).length,
+               moving: els.filter((e) => getComputedStyle(e).transitionDuration.split(',').some((x) => parseFloat(x) !== 0)).length };
+    });
+    t.check(r.anims === 0 && r.moving === 0, `reduce: the drawer runs ${r.anims} animations, ${r.moving} elements with a transition`);
+    await page.close();
+  }
+
+  // every Tab stop in the open drawer draws the focus ring
+  for (const mode of ['light', 'dark']) {
+    const page = await t.newPage({ viewport: { width: 360, height: 740 } });
+    await page.addInitScript((m) => { try { localStorage.setItem('clogem-mode', m); } catch (e) {} }, mode);
+    await open(page, t, article);
+    const ring = await page.evaluate(() => {
+      const p = document.createElement('div'); document.body.appendChild(p);
+      p.style.color = 'var(--focusRing)'; const c = getComputedStyle(p).color; p.remove(); return c;
+    });
+    await page.focus('.clogem-navbar__toggle > summary');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.activeElement && document.activeElement.closest('#clogem-drawer'), null, { timeout: 3000 }).catch(() => {});
+    let stops = 0, bad = 0;
+    while (stops < 80 && await focusIn(page, '#clogem-drawer')) {
+      stops++;
+      const f = await page.evaluate(() => { const c = getComputedStyle(document.activeElement);
+        return { style: c.outlineStyle, width: parseFloat(c.outlineWidth), color: c.outlineColor, what: document.activeElement.outerHTML.slice(0, 50) }; });
+      if (!(f.style === 'solid' && f.width >= 2 && f.color === ring) && bad++ < 3) t.check(false, `360px ${mode}: drawer stop ${stops} (${f.what}): ${f.style} ${f.width}px ${f.color}, want solid ≥2px ${ring}`);
+      await page.keyboard.press('Tab');
+    }
+    t.check(stops > 10 && bad === 0, `360px ${mode}: ${stops} drawer stops, ${bad} without the ring`);
+    await page.close();
+  }
+}
+
+async function item5(t) {
+  // no JS: the old wrapping navbar, static, every link shown
+  for (const width of [320, 360, 768]) {
+    const page = await t.newPage({ viewport: { width, height: 740 }, javaScriptEnabled: false });
+    for (const rel of mobilePages) {
+      await page.goto(url(t, rel), { waitUntil: 'load' });
+      const what = `no JS, ${width}px /${rel}`;
+      const r = await page.evaluate(() => {
+        const nb = document.querySelector('.clogem-navbar');
+        const links = [...nb.querySelectorAll('.clogem-navbar__nav > ul > li > a, .clogem-navbar__nav > ul > li > details > summary, .clogem-langs a')];
+        const sb = document.querySelector('aside.clogem-sidebar'), main = document.querySelector('main');
+        return { pos: getComputedStyle(nb).position, hidden: links.filter((e) => !e.checkVisibility()).map((e) => e.textContent.trim()),
+                 n: links.length, toggle: !!document.querySelector('.clogem-navbar__toggle') && document.querySelector('.clogem-navbar__toggle').getClientRects().length > 0,
+                 sidebar: sb ? [sb.getBoundingClientRect().top, main.getBoundingClientRect().bottom] : null };
+      });
+      t.check(r.pos === 'static', `${what}: the navbar is ${r.pos}`);
+      t.check(r.n > 0 && r.hidden.length === 0, `${what}: links hidden without a click: ${r.hidden.join(', ')}`);
+      t.check(!r.toggle, `${what}: the menu toggle is rendered`);
+      if (r.sidebar) t.check(r.sidebar[0] >= r.sidebar[1], `${what}: the sidebar's top ${r.sidebar[0]} is above main's bottom ${r.sidebar[1]}`);
+      const ov = await page.evaluate(() => { document.querySelectorAll('.clogem-navbar details').forEach((d) => { d.open = true; });
+        return document.documentElement.scrollWidth - innerWidth; });
+      t.check(ov <= 0, `${what}: with every navbar <details> open the page overflows by ${ov}`);
+    }
+    await page.close();
+  }
+  {
+    const page = await t.newPage({ viewport: { width: 360, height: 740 }, javaScriptEnabled: false, reducedMotion: 'reduce' });
+    await page.goto(url(t, article, 'nesting'), { waitUntil: 'load' });
+    await page.waitForTimeout(200);
+    const top = await page.evaluate(() => document.getElementById('nesting').getBoundingClientRect().top);
+    t.check(top >= 0 && top <= 32, `no JS, 360px: #nesting lands at ${top}, want 0–32`);
+    await page.close();
+  }
+
+  // a failed nav.js: the drawer still opens natively
+  for (const how of ['click', 'Enter']) {
+    const page = await t.newPage({ viewport: { width: 360, height: 740 } });
+    await page.route('**/clogem/js/nav.js*', (route) => route.abort());
+    for (const rel of [article, 'ms/']) {
+      await open(page, t, rel);
+      const what = `360px /${rel}, nav.js blocked, ${how}`;
+      if (how === 'click') await page.locator('.clogem-navbar__toggle > summary').click();
+      else { await page.focus('.clogem-navbar__toggle > summary'); await page.keyboard.press('Enter'); }
+      t.check(await isOpen(page), `${what}: the summary opens the drawer`);
+      const r = await page.evaluate(() => {
+        const d = document.getElementById('clogem-drawer');
+        const links = [...d.querySelectorAll('.clogem-navbar__nav > ul > li > a, .clogem-navbar__nav > ul > li > details > summary, .clogem-langs a')];
+        const bad = links.filter((e) => { e.focus(); return !e.checkVisibility() || document.activeElement !== e; }).map((e) => e.textContent.trim());
+        const sb = document.querySelector('aside.clogem-sidebar'), main = document.querySelector('main');
+        return { n: links.length, bad, inDrawer: !!d.querySelector('aside'),
+                 sidebar: sb ? sb.getBoundingClientRect().top + scrollY >= main.getBoundingClientRect().bottom + scrollY : true,
+                 ov: document.documentElement.scrollWidth - innerWidth };
+      });
+      t.check(r.n > 0 && r.bad.length === 0, `${what}: drawer links not visible or not focusable: ${r.bad.join(', ')}`);
+      t.check(!r.inDrawer && r.sidebar, `${what}: the sidebar stays below main`);
+      t.check(r.ov <= 0, `${what}: the page overflows by ${r.ov}`);
+    }
+    await page.close();
+  }
+}
+
+async function item6(t) {
+  for (const width of [320, 360, 768]) {
+    const page = await t.newPage({ viewport: { width, height: 740 } });
+    await open(page, t, article);
+    const what = `${width}px`;
+    t.check(await page.evaluate(() => document.querySelector('aside.clogem-sidebar').parentElement.id === 'clogem-drawer'),
+            `${what}: nav.js moved the sidebar into the drawer at start-up`);
+    // keyboard
+    await page.evaluate(() => document.activeElement && document.activeElement.blur());
+    let on = false;
+    for (let i = 0; i < 5 && !on; i++) {
+      await page.keyboard.press('Tab');
+      on = await page.evaluate(() => document.activeElement.matches('.clogem-navbar__toggle > summary'));
+    }
+    t.check(on, `${what}: Tab reaches the menu summary first`);
+    await page.keyboard.press('Enter');
+    t.check(await isOpen(page), `${what}: Enter opens the drawer`);
+    await page.waitForFunction(() => document.activeElement && document.activeElement.closest('#clogem-drawer'), null, { timeout: 3000 }).catch(() => {});
+    t.check(await focusIn(page, '#clogem-drawer'), `${what}: focus moved into the drawer`);
+    const reached = new Set();
+    for (let i = 0; i < 150 && await focusIn(page, '#clogem-drawer'); i++) {
+      const k = await page.evaluate(() => {
+        const e = document.activeElement;
+        e.dataset.b2bSeen = '1';
+        return e.matches('.clogem-navbar__item > details:not([open]) > summary');
+      });
+      if (k) await page.keyboard.press('Enter');
+      await page.keyboard.press('Tab');
+    }
+    const missed = await page.evaluate(() => [...document.querySelectorAll('#clogem-drawer a[href], #clogem-drawer summary')]
+      .filter((e) => e.checkVisibility() && !e.dataset.b2bSeen).map((e) => e.textContent.trim()));
+    const kinds = await page.evaluate(() => ['.clogem-navbar__nav > ul > li > a', '.clogem-navbar__item > details > summary',
+      '.clogem-navbar__menu a', '.clogem-langs a', '.clogem-sidebar a'].map((s) => document.querySelectorAll(`#clogem-drawer ${s}[data-b2b-seen]`).length));
+    t.check(missed.length === 0 && kinds.every((n) => n > 0), `${what}: Tab reaches every drawer link (missed: ${missed.join(', ')}; per kind ${kinds})`);
+    // Escape closes it and focuses the summary
+    await page.evaluate(() => document.querySelector('#clogem-drawer a[href]').focus());
+    await page.keyboard.press('Escape');
+    t.check(!await isOpen(page) && await page.evaluate(() => document.activeElement.matches('.clogem-navbar__toggle > summary')),
+            `${what}: Escape closes the drawer and focuses the summary`);
+    if (width === 360) {
+      await page.locator('.clogem-navbar__toggle > summary').click();
+      await page.evaluate(() => { document.querySelector('#clogem-drawer .clogem-navbar__item > details').open = true; });
+      await page.evaluate(() => document.querySelector('#clogem-drawer .clogem-navbar__menu a').focus());
+      await page.keyboard.press('Escape');
+      t.check(!await isOpen(page) && await page.evaluate(() => document.activeElement.matches('.clogem-navbar__toggle > summary')),
+              '360px: with the Guide dropdown open, one Escape closes the drawer and focuses the summary');
+    }
+    // pointer
+    if (width !== 320) {
+      await page.locator('.clogem-navbar__toggle > summary').click();
+      t.check(await isOpen(page), `${what}: a click opens the drawer`);
+      const vp = page.viewportSize();
+      await page.mouse.click(vp.width - 4, vp.height / 2);
+      t.check(!await isOpen(page), `${what}: a click outside the drawer closes it`);
+      await page.locator('.clogem-navbar__toggle > summary').click();
+      await page.locator('.clogem-navbar__toggle > summary').click();
+      t.check(!await isOpen(page), `${what}: two clicks on the summary leave it closed`);
+    }
+    // following a link closes it
+    await page.locator('.clogem-navbar__toggle > summary').click();
+    await page.evaluate(() => { document.querySelector('#clogem-drawer .clogem-navbar__nav a[href]').setAttribute('href', '#nesting'); });
+    await page.locator('#clogem-drawer .clogem-navbar__nav a[href="#nesting"]').click();
+    t.check(!await isOpen(page), `${what}: following a link in the drawer closes it`);
+    await settle(page);
+    checkAnchor(t, await page.evaluate(anchorState, 'nesting'), `${what}: #nesting from the drawer`);
+    const d = await asides(page);
+    t.check(d.n === 1 && d.ids === 1, `${what}: one aside.clogem-sidebar (${d.n}) and one #clogem-drawer (${d.ids})`);
+    await page.close();
+  }
+
+  // leaving the drawer layout closes the drawer and puts the sidebar back
+  {
+    const page = await t.newPage({ viewport: { width: 360, height: 740 } });
+    await open(page, t, article);
+    await page.locator('.clogem-navbar__toggle > summary').click();
+    t.check(await isOpen(page), 'resize: the drawer is open at 360');
+    let d = await asides(page);
+    t.check(d.n === 1 && d.ids === 1, `resize: one aside (${d.n}) and one drawer (${d.ids}) while open`);
+    await page.setViewportSize({ width: 1280, height: 740 });
+    await page.waitForTimeout(200);
+    const r = await page.evaluate(() => {
+      const a = document.querySelector('aside.clogem-sidebar'), m = document.querySelector('main');
+      return { rendered: document.querySelector('.clogem-navbar__toggle > summary').getClientRects().length > 0,
+               open: document.querySelector('.clogem-navbar__toggle').open,
+               parent: a.parentElement.classList.contains('clogem-shell'),
+               before: !!(a.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING),
+               left: a.getBoundingClientRect().right <= m.getBoundingClientRect().left,
+               top: Math.abs(a.getBoundingClientRect().top - m.getBoundingClientRect().top) };
+    });
+    t.check(!r.rendered && !r.open, `resize to 1280: the summary is not rendered (${r.rendered}) and the drawer is closed (${!r.open})`);
+    t.check(r.parent && r.before && r.left && r.top <= 1, `resize to 1280: the sidebar is back in the shell, before main, left of it, same top (${JSON.stringify(r)})`);
+    d = await asides(page);
+    t.check(d.n === 1 && d.ids === 1, `resize: one aside (${d.n}) after resizing`);
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.waitForTimeout(200);
+    t.check(!await isOpen(page), 'back at 360: the drawer starts closed');
+    await page.evaluate(() => { scrollTo({ top: 0, behavior: 'instant' }); document.activeElement && document.activeElement.blur(); });
+    let into = false;
+    for (let i = 0; i < 15; i++) { await page.keyboard.press('Tab'); if (await focusIn(page, '#clogem-drawer')) into = true; }
+    t.check(!into, 'back at 360: Tab does not enter the closed drawer');
+    d = await asides(page);
+    t.check(d.n === 1 && d.ids === 1 && await page.evaluate(() => document.querySelector('aside.clogem-sidebar').parentElement.id === 'clogem-drawer'),
+            `back at 360: one aside, in the drawer again (${d.n})`);
+    await page.close();
+  }
+
+  // no `@media (scripting)`: nav.js loads but the CSS draws no drawer, so
+  // the sidebar is never moved
+  {
+    const page = await t.newPage({ viewport: { width: 360, height: 740 } });
+    await page.route('**/clogem/css/theme.css*', async (route) => {
+      const res = await route.fetch();
+      await route.fulfill({ response: res, body: (await res.text()).replaceAll('(scripting: enabled)', '(scripting: initial-only)') });
+    });
+    await open(page, t, article);
+    const r = await page.evaluate(() => ({
+      pos: getComputedStyle(document.querySelector('.clogem-navbar')).position,
+      toggle: document.querySelector('.clogem-navbar__toggle > summary').getClientRects().length,
+      inShell: document.querySelector('aside.clogem-sidebar').parentElement.classList.contains('clogem-shell'),
+      nav: typeof window.clogem === 'object' }));
+    t.check(r.pos === 'static' && r.toggle === 0, `no (scripting: enabled): the no-JS navbar (${r.pos}, toggle rendered ${r.toggle})`);
+    t.check(r.inShell && r.nav, 'no (scripting: enabled): the sidebar stays in the shell');
+    await page.close();
+  }
+
+  // a one-language site with no :nav: the toggle is revealed, on a sidebar
+  // page only (rewritten in-page)
+  {
+    const page = await t.newPage({ viewport: { width: 360, height: 740 } });
+    await page.route(url(t, article), async (route) => {
+      const res = await route.fetch();
+      const body = (await res.text()).replace('<details class="clogem-navbar__toggle">', '<details class="clogem-navbar__toggle" hidden="hidden">')
+        .replace(/<nav class="clogem-navbar__nav"><ul>[\s\S]*?<\/ul><\/nav>/, '<nav class="clogem-navbar__nav"><ul></ul></nav>')
+        .replace(/<nav aria-label="[^"]*" class="clogem-langs">[\s\S]*?<\/ul><\/nav>/, '');
+      await route.fulfill({ response: res, body });
+    });
+    await open(page, t, article);
+    const r = await page.evaluate(() => ({ hidden: document.querySelector('.clogem-navbar__toggle').hidden,
+      inDrawer: !!document.querySelector('#clogem-drawer aside.clogem-sidebar') }));
+    t.check(!r.hidden && r.inDrawer, `:nav [], one language: nav.js reveals the toggle and moves the sidebar in (${JSON.stringify(r)})`);
+    await page.locator('.clogem-navbar__toggle > summary').click();
+    await page.waitForFunction(() => document.activeElement && document.activeElement.closest('#clogem-drawer'), null, { timeout: 3000 }).catch(() => {});
+    t.check(await focusIn(page, '#clogem-drawer .clogem-sidebar'), ':nav [], one language: opening focuses the sidebar\'s first control');
+    await page.close();
+  }
+
+  // outside the drawer layout: Escape and a click outside close a dropdown
+  {
+    const page = await t.newPage({ viewport: { width: 1280, height: 740 } });
+    await open(page, t, article);
+    // Browse: a summary that holds no link (Guide's holds one)
+    for (const sel of ['.clogem-langs__toggle', '.clogem-navbar__item > details:has(> summary > span)']) {
+      await page.locator(`${sel} > summary`).first().click();
+      t.check(await page.evaluate((s) => document.querySelector(s).open, sel), `1280px: a click opens ${sel}`);
+      await page.keyboard.press('Escape');
+      t.check(await page.evaluate((s) => !document.querySelector(s).open && document.activeElement === document.querySelector(`${s} > summary`), sel),
+              `1280px: Escape closes ${sel} and focuses its summary`);
+      await page.locator(`${sel} > summary`).first().click();
+      await page.mouse.click(640, 500);
+      t.check(await page.evaluate((s) => !document.querySelector(s).open, sel), `1280px: a click outside closes ${sel}`);
+    }
+    await page.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 7. The home's text card pads like every other main at 50rem and below
+
+async function item7(t) {
+  for (const width of [320, 360, 801, 1280]) {
+    const page = await t.newPage({ viewport: { width, height: 740 } });
+    await open(page, t, article);
+    const main = await page.evaluate(() => getComputedStyle(document.querySelector('main')).padding);
+    t.check(main === (width <= 800 ? '16px' : '20px 24px'), `${width}px: the article's main pads ${main}`);
+    for (const rel of ['', 'zh-Hant/', 'ms/', 'ta/', 'page/2/']) {
+      await open(page, t, rel);
+      const p = await page.evaluate(() => getComputedStyle(document.querySelector('.clogem-main--posts > .clogem-content')).padding);
+      t.check(p === main, `${width}px /${rel}: the text card pads ${p}, want ${main} as the article's main`);
+    }
+    await page.close();
+  }
+}
+
 export default async function layout(t) {
   await item1(t);
   await item2(t);
   await item3(t);
+  await item4(t);
+  await item5(t);
+  await item6(t);
 }

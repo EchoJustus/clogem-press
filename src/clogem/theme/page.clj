@@ -14,7 +14,7 @@
   ;; rows (layout/fallback-badge).
   (layout/document
      (assoc ctx :title (:title variant))
-     (layout/navbar ctx)
+     (layout/navbar (assoc ctx :sidebar? (layout/sidebar? ctx)))
      (layout/shell
       ctx
       [:main.clogem-main

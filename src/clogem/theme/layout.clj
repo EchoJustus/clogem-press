@@ -434,18 +434,36 @@
              [:li [:button {:type "button" :data-mode (name m) :aria-pressed "false"}
                    (icons/icon ctx ic) " " [:span (i18n/tr ctx (keyword "mode" (name m)))]]]))]))
 
+(defn- menu-toggle
+  "P4-B2b: the drawer's toggle — a `<details>` holding only its summary;
+  CSS shows its next siblings' `#clogem-drawer` while it is open."
+  [ctx hidden?]
+  [:details.clogem-navbar__toggle (when hidden? {:hidden true})
+   [:summary {:aria-controls "clogem-drawer"}
+    (icons/icon ctx :menu {:class "is-menu"}) (icons/icon ctx :x {:class "is-close"})
+    [:span.clogem-visually-hidden (i18n/tr ctx :nav/menu)]]])
+
 (defn navbar
-  "P4-B2b: one row — the brand, the nav, the languages, search and the mode
-  toggle, in visual order."
-  [{:keys [cfg lang] :as ctx}]
-  [:header.clogem-navbar
-   [:a.clogem-navbar__brand {:href (href ctx (model/home-url cfg lang))}
-    (i18n/resolve-str ctx (get-in cfg [:site :title]))]
-   [:nav.clogem-navbar__nav
-    (into [:ul] (map #(nav-item ctx %) (:nav cfg)))]
-   (lang-switcher ctx)
-   (search-box ctx)
-   (mode-toggle ctx)])
+  "One row (P4-B2b), in visual order: the brand, the nav, the languages,
+  search and the mode toggle. At 50rem and below, with JS, the nav and the
+  languages are in `#clogem-drawer`, behind the menu toggle, first; above
+  it the drawer is `display: contents`. A one-language site with no `:nav`
+  has nothing to put there, except the sidebar js/nav.js moves in: it gets
+  the drawer, with the toggle `hidden`, on a page with a sidebar
+  (`:sidebar?`) only."
+  [{:keys [cfg lang sidebar?] :as ctx}]
+  (let [nav    [:nav.clogem-navbar__nav (into [:ul] (map #(nav-item ctx %) (:nav cfg)))]
+        langs  (lang-switcher ctx)
+        shown? (boolean (or (seq (:nav cfg)) langs))]
+    [:header.clogem-navbar
+     (when (or shown? sidebar?) (menu-toggle ctx (not shown?)))
+     [:a.clogem-navbar__brand {:href (href ctx (model/home-url cfg lang))}
+      (i18n/resolve-str ctx (get-in cfg [:site :title]))]
+     (if (or shown? sidebar?)
+       [:div#clogem-drawer.clogem-navbar__drawer nav langs]
+       nav)
+     (search-box ctx)
+     (mode-toggle ctx)]))
 
 (defn- sidebar-node
   "One directory as <details>/<summary> — collapsible without JS — with its
@@ -478,6 +496,19 @@
   (let [segs (remove str/blank? (str/split (str dir-key) #"/"))]
     (set (map #(str "/" (str/join "/" (take % segs))) (range 1 (inc (count segs)))))))
 
+(defn- sidebar-node-of
+  "The sidebar tree node a page shows (`sidebar`), or nil."
+  [{:keys [model group]}]
+  (when-let [top (and group
+                      (not (false? (get-in group [:variants (:primary group) :front-matter :sidebar])))
+                      (model/top-dir group))]
+    (get-in model [:sidebar top])))
+
+(defn sidebar?
+  "Does the page show a sidebar tree?"
+  [ctx]
+  (some? (sidebar-node-of ctx)))
+
 (defn sidebar
   "The left sidebar tree of D-P2-1, or nil when the page has none:
 
@@ -489,16 +520,13 @@
   Every directory is a <details> group; [:theme :sidebar-open true] opens all
   of them, false only the active trail. The leaf AND every ancestor of the
   current article are marked."
-  [{:keys [cfg model group] :as ctx}]
-  (when-let [top (and group
-                      (not (false? (get-in group [:variants (:primary group) :front-matter :sidebar])))
-                      (model/top-dir group))]
-    (when-let [node (get-in model [:sidebar top])]
-      [:aside.clogem-sidebar
-       [:nav {:aria-label (i18n/tr ctx :page/sidebar)}
-        (sidebar-node ctx node
-                      (not (false? (get-in cfg [:theme :sidebar-open])))
-                      (ancestors-of (:dir-key group)))]])))
+  [{:keys [cfg group] :as ctx}]
+  (when-let [node (sidebar-node-of ctx)]
+    [:aside.clogem-sidebar
+     [:nav {:aria-label (i18n/tr ctx :page/sidebar)}
+      (sidebar-node ctx node
+                    (not (false? (get-in cfg [:theme :sidebar-open])))
+                    (ancestors-of (:dir-key group)))]]))
 
 (defn toc
   "The right-hand TOC bar (D-P2-9): one link per entry of ctx :toc, levelled
@@ -979,6 +1007,8 @@
         [:link {:rel "stylesheet" :href (asset-href ctx assets/custom-css)}])
       ;; D-P4-3: the toggle and window.clogem.getMode/setMode
       [:script {:src (asset-href ctx "js/mode.js") :defer true}]
+      ;; P4-B2b: the drawer and the navbar's dropdowns
+      [:script {:src (asset-href ctx "js/nav.js") :defer true}]
       ;; D-P3-15: window.clogem.setCommentsTheme, beside the widget it drives
       (when (comments? ctx)
         [:script {:src (asset-href ctx "js/comments.js") :defer true}])

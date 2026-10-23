@@ -34,6 +34,25 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   summary still opens and closes it.
 - **An icon-only search trigger** at 64rem and below (CSS only): the
   trigger keeps its name, the page language's `:nav/search`.
+- **The mobile navbar and drawer** (at 50rem and below, with JS): one
+  sticky row, exactly `--navbarHeight` tall — a menu toggle, the brand
+  (ellipsised), the search icon and the mode button — instead of up to
+  four rows (258–285 px at 320 px). The toggle is a `<details
+  class="clogem-navbar__toggle">` holding only its summary (`menu`/`x` and
+  a visually hidden `:nav/menu`, new in all five languages); while it is
+  open, `#clogem-drawer`, its sibling, shows below the navbar with the nav
+  (dropdowns collapsed until opened) and every language. A site with no
+  `:nav` and one language gets no toggle, except on a page with a
+  sidebar, where it is rendered `hidden` and revealed by `js/nav.js`.
+- **`js/nav.js`** (same-origin, `defer`, after `mode.js`; 1.3 KB
+  gzipped, budget 2,000 B): while the drawer layout is active — read from
+  the CSS, at start-up and on every resize — it moves the page's sidebar
+  into the drawer and puts it back on leaving it. On open, focus moves
+  into the drawer; Escape closes it and focuses the toggle, as do a click
+  outside, following a link in it, and a page restored from the
+  back-forward cache. Above 50rem, Escape or a click outside closes an
+  open nav or language dropdown. `window.clogem` is extended, never
+  replaced; no inline script is added, so the CSP is unchanged.
 - **A wider three-column shell** from 80rem: a page with a sidebar and a
   TOC is sidebar | main | TOC with a 1.5rem gap in `--maxWidth` + 18rem,
   so at 1280 px main is 680 px and the article 632 (615 beside a 17 px
@@ -49,6 +68,12 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
 - **A nav too long for one row** wraps its own items inside the navbar,
   which grows taller rather than spilling over the page; about two lines
   fit in `--navbarHeight`.
+- **The navbar without JS at 50rem and below is static**: it still
+  wraps, with every top-level link, dropdown summary and language shown,
+  but no longer sticks over the page (it was 190–268 px tall at 320 px).
+  The same goes for a browser without `@media (scripting)`. A `nav.js`
+  that fails to load leaves the one-row navbar, and its toggle opens the
+  drawer natively, with the sidebar below the article.
 - **Smooth scrolling is always on.** vdoing's `smoothScroll` defaults to
   off; clogem-press has no key for it, and reduced motion turns it off.
 - **The TOC breakpoint.** Beside a sidebar the TOC shows from 80rem
@@ -65,6 +90,10 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   two would add up). At 1280 px a heading used to land 5–6 px under the
   navbar, and a Shift+Tab stop (a copy button) wholly under it.
 
+- **Navbar dropdowns overflowing a phone**: an open Malay "Semak imbas"
+  menu widened the page by 44 px at 320 px (28 at 360) and Tamil's by 18;
+  at 50rem and below the dropdowns are in the flow (`position: static`).
+
 ### Tests (B2b)
 
 - `test/browser/layout.test.mjs` (new): the navbar's height and one row at
@@ -75,13 +104,31 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   JS; the icon-only trigger at 801–1024; a ten-item nav at 1024; two
   columns at 900 and 1024, three at 1280 and 1440 with the article ≥ 600 px
   (beside a 17 px scrollbar too), the 952 px main of pages without a
-  sidebar, a `--single --toc` page and a 60-entry TOC.
+  sidebar, a `--single --toc` page and a 60-entry TOC; at 320, 360 and
+  768 px the one-row navbar, the closed drawer out of the Tab order, the
+  open drawer within the viewport with everything in it open, the mode
+  menu at 320, reduced motion and the focus ring in the drawer; without JS,
+  without `(scripting: enabled)` and with `nav.js` blocked; the keyboard,
+  pointer, link, resize and no-duplicate behaviour of `nav.js`.
+- `overflow.test.mjs` also opens the drawer, and everything in it, on every
+  page where its toggle renders; `modes.test.mjs` checks print at 1280 and
+  360 px, each control first asserted drawn on screen, and at 1280 gives
+  one code block a long line (with the wider article no demo code block
+  scrolled, so none was a Tab stop).
+- `bb test`: one toggle per page with a nav or languages, `:nav/menu` in
+  the page's language, the hidden toggle of a one-language `:nav []` site
+  on sidebar pages only, the drawer's CSS, `nav.js` linked once after
+  `mode.js`, and its budget (`nav-js-budget`, 2,000 B).
 - `bb test`: `clogem.layout-test` (new) pins the markup and the CSS;
   `theme_modes_test` checks that `smooth` appears only under
   `(prefers-reduced-motion: no-preference)`. The contrast parser
   (`test/clogem/css_palette.clj`) learnt a leading `not` and
   `(scripting: …)`, through `:scripting?` (default true; `initial-only` is
   false, as in Chromium).
+
+### Needs native review (B2b)
+
+- `:nav/menu`: ms "Menu", ta "மெனு".
 
 **Task F — analytics, verification and static root** (§11.3 items 14, 15):
 

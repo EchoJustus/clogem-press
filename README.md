@@ -297,6 +297,20 @@ root's `scroll-padding-top`), headings or not. Scrolling is smooth unless
 the reader's system asks for reduced motion; there is no key for it
 (vdoing's `smoothScroll`, off by default there, is not read).
 
+**Mobile layout.** At 50rem (800 px) and below the navbar is one sticky
+row: a menu button, the brand (cut short with an ellipsis), the search
+icon and the mode button. The menu button opens a drawer below the
+navbar with the nav, every language and, on an article, the sidebar,
+which `js/nav.js` moves there (and back, if the window widens). Escape, a
+click outside or following a link closes it. Without JavaScript — or in
+a browser without `@media (scripting)` — the navbar is the full wrapping
+one, every link shown, and it does not stick; the sidebar follows the
+article. If `js/nav.js` fails to load, the menu button still opens the
+drawer (it is a `<details>`), and the sidebar stays below the article.
+One limitation: without JavaScript, Tab reaches the sidebar before the
+article, which is drawn above it, because the sidebar comes first in the
+page.
+
 **Columns.** Above 50rem an article with a sidebar is sidebar | article;
 from 80rem (1280 px) its TOC joins them on the right, in a shell 18rem
 wider than `--maxWidth`, as vdoing's TOC shows only from 1280 px. A page
@@ -424,7 +438,7 @@ script-src 'self' 'sha256-aykGrfu05czJ6oIj+Xn+Qrjxa7JG8hF3RGl0W0liGmw='
 Pagefind needs `worker-src 'self'` and `'wasm-unsafe-eval'` (DESIGN.md §6.8,
 §11.2 items 42 and 49). The copy button's strings are a
 `<script type="application/json">` data block, which CSP does not govern;
-`js/code.js` is a same-origin file. A policy without the hash still gets the
+`js/code.js` and `js/nav.js` (the drawer) are same-origin files. A policy without the hash still gets the
 reader's mode: `js/mode.js` (same-origin) applies it, one frame late.
 
 Analytics adds no inline script: `'self'` covers `js/analytics.js`, and the

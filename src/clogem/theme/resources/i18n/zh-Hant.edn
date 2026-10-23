@@ -6,6 +6,7 @@
  :nav/search           "搜尋"
  :nav/language         "語言"
  :nav/home             "首頁"
+ :nav/menu             "選單"
  :page/last-updated    "最後更新於 {{date}}"
  :page/prev            "上一篇"
  :page/next            "下一篇"

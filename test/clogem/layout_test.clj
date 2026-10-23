@@ -159,3 +159,110 @@
         (is (not-any? #(re-find #"^\.pf-trigger-shortcut" %) (mapcat :selectors rules)))))
     (testing "the gap"
       (is (= "1rem" ((cp/rule rules ".clogem-navbar") "gap"))))))
+
+;; ---------------------------------------------------------------------------
+;; 4. The menu toggle and the drawer
+
+(def ^:private one-lang {:langs {:locales {:zh-Hans nil :zh-Hant nil :ms nil :ta nil}}})
+(def ^:private a-tree "---\ntitle: T\ndate: \"2026-02-01 00:00:00\"\npermalink: /pages/t00001/\n---\n\n# T\n\n## H2\n\nbody\n")
+
+(defn- toggles [page] (re-seq #"<details class=\"clogem-navbar__toggle\"[^>]*>" page))
+
+(deftest every-page-with-a-nav-or-languages-has-one-toggle
+  (let [ps (pages)]
+    (doseq [[rel page] ps
+            :let [nb (navbar-of page)]
+            :when nb]
+      (is (= ["<details class=\"clogem-navbar__toggle\">"] (toggles nb)) (str rel ": exactly one toggle, not hidden"))
+      (is (re-find #"^<header class=\"clogem-navbar\"><details class=\"clogem-navbar__toggle\"><summary aria-controls=\"clogem-drawer\">" nb)
+          (str rel ": first in the header, the summary controls the drawer"))
+      (is (re-find #"#menu\"[^>]*>(?:</use>)?</svg><svg[^>]*class=\"clogem-icon is-close\"[^>]*><use href=\"[^\"]*#x\"" nb)
+          (str rel ": the menu and x icons"))
+      (is (= 1 (count (re-seq #"id=\"clogem-drawer\"" page))) (str rel ": one drawer"))
+      (is (re-find #"<div class=\"clogem-navbar__drawer\" id=\"clogem-drawer\"><nav class=\"clogem-navbar__nav\">.*</ul></nav><nav aria-label=\"[^\"]+\" class=\"clogem-langs\">.*</ul></nav></div><div class=\"clogem-search\">" nb)
+          (str rel ": the drawer holds the nav and the languages, then search follows")))
+    (testing ":nav/menu in the page's language"
+      (doseq [[p want] [[["index.html"] "Menu"] [["zh-Hans" "index.html"] "菜单"] [["zh-Hant" "index.html"] "選單"]
+                        [["ms" "index.html"] "Menu"] [["ta" "index.html"] "மெனு"]]]
+        (is (str/includes? (navbar-of (apply html p)) (str "<span class=\"clogem-visually-hidden\">" want "</span></summary>")) (str p))))
+    (testing "the search box stays the header's direct child, its trigger first (search_test pins it)"
+      (is (re-find #"<header class=\"clogem-navbar\">.*<div class=\"clogem-search\"><pagefind-modal-trigger placeholder=\"[^\"]+\"></pagefind-modal-trigger>" (html "index.html"))))
+    (testing "no <details> or class on one says open"
+      (is (not-any? #(re-find #"<details class=\"clogem-navbar__toggle\"[^>]*open" (val %)) ps)))))
+
+(deftest a-one-language-site-without-a-nav
+  (let [ps (build-temp (merge one-lang {:nav []})
+                       {"index.md" "# Home\n" "01.Guide/01.t.md" a-tree})]
+    (is (contains? ps "pages/t00001/index.html"))
+    (testing "a sidebar page: the drawer, with the toggle hidden until js/nav.js moves the sidebar in"
+      (let [nb (navbar-of (ps "pages/t00001/index.html"))]
+        (is (= ["<details class=\"clogem-navbar__toggle\" hidden=\"hidden\">"] (toggles nb)))
+        (is (str/includes? nb "<div class=\"clogem-navbar__drawer\" id=\"clogem-drawer\"><nav class=\"clogem-navbar__nav\"><ul></ul></nav></div>"))))
+    (testing "every other page: neither, and the nav stays the header's child"
+      (doseq [[rel page] ps
+              :when (and (navbar-of page) (not= rel "pages/t00001/index.html"))]
+        (is (not (str/includes? page "clogem-navbar__toggle")) rel)
+        (is (not (str/includes? page "clogem-drawer")) rel)
+        (is (str/includes? (navbar-of page) "</a><nav class=\"clogem-navbar__nav\"><ul></ul></nav><div class=\"clogem-mode\"") rel)))
+    (testing "no clogem-sidebar, clogem-toc or clogem-langs where the page has none"
+      (doseq [[rel page] ps :when (not= rel "pages/t00001/index.html")]
+        (is (not (str/includes? page "clogem-sidebar")) rel))
+      (is (not-any? #(str/includes? (val %) "clogem-langs") ps)))))
+
+(deftest a-one-language-site-with-a-nav-gets-the-toggle
+  (let [ps (build-temp (merge one-lang {:nav [{:text "Home" :link "/"}]}) {"index.md" "# Home\n"})]
+    (is (= ["<details class=\"clogem-navbar__toggle\">"] (toggles (navbar-of (ps "index.html")))))
+    (is (not (str/includes? (ps "index.html") "clogem-sidebar")))))
+
+(deftest the-drawer-css
+  (let [css (slurp theme-css)
+        rules (cp/parse css)
+        in (fn [q] (filter #(= [q] (:media %)) rules))
+        js-q "(scripting: enabled) and (max-width: 50rem)"
+        decls (fn [q sel] (into {} (for [r (in q) :when (some #{sel} (:selectors r)) [p v] (:decls r)] [p v])))]
+    (testing "the drawer is hidden unless the toggle is open, so a drawer without a toggle never shows"
+      (is (= "none" ((decls js-q ".clogem-navbar__drawer") "display")))
+      (is (= "block" ((decls js-q ".clogem-navbar__toggle[open] ~ .clogem-navbar__drawer") "display")))
+      (is (not (re-find #":not\(\[open\]\) ~" css))))
+    (testing "absolute below the navbar, never fixed (the backdrop-filter trap)"
+      (let [d (decls js-q ".clogem-navbar__toggle[open] ~ .clogem-navbar__drawer")]
+        (is (= "absolute" (d "position")))
+        (is (= "100%" (d "top")))
+        (is (= "auto" (d "overflow-y")))
+        (is (str/includes? css "max-height: calc(100vh - var(--navbarHeight)); max-height: calc(100dvh - var(--navbarHeight));")))
+      (is (not (re-find #"position:\s*fixed" css))))
+    (testing "a [hidden] toggle stays hidden whatever display it is given"
+      (is (= "block" ((decls js-q ".clogem-navbar__toggle:not([hidden])") "display"))))
+    (testing "the no-JS rules sit outside any scripting query: static, wrapping, no navbar offset"
+      (let [d (decls "(max-width: 50rem)" ".clogem-navbar")]
+        (is (= "static" (d "position")))
+        (is (= "wrap" (d "flex-wrap"))))
+      (is (= "0.75rem" ((decls "(max-width: 50rem)" "html") "scroll-padding-top")))
+      (is (= "static" ((decls "(max-width: 50rem)" ".clogem-navbar__menu") "position")))
+      (is (= "sticky" ((decls js-q ".clogem-navbar") "position")))
+      (is (= "calc(var(--navbarHeight) + 0.75rem)" ((decls js-q "html") "scroll-padding-top"))))
+    (testing "the drawer's own background is the card's, and the palette passes with it"
+      (is (= "var(--mainBg)" ((decls js-q ".clogem-navbar__toggle[open] ~ .clogem-navbar__drawer") "background")))
+      (is (= [] (cp/failures css))))))
+
+;; ---------------------------------------------------------------------------
+;; 6. js/nav.js
+
+(deftest nav-js-is-linked-once-deferred-after-mode-js
+  (doseq [[rel page] (pages)
+          :when (str/includes? page "<header class=\"clogem-navbar\"")]
+    (let [tags (re-seq #"<script[^>]*src=\"[^\"]*/js/nav\.js\?v=[^\"]+\"[^>]*></script>" page)
+          i (str/index-of page "/clogem/js/nav.js")
+          m (str/index-of page "/clogem/js/mode.js")]
+      (is (= 1 (count tags)) rel)
+      (is (str/includes? (first tags) " defer") rel)
+      (is (and i m (< m i)) (str rel ": after mode.js"))
+      (is (< i (str/index-of page "</head>")) rel)))
+  (testing "it ships, and moves the aside itself rather than a copy"
+    (is (fs/exists? (fs/path *out* "clogem" "js" "nav.js")))
+    (let [js (slurp "src/clogem/theme/resources/js/nav.js")]
+      (is (not (str/includes? js "cloneNode")))
+      (is (not (str/includes? js "innerHTML")))
+      (is (not (re-find #"\.style\b|setAttribute\(\"style" js)) "styles through the CSSOM, never a style attribute")
+      (is (str/includes? js "window.clogem = window.clogem || {}") "extends window.clogem, never replaces it")
+      (is (str/includes? js "e.defaultPrevented") "mode.js's own Escape wins"))))

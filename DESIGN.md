@@ -1861,9 +1861,20 @@ order; each builds on A:
   - **B2b — Mobile layout**: `--navbarHeight` and anchors, the one-row navbar, the mobile drawer
     and `js/nav.js`, sidebar collapse, the right menu bar, page buttons, background patterns, back
     to top and smooth scroll. *In progress:* `--navbarHeight`, anchors and smooth scroll; the
-    one-row desktop navbar with a language dropdown; the 80rem three-column shell (§11.3 item 9).
+    one-row desktop navbar with a language dropdown; the 80rem three-column shell; the mobile
+    navbar, the drawer and `js/nav.js`, with its no-JS and failed-script fallbacks (§11.3 item 9). Sidebar collapse, the right menu bar switch, page buttons,
+    background patterns and back to top remain.
 - **F — Analytics, verification, static root** (1 d) (§11.3 items 14, 15). *Done.*
-- **E1 — Blog identity, banner, htmlModules** (2.75 d) (§11.3 item 13).
+- **E1 — Blog identity, banner, htmlModules** (2.75 d) (§11.3 item 13). *From B2b:* the
+  `sidebar-t`/`sidebar-b` slots go inside `aside.clogem-sidebar`, around its `<nav>`, as vdoing's
+  (`Sidebar.vue`), so `nav.js`'s move carries them into the drawer and a collapse hides them; their
+  CSS must not depend on where the aside sits (no `.clogem-shell > .clogem-sidebar + …`, no
+  `nth-child`) and must fit the drawer (`max-width: 100%`). A mobile blogger card goes into
+  `#clogem-drawer`, rendered on the server. `window-rb` takes its inline-end offset from B2b's
+  back-to-top button, not vdoing's 80px, and stays below the navbar's z-index 10 or is hidden at
+  ≤ 960px; inside the navbar, `position: fixed` is relative to the navbar. Anything E1 or E2 add to
+  the navbar goes into the drawer at ≤ 50rem, or must fit the row: at 320 px the brand gets about
+  160 px.
 - **E2 — Article-page parity** (1.75 d): edit link, last-updated, update bar, `titleTag` rows,
   logo/repo, `pageClass`, a 404 page (§11.3 item 16).
 - **G — Cross-language search, then release 0.3.0** (2 d) (§11.3 item 17).
@@ -3014,6 +3025,13 @@ their own findings. Item 19 onward are corrections.
    article 632 px at 1280, 615 beside a 17 px scrollbar; 2rem would give 599) — so it is **hidden at
    1025–1279 px, where it used to show**, and that range is sidebar | article. A `--single` page keeps
    its TOC above 64rem. The TOC's `max-height` leaves the back-to-top button's band clear.
+   At ≤ 50rem, with `@media (scripting: enabled)`: one sticky row (a `<details>` menu toggle, the
+   brand, search, mode) and `#clogem-drawer` below it, `position: absolute` (the navbar's
+   `backdrop-filter` makes it the containing block of anything `fixed`), shown only while the toggle
+   is open; `js/nav.js` moves the sidebar in while the menu summary is rendered (read from the CSS,
+   so no `(scripting)` support means no move). The no-JS rules sit outside any scripting query: the
+   old wrapping navbar, `static`, every link shown, `scroll-padding-top: 0.75rem`. A failed `nav.js`
+   leaves the native `<details>` toggle working.
 10. **Highlighting on by default (C) — done.** `:highlight {:provider :chroma}`; `:none` or `--no-highlight`
     turns it off. A fetch failure is an error in `build` and a warning in `dev`. Line numbers are CSS
     counters, never text — Chroma's own numbers pollute the Pagefind index. One Chroma process per

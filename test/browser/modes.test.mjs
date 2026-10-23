@@ -428,6 +428,17 @@ export default async function modes(t) {
       const page = await t.newPage({ colorScheme: 'light', viewport: { width, height: 800 } });
       await page.addInitScript((m) => { try { localStorage.setItem('clogem-mode', m); } catch (e) {} }, mode);
       await page.goto(t.url('pages/c0nta1/index.html'), { waitUntil: 'load' });
+      // P4-B2b: at 1280 the article is 632 px wide and no code block of the
+      // page scrolls, so none is a Tab stop; one long line makes the first
+      // block scroll again
+      if (width === 1280) {
+        await page.evaluate(() => {
+          const line = document.createElement('span');
+          line.className = 'line';
+          line.textContent = 'a long line that scrolls '.repeat(12);
+          document.querySelector('pre.clogem-code > code').appendChild(line);
+        });
+      }
       const ring = await page.evaluate(() => {
         const probe = document.createElement('div');
         document.body.appendChild(probe);
@@ -472,16 +483,24 @@ export default async function modes(t) {
   }
 
   // --- print -------------------------------------------------------------------
-  {
-    const page = await t.newPage({ colorScheme: 'dark' });
+  // P4-B2b: at two sizes, each checking the controls that are drawn there —
+  // asserted on screen first, so a control the screen already hides cannot
+  // pass for one print hides (computed display, not checkVisibility(),
+  // which is false for the drawer's display: contents)
+  const display = (sels) => Object.fromEntries(sels.map((s) =>
+    [s, document.querySelector(s) ? getComputedStyle(document.querySelector(s)).display : 'absent']));
+  for (const [viewport, onScreen] of [[{ width: 1280, height: 720 }, ['.clogem-langs__toggle', '.clogem-navbar__drawer']],
+                                      [{ width: 360, height: 740 }, ['.clogem-navbar__toggle']]]) {
+    const page = await t.newPage({ colorScheme: 'dark', viewport });
     await page.addInitScript(() => { try { localStorage.setItem('clogem-mode', 'dark'); } catch (e) {} });
     await page.goto(url, { waitUntil: 'load' });
+    const screen = await page.evaluate(display, onScreen);
+    for (const [s, d] of Object.entries(screen)) t.check(d !== 'none' && d !== 'absent', `${viewport.width}px: ${s} is drawn on screen (display ${d})`);
     await page.emulateMedia({ media: 'print' });
-    const shown = await page.evaluate(() => Object.fromEntries(
+    const shown = await page.evaluate(display,
       ['.clogem-navbar', '.clogem-sidebar', '.clogem-toc', '.clogem-mode', '.clogem-search', '.clogem-comments',
-       '.clogem-prev-next', '.header-anchor']
-        .map((s) => [s, document.querySelector(s) ? getComputedStyle(document.querySelector(s)).display : 'absent'])));
-    for (const [s, d] of Object.entries(shown)) t.check(d === 'none' || d === 'absent', `print hides ${s} (display ${d})`);
+       '.clogem-prev-next', '.header-anchor', ...onScreen]);
+    for (const [s, d] of Object.entries(shown)) t.check(d === 'none' || d === 'absent', `${viewport.width}px: print hides ${s} (display ${d})`);
     const bg = await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor);
     t.check(bg === 'rgb(255, 255, 255)', `print uses the light palette even in dark mode: ${bg}`);
     await page.close();

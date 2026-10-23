@@ -4,6 +4,7 @@
  :nav/search           "Search"
  :nav/language         "Language"
  :nav/home             "Home"
+ :nav/menu             "Menu"
  :page/last-updated    "Last updated {{date}}"
  :page/prev            "Previous"
  :page/next            "Next"

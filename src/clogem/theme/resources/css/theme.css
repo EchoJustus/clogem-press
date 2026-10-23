@@ -206,6 +206,14 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
 .clogem-navbar__nav { min-width: 0; }
 .clogem-navbar__nav > ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0 1rem; margin: 0; padding: 0; }
 .clogem-search { display: flex; }
+/* the drawer's toggle and the drawer (P4-B2b): see 50rem and below */
+.clogem-navbar__toggle { display: none; }
+.clogem-navbar__toggle > summary { display: flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; font-size: 1.3rem; color: var(--textColor); list-style: none; cursor: pointer; }
+.clogem-navbar__toggle > summary::-webkit-details-marker { display: none; }
+.clogem-navbar__toggle .is-close, .clogem-navbar__toggle[open] .is-menu { display: none; }
+.clogem-navbar__toggle[open] .is-close { display: inline; }
+.clogem-navbar__drawer { display: contents; }
 .clogem-navbar__item { position: relative; }
 .clogem-navbar__item details > summary { list-style: none; cursor: pointer; }
 .clogem-navbar__item details > summary::-webkit-details-marker { display: none; }
@@ -285,6 +293,36 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
 @media (max-width: 50rem) {
   .clogem-shell { grid-template-columns: minmax(0, 1fr); }
   .clogem-sidebar { order: 2; }
+}
+/* P4-B2b: 50rem and below. Outside any scripting query, so a browser
+ * without the feature gets them: the navbar of old, static, wrapping, every
+ * link shown; jumps need no navbar offset */
+@media (max-width: 50rem) {
+  html { scroll-padding-top: 0.75rem; }
+  .clogem-navbar { position: static; flex-wrap: wrap; gap: 0.25rem 1rem; padding: 0.5rem 1.25rem; }
+  .clogem-navbar__brand { max-width: 100%; }
+  .clogem-navbar__menu { position: static; }
+}
+/* with scripting: one sticky row (toggle, brand, search, mode) and a drawer
+ * below it, shown while the toggle is open. Absolute, not fixed: the
+ * navbar's backdrop-filter would size a fixed drawer to the navbar. A
+ * failed js/nav.js leaves the toggle working, and the sidebar in place */
+@media (scripting: enabled) and (max-width: 50rem) {
+  html { scroll-padding-top: calc(var(--navbarHeight) + 0.75rem); }
+  .clogem-navbar { position: sticky; flex-wrap: nowrap; gap: 0.5rem; padding: 0 0.75rem; }
+  .clogem-navbar__toggle:not([hidden]) { display: block; margin-inline-start: -0.5rem; }
+  .clogem-navbar__brand { flex: 1 1 auto; min-width: 0; }
+  .clogem-navbar__drawer { display: none; }
+  .clogem-navbar__toggle[open] ~ .clogem-navbar__drawer {
+    display: block; position: absolute; top: 100%; inset-inline-start: 0; width: min(20rem, 100%);
+    max-height: calc(100vh - var(--navbarHeight)); max-height: calc(100dvh - var(--navbarHeight));
+    overflow-y: auto; overscroll-behavior: contain; padding: 0.5rem 1.25rem 1.25rem;
+    background: var(--mainBg); border: 1px solid var(--borderColor); border-width: 0 1px 1px 0;
+  }
+  .clogem-navbar__drawer .clogem-navbar__nav > ul { flex-direction: column; }
+  .clogem-navbar__drawer .clogem-langs { flex-wrap: wrap; margin-top: 0.5rem; padding-top: 0.5rem;
+    border-top: 1px solid var(--borderColor); }
+  .clogem-navbar__drawer > .clogem-sidebar { margin-top: 0.75rem; }
 }
 
 .clogem-sidebar { background: var(--sidebarBg); border-radius: 5px; padding: 1rem; align-self: start; }
@@ -642,7 +680,8 @@ html.theme-mode-dark {
     color-scheme: light;
   }
   .clogem-navbar, .clogem-sidebar, .clogem-toc, .clogem-mode, .clogem-search,
-  .clogem-comments, .clogem-lang-banner, .clogem-prev-next, .header-anchor { display: none !important; }
+  .clogem-comments, .clogem-lang-banner, .clogem-prev-next, .header-anchor,
+  .clogem-navbar__toggle, .clogem-navbar__drawer, .clogem-langs__toggle { display: none !important; }
   .clogem-shell, .clogem-shell--toc, .clogem-shell--single.clogem-shell--toc {
     display: block; max-width: none; padding: 0;
   }

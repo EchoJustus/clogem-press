@@ -225,7 +225,9 @@ console.log(JSON.stringify([
             "the reduce block keeps scroll-behavior: auto !important"))
       (let [print (subs css (str/index-of css "@media print {"))]
         (doseq [c [".clogem-navbar" ".clogem-sidebar" ".clogem-toc" ".clogem-mode" ".clogem-search"
-                   ".clogem-comments" ".clogem-lang-banner" ".clogem-prev-next" ".header-anchor" ".clogem-copy"]]
+                   ".clogem-comments" ".clogem-lang-banner" ".clogem-prev-next" ".header-anchor" ".clogem-copy"
+                   ;; P4-B2b
+                   ".clogem-navbar__toggle" ".clogem-navbar__drawer" ".clogem-langs__toggle"]]
           (is (str/includes? print c) (str c " is hidden in print")))
         (is (str/includes? print "--bodyBg: #ffffff") "print uses a light palette")
         ;; P4-B2a.1: the boxes lose their shadow (page_style_test), not `*`:

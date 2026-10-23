@@ -5,6 +5,9 @@
  :nav/search           "Cari"
  :nav/language         "Bahasa"
  :nav/home             "Laman utama"
+ ;; P4-B2b: the mobile menu toggle. Awaiting native review (CHANGELOG,
+ ;; Unreleased, "Needs native review (B2b)").
+ :nav/menu             "Menu"
  :page/last-updated    "Dikemas kini {{date}}"
  :page/prev            "Sebelumnya"
  :page/next            "Seterusnya"
