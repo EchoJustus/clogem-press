@@ -997,6 +997,18 @@
   (when-let [attrs (analytics-attrs cfg)]
     [:script (merge {:src (asset-href ctx "js/analytics.js") :defer true} attrs)]))
 
+(defn back-to-top
+  "P4-B2b: the back-to-top button, last in `<body>` on every page with the
+  navbar, unless `:theme :back-to-top` is false. Rendered `hidden`:
+  js/nav.js shows it while the page is scrolled more than 100 px down
+  (vdoing's threshold), so without JS there is none."
+  [{:keys [cfg] :as ctx}]
+  (when-not (false? (get-in cfg [:theme :back-to-top]))
+    [:button.clogem-back-to-top {:type "button" :hidden true
+                                 :aria-label (i18n/tr ctx :page/back-to-top)
+                                 :title (i18n/tr ctx :page/back-to-top)}
+     (icons/icon ctx :arrow-up)]))
+
 (defn document
   "Wrap body hiccup in a complete HTML document.
 
@@ -1071,10 +1083,13 @@
       ;; §11.3 item 14: LAST — the provider's script is the page's least
       ;; important resource
       (analytics-head ctx)]
-     (into [:body {:class (str "lang-" (name lang)
-                               (when-let [k (:page-kind ctx)] (str " page-" (name k))))}
-            (search-config ctx)]
-           body)]))
+     (-> [:body {:class (str "lang-" (name lang)
+                             (when-let [k (:page-kind ctx)] (str " page-" (name k))))}
+          (search-config ctx)]
+         (into body)
+         ;; every page built here has the navbar; outside it, which is the
+         ;; containing block of anything fixed inside it
+         (conj (back-to-top ctx)))]))
 
 (defn page
   "A page with no sidebar tree — home, index, catalogue and paginated pages

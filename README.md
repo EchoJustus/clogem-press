@@ -347,6 +347,14 @@ lines are `--linesColor` (5% opaque, lighter in dark mode), which you can
 set in `overrides/custom.css`; `bb test` checks that text keeps 4.5:1 on
 them. Print draws no pattern.
 
+**Back to top.** On by default, as in vdoing: once the page is scrolled
+more than 100 px down, a round arrow button shows at the bottom right
+(2rem from the right and 2.5rem from the bottom; 1rem and 1.5rem at 50rem
+and below). It scrolls smoothly to the top — instantly under reduced
+motion — and hides at once; the next Tab starts again at the navbar. It
+sits below the navbar, so the open mobile drawer covers it. It needs
+JavaScript; print never shows it. `:theme :back-to-top false` omits it.
+
 The mode and page-style classes are on `<html>`, unqualified:
 `.theme-mode-dark`, `.theme-style-card`. (0.2.0 put them on `<body>`; CSS
 written as `body.theme-mode-dark` must drop `body`.)

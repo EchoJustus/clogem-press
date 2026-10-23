@@ -16,6 +16,8 @@
 //  10. the sidebar's collapse button (js/nav.js), above 50rem only;
 //  11. the page buttons, from 84rem only, never over a box or a link;
 //  12. the background patterns on the main column;
+//  13. back to top (js/nav.js): shown past 100 px, hidden once used, and
+//      covering no link.
 //
 // Smooth scrolling is on in every test, and focus scrolling animates too:
 // positions are read under `reducedMotion: 'reduce'`, or once scrollY has
@@ -1144,6 +1146,182 @@ async function item12(t) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 13. Back to top
+
+function upState() {
+  const b = document.querySelector('.clogem-back-to-top');
+  const r = b.getBoundingClientRect();
+  return { shown: b.checkVisibility(), hidden: b.hidden, left: r.left, right: r.right, top: r.top, bottom: r.bottom,
+           width: r.width, height: r.height, iw: document.documentElement.clientWidth, ih: innerHeight, y: scrollY };
+}
+
+// runs in the page: the links of `sel` whose centre is on screen, below the
+// navbar, and is not the link itself (something covers it)
+function coveredLinks(sel) {
+  const nav = document.querySelector('.clogem-navbar').getBoundingClientRect().bottom;
+  const out = [];
+  let checked = 0;
+  for (const a of document.querySelectorAll(sel)) {
+    if (!a.checkVisibility()) continue;
+    for (const r of a.getClientRects()) {
+      const x = r.left + r.width / 2, y = r.top + r.height / 2;
+      if (y < Math.max(nav, 0) || y > innerHeight || x < 0 || x > innerWidth) continue;
+      checked++;
+      const hit = document.elementFromPoint(x, y);
+      if (!a.contains(hit)) out.push(`${a.textContent.trim().slice(0, 24)} → ${hit && hit.className}`);
+    }
+  }
+  return { checked, out };
+}
+
+async function item13(t) {
+  for (const width of [360, 1280]) {
+    for (const rel of [article, '']) {
+      const what = `${width} /${rel}`;
+      const page = await t.newPage({ viewport: { width, height: 740 }, reducedMotion: 'reduce' });
+      await open(page, t, rel);
+      const s0 = await page.evaluate(upState);
+      t.check(!s0.shown && s0.hidden, `${what}: hidden at scrollY 0 (${JSON.stringify(s0)})`);
+      t.check(await scrollTop(page, 200) === 200, `${what}: scrollY reached 200`);
+      const shown = await page.waitForFunction(() => document.querySelector('.clogem-back-to-top').checkVisibility(), null, { timeout: 1000 })
+        .then(() => true, () => false);
+      const s1 = await page.evaluate(upState);
+      t.check(shown && s1.width >= 24 && s1.height >= 24 && s1.left >= 0 && s1.right <= s1.iw && s1.top >= 0 && s1.bottom <= s1.ih,
+              `${what}: after 200 px it shows within 1 s, ≥ 24×24, inside the viewport (${JSON.stringify(s1)})`);
+      const want = width <= 800 ? [16, 24] : [32, 40];
+      t.check(Math.abs(s1.iw - s1.right - want[0]) <= 0.5 && Math.abs(s1.ih - s1.bottom - want[1]) <= 0.5,
+              `${what}: ${s1.iw - s1.right} px from the right, ${s1.ih - s1.bottom} from the bottom, want ${want}`);
+      // reduce: Enter takes the page to the top at once, and hides it
+      await page.focus('.clogem-back-to-top');
+      await page.keyboard.press('Enter');
+      const s2 = await page.evaluate(upState);
+      t.check(s2.y === 0 && s2.hidden, `${what} reduce: after Enter scrollY is ${s2.y}, the button hidden ${s2.hidden}`);
+      await page.keyboard.press('Tab');
+      const f = await page.evaluate(() => {
+        const e = document.activeElement;
+        return e.matches('.clogem-navbar__brand') ? 'brand' : e.matches('.clogem-navbar__toggle > summary') ? 'menu' : e.tagName + '.' + e.className;
+      });
+      t.check(f === (width <= 800 ? 'menu' : 'brand'), `${what}: one Tab after it focuses ${f}`);
+      t.check((await page.evaluate(upState)).hidden, `${what}: still hidden at the top`);
+      await page.close();
+    }
+  }
+
+  // no-preference: a smooth way up, the button hidden all the way
+  for (const width of [360, 1280]) {
+    const page = await t.newPage({ viewport: { width, height: 740 }, reducedMotion: 'no-preference' });
+    await open(page, t, article);
+    t.check(await scrollTop(page, 1500) === 1500, `${width} smooth: scrollY reached 1500`);
+    await page.waitForFunction(() => document.querySelector('.clogem-back-to-top').checkVisibility(), null, { timeout: 1000 });
+    await page.evaluate(() => {
+      window.__up = [];
+      const f = () => { window.__up.push([scrollY, document.querySelector('.clogem-back-to-top').hidden]);
+                        if (scrollY > 0 && window.__up.length < 400) requestAnimationFrame(f); };
+      document.querySelector('.clogem-back-to-top').addEventListener('click', () => requestAnimationFrame(f), { once: true });
+    });
+    await page.focus('.clogem-back-to-top');
+    await page.keyboard.press('Enter');
+    const reached = await page.waitForFunction(() => scrollY === 0, null, { timeout: 3000 }).then(() => true, () => false);
+    const samples = await page.evaluate(() => window.__up);
+    t.check(reached, `${width} smooth: scrollY reached 0 within 3 s`);
+    t.check(samples.some(([y]) => y > 0 && y < 1500), `${width} smooth: a sample on the way (${samples.slice(0, 6).map(([y]) => y).join(', ')}…)`);
+    t.check(samples.every(([, h]) => h), `${width} smooth: hidden from the click on (${samples.filter(([, h]) => !h).length} frames shown)`);
+    await page.close();
+  }
+
+  // without JS, or with nav.js aborted, it never shows
+  for (const [what, opts, abort] of [['no JS', { javaScriptEnabled: false }, false], ['nav.js aborted', {}, true]]) {
+    const page = await t.newPage({ viewport: { width: 1280, height: 740 }, ...opts });
+    if (abort) await page.route('**/clogem/js/nav.js*', (route) => route.abort());
+    await page.goto(url(t, article), { waitUntil: 'load' });
+    await page.evaluate(() => scrollTo({ top: 200, behavior: 'instant' }));
+    await page.waitForTimeout(1000);
+    t.check(!(await page.evaluate(upState)).shown, `${what}: back to top never shows`);
+    await page.close();
+  }
+
+  // it covers no link: the TOC and the sidebar at 1280, prev/next at 360
+  // at the end, the drawer's links at 360
+  {
+    const page = await t.newPage({ viewport: { width: 1280, height: 740 }, reducedMotion: 'reduce' });
+    await open(page, t, article);
+    for (const y of [200, 'end']) {
+      await page.evaluate((y) => scrollTo({ top: y === 'end' ? document.documentElement.scrollHeight : y, behavior: 'instant' }), y);
+      await page.waitForFunction(() => document.querySelector('.clogem-back-to-top').checkVisibility(), null, { timeout: 1000 });
+      const c = await page.evaluate(coveredLinks, '.clogem-toc a[href], .clogem-sidebar a[href]');
+      t.check(c.checked >= 4 && c.out.length === 0, `1280 at ${y}: back to top covers no TOC or sidebar link (${c.checked} checked; ${c.out.join('; ')})`);
+    }
+    await page.close();
+  }
+  {
+    const page = await t.newPage({ viewport: { width: 1280, height: 740 }, reducedMotion: 'reduce' });
+    await page.route(url(t, article), async (route) => {
+      const res = await route.fetch();
+      const lis = Array.from({ length: 60 }, (_, i) => `<li class="level-2"><a href="#nesting">Entry ${i + 1}</a></li>`).join('');
+      await route.fulfill({ response: res, body: (await res.text()).replace(/(<aside class="clogem-toc"><nav[^>]*><ul>)/, '$1' + lis) });
+    });
+    await open(page, t, article);
+    await scrollTop(page, 600);
+    await page.waitForFunction(() => document.querySelector('.clogem-back-to-top').checkVisibility(), null, { timeout: 1000 });
+    const r = await page.evaluate(() => ({ toc: document.querySelector('.clogem-toc').getBoundingClientRect().bottom,
+                                           up: document.querySelector('.clogem-back-to-top').getBoundingClientRect().top }));
+    t.check(r.toc <= r.up, `1280, a 60-entry TOC: the stuck TOC's bottom ${r.toc} is above back to top (${r.up})`);
+    await page.close();
+  }
+  {
+    const page = await t.newPage({ viewport: { width: 360, height: 740 }, reducedMotion: 'reduce' });
+    await open(page, t, article);
+    await page.evaluate(() => scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }));
+    await page.waitForFunction(() => document.querySelector('.clogem-back-to-top').checkVisibility(), null, { timeout: 1000 });
+    const c = await page.evaluate(coveredLinks, '.clogem-prev-next a');
+    t.check(c.checked === 2 && c.out.length === 0, `360 at the end: back to top covers neither prev/next link (${c.checked} checked; ${c.out.join('; ')})`);
+    await page.close();
+  }
+  {
+    // 480 px tall, so the open drawer reaches the bottom of the viewport
+    const page = await t.newPage({ viewport: { width: 360, height: 480 }, reducedMotion: 'reduce' });
+    await open(page, t, article);
+    // the drawer, open after 200 px, covers it. (Opening it focuses its
+    // first link, which scrolls the page to the top — part 1's behaviour —
+    // so the page is put back at 200, and the drawer scrolled in steps.)
+    await scrollTop(page, 200);
+    await page.waitForFunction(() => document.querySelector('.clogem-back-to-top').checkVisibility(), null, { timeout: 1000 });
+    await page.locator('.clogem-navbar__toggle > summary').click();
+    await scrollTop(page, 200);
+    await page.waitForFunction(() => document.querySelector('.clogem-back-to-top').checkVisibility(), null, { timeout: 1000 }).catch(() => {});
+    const d = await page.evaluate(() => {
+      const drawer = document.getElementById('clogem-drawer');
+      const up = document.querySelector('.clogem-back-to-top');
+      const ur = up.getBoundingClientRect();
+      const out = [], seen = new Set();
+      let under = 0;
+      for (let top = 0; top <= drawer.scrollHeight; top += drawer.clientHeight / 2) {
+        drawer.scrollTop = top;
+        const dr = drawer.getBoundingClientRect();
+        for (const a of drawer.querySelectorAll('a[href]')) {
+          if (!a.checkVisibility()) continue;
+          const r = a.getBoundingClientRect();
+          const x = r.left + r.width / 2, y = r.top + r.height / 2;
+          if (y < dr.top || y > Math.min(dr.bottom, innerHeight)) continue;
+          seen.add(a);
+          if (r.right > ur.left && r.bottom > ur.top) under++;
+          const hit = document.elementFromPoint(x, y);
+          if (!a.contains(hit)) out.push(`${a.textContent.trim().slice(0, 24)} → ${hit && hit.className}`);
+        }
+      }
+      // where the two meet, the drawer is drawn over the button
+      const mid = up.getBoundingClientRect(), dr = drawer.getBoundingClientRect();
+      const x = (mid.left + Math.min(mid.right, dr.right)) / 2, y = (mid.top + mid.bottom) / 2;
+      const over = mid.left < dr.right && mid.bottom <= dr.bottom + 0.5 ? drawer.contains(document.elementFromPoint(x, y)) : null;
+      return { checked: seen.size, under, out, over, shown: up.checkVisibility(), open: document.querySelector('.clogem-navbar__toggle').open, y: scrollY };
+    });
+    t.check(d.open && d.y === 200 && d.over === true, `360×480, the drawer open at 200: it is drawn over back to top (${JSON.stringify({ open: d.open, y: d.y, over: d.over })})`);
+    t.check(d.shown && d.checked >= 8 && d.out.length === 0, `360, the drawer open: back to top covers no drawer link (${d.checked} checked, shown ${d.shown}; ${d.out.join('; ')})`);
+    await page.close();
+  }
+}
+
 export default async function layout(t) {
   await item1(t);
   await item2(t);
@@ -1155,4 +1333,5 @@ export default async function layout(t) {
   await item10(t);
   await item11(t);
   await item12(t);
+  await item13(t);
 }

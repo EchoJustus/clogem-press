@@ -489,14 +489,20 @@ export default async function modes(t) {
   // which is false for the drawer's display: contents)
   const display = (sels) => Object.fromEntries(sels.map((s) =>
     [s, document.querySelector(s) ? getComputedStyle(document.querySelector(s)).display : 'absent']));
-  // (P4-B2b items 10, 11: the sidebar toggle once nav.js revealed it, the
-  // page buttons where both show)
+  // (P4-B2b items 10, 11, 13: the sidebar toggle once nav.js revealed it,
+  // the page buttons where both show, back to top once a 200 px scroll
+  // shows it)
   for (const [viewport, onScreen, rel] of [[{ width: 1280, height: 720 }, ['.clogem-langs__toggle', '.clogem-navbar__drawer', '.clogem-sidebar-toggle']],
-                                           [{ width: 360, height: 740 }, ['.clogem-navbar__toggle']],
+                                           [{ width: 360, height: 740 }, ['.clogem-navbar__toggle', '.clogem-back-to-top']],
                                            [{ width: 1440, height: 740 }, ['.clogem-page-button.is-prev', '.clogem-page-button.is-next'], 'pages/c0nta1/index.html']]) {
     const page = await t.newPage({ colorScheme: 'dark', viewport });
     await page.addInitScript(() => { try { localStorage.setItem('clogem-mode', 'dark'); } catch (e) {} });
     await page.goto(rel ? t.url(rel) : url, { waitUntil: 'load' });
+    if (onScreen.includes('.clogem-back-to-top')) {
+      const y = await page.evaluate(() => { scrollTo({ top: 200, behavior: 'instant' }); return scrollY; });
+      t.check(y === 200, `${viewport.width}px: scrollY reached 200 (${y})`);
+      await page.waitForFunction(() => !document.querySelector('.clogem-back-to-top').hidden, null, { timeout: 1000 }).catch(() => {});
+    }
     const screen = await page.evaluate(display, onScreen);
     for (const [s, d] of Object.entries(screen)) t.check(d !== 'none' && d !== 'absent', `${viewport.width}px: ${s} is drawn on screen (display ${d})`);
     // P4-B2b item 12: a background pattern on screen, none in print

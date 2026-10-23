@@ -476,7 +476,7 @@
                            :title-badge-icons :planned :blogger :planned :footer :planned
                            :update-bar :planned :right-menu-bar :ok :page-button :ok
                            :content-bg-style :ok :last-updated :planned
-                           :sidebar-collapsed :ok :back-to-top :planned :logo :planned
+                           :sidebar-collapsed :ok :back-to-top :ok :logo :planned
                            :repo :planned}
    [:theme :fonts]        {:tamil :ok}
    [:highlight]           {:provider :ok :line-numbers :ok :copy-button :ok :style :ok :dark-style :ok}

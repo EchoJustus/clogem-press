@@ -41,6 +41,7 @@
  :page/categories      "分類"
  :page/tags            "標籤"
  :page/sidebar         "側邊欄"
+ :page/back-to-top     "返回頂部"
  :container/theorem    "定理"
  ;; Search UI (D-P3-10): Pagefind 1.5.2 translations/zh-tw.json.
  ;; [SEARCH_TERM], [COUNT] and [DIFFERENT_TERM] are Pagefind's placeholders; keep them.

@@ -281,17 +281,11 @@
     (try (diag/collecting (config/load-config (str dir)))
          (finally (fs/delete-tree dir)))))
 
-(def ^:private chrome-keys
-  "The page chrome's keys still :planned in `config/known-keys`: the tests
-  below see them as items 9–13 make them, :ok. Each item takes its key
-  out of this set when it flips it."
-  #{:back-to-top})
-
-(defn- as-ok [known]
-  (reduce #(assoc-in %1 [[:theme] %2] :ok) known chrome-keys))
-
 (deftest the-chrome-keys-warn-and-repair
-  (with-redefs [config/known-keys (as-ok config/known-keys)]
+  (testing "items 9–13 made all five :ok in known-keys"
+    (is (every? #(= :ok (get-in config/known-keys [[:theme] %]))
+                [:sidebar-collapsed :right-menu-bar :page-button :content-bg-style :back-to-top])))
+  (do
     (doseq [[k default bad good] [[:sidebar-collapsed false ["yes" 1 :on] [true false]]
                                   [:right-menu-bar true ["yes" 1 :on] [true false]]
                                   [:page-button true ["yes" 1 :on] [true false]]
@@ -577,3 +571,50 @@
         (is (not= css strong))
         (is (seq (cp/failures strong)))
         (is (some #(str/includes? % "--linesColor over --mainBg") (cp/failures strong)))))))
+
+;; ---------------------------------------------------------------------------
+;; 13. Back to top: :theme :back-to-top
+
+(def ^:private back-to-top-re
+  #"<button aria-label=\"([^\"]+)\" class=\"clogem-back-to-top\" hidden=\"hidden\" title=\"\1\" type=\"button\"><svg[^>]*class=\"clogem-icon\"[^>]*><use href=\"[^\"]*#arrow-up\"(?:/>|></use>)</svg></button></body>")
+
+(deftest back-to-top-ends-every-page-with-a-navbar
+  (let [ps (pages)]
+    (doseq [[rel page] ps
+            :when (str/includes? page "<header class=\"clogem-navbar\"")]
+      (is (= 1 (count (re-seq #"clogem-back-to-top" page))) rel)
+      (is (re-find back-to-top-re page) (str rel ": hidden, named, last in <body>")))
+    (testing "an article, a catalogue, the home, a category page and the archive"
+      (doseq [p [["pages" "c0nta1" "index.html"] ["pages" "559f0f" "index.html"] ["index.html"]
+                 ["categories" "guide" "index.html"] ["archives" "index.html"]]]
+        (is (= "Back to top" (second (re-find back-to-top-re (apply html p)))) (str p))))
+    (testing "named in the page's language"
+      (is (= "返回顶部" (second (re-find back-to-top-re (html "zh-Hans" "index.html")))))
+      (is (= "返回頂部" (second (re-find back-to-top-re (html "zh-Hant" "index.html")))))
+      (is (= "Kembali ke atas" (second (re-find back-to-top-re (html "ms" "index.html")))))
+      (is (= "மேலே செல்" (second (re-find back-to-top-re (html "ta" "index.html"))))))
+    (testing "no page without the navbar has one (redirect stubs)"
+      (doseq [[rel page] ps :when (not (str/includes? page "<header class=\"clogem-navbar\""))]
+        (is (not (str/includes? page "clogem-back-to-top")) rel)))))
+
+(deftest back-to-top-false-removes-it
+  (let [files {"index.md" "# Home\n" "01.Guide/01.t.md" a-toc-article}
+        off (build-temp (assoc one-lang :theme {:back-to-top false}) files)
+        on (build-temp one-lang files)]
+    (is (seq off))
+    (is (not-any? #(str/includes? (val %) "clogem-back-to-top") off))
+    (is (every? #(re-find back-to-top-re (val %)) (filter #(str/includes? (val %) "clogem-navbar") on)))
+    (is (= :ok (get-in config/known-keys [[:theme] :back-to-top])))))
+
+(deftest the-back-to-top-css
+  (let [rules (cp/parse (slurp theme-css))
+        of (fn [q sel] (into {} (for [r rules :when (and (= q (:media r)) (some #{sel} (:selectors r))) [p v] (:decls r)] [p v])))
+        d (of [] ".clogem-back-to-top")]
+    (is (= ["fixed" "2rem" "2.5rem" "2.2rem" "2.2rem" "var(--blurBg)" "5"]
+           (map d ["position" "right" "bottom" "width" "height" "background" "z-index"])))
+    (is (= "none" ((of [] ".clogem-back-to-top[hidden]") "display")))
+    (is (= ["1rem" "1.5rem"] (map (of ["(max-width: 50rem)"] ".clogem-back-to-top") ["right" "bottom"])))
+    (testing "nav.js shows it past 100 px and hides it on activation"
+      (let [js (slurp "src/clogem/theme/resources/js/nav.js")]
+        (is (str/includes? js "y <= 100"))
+        (is (str/includes? js "window.scrollTo({ top: 0 })"))))))

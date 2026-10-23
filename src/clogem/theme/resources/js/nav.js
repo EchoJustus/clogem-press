@@ -4,10 +4,9 @@
  * back at a placeholder when it does not; focus into the drawer on open;
  * Escape, a click outside, a followed link or a bfcache pageshow close it;
  * outside the drawer layout, Escape or a click outside closes a dropdown.
- * A toggle rendered hidden (no :nav, one language) is revealed here.
- * The sidebar's collapse button is revealed here too, and collapses it
- * through a class on the shell (CSS applies it above 50rem only); the
- * server's data-clogem-collapsed sets the state it starts in. */
+ * A toggle rendered hidden (no :nav, one language) is revealed here, and
+ * so is the sidebar's collapse button: is-sidebar-collapsed on the shell,
+ * from data-clogem-collapsed. Back to top shows past 100 px, hides once used. */
 (function () {
   "use strict";
   window.clogem = window.clogem || {};
@@ -55,6 +54,31 @@
     sbt.hidden = false;
     sbt.addEventListener("click", function () {
       collapse(!shell.classList.contains("is-sidebar-collapsed"));
+    });
+  }
+
+  var up = document.querySelector(".clogem-back-to-top");
+  if (up) {
+    // going: up after a click, until the top or a scroll down
+    var going = false, last = 0, queued = false;
+    var place = function () {
+      queued = false;
+      var y = window.scrollY;
+      if (going && (y <= 0 || y > last)) going = false;
+      last = y;
+      up.hidden = going || y <= 100;
+    };
+    window.addEventListener("scroll", function () {
+      if (!queued) { queued = true; window.requestAnimationFrame(place); }
+    }, { passive: true });
+    place();
+    up.addEventListener("click", function () {
+      var b = document.body, had = document.activeElement === up;
+      going = true;
+      up.hidden = true;
+      // focus stays on <body>, the next Tab starting at the top
+      if (had) { b.tabIndex = -1; b.focus({ preventScroll: true }); b.removeAttribute("tabindex"); }
+      window.scrollTo({ top: 0 });
     });
   }
 

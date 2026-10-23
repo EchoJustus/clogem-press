@@ -20,6 +20,17 @@ export default async function overflow(t) {
         () => [document.documentElement.scrollWidth, window.innerWidth]);
       t.check(scrollWidth <= innerWidth,
               `${width}px ${url}: scrollWidth ${scrollWidth} > innerWidth ${innerWidth}`);
+      // P4-B2b item 13: scrolled 200 px, back to top shown where the page
+      // is long enough, nothing scrolls sideways either
+      const after = await page.evaluate(async () => {
+        scrollTo({ top: 200, behavior: 'instant' });
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const up = document.querySelector('.clogem-back-to-top');
+        return { sw: document.documentElement.scrollWidth, y: scrollY, up: !!up && up.checkVisibility() };
+      });
+      t.check(after.sw <= innerWidth, `${width}px ${url}, scrolled to ${after.y}: scrollWidth ${after.sw} > innerWidth ${innerWidth}`);
+      if (after.y > 100) t.check(after.up, `${width}px ${url}, scrolled to ${after.y}: back to top shows`);
+      await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));
       // P4-B2b: with the drawer open, and every <details> in it, neither
       // the page nor the drawer scrolls sideways
       const d = await page.evaluate(() => {

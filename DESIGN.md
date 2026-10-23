@@ -783,6 +783,10 @@ any more). Note what arrived: `:generator`, `:langs`, `:i18n`, `:analytics`, `:s
 
  :theme {:default-mode :auto          ; :auto | :light | :dark | :read (§11.2 item 49)
          :page-style :card :sidebar-open true
+         ;; the page chrome (B2b): vdoing's sidebarOpen (inverted), rightMenuBar,
+         ;; pageButton and contentBgStyle (nil | 1–6), and clogem's back to top
+         :sidebar-collapsed false :right-menu-bar true :page-button true
+         :content-bg-style nil :back-to-top true
          :banner-bg "auto" :body-bg-img nil :title-badge true
          :blogger {:avatar "…" :name "…" :slogan "…"}
          :social  {:icons [{:icon :github :title "GitHub" :link "…"}]}
@@ -1860,11 +1864,11 @@ order; each builds on A:
     documented). *Done (§11.3 items 2–5 and 9).*
   - **B2b — Mobile layout**: `--navbarHeight` and anchors, the one-row navbar, the mobile drawer
     and `js/nav.js`, sidebar collapse, the right menu bar, page buttons, background patterns, back
-    to top and smooth scroll. *In progress:* `--navbarHeight`, anchors and smooth scroll; the
+    to top and smooth scroll. *Done:* `--navbarHeight`, anchors and smooth scroll; the
     one-row desktop navbar with a language dropdown; the 80rem three-column shell; the mobile
     navbar, the drawer and `js/nav.js`, with its no-JS and failed-script fallbacks; the home's
-    text-card padding (§11.3 item 9). Sidebar collapse, the right menu bar switch, page buttons,
-    background patterns and back to top remain.
+    text-card padding (§11.3 item 9); and the five chrome keys of §11.3 item 16 — sidebar
+    collapse, the right menu bar switch, page buttons, background patterns and back to top.
 - **F — Analytics, verification, static root** (1 d) (§11.3 items 14, 15). *Done.*
 - **E1 — Blog identity, banner, htmlModules** (2.75 d) (§11.3 item 13). *From B2b:* the
   `sidebar-t`/`sidebar-b` slots go inside `aside.clogem-sidebar`, around its `<nav>`, as vdoing's
@@ -3437,7 +3441,9 @@ their own findings. Item 19 onward are corrections.
 16. **Parity details (E2, and A).** `:content :edit-link {:repo :branch :dir}` plus `editLink: false`;
     `:theme :last-updated` from one `git log` pass; `:theme :sidebar-collapsed`, keeping
     `:sidebar-open`'s 0.2.0 meaning; right-menu-bar, page-button, content-bg-style, back-to-top,
-    logo, repo link, hero keys, `pageClass`, and a 404 page (`noindex`, not in the sitemap).
+    logo, repo link, hero keys, `pageClass`, and a 404 page (`noindex`, not in the sitemap). *The
+    five chrome keys — `:sidebar-collapsed`, `:right-menu-bar`, `:page-button`,
+    `:content-bg-style`, `:back-to-top` — are done in B2b (below).*
     *Fix round P4-A.1.* `:site :author` is checked only in its named shape (`:name`/`:link`, keyword
     or string keys, as `i18n/resolve-author` reads them); its per-language shape is user data. `:nav`
     items are walked (`:nav 1 :items 0 :lnk`), never their per-language `:text`. A bad `:tools
@@ -3475,6 +3481,15 @@ their own findings. Item 19 onward are corrections.
     shell's gutter, `(100vw − 80rem) / 2 + 1.25rem`, is 52 px — 50 px wide, and 80 px from 88rem
     (an 84 px gutter). Beside a classic scrollbar they reach a few px into the sidebar's and the
     TOC's padding, never onto a link (owner's decision).
+    `:back-to-top` (clogem's own key; vdoing always shows it, `Buttons.vue`) renders a `hidden`
+    `<button>` last in `<body>`, outside the navbar (whose `backdrop-filter` would make it the
+    containing block), named `:page/back-to-top`, with the sprite's `arrow-up`. `nav.js` shows it
+    while `scrollY > 100` (vdoing's threshold, read once per animation frame), hides it as soon as
+    it is used — focus is left on `<body>` with the next Tab starting at the top — and calls
+    `scrollTo({top: 0})`, smooth unless reduced motion. `position: fixed` at `right: 2rem; bottom:
+    2.5rem`, 1rem and 1.5rem at ≤ 50rem (vdoing switches at 959px), 2.2rem round on `--blurBg`,
+    z-index 5 (vdoing's is 11): below the navbar, so the drawer covers it. The TOC's `max-height`
+    keeps its bottom above it.
     vdoing's `contentBgStyle` (`:content-bg-style`, nil or 1–6) puts `clogem-bg-style-N` on the main
     column of articles and catalogues, where vdoing's `Page.vue` draws it, and nowhere else: its six
     patterns in `background-image`/`background-size`/`background-position` only (`0deg` for vdoing's

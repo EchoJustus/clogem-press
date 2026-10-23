@@ -12,6 +12,10 @@ B2, §11.3 item 1), then Task F — analytics, verification and a static root
 page chrome (the second half of B2, §11.3 item 9, D-P4-9). The version
 stays 0.2.0. A site that already set `:theme :page-style :line` now gets
 that look: 0.2.0 and B1 accepted the value but drew card and line the same.
+Likewise a site that set any of the five keys 0.2.0 listed as planned —
+`:theme :sidebar-collapsed`, `:right-menu-bar`, `:page-button`,
+`:content-bg-style` or `:back-to-top` — now gets that behaviour, and page
+buttons and a back-to-top button now appear by default, as in vdoing.
 
 **Task B2b — navbar, mobile drawer and page chrome** (§11.3 item 9, D-P4-9):
 
@@ -44,8 +48,8 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   (dropdowns collapsed until opened) and every language. A site with no
   `:nav` and one language gets no toggle, except on a page with a
   sidebar, where it is rendered `hidden` and revealed by `js/nav.js`.
-- **`js/nav.js`** (same-origin, `defer`, after `mode.js`; 1.3 KB
-  gzipped, budget 2,000 B): while the drawer layout is active — read from
+- **`js/nav.js`** (same-origin, `defer`, after `mode.js`; 1,847 B
+  gzipped with the sidebar collapse and back to top, budget 2,000 B): while the drawer layout is active — read from
   the CSS, at start-up and on every resize — it moves the page's sidebar
   into the drawer and puts it back on leaving it. On open, focus moves
   into the drawer; Escape closes it and focuses the toggle, as do a click
@@ -99,6 +103,15 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   and catalogues (the class `clogem-bg-style-N`), in a new `--linesColor`,
   set in every mode: `rgba(50, 0, 0, 0.05)` in light and read,
   `rgba(125, 125, 125, 0.05)` in dark. Print draws none.
+- **Back to top** (`:theme :back-to-top`, default `true`; vdoing always
+  shows it): a round `arrow-up` button, named by the page language's new
+  `:page/back-to-top` (all five languages), fixed 2rem from the right and
+  2.5rem from the bottom (1rem and 1.5rem at 50rem and below), 2.2rem on
+  `--blurBg`, below the navbar and its drawer. `js/nav.js` shows it once
+  the page is scrolled more than 100 px; activating it scrolls to the top —
+  smoothly, or at once under reduced motion — and hides it at once, the
+  next Tab starting at the navbar. Without JS there is none; print hides
+  it; `false` omits it.
 
 ### Changed (B2b)
 
@@ -202,10 +215,23 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   article and a catalogue, each pattern's gradient functions, pattern 1
   centred, the background colour still `--mainBg`, dark lines in dark mode,
   none in print; `modes.test.mjs`' print check draws no pattern.
+- `bb test`: back to top is last in `<body>`, `hidden`, on every page with
+  the navbar (an article, a catalogue, the home, a category page, the
+  archive), named in each language (返回顶部 on zh-Hans), and gone with
+  `false`. `layout.test.mjs` at 360 and 1280 on an article and the home:
+  hidden at the top, shown within 1 s of a 200 px scroll, ≥ 24×24 and in
+  the viewport at its offsets; Enter reaches the top at once under reduced
+  motion and smoothly within 3 s otherwise, hidden all the way, and one Tab
+  then focuses the brand or the menu toggle; never shown without JS or
+  with `nav.js` aborted; it covers no TOC or sidebar link at 1280, neither
+  prev/next link at 360, and the open drawer covers it.
+  `overflow.test.mjs` checks every page scrolled 200 px too, and
+  `modes.test.mjs` its print at 360.
 
 ### Needs native review (B2b)
 
 - `:nav/menu`: ms "Menu", ta "மெனு".
+- `:page/back-to-top`: ms "Kembali ke atas", ta "மேலே செல்".
 
 **Task F — analytics, verification and static root** (§11.3 items 14, 15):
 

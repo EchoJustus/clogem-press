@@ -518,6 +518,16 @@ img { max-width: 100%; height: auto; }
 }
 @media (min-width: 88rem) { .clogem-page-button { width: 80px; } }
 
+/* P4-B2b: back to top, as vdoing's (Buttons.vue), below the navbar and its
+ * drawer (z-index 10). js/nav.js shows it past 100 px of scrolling */
+.clogem-back-to-top { position: fixed; right: 2rem; bottom: 2.5rem; z-index: 5; display: flex; align-items: center;
+  justify-content: center; width: 2.2rem; height: 2.2rem; padding: 0; font: inherit; font-size: 1.1rem;
+  color: var(--textColor); background: var(--blurBg); border: 0; border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); cursor: pointer; }
+.clogem-back-to-top:hover { color: var(--accent); }
+.clogem-back-to-top[hidden] { display: none; }
+@media (max-width: 50rem) { .clogem-back-to-top { right: 1rem; bottom: 1.5rem; } }
+
 /* ---- Phase 2: catalogue pages ---- */
 .clogem-catalogue__header { margin-bottom: 1.5rem; }
 .clogem-catalogue__img { max-height: 12rem; border-radius: 8px; }
@@ -732,7 +742,7 @@ html.theme-mode-dark {
   .clogem-navbar, .clogem-sidebar, .clogem-toc, .clogem-mode, .clogem-search,
   .clogem-comments, .clogem-lang-banner, .clogem-prev-next, .header-anchor,
   .clogem-navbar__toggle, .clogem-navbar__drawer, .clogem-langs__toggle,
-  .clogem-sidebar-toggle, .clogem-page-button { display: none !important; }
+  .clogem-sidebar-toggle, .clogem-page-button, .clogem-back-to-top { display: none !important; }
   .clogem-shell, .clogem-shell--toc, .clogem-shell--single.clogem-shell--toc {
     display: block; max-width: none; padding: 0;
   }
