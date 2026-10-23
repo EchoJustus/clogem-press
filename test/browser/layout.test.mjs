@@ -343,13 +343,22 @@ async function item2(t) {
     await page.setViewportSize({ width: 900, height: 740 });
     await page.locator('button.pf-trigger-btn').click();
     await page.waitForFunction(() => document.querySelector('pagefind-modal dialog')?.open, null, { timeout: 5000 }).catch(() => {});
+    // the rule hiding the trigger's shortcut is scoped to the trigger:
+    // Pagefind's searchbox draws its hint as a .pf-trigger-shortcut too
+    // (1.5.2's modal uses <pagefind-input>, which has none, so a probe in
+    // the search box, beside the modal, stands in for it)
     const m = await page.evaluate(() => {
       const d = document.querySelector('pagefind-modal dialog');
-      const sc = d && d.querySelector('.pf-trigger-shortcut');
-      return { open: !!d && d.open, shortcut: sc ? getComputedStyle(sc).display : 'absent' };
+      const probe = document.createElement('div');
+      probe.className = 'pf-searchbox-input-wrapper';
+      probe.innerHTML = '<span class="pf-trigger-shortcut"><span class="pf-trigger-key">K</span></span>';
+      document.querySelector('.clogem-search').appendChild(probe);
+      const shown = getComputedStyle(probe.firstChild).display;
+      probe.remove();
+      return { open: !!d && d.open, shortcut: shown };
     });
     t.check(m.open, `900px /${rel}: the icon-only trigger opens the modal`);
-    t.check(m.shortcut !== 'none', `900px /${rel}: the modal's own shortcut hint is still displayed (${m.shortcut})`);
+    t.check(m.shortcut !== 'none', `900px /${rel}: a .pf-trigger-shortcut outside the trigger is still displayed (${m.shortcut})`);
     await page.close();
   }
 
