@@ -297,6 +297,11 @@ root's `scroll-padding-top`), headings or not. Scrolling is smooth unless
 the reader's system asks for reduced motion; there is no key for it
 (vdoing's `smoothScroll`, off by default there, is not read).
 
+**Columns.** Above 50rem an article with a sidebar is sidebar | article;
+from 80rem (1280 px) its TOC joins them on the right, in a shell 18rem
+wider than `--maxWidth`, as vdoing's TOC shows only from 1280 px. A page
+with a TOC and no sidebar shows it above 64rem.
+
 The mode and page-style classes are on `<html>`, unqualified:
 `.theme-mode-dark`, `.theme-style-card`. (0.2.0 put them on `<body>`; CSS
 written as `body.theme-mode-dark` must drop `body`.)

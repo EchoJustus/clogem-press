@@ -380,7 +380,130 @@ async function item2(t) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 3. Columns above 50rem, and the 80rem three-column shell
+
+const box = (sel) => {
+  const e = document.querySelector(sel);
+  if (!e) return null;
+  const r = e.getBoundingClientRect();
+  return { left: r.left, right: r.right, top: r.top + scrollY, width: r.width, display: getComputedStyle(e).display };
+};
+
+async function item3(t) {
+  // two columns at 900 and 1024: the sidebar left of main, the same top
+  for (const width of [900, 1024]) {
+    const page = await t.newPage({ viewport: { width, height: 740 } });
+    for (const rel of [article, 'pages/cjk001/']) {
+      await open(page, t, rel);
+      const r = await page.evaluate(([box]) => {
+        const f = new Function('return ' + box)();
+        return { sb: f('aside.clogem-sidebar'), main: f('main'), toc: f('.clogem-toc'), overflow: document.documentElement.scrollWidth - innerWidth };
+      }, [box.toString()]);
+      t.check(r.sb && r.sb.right <= r.main.left && Math.abs(r.sb.top - r.main.top) <= 1,
+              `${width}px /${rel}: the sidebar (${r.sb && r.sb.left}–${r.sb && r.sb.right}, y ${r.sb && r.sb.top}) is left of main (${r.main.left}, y ${r.main.top})`);
+      t.check(r.overflow <= 0, `${width}px /${rel}: overflow ${r.overflow}`);
+      if (r.toc) t.check(r.toc.display === 'none', `${width}px /${rel}: below 80rem the TOC is display: none (${r.toc.display})`);
+    }
+    await page.close();
+  }
+  // three columns from 80rem, the article at least 600 px
+  for (const width of [1280, 1440]) {
+    const page = await t.newPage({ viewport: { width, height: 740 } });
+    await open(page, t, article);
+    const r = await page.evaluate(([box]) => {
+      const f = new Function('return ' + box)();
+      return { sb: f('aside.clogem-sidebar'), main: f('main'), toc: f('.clogem-toc'), art: f('article.clogem-article') };
+    }, [box.toString()]);
+    t.check(r.art.width >= 600, `${width}px: article.clogem-article is ${r.art.width} px, want ≥ 600`);
+    t.check(r.sb.right <= r.main.left && r.main.right <= r.toc.left && r.toc.display !== 'none',
+            `${width}px: sidebar ${r.sb.left}–${r.sb.right}, main ${r.main.left}–${r.main.right}, TOC ${r.toc.left}–${r.toc.right} run left to right`);
+    await page.close();
+  }
+  // beside a 17 px classic scrollbar (the media query still sees 1280)
+  // the article is 615: a 2rem gap would leave it at 599. Headless
+  // Chromium hides scrollbars, so a 17 px body margin takes its place
+  {
+    const page = await t.newPage({ viewport: { width: 1280, height: 740 } });
+    await open(page, t, article);
+    const w = await page.evaluate(() => {
+      document.body.style.marginInlineEnd = '17px';
+      return { art: document.querySelector('article.clogem-article').getBoundingClientRect().width,
+               shell: document.querySelector('.clogem-shell').getBoundingClientRect().width };
+    });
+    t.check(w.shell === 1263 && w.art >= 600, `1280px beside a 17 px scrollbar (a ${w.shell} px shell): the article is ${w.art} px, want ≥ 600`);
+    await page.close();
+  }
+  // 1279: below 80rem, no TOC beside a sidebar
+  {
+    const page = await t.newPage({ viewport: { width: 1279, height: 740 } });
+    await open(page, t, article);
+    t.check(await page.evaluate(() => getComputedStyle(document.querySelector('.clogem-toc')).display) === 'none', '1279px: the TOC is display: none');
+    await page.close();
+  }
+  // pages without a sidebar and a TOC keep the 62rem shell
+  {
+    const page = await t.newPage({ viewport: { width: 1280, height: 740 } });
+    for (const rel of ['', 'categories/guide/', 'pages/559f0f/']) {
+      await open(page, t, rel);
+      const w = await page.evaluate(() => document.querySelector('main').getBoundingClientRect().width);
+      t.check(Math.abs(w - 952) <= 1, `1280px /${rel}: main is ${w} px, want 952`);
+    }
+    await page.close();
+  }
+  // a --single --toc page (a post with no tree) keeps its TOC above 64rem
+  {
+    const page = await t.newPage({ viewport: { width: 1100, height: 740 } });
+    await page.route(url(t, article), async (route) => {
+      const res = await route.fetch();
+      const body = (await res.text()).replace(/<aside class="clogem-sidebar">[\s\S]*?<\/aside>/, '')
+        .replace('class="clogem-shell clogem-shell--toc"', 'class="clogem-shell clogem-shell--single clogem-shell--toc"');
+      await route.fulfill({ response: res, body });
+    });
+    await open(page, t, article);
+    t.check(await page.evaluate(() => !document.querySelector('aside.clogem-sidebar') && !!document.querySelector('.clogem-shell--single.clogem-shell--toc')),
+            '--single --toc: the rewrite took');
+    for (const width of [1100, 1280, 1024]) {
+      await page.setViewportSize({ width, height: 740 });
+      const r = await page.evaluate(([box]) => { const f = new Function('return ' + box)(); return { main: f('main'), toc: f('.clogem-toc') }; }, [box.toString()]);
+      if (width === 1024) t.check(r.toc.display === 'none', `--single --toc at 1024: the TOC is display: none (${r.toc.display})`);
+      else t.check(r.toc.display !== 'none' && r.toc.left >= r.main.right, `--single --toc at ${width}: the TOC (${r.toc.left}) is right of main (${r.main.right})`);
+    }
+    await page.close();
+  }
+  // a long TOC scrolls inside itself, clear of the back-to-top band
+  {
+    const page = await t.newPage({ viewport: { width: 1280, height: 740 } });
+    await page.route(url(t, article), async (route) => {
+      const res = await route.fetch();
+      const lis = Array.from({ length: 60 }, (_, i) => `<li class="level-2"><a href="#nesting">Entry ${i + 1}</a></li>`).join('');
+      const body = (await res.text()).replace(/(<aside class="clogem-toc"><nav[^>]*><ul>)/, '$1' + lis);
+      await route.fulfill({ response: res, body });
+    });
+    await open(page, t, article);
+    t.check(await scrollTop(page, 600) === 600, 'a long TOC: scrollY reached 600');
+    const r = await page.evaluate(() => {
+      const toc = document.querySelector('.clogem-toc');
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+      return { n: toc.querySelectorAll('a').length, bottom: toc.getBoundingClientRect().bottom, bound: innerHeight - 4.7 * rem,
+               scrolls: toc.scrollHeight > toc.clientHeight };
+    });
+    t.check(r.n >= 60 && r.bottom <= r.bound + 0.5, `a long TOC (${r.n} links): its bottom ${r.bottom} ≤ innerHeight − 4.7rem (${r.bound})`);
+    t.check(r.scrolls, 'a long TOC scrolls');
+    const last = page.locator('.clogem-toc a').last();
+    await last.scrollIntoViewIfNeeded();
+    const vis = await page.evaluate(() => {
+      const toc = document.querySelector('.clogem-toc'), a = [...toc.querySelectorAll('a')].pop();
+      const tr = toc.getBoundingClientRect(), ar = a.getBoundingClientRect();
+      return ar.top >= tr.top - 0.5 && ar.bottom <= tr.bottom + 0.5 && toc.scrollTop > 0;
+    });
+    t.check(vis, 'a long TOC: its last link can be reached by scrolling the TOC');
+    await page.close();
+  }
+}
+
 export default async function layout(t) {
   await item1(t);
   await item2(t);
+  await item3(t);
 }

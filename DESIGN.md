@@ -1861,7 +1861,7 @@ order; each builds on A:
   - **B2b — Mobile layout**: `--navbarHeight` and anchors, the one-row navbar, the mobile drawer
     and `js/nav.js`, sidebar collapse, the right menu bar, page buttons, background patterns, back
     to top and smooth scroll. *In progress:* `--navbarHeight`, anchors and smooth scroll; the
-    one-row desktop navbar with a language dropdown (§11.3 item 9).
+    one-row desktop navbar with a language dropdown; the 80rem three-column shell (§11.3 item 9).
 - **F — Analytics, verification, static root** (1 d) (§11.3 items 14, 15). *Done.*
 - **E1 — Blog identity, banner, htmlModules** (2.75 d) (§11.3 item 13).
 - **E2 — Article-page parity** (1.75 d): edit link, last-updated, update bar, `titleTag` rows,
@@ -3009,6 +3009,11 @@ their own findings. Item 19 onward are corrections.
    sibling (CSS cannot show a closed `<details>`' content where `::details-content` is missing), and
    the search trigger is its icon alone at ≤ 64rem. "Above 50rem" is written
    `not all and (max-width: 50rem)`, so no fractional width between 800 and 801 px falls in a gap.
+   Columns: beside a sidebar the TOC now shows only from 80rem, as vdoing's (`Page.vue` hides it at
+   ≤ 1279px), in a three-column shell `calc(var(--maxWidth) + 18rem)` wide with a 1.5rem gap (the
+   article 632 px at 1280, 615 beside a 17 px scrollbar; 2rem would give 599) — so it is **hidden at
+   1025–1279 px, where it used to show**, and that range is sidebar | article. A `--single` page keeps
+   its TOC above 64rem. The TOC's `max-height` leaves the back-to-top button's band clear.
 10. **Highlighting on by default (C) — done.** `:highlight {:provider :chroma}`; `:none` or `--no-highlight`
     turns it off. A fetch failure is an error in `build` and a warning in `dev`. Line numbers are CSS
     counters, never text — Chroma's own numbers pollute the Pagefind index. One Chroma process per

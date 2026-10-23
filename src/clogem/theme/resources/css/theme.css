@@ -472,14 +472,26 @@ img { max-width: 100%; height: auto; }
 .clogem-catalogue__sub { margin-top: 0.75rem; padding-left: 0.75rem; border-left: 2px solid var(--borderColor); }
 .clogem-catalogue__sub h4 { margin: 0.25rem 0; }
 
-/* ---- Phase 2: TOC bar ---- */
-.clogem-shell--toc { grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr) minmax(11rem, 14rem); }
+/* ---- Phase 2: TOC bar ----
+ * P4-B2b: beside a sidebar the TOC shows from 80rem, as vdoing's, in a
+ * shell 18rem wider; below that the page is sidebar | main. Without a
+ * sidebar it shows above 64rem, in the 62rem shell. */
 .clogem-shell--single.clogem-shell--toc { grid-template-columns: minmax(0, 1fr) minmax(11rem, 14rem); }
 @media (max-width: 64rem) {
-  .clogem-shell--toc, .clogem-shell--single.clogem-shell--toc { grid-template-columns: minmax(0, 1fr); }
-  .clogem-toc { display: none; }
+  .clogem-shell--single.clogem-shell--toc { grid-template-columns: minmax(0, 1fr); }
+  .clogem-shell--single > .clogem-toc { display: none; }
 }
-.clogem-toc { position: sticky; top: calc(var(--navbarHeight) + 1rem); align-self: start; font-size: 0.85rem; border-left: 1px solid var(--borderColor); padding-left: 0.75rem; }
+@media not all and (min-width: 80rem) { .clogem-shell--toc:not(.clogem-shell--single) > .clogem-toc { display: none; } }
+@media (min-width: 80rem) {
+  .clogem-shell--toc:not(.clogem-shell--single) {
+    grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr) minmax(11rem, 14rem);
+    gap: 1.5rem; max-width: calc(var(--maxWidth) + 18rem);
+  }
+  .clogem-shell--toc:not(.clogem-shell--single) > .clogem-toc { padding-right: 0.5rem; }
+}
+/* stuck, it stays clear of the back-to-top button's band */
+.clogem-toc { position: sticky; top: calc(var(--navbarHeight) + 1rem); align-self: start; font-size: 0.85rem; border-left: 1px solid var(--borderColor); padding-left: 0.75rem;
+  max-height: calc(100vh - var(--navbarHeight) - 6.2rem); overflow-y: auto; }
 .clogem-toc ul { list-style: none; margin: 0; padding: 0; }
 .clogem-toc li { padding: 0.15rem 0; }
 .clogem-toc li.level-3 { padding-left: 0.9rem; }

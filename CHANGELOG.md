@@ -34,6 +34,11 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   summary still opens and closes it.
 - **An icon-only search trigger** at 64rem and below (CSS only): the
   trigger keeps its name, the page language's `:nav/search`.
+- **A wider three-column shell** from 80rem: a page with a sidebar and a
+  TOC is sidebar | main | TOC with a 1.5rem gap in `--maxWidth` + 18rem,
+  so at 1280 px main is 680 px and the article 632 (615 beside a 17 px
+  scrollbar); it was 376 and 328. The TOC is at most the viewport less
+  `--navbarHeight` and 6.2rem tall and scrolls inside itself.
 
 ### Changed (B2b)
 
@@ -46,6 +51,11 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   fit in `--navbarHeight`.
 - **Smooth scrolling is always on.** vdoing's `smoothScroll` defaults to
   off; clogem-press has no key for it, and reduced motion turns it off.
+- **The TOC breakpoint.** Beside a sidebar the TOC shows from 80rem
+  (1280 px), as vdoing's does; at 1025–1279 px, where it used to show, such
+  a page is now sidebar | main (main 632 px from 1024), and above 50rem a
+  TOC page no longer stacks its sidebar above the article. A page with a
+  TOC and no sidebar keeps it above 64rem.
 
 ### Fixed (B2b)
 
@@ -62,7 +72,10 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   load and a TOC click, a `<p>` target, the TOC's offset under
   `--navbarHeight: 6rem`, 30 Shift+Tab stops at 1280, smooth scrolling and
   reduced motion; the language dropdown by keyboard, pointer and without
-  JS; the icon-only trigger at 801–1024; a ten-item nav at 1024.
+  JS; the icon-only trigger at 801–1024; a ten-item nav at 1024; two
+  columns at 900 and 1024, three at 1280 and 1440 with the article ≥ 600 px
+  (beside a 17 px scrollbar too), the 952 px main of pages without a
+  sidebar, a `--single --toc` page and a 60-entry TOC.
 - `bb test`: `clogem.layout-test` (new) pins the markup and the CSS;
   `theme_modes_test` checks that `smooth` appears only under
   `(prefers-reduced-motion: no-preference)`. The contrast parser
