@@ -78,6 +78,8 @@
  :mode/light                  "Light"
  :mode/dark                   "Dark"
  :mode/read                   "Reading"
+ ;; P4-B2a: the toggle's name, {{mode}} being the current mode's label above.
+ :mode/current                "Colour mode: {{mode}}"
 
  ;; Code blocks (Phase 4 C): the copy button js/code.js adds.
  :code/copy                   "Copy"

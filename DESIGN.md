@@ -1846,7 +1846,14 @@ order; each builds on A:
 - **D — Dev loop** (1.75 d): debounce, the verified pod fetch, an error overlay, `:base` in dev,
   Pagefind in the background (§11.3 item 12). *Done (with its fix round, P4-D.1).*
 - **B2 — Page styles and mobile layout** (2 d): card/line, a one-row navbar with a drawer, focus
-  rings, monospace code on ta/zh pages (§11.3 item 9).
+  rings, monospace code on ta/zh pages (§11.3 item 9). *Split in two:*
+  - **B2a — Page styles**: the card and line page styles with a dark page distinct from the card,
+    focus rings, and B1's five follow-ups (a contrast test that reads the merged cascade, Pagefind's
+    remaining variables, a toggle named for the mode, `mode.js` under a CSP, `[data-mode]`
+    documented). *Done (§11.3 items 2–5 and 9).*
+  - **B2b — Mobile layout**: `--navbarHeight` and anchors, the one-row navbar, the mobile drawer
+    and `js/nav.js`, sidebar collapse, the right menu bar, page buttons, background patterns, back
+    to top and smooth scroll.
 - **F — Analytics, verification, static root** (1 d) (§11.3 items 14, 15).
 - **E1 — Blog identity, banner, htmlModules** (2.75 d) (§11.3 item 13).
 - **E2 — Article-page parity** (1.75 d): edit link, last-updated, update bar, `titleTag` rows,
@@ -2827,6 +2834,14 @@ their own findings. Item 19 onward are corrections.
    and follows OS changes live; `localStorage['clogem-mode']` beats `:default-mode`. Without JS the
    media-query fallback still applies. User CSS written as `body.theme-mode-*` breaks — a documented
    incompatibility.
+   *B2a:* a Content-Security-Policy without the script's hash blocked it, leaving `<html>` in
+   `:default-mode` with no `data-mode` (measured under `script-src 'self'` with dark stored:
+   `theme-mode-auto`, `getMode()` "auto", the light background, "auto" pressed). When `<html>` has no
+   valid `data-mode` at startup, `js/mode.js` now does the script's work — stored mode, else
+   `data-default-mode`, else auto; the resolved class; the `matchMedia` listener — one frame late.
+   The head script and its hash are unchanged. README documents `[data-mode]` for styling the
+   reader's *choice*: `.theme-mode-dark` also covers auto on a dark OS, and `.theme-mode-auto` exists
+   only without JS.
    *Done (B1).* `layout/document` stamps `<html class="theme-mode-<default> theme-style-<style>"
    data-default-mode="<default>">`; `<body>` keeps `lang-*` and `page-*`. `layout/mode-script` is the
    first script in `<head>`, after the charset, viewport and `<meta name="color-scheme" content="light
@@ -2859,6 +2874,10 @@ their own findings. Item 19 onward are corrections.
    `<head>`) sets `data-theme` from `data-mode` before `client.js` reads it once; it re-sends the
    theme on the iframe's first `message` from `https://giscus.app`, and follows `clogem:modechange`
    (dark → `dark`, light and read → `light`, auto → `preferred_color_scheme`).
+   *B2a:* the button is named for the current mode — `:mode/current`, "Colour mode: {{mode}}", in
+   all five languages (ms and ta await native review). The server renders the default mode's name
+   and the page language's pattern as `data-label`; `js/mode.js` fills it with the menu's label on
+   every change, another tab's included. `:mode/label` is no longer rendered.
 4. **Accessible palette (B1), WCAG AA or better.** Light and read modes: accent `#1a7350`; muted
    `#5f6873` (light) and `#5f5a50` (read); new body and main colours. Dark mode keeps `#3eaf7c`, with
    muted `#9aa3ad`. Links in prose are underlined. vdoing's full set of colour variables,
@@ -2882,6 +2901,30 @@ their own findings. Item 19 onward are corrections.
    so `code, pre, kbd, samp` keep the monospace stack on zh and ta pages (item 9's fix, done here).
    `:theme :page-style` is validated: `:card | :line`, anything else a warning that falls back to
    `:card` (0.2.0 accepted anything); B2 styles them.
+   *B2a — the test.* `theme_modes_test` read the first rule whose selector was exactly
+   `.theme-mode-dark` (and so on), so a later or compound rule was never checked, and took
+   `#ffffffe6` as opaque. `test/clogem/css_palette.clj` merges every rule that applies to `<html>` in
+   cascade order (`!important`, specificity, source order), inside `@media` too, resolves `var()`,
+   and composites translucent colours over what lies under them; the states are light, read, dark,
+   auto in its dark media block and print (over dark), each in card and line. `--blurBg` is a surface
+   (over the page and over a card), and `--textLightenColor` a foreground. `highlight_test` shares
+   it, and `modes.test.mjs` reads the browser's own merged values. Appending `.theme-mode-dark {
+   --textColorSubtle: #555555; }`, or `--blurBg: #00000080` in the light block, now fails.
+   *B2a — the page styles (vdoing `pageStyle`).* Card: the main column of every page kind, the
+   sidebar, and the home right-bar's sections and post cards are `--mainBg` boxes, 5px radius,
+   vdoing's shadows (`0 1px 2px` on page boxes, `0 0 4px` on post cards, `0 1px 15px` on hover) in a
+   per-mode `--shadowColor`. Line: the same boxes with a `1px solid var(--borderColor)` border, no
+   shadow, and `--bodyBg: var(--mainBg)` in every mode. The owner decided dark gets a page distinct
+   from the card: dark and the auto block now have `--bodyBg #22252b` on `--mainBg #16181d` (1.16:1;
+   vdoing's body is lighter than its main too, 1.12:1); text 10.74, link-hover 7.66, muted 6.01 and
+   accent 5.58 on it. Print draws no shadow. theme.css is 30,785 B, 8,455 B gzipped (after P4-B2a.1) (it was 25,351 /
+   6,980); `bb test` holds it to 12,288 B gzipped.
+   *P4-B2a.1:* a home whose main column lists post cards marks it `.clogem-main--posts`, which is no
+   box — vdoing's post list is `.card-box` items on `--bodyBg`, with no enclosing card — and the
+   home's own text above the list is the card instead. Print draws no box in either style: the
+   boxes lose their shadow, border, radius, padding and transition (decorative borders are dropped,
+   as card has none to drop). The print rule names the boxes, not `*`: a `{2}`-highlighted code
+   line keeps its `inset 3px` accent bar, its only marker when backgrounds are not printed.
 5. **Pagefind's `--pf-*` variables** are mapped to the palette (B1).
    *Done (B1).* Pagefind 1.5.2's `pagefind-component-ui.css` declares its defaults on `:root` (and a
    dark set on `[data-pf-theme="dark"]`, which nothing sets) and is linked after theme.css, so the
@@ -2890,6 +2933,13 @@ their own findings. Item 19 onward are corrections.
    `-skeleton`, `-skeleton-shine`, `-hover`, `-mark` and `-outline-focus`. Its icons are masks, so they
    take the text colour. The browser test checks the trigger and the open dialog against `--mainBg` in
    dark, read and light.
+   *B2a:* the rest of what Pagefind reads — `--pf-error-bg`, `-error-border`, `-error-text`,
+   `-error-text-secondary`, `-shadow-sm|md|lg`, `-scroll-shadow`, `-modal-backdrop` — were its light
+   values in every mode. `html[class]` maps the error colours onto new per-mode palette variables
+   (`--errorBg`, `--errorBorder`, `--errorText`; the secondary text is `--textColor`) and sets
+   Pagefind's light shadows and backdrop; `html.theme-mode-dark`, and `html.theme-mode-auto` in the
+   dark media block, set its dark ones. Pagefind's error text was 4.41:1 (light) and 4.42:1 (dark
+   secondary); every mode's is now 5.9:1 or better.
 6. **Icons (B1).** Sources: Lucide (ISC/MIT), Simple Icons (CC0) for brands, Tabler (MIT) for gaps,
    a generic link icon as the fallback. Delivered as one built sprite, `clogem/icons.svg`, holding
    only the brands in use, through `(icons/icon ctx :name opts)`. Social links are
@@ -2934,6 +2984,13 @@ their own findings. Item 19 onward are corrections.
 9. **Mobile layout (B2).** A one-row navbar with a drawer at ≤ 50 rem; `--navbarHeight` and
    `scroll-margin-top`; a `:where(:lang())` fix so code stays monospace on ta/zh pages;
    `focus-visible` rings. (The `:where(:lang())` fix landed in B1, because C depends on it.)
+   *Focus rings done (B2a, D-P4-9); the rest is B2b.* Links, `<summary>` and heading anchors drew
+   Chromium's `auto 1px`; four controls drew `2px solid` accent, and in read mode the copy button's
+   ring was 2.41:1 on its code block. One `:focus-visible` rule now draws `2px solid var(--focusRing)`
+   (the accent) at a 2px offset; inside a code block the ring is `--codeFocusRing` (the code colour),
+   inset on the scrollable `<code>`; a focused heading anchor is shown. The ring reaches 3:1 on every
+   surface and the code ring on `--codeBg`, in every mode (`page_style_test`); 40 Tab stops at 1280
+   and 360 px, light and dark, all draw it (`modes.test.mjs`).
 10. **Highlighting on by default (C) — done.** `:highlight {:provider :chroma}`; `:none` or `--no-highlight`
     turns it off. A fetch failure is an error in `build` and a warning in `dev`. Line numbers are CSS
     counters, never text — Chroma's own numbers pollute the Pagefind index. One Chroma process per

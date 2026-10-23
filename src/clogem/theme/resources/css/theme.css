@@ -12,11 +12,14 @@
  * `prefers-color-scheme: dark` block below, which must define exactly what
  * `.theme-mode-dark` defines (a test compares them).
  *
- * Every mode block defines vdoing's full variable set plus --accent and
- * --textColorSubtle (muted text). Text, muted and accent reach WCAG AA
+ * Every mode block defines vdoing's full variable set plus --accent,
+ * --textColorSubtle (muted text) and (P4-B2a) the --error* colours of
+ * Pagefind's error box. Text, link-hover, muted and accent reach WCAG AA
  * (4.5:1) on every surface (--bodyBg, --mainBg, --sidebarBg,
- * --customBlockBg), and --codeColor on --codeBg; `bb test` parses this file
- * and checks every pair (theme_modes_test.clj). Read mode's code block is
+ * --customBlockBg, and the translucent --blurBg composited over the page
+ * and over a card), and --codeColor on --codeBg, in both page styles;
+ * `bb test` merges every rule that applies to <html>, in cascade order,
+ * and checks every pair (test/clogem/css_palette.clj). Read mode's code block is
  * dark, as vdoing's is. Code blocks (Phase 4 C, §11.3 item 10) also take
  * --codeLineNumber (line numbers and the language label) and --codeHlBg (a
  * highlighted line): every Chroma token colour of highlight.css, the line
@@ -42,6 +45,10 @@
   --codeColor: #24292f;
   --codeLineNumber: #5f6873;
   --codeHlBg: #fffbdd;
+  --errorBg: #fef2f2;
+  --errorBorder: #fecaca;
+  --errorText: #b91c1c;
+  --shadowColor: rgba(0, 0, 0, 0.1);
   color-scheme: light;
 }
 
@@ -62,11 +69,15 @@
   --codeColor: #dcdfe4;
   --codeLineNumber: #9aa3ad;
   --codeHlBg: #1e2620;
+  --errorBg: #f6e7df;
+  --errorBorder: #e8c4b4;
+  --errorText: #9f1d1d;
+  --shadowColor: rgba(0, 0, 0, 0.1);
   color-scheme: light;
 }
 
 .theme-mode-dark {
-  --bodyBg: #16181d;
+  --bodyBg: #22252b;
   --mainBg: #16181d;
   --sidebarBg: #1b1e24;
   --blurBg: #16181de6;
@@ -80,13 +91,17 @@
   --codeColor: #dcdfe4;
   --codeLineNumber: #9aa3ad;
   --codeHlBg: #1a2620;
+  --errorBg: #2a1a1a;
+  --errorBorder: #5c2828;
+  --errorText: #f87171;
+  --shadowColor: rgba(0, 0, 0, 0.4);
   color-scheme: dark;
 }
 
 /* the no-JS fallback for :auto — identical to .theme-mode-dark */
 @media (prefers-color-scheme: dark) {
   .theme-mode-auto {
-    --bodyBg: #16181d;
+    --bodyBg: #22252b;
     --mainBg: #16181d;
     --sidebarBg: #1b1e24;
     --blurBg: #16181de6;
@@ -100,9 +115,18 @@
     --codeColor: #dcdfe4;
     --codeLineNumber: #9aa3ad;
     --codeHlBg: #1a2620;
+    --errorBg: #2a1a1a;
+    --errorBorder: #5c2828;
+    --errorText: #f87171;
+    --shadowColor: rgba(0, 0, 0, 0.4);
     color-scheme: dark;
   }
 }
+
+/* P4-B2a: the line page style (vdoing's pageStyle: line) draws the page in
+ * the card's colour, in every mode. After every mode block, which it ties
+ * on specificity; print's html[class] (0,1,1) still wins. */
+.theme-style-line { --bodyBg: var(--mainBg); }
 
 * { box-sizing: border-box; }
 
@@ -135,6 +159,16 @@ body {
   font-family: "Noto Sans Tamil", "Tamil Sangam MN", "Nirmala UI", Latha, Roboto, sans-serif;
   line-height: 1.85;   /* taller than the Latin default — Tamil glyphs are tall */
 }
+
+/* P4-B2a (D-P4-9): one focus ring for everything focusable — links,
+ * <summary>, buttons, heading anchors, Pagefind's trigger — in the accent,
+ * which reaches 3:1 (WCAG 1.4.11) on every surface. Inside a code block
+ * the ring is --codeFocusRing, the code's own colour: the accent on read
+ * mode's dark block was 2.41:1. The scrollable <code> draws it inset,
+ * since its <pre> clips. */
+:focus-visible { outline: 2px solid var(--focusRing); outline-offset: 2px; }
+pre.clogem-code :focus-visible { outline-color: var(--codeFocusRing); }
+pre.clogem-code > code:focus-visible { outline-offset: -2px; }
 
 a { color: var(--accent); text-decoration: none; }
 a:hover { color: var(--textLightenColor); text-decoration: underline; }
@@ -206,9 +240,6 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
 }
 .clogem-mode__menu button:hover { background: var(--customBlockBg); }
 .clogem-mode__menu button[aria-pressed="true"] { color: var(--accent); font-weight: 600; }
-.clogem-mode__button:focus-visible, .clogem-mode__menu button:focus-visible {
-  outline: 2px solid var(--accent); outline-offset: 1px;
-}
 .clogem-navbar__menu li { padding: 0.2rem 0; }
 
 /* the list wraps, like the navbar around it: a long :label used to widen a
@@ -231,7 +262,7 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
   .clogem-sidebar { order: 2; }
 }
 
-.clogem-sidebar { background: var(--sidebarBg); border-radius: 8px; padding: 1rem; align-self: start; }
+.clogem-sidebar { background: var(--sidebarBg); border-radius: 5px; padding: 1rem; align-self: start; }
 .clogem-sidebar__group h2 { font-size: 0.8rem; text-transform: uppercase;
   letter-spacing: 0.06em; color: var(--textColorSubtle); margin: 1rem 0 0.4rem; }
 .clogem-sidebar ul { list-style: none; margin: 0; padding: 0; }
@@ -277,7 +308,6 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
   padding: 0.15rem 0.45rem; cursor: pointer;
 }
 .clogem-lang-banner__dismiss:hover { border-color: var(--borderColor); }
-.clogem-lang-banner__dismiss:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* D-P3-15: the giscus widget below the article */
 .clogem-comments { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--borderColor); }
@@ -285,6 +315,7 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
 .clogem-content :is(h2, h3, h4, h5, h6) { scroll-margin-top: 4rem; }
 .header-anchor { opacity: 0; margin-left: 0.35rem; text-decoration: none; }
 :is(h1, h2, h3, h4, h5, h6):hover .header-anchor { opacity: 0.5; }
+.header-anchor:focus-visible { opacity: 1; }   /* a ring on nothing is no ring */
 
 /* Code blocks (§11.3 item 10). The <code> is the scroll box, not the <pre>,
  * so the language label and the copy button (both pinned to the <pre>'s
@@ -330,7 +361,6 @@ pre.clogem-code.ln-w6 .line::before { width: 6ch; }
   background: transparent; color: var(--codeLineNumber); cursor: pointer; font: inherit;
 }
 .clogem-copy:hover { border-color: var(--codeLineNumber); }
-.clogem-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .clogem-copy.is-copied { color: var(--codeColor); }
 code, pre, kbd, samp { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
 code { font-size: 0.9em; }
@@ -459,6 +489,37 @@ img { max-width: 100%; height: auto; }
 .card-img-list .box-info { padding: 0.75rem; }
 .card-img-list .title { font-weight: 700; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
 
+/* ---- Phase 4 B2a: page styles (vdoing pageStyle, §11.3 item 1) ----
+ * `:theme :page-style` puts theme-style-card (the default) or
+ * theme-style-line on <html>. The boxes are the main column of every page
+ * kind, the sidebar, and the home page's right-bar sections and post
+ * cards. Card: --mainBg cards on the page's --bodyBg (darker in light and
+ * read, lighter in dark, as vdoing's), with vdoing's 5px radius and
+ * shadows. Line: the same boxes, flat — a 1px border, no shadow — on a
+ * page of the same colour (above). */
+.clogem-main { background: var(--mainBg); border-radius: 5px; padding: 1.25rem 1.5rem; align-self: start; }
+@media (max-width: 50rem) { .clogem-main { padding: 1rem; } }
+.clogem-home-right > section { background: var(--mainBg); border-radius: 5px; padding: 0.25rem 1rem 0.75rem; }
+.clogem-home-right > section + section { margin-top: 1rem; }
+/* P4-B2a.1: a home whose main column lists post cards is no box itself —
+ * vdoing's post list is cards on the page, not cards in a card — and the
+ * home's own text above the list is the card instead */
+html[class] .clogem-main.clogem-main--posts { background: none; border: 0; border-radius: 0; box-shadow: none; padding: 0; }
+.clogem-main--posts > .clogem-content { background: var(--mainBg); border-radius: 5px; padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
+.theme-style-card :is(.clogem-main, .clogem-sidebar, .clogem-home-right > section, .clogem-main--posts > .clogem-content) {
+  box-shadow: 0 1px 2px var(--shadowColor);
+}
+.theme-style-card .clogem-post-card, .theme-style-line .clogem-post-card {
+  background: var(--mainBg); border-radius: 5px; border-bottom: 0;
+  padding: 1rem 1.25rem; margin: 0 0 1rem;
+}
+.theme-style-card .clogem-post-card { box-shadow: 0 0 4px var(--shadowColor); transition: box-shadow 0.2s; }
+.theme-style-card .clogem-post-card:hover { box-shadow: 0 1px 15px var(--shadowColor); }
+.theme-style-line :is(.clogem-main, .clogem-sidebar, .clogem-home-right > section, .clogem-post-card,
+                       .clogem-main--posts > .clogem-content) {
+  border: 1px solid var(--borderColor); box-shadow: none;
+}
+
 /* ---- Phase 4 B1: Pagefind follows the mode (D-P4-5) ----
  * Pagefind's Component UI declares its --pf-* defaults on :root, and its
  * stylesheet is linked after this one; `html[class]` (0,1,1) outranks
@@ -475,7 +536,40 @@ html[class] {
   --pf-skeleton-shine: var(--bodyBg);
   --pf-hover: var(--customBlockBg);
   --pf-mark: var(--textColor);
-  --pf-outline-focus: var(--accent);
+  --pf-outline-focus: var(--focusRing);
+  /* P4-B2a: the focus ring (above), resolved per mode */
+  --focusRing: var(--accent);
+  --codeFocusRing: var(--codeColor);
+  /* P4-B2a: the rest of what Pagefind 1.5.2 reads. Its error colours fail
+   * AA (#dc2626 on #fef2f2 is 4.41:1), so they come from the palette;
+   * shadows and the backdrop are Pagefind's light values */
+  --pf-error-bg: var(--errorBg);
+  --pf-error-border: var(--errorBorder);
+  --pf-error-text: var(--errorText);
+  --pf-error-text-secondary: var(--textColor);
+  --pf-scroll-shadow: rgba(0, 0, 0, 0.08);
+  --pf-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --pf-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --pf-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.2);
+  --pf-modal-backdrop: rgba(0, 0, 0, 0.5);
+}
+/* Pagefind keys its dark values to [data-pf-theme="dark"], which nothing
+ * sets; these are they, at (0,1,1) so its later :root loses */
+html.theme-mode-dark {
+  --pf-scroll-shadow: rgba(255, 255, 255, 0.1);
+  --pf-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --pf-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --pf-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+  --pf-modal-backdrop: rgba(0, 0, 0, 0.7);
+}
+@media (prefers-color-scheme: dark) {
+  html.theme-mode-auto {
+    --pf-scroll-shadow: rgba(255, 255, 255, 0.1);
+    --pf-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+    --pf-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --pf-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+    --pf-modal-backdrop: rgba(0, 0, 0, 0.7);
+  }
 }
 
 /* ---- Phase 4 B1: reduced motion and print (D-P4-4) ---- */
@@ -505,12 +599,23 @@ html[class] {
     --codeColor: #24292f;
     --codeLineNumber: #5f6873;
     --codeHlBg: #fffbdd;
+    --errorBg: #fef2f2;
+    --errorBorder: #fecaca;
+    --errorText: #b91c1c;
     color-scheme: light;
   }
   .clogem-navbar, .clogem-sidebar, .clogem-toc, .clogem-mode, .clogem-search,
   .clogem-comments, .clogem-lang-banner, .clogem-prev-next, .header-anchor { display: none !important; }
   .clogem-shell, .clogem-shell--toc, .clogem-shell--single.clogem-shell--toc {
     display: block; max-width: none; padding: 0;
+  }
+  /* P4-B2a: print draws no box, in either style — no shadow, no border, no
+   * radius, no padding — and no transition into that. Only the boxes: a
+   * highlighted code line keeps its inset accent bar, its only marker
+   * when backgrounds are not printed */
+  html[class] :is(.clogem-main, .clogem-home-right > section, .clogem-post-card,
+                  .clogem-main--posts > .clogem-content) {
+    border: 0; padding: 0; border-radius: 0; box-shadow: none; transition: none;
   }
   .clogem-content a { text-decoration: underline; }
   pre.clogem-code, pre.clogem-code > code { white-space: pre-wrap; overflow: visible; }

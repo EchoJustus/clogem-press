@@ -80,6 +80,8 @@
  :mode/light                  "淺色模式"
  :mode/dark                   "深色模式"
  :mode/read                   "閱讀模式"
+ ;; P4-B2a: the toggle's name, {{mode}} being the current mode's label above.
+ :mode/current                "主題模式：{{mode}}"
 
  ;; 程式碼區塊（Phase 4 C）：js/code.js 加入的複製按鈕。
  :code/copy                   "複製"

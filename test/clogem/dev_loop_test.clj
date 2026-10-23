@@ -311,25 +311,28 @@
   (let [orig i18n/theme-strings]
     (fn [lang] (dissoc (orig lang) k))))
 
+;; P4-B2a: the key is :mode/current, the mode button's name, which every
+;; page with a navbar renders (it was :mode/label until the button was
+;; named for the current mode)
 (deftest a-missing-key-warns-once-per-language-and-renders-the-fallback
   (with-site two-langs url-site
     (fn [dir out]
-      (with-redefs [i18n/theme-strings (without-key :mode/label)]
+      (with-redefs [i18n/theme-strings (without-key :mode/current)]
         (testing "build: one warning per (key, language) naming the string
                   file — 227 pages used to give one line per call in dev —
                   and the key's name in the page"
           (let [[_ _ err] (build! dir out)
-                ws (filter #(str/includes? % "missing UI string key `:mode/label`") (str/split-lines err))]
+                ws (filter #(str/includes? % "missing UI string key `:mode/current`") (str/split-lines err))]
             (is (= (lang-files dir) (map #(second (re-find #"^warning: (\S+): " %)) ws))
                 (str "exactly one per language, naming its file:\n" err))
-            (is (str/includes? (html out "pages" "t00001") "aria-label=\"label\""))
+            (is (str/includes? (html out "pages" "t00001") "aria-label=\"current\""))
             (is (not (str/includes? (html out "pages" "t00001") "⟦")))))
         (testing "dev (the flag passed through `cli/build`): ⟦key⟧, warned once too"
           (let [[r _ err] (build! dir out {:clogem/dev? true})
-                ws (filter #(str/includes? % "missing UI string key `:mode/label`") (str/split-lines err))]
+                ws (filter #(str/includes? % "missing UI string key `:mode/current`") (str/split-lines err))]
             (is (= (count (lang-files dir)) (count ws)) err)
             (is (:clogem/dev? (:clogem/cfg r)))
-            (is (str/includes? (html out "pages" "t00001") "aria-label=\"⟦:mode/label⟧\""))))
+            (is (str/includes? (html out "pages" "t00001") "aria-label=\"⟦:mode/current⟧\""))))
         (testing ":i18n {:missing-key :silent} turns the warning off"
           (spit (fs/file dir "site.edn") (pr-str (assoc url-site :i18n {:missing-key :silent})))
           (let [[_ _ err] (build! dir out)]
@@ -338,12 +341,12 @@
 (deftest doctor-reports-a-missing-key-once-per-language
   (with-site two-langs url-site
     (fn [dir _out]
-      (with-redefs [i18n/theme-strings (without-key :mode/label)]
+      (with-redefs [i18n/theme-strings (without-key :mode/current)]
         (let [res (atom nil)]
           (binding [*err* (java.io.StringWriter.)]
             (with-out-str (reset! res (cli/doctor {:site-dir (str dir)}))))
           (is (= (lang-files dir)
-                 (map :path (filter #(str/includes? (:message %) "`:mode/label`") (:warnings @res))))
+                 (map :path (filter #(str/includes? (:message %) "`:mode/current`") (:warnings @res))))
               (pr-str (map :message (:warnings @res)))))))))
 
 ;; ---------------------------------------------------------------------------

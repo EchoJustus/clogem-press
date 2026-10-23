@@ -78,6 +78,9 @@
  :mode/light                  "வெளிர்"
  :mode/dark                   "இருள்"
  :mode/read                   "வாசிப்பு"
+ ;; P4-B2a: the toggle's name, {{mode}} being the current mode's label above.
+ ;; Awaiting native review (CHANGELOG, Unreleased, "Needs native review (B2a)").
+ :mode/current                "வண்ணப் பயன்முறை: {{mode}}"
 
  ;; Code blocks (Phase 4 C), the copy button. Awaiting native review (CHANGELOG, Unreleased).
  :code/copy                   "நகலெடு"

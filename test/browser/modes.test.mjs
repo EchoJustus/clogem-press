@@ -10,34 +10,51 @@
 //   - print hides the chrome;
 //   - the site's overrides/custom.css is applied.
 //
-// Expected colours are read from the theme.css being served, so the test
-// follows the palette rather than restating it.
-
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
+// Expected colours are what the stylesheets being served compute (palette()
+// below), so the test follows the palette rather than restating it.
 
 const article = 'pages/643259/index.html';   // en, sidebar, TOC, comments
 
-function hexToRgb(hex) {
-  let h = hex.trim().replace('#', '');
-  if (h.length === 3) h = [...h].map((c) => c + c).join('');
-  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
-  return `rgb(${r}, ${g}, ${b})`;
+// {mode → {var → computed value}}: what theme.css computes on <html> in
+// each mode (P4-B2a item 1). B1 parsed the first rule whose selector was
+// exactly `.theme-mode-dark` and so on, missing later and compound rules;
+// the browser is a cascade engine, so it is asked instead: on a no-JS page
+// (nothing rewrites the classes), with Pagefind's stylesheet removed (so
+// these are the theme's own values; item 2 checks that they beat it),
+// <html> is given each mode's class. Auto is read under a dark OS.
+const colourVars = ['--bodyBg', '--mainBg', '--sidebarBg', '--blurBg', '--accent', '--codeBg', '--codeColor',
+                    '--pf-error-bg', '--pf-modal-backdrop'];
+const plainVars = ['--pf-shadow-lg'];
+
+// runs in the page: a probe element paints each colour variable as its
+// background, which the browser resolves to rgb()/rgba(); the rest are read
+// as <html>'s computed custom property
+function readVars({ colours, plain }) {
+  const probe = document.createElement('div');
+  document.body.appendChild(probe);
+  const v = {};
+  for (const name of colours) {
+    probe.style.background = `var(${name})`;
+    v[name] = getComputedStyle(probe).backgroundColor;
+  }
+  for (const name of plain) v[name] = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  probe.remove();
+  return v;
 }
 
-// {mode → {var → value}} from theme.css's mode blocks
-function palette(css) {
-  const block = (sel, from = 0) => {
-    const i = css.indexOf(`\n${sel} {`, from);
-    if (i < 0) throw new Error(`no rule ${sel}`);
-    const body = css.slice(css.indexOf('{', i) + 1, css.indexOf('}', i));
-    return Object.fromEntries([...body.matchAll(/(--[A-Za-z0-9-]+)\s*:\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
-  };
-  return {
-    light: block(':root, .theme-mode-light'),
-    read: block('.theme-mode-read'),
-    dark: block('.theme-mode-dark'),
-  };
+async function palette(t, url, style = 'card') {
+  const out = {};
+  for (const [mode, os] of [['light', 'light'], ['read', 'light'], ['dark', 'light'], ['auto', 'dark']]) {
+    const page = await t.newPage({ colorScheme: os, javaScriptEnabled: false });
+    await page.goto(url, { waitUntil: 'load' });
+    await page.evaluate(({ mode, style }) => {
+      document.querySelectorAll('link[rel=stylesheet][href*="pagefind"]').forEach((l) => l.remove());
+      document.documentElement.className = `theme-mode-${mode} theme-style-${style}`;
+    }, { mode, style });
+    out[mode] = await page.evaluate(readVars, { colours: colourVars, plain: plainVars });
+    await page.close();
+  }
+  return out;
 }
 
 async function firstFrame(t, url, { os, stored, storageThrows = false, js = true }) {
@@ -66,11 +83,10 @@ async function firstFrame(t, url, { os, stored, storageThrows = false, js = true
 }
 
 export default async function modes(t) {
-  const css = await readFile(path.join(t.dist, 'clogem', 'css', 'theme.css'), 'utf8');
-  const pal = palette(css);
-  const bodyBg = Object.fromEntries(Object.entries(pal).map(([m, v]) => [m, hexToRgb(v['--bodyBg'])]));
-  const mainBg = Object.fromEntries(Object.entries(pal).map(([m, v]) => [m, hexToRgb(v['--mainBg'])]));
   const url = t.url(article);
+  const pal = await palette(t, url);
+  const bodyBg = Object.fromEntries(Object.entries(pal).map(([m, v]) => [m, v['--bodyBg']]));
+  const mainBg = Object.fromEntries(Object.entries(pal).map(([m, v]) => [m, v['--mainBg']]));
 
   // --- the first frame ----------------------------------------------------
   const matrix = [
@@ -180,6 +196,88 @@ export default async function modes(t) {
     await page.close();
   }
 
+  // --- the toggle names the current mode (P4-B2a item 3) --------------------
+  const name = (page) => page.evaluate(() => {
+    const b = document.querySelector('.clogem-mode__button');
+    return [b.getAttribute('aria-label'), b.getAttribute('title')];
+  });
+  for (const [u, want] of [[url, 'Colour mode: Dark'], [t.url('zh-Hans/index.html'), '主题模式：深色模式']]) {
+    const page = await t.newPage({ colorScheme: 'light' });
+    await page.addInitScript(() => { try { localStorage.setItem('clogem-mode', 'dark'); } catch (e) {} });
+    await page.goto(u, { waitUntil: 'load' });
+    const [label, title] = await name(page);
+    t.check(label === want && title === want, `with dark stored the toggle is named "${label}" / "${title}", want "${want}"`);
+    await page.close();
+  }
+  {
+    const page = await t.newPage({ colorScheme: 'light' });
+    await page.goto(url, { waitUntil: 'load' });
+    t.check((await name(page))[0] === 'Colour mode: Follow system', `nothing stored: ${(await name(page))[0]}`);
+    await page.focus('.clogem-mode__button');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowDown');
+    t.check(await page.evaluate(() => document.activeElement?.getAttribute('data-mode')) === 'light', 'ArrowDown reaches Light');
+    await page.keyboard.press('Enter');
+    t.check((await name(page))[0] === 'Colour mode: Light', `after choosing Light by keyboard: ${(await name(page))[0]}`);
+    // another page of the same reader (same context, so the same storage)
+    const other = await page.context().newPage();
+    await other.goto(url, { waitUntil: 'load' });
+    await other.evaluate(() => window.clogem.setMode('read'));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-mode') === 'read', null, { timeout: 2000 }).catch(() => {});
+    t.check((await name(page))[0] === 'Colour mode: Reading',
+            `another tab stores read: the first page's toggle is "${(await name(page))[0]}"`);
+    await other.close();
+    // P4-B2a.1 item 7: a label is text, not a replacement pattern
+    await page.evaluate(() => {
+      document.querySelector('#clogem-mode-menu button[data-mode="dark"]').lastChild.textContent = "Dark $& $1 $$ $'";
+      window.clogem.setMode('dark');
+    });
+    t.check((await name(page))[0] === "Colour mode: Dark $& $1 $$ $'", `a label with $& in it: "${(await name(page))[0]}"`);
+    await page.close();
+  }
+
+  // --- a CSP that blocks the inline head script (P4-B2a item 3) --------------
+  // script-src 'self' without the script's sha256: only js/mode.js runs
+  const withCsp = async (page) => page.route('**/' + article.replace(/index\.html$/, ''), async (route) => {
+    const res = await route.fetch();
+    await route.fulfill({ response: res, headers: { ...res.headers(), 'content-security-policy': "script-src 'self'" } });
+  });
+  const state = (page) => page.evaluate(() => ({
+    cls: document.documentElement.className,
+    mode: document.documentElement.getAttribute('data-mode'),
+    bg: getComputedStyle(document.documentElement).backgroundColor,
+    pressed: [...document.querySelectorAll('#clogem-mode-menu button[aria-pressed="true"]')].map((b) => b.dataset.mode),
+    label: document.querySelector('.clogem-mode__button').getAttribute('aria-label'),
+  }));
+  {
+    const page = await t.newPage({ colorScheme: 'light' });
+    await page.addInitScript(() => { try { localStorage.setItem('clogem-mode', 'dark'); } catch (e) {} });
+    await withCsp(page);
+    await page.goto(url, { waitUntil: 'load' });
+    await page.waitForFunction(() => document.documentElement.hasAttribute('data-mode'), null, { timeout: 2000 }).catch(() => {});
+    const s = await state(page);
+    t.check(/\btheme-mode-dark\b/.test(s.cls) && !/theme-mode-auto/.test(s.cls), `CSP, dark stored: class "${s.cls}"`);
+    t.check(s.mode === 'dark', `CSP, dark stored: data-mode ${s.mode}`);
+    t.check(s.bg === bodyBg.dark, `CSP, dark stored: background ${s.bg}, want ${bodyBg.dark}`);
+    t.check(JSON.stringify(s.pressed) === '["dark"]', `CSP, dark stored: pressed ${s.pressed}`);
+    t.check(s.label === 'Colour mode: Dark', `CSP, dark stored: named "${s.label}"`);
+    await page.close();
+  }
+  {
+    const page = await t.newPage({ colorScheme: 'dark' });
+    await page.addInitScript(() => { try { localStorage.setItem('clogem-mode', 'auto'); } catch (e) {} });
+    await withCsp(page);
+    await page.goto(url, { waitUntil: 'load' });
+    await page.waitForFunction(() => document.documentElement.hasAttribute('data-mode'), null, { timeout: 2000 }).catch(() => {});
+    let s = await state(page);
+    t.check(/\btheme-mode-dark\b/.test(s.cls) && s.mode === 'auto', `CSP, auto stored, dark OS: ${JSON.stringify(s)}`);
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.waitForFunction(() => /\btheme-mode-light\b/.test(document.documentElement.className), null, { timeout: 2000 }).catch(() => {});
+    s = await state(page);
+    t.check(/\btheme-mode-light\b/.test(s.cls) && s.bg === bodyBg.light, `CSP, auto: an OS change to light is followed: ${JSON.stringify(s)}`);
+    await page.close();
+  }
+
   // --- a live OS change in auto mode ---------------------------------------
   {
     const page = await t.newPage({ colorScheme: 'light' });
@@ -215,6 +313,164 @@ export default async function modes(t) {
     await page.close();
   }
 
+  // --- Pagefind's remaining variables follow the mode (P4-B2a item 2) ------
+  // Pagefind's :root block is linked after theme.css; its dark values sit
+  // under [data-pf-theme="dark"], which nothing sets
+  for (const mode of ['light', 'dark', 'read']) {
+    const page = await t.newPage({ colorScheme: 'light' });
+    await page.addInitScript((m) => { try { localStorage.setItem('clogem-mode', m); } catch (e) {} }, mode);
+    await page.goto(url, { waitUntil: 'load' });
+    t.check(await page.evaluate(() => !!document.querySelector('link[href*="pagefind-component-ui.css"]')),
+            `${mode}: Pagefind's stylesheet is linked`);
+    const got = await page.evaluate(readVars, { colours: ['--pf-error-bg', '--pf-modal-backdrop'], plain: ['--pf-shadow-lg'] });
+    for (const v of ['--pf-error-bg', '--pf-shadow-lg', '--pf-modal-backdrop']) {
+      t.check(!['', 'rgba(0, 0, 0, 0)'].includes(pal[mode][v]), `${mode}: the theme sets ${v}`);
+      t.check(got[v] === pal[mode][v], `${mode}: ${v} is ${got[v]}, want the theme's ${pal[mode][v]}`);
+    }
+    // P4-B2a.1 item 10: in light and read most of the theme's values equal
+    // Pagefind's, so a mapping that loses to its :root reads the same. Set
+    // every --pf-* the theme maps to a sentinel in Pagefind's :root rule:
+    // none may show through on <html>.
+    const lost = await page.evaluate(() => {
+      const sheets = [...document.styleSheets];
+      const theme = sheets.find((s) => /\/theme\.css/.test(s.href || ''));
+      const pf = sheets.find((s) => /pagefind-component-ui\.css/.test(s.href || ''));
+      // whatever rule the theme declares it in
+      const all = (rules) => [...rules].flatMap((r) => [...(r.style ? [r] : []), ...(r.cssRules ? all(r.cssRules) : [])]);
+      const mapped = [...new Set(all(theme.cssRules).flatMap((r) => [...r.style])
+        .filter((p) => p.startsWith('--pf-')))];
+      const root = [...pf.cssRules].find((r) => r.selectorText === ':root');
+      const tried = mapped.filter((p) => root.style.getPropertyValue(p) !== '');
+      for (const p of tried) root.style.setProperty(p, 'clogem-sentinel');
+      const h = getComputedStyle(document.documentElement);
+      return { tried: tried.length, lost: tried.filter((p) => h.getPropertyValue(p).trim() === 'clogem-sentinel') };
+    });
+    t.check(lost.tried >= 20, `${mode}: the theme maps ${lost.tried} of Pagefind's :root variables`);
+    t.check(lost.lost.length === 0, `${mode}: Pagefind's :root wins over the theme's ${lost.lost.join(', ')}`);
+    await page.close();
+  }
+
+  // --- card and line page styles (P4-B2a item 5) -----------------------------
+  // The demo builds with :page-style :card; <html>'s style class is switched
+  // in-page. Auto is the no-JS page under a dark OS, where theme-mode-auto
+  // stays and the dark media block applies.
+  // [page, is .clogem-main a box?, the other boxes]
+  const stylePages = [
+    [article, true, ['.clogem-sidebar']],
+    // the only demo home with a right bar; its post list is :simple
+    ['zh-Hans/index.html', true, ['.clogem-home-right > section']],
+    // the detailed post list: cards on the page, not in a card; the home's
+    // own text is the card above them (P4-B2a.1 item 3)
+    ['page/2/index.html', false, ['.clogem-main--posts > .clogem-content', '.clogem-post-card']],
+    ['categories/basics/index.html', true, []],
+    ['pages/559f0f/index.html', true, []],   // a catalogue
+  ];
+  const mainSel = '.clogem-main';
+  for (const [rel, mainIsBox, others] of stylePages) {
+    for (const mode of ['light', 'dark', 'read', 'auto']) {
+      const auto = mode === 'auto';
+      const page = await t.newPage({ colorScheme: auto ? 'dark' : 'light', javaScriptEnabled: !auto });
+      if (!auto) await page.addInitScript((m) => { try { localStorage.setItem('clogem-mode', m); } catch (e) {} }, mode);
+      await page.goto(t.url(rel), { waitUntil: 'load' });
+      for (const style of ['card', 'line']) {
+        const r = await page.evaluate(({ style, mainSel, others }) => {
+          const h = document.documentElement;
+          h.className = h.className.replace(/\btheme-style-\S+/, `theme-style-${style}`);
+          const probe = document.createElement('div');
+          document.body.appendChild(probe);
+          const read = (v) => { probe.style.background = `var(${v})`; return getComputedStyle(probe).backgroundColor; };
+          const mainBg = read('--mainBg'), sidebarBg = read('--sidebarBg');
+          probe.remove();
+          const box = (el) => { const c = getComputedStyle(el); return { bg: c.backgroundColor, shadow: c.boxShadow, border: c.borderTopWidth }; };
+          const main = document.querySelector(mainSel);
+          return {
+            cls: h.className, root: getComputedStyle(h).backgroundColor, mainBg,
+            main: main && box(main),
+            // each box's own background: the sidebar's is --sidebarBg
+            others: others.map((s) => [s, s === '.clogem-sidebar' ? sidebarBg : mainBg, [...document.querySelectorAll(s)].map(box)]),
+          };
+        }, { style, mainSel, others });
+        const what = `${rel} ${mode} ${style}`;
+        if (!r.main) { t.check(false, `${what}: no ${mainSel}`); continue; }
+        t.check(new RegExp(`theme-mode-${auto ? 'auto' : mode}\\b`).test(r.cls), `${what}: <html class="${r.cls}">`);
+        if (!mainIsBox) {
+          t.check(r.main.bg === 'rgba(0, 0, 0, 0)' && r.main.shadow === 'none' && r.main.border === '0px',
+                  `${what}: the post cards' column is no box (${r.main.bg}, ${r.main.shadow}, ${r.main.border})`);
+        } else if (style === 'card') {
+          t.check(r.main.bg === r.mainBg && r.main.bg !== r.root,
+                  `${what}: the main box is ${r.main.bg}, want --mainBg ${r.mainBg}, distinct from the page ${r.root}`);
+          t.check(r.main.shadow !== 'none', `${what}: the main box has a shadow (${r.main.shadow})`);
+        } else {
+          t.check(r.main.bg === r.root, `${what}: the main box ${r.main.bg} is the page's ${r.root}`);
+          t.check(r.main.shadow === 'none', `${what}: no shadow (${r.main.shadow})`);
+          t.check(r.main.border === '1px', `${what}: a 1px border (${r.main.border})`);
+        }
+        for (const [sel, want, bs] of r.others) {
+          t.check(bs.length > 0, `${what}: ${sel} is on the page`);
+          for (const b of bs) {
+            // P4-B2a.1 item 2: every box draws its own background
+            t.check(b.bg === want, `${what}: ${sel} is ${b.bg}, want ${want}`);
+            if (style === 'card') t.check(b.shadow !== 'none' && b.bg !== r.root, `${what}: ${sel} is a card on the page ${r.root} (${b.bg}, ${b.shadow})`);
+            else t.check(b.shadow === 'none' && b.border === '1px', `${what}: ${sel} is flat with a 1px border (${b.shadow}, ${b.border})`);
+          }
+        }
+      }
+      await page.close();
+    }
+  }
+
+  // --- focus rings (P4-B2a item 6, D-P4-9) -----------------------------------
+  // Every stop of 40 Tabs draws the theme's ring: solid, at least 2px, in
+  // the ring colour — the code ring inside a code block. B1 left links,
+  // <summary> and heading anchors on Chromium's `auto 1px`.
+  for (const width of [1280, 360]) {
+    for (const mode of ['light', 'dark']) {
+      const page = await t.newPage({ colorScheme: 'light', viewport: { width, height: 800 } });
+      await page.addInitScript((m) => { try { localStorage.setItem('clogem-mode', m); } catch (e) {} }, mode);
+      await page.goto(t.url('pages/c0nta1/index.html'), { waitUntil: 'load' });
+      const ring = await page.evaluate(() => {
+        const probe = document.createElement('div');
+        document.body.appendChild(probe);
+        const read = (v) => { probe.style.color = `var(${v})`; return getComputedStyle(probe).color; };
+        const r = { ring: read('--focusRing'), code: read('--codeFocusRing'), accent: read('--accent'), codeColor: read('--codeColor') };
+        probe.remove();
+        return r;
+      });
+      t.check(ring.ring === ring.accent && ring.code === ring.codeColor,
+              `${width}px ${mode}: the ring is the accent and the code ring the code colour: ${JSON.stringify(ring)}`);
+      const kinds = new Set();
+      let bad = 0;
+      for (let i = 0; i < 40; i++) {
+        await page.keyboard.press('Tab');
+        const f = await page.evaluate(() => {
+          const e = document.activeElement;
+          if (!e || e === document.body) return null;
+          const c = getComputedStyle(e);
+          return {
+            what: e.tagName.toLowerCase() + (typeof e.className === 'string' && e.className ? '.' + e.className.split(' ')[0] : ''),
+            style: c.outlineStyle, width: parseFloat(c.outlineWidth), color: c.outlineColor, inCode: !!e.closest('pre'),
+            offset: c.outlineOffset, opacity: c.opacity,
+          };
+        });
+        if (!f) continue;
+        kinds.add(f.what);
+        const want = f.inCode ? ring.code : ring.ring;
+        // P4-B2a.1 item 5: a heading anchor is shown when focused, and the
+        // scrollable <code> draws its ring inset (its <pre> clips)
+        const ok = f.style === 'solid' && f.width >= 2 && f.color === want
+          && (f.what !== 'a.header-anchor' || f.opacity === '1')
+          && (!(f.inCode && f.what.startsWith('code')) || f.offset === '-2px');
+        if (!ok && bad++ < 5) t.check(false, `${width}px ${mode}, stop ${i + 1} (${f.what}): outline ${f.style} ${f.width}px ${f.color} offset ${f.offset}, opacity ${f.opacity}; want solid ≥2px ${want}`);
+      }
+      t.check(bad === 0, `${width}px ${mode}: every focus stop draws the ring (${bad} did not)`);
+      t.check(kinds.size >= 4, `${width}px ${mode}: Tab reached links, summaries, buttons…: ${[...kinds].join(' ')}`);
+      t.check(kinds.has('button.clogem-copy'), `${width}px ${mode}: a copy button was among the stops`);
+      t.check(kinds.has('a.header-anchor') && [...kinds].some((k) => k.startsWith('code')),
+              `${width}px ${mode}: a heading anchor and a scrollable <code> were among the stops`);
+      await page.close();
+    }
+  }
+
   // --- print -------------------------------------------------------------------
   {
     const page = await t.newPage({ colorScheme: 'dark' });
@@ -222,12 +478,62 @@ export default async function modes(t) {
     await page.goto(url, { waitUntil: 'load' });
     await page.emulateMedia({ media: 'print' });
     const shown = await page.evaluate(() => Object.fromEntries(
-      ['.clogem-navbar', '.clogem-sidebar', '.clogem-toc', '.clogem-mode', '.clogem-search', '.clogem-comments']
+      ['.clogem-navbar', '.clogem-sidebar', '.clogem-toc', '.clogem-mode', '.clogem-search', '.clogem-comments',
+       '.clogem-prev-next', '.header-anchor']
         .map((s) => [s, document.querySelector(s) ? getComputedStyle(document.querySelector(s)).display : 'absent'])));
     for (const [s, d] of Object.entries(shown)) t.check(d === 'none' || d === 'absent', `print hides ${s} (display ${d})`);
     const bg = await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor);
     t.check(bg === 'rgb(255, 255, 255)', `print uses the light palette even in dark mode: ${bg}`);
     await page.close();
+  }
+  // P4-B2a: print draws no box, in either page style — no shadow, no
+  // border, and no transition into that (P4-B2a.1 item 4). Only the boxes:
+  // a highlighted code line keeps its inset accent bar, its only marker
+  // when backgrounds are not printed (P4-B2a.1 item 1).
+  const printBoxes = ['.clogem-main', '.clogem-home-right > section', '.clogem-post-card', '.clogem-main--posts > .clogem-content'];
+  for (const rel of [article, 'zh-Hans/index.html', 'page/2/index.html', 'pages/eed953/index.html']) {
+    for (const style of ['card', 'line']) {
+      const page = await t.newPage({ colorScheme: 'light' });
+      await page.goto(t.url(rel), { waitUntil: 'load' });
+      await page.evaluate((style) => {
+        const h = document.documentElement;
+        h.className = h.className.replace(/\btheme-style-\S+/, `theme-style-${style}`);
+      }, style);
+      await page.emulateMedia({ media: 'print' });
+      const r = await page.evaluate((sels) => {
+        const name = (e) => e.tagName.toLowerCase() + (e.className && typeof e.className === 'string' ? '.' + e.className.split(' ').join('.') : '');
+        const probe = document.createElement('div');
+        document.body.appendChild(probe);
+        probe.style.color = 'var(--accent)';
+        const accent = getComputedStyle(probe).color;
+        probe.remove();
+        const boxes = sels.flatMap((s) => [...document.querySelectorAll(s)]).map((e) => {
+          const c = getComputedStyle(e);
+          return { what: name(e), shadow: c.boxShadow, transition: c.transitionDuration,
+                   border: [c.borderTopWidth, c.borderRightWidth, c.borderBottomWidth, c.borderLeftWidth].join(' ') };
+        });
+        // what prints: a hidden element's shadow is not drawn
+        const shadowed = [...document.querySelectorAll('*')]
+          .filter((e) => e.checkVisibility() && getComputedStyle(e).boxShadow !== 'none');
+        return {
+          accent, boxes,
+          others: shadowed.filter((e) => !e.matches('pre.clogem-code .line.hl')).map(name),
+          hl: [...document.querySelectorAll('pre.clogem-code .line.hl')].map((e) => getComputedStyle(e).boxShadow),
+        };
+      }, printBoxes);
+      const what = `print, ${rel} ${style}`;
+      t.check(r.boxes.length > 0, `${what}: a box to check`);
+      for (const b of r.boxes) {
+        t.check(b.shadow === 'none' && b.border === '0px 0px 0px 0px' && /^0s(, 0s)*$/.test(b.transition),
+                `${what}: ${b.what} is no box (shadow ${b.shadow}, border ${b.border}, transition ${b.transition})`);
+      }
+      t.check(r.others.length === 0, `${what}: no shadow but a highlighted line's, yet ${r.others.slice(0, 5).join(', ')}`);
+      if (rel.includes('eed953')) {
+        const bar = `${r.accent} 3px 0px 0px 0px inset`;
+        t.check(r.hl.length > 0 && r.hl.every((x) => x === bar), `${what}: each highlighted line keeps its bar ${bar}: ${r.hl.join(' | ')}`);
+      }
+      await page.close();
+    }
   }
 
   // --- overrides/custom.css is applied, last --------------------------------

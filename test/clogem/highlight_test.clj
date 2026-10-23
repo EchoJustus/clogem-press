@@ -20,6 +20,7 @@
             [hiccup2.core :as h]
             [clogem.cli :as cli]
             [clogem.config :as config]
+            [clogem.css-palette :as cp]
             [clogem.dev :as dev]
             [clogem.diag :as diag]
             [clogem.fake-tools :as fake]
@@ -247,55 +248,36 @@
         (is (= (str/replace (vars ".theme-mode-dark, .theme-mode-read") #"\s+" " ")
                (str/replace (vars "  .theme-mode-auto") #"\s+" " ")))))))
 
-(defn- luminance [hex]
-  (let [h  (str/replace hex "#" "")
-        ch #(let [c (/ (Integer/parseInt (subs h % (+ % 2)) 16) 255.0)]
-              (if (<= c 0.03928) (/ c 12.92) (Math/pow (/ (+ c 0.055) 1.055) 2.4)))]
-    (+ (* 0.2126 (ch 0)) (* 0.7152 (ch 2)) (* 0.0722 (ch 4)))))
-
-(defn contrast [a b]
-  (let [[x y] (sort > [(luminance a) (luminance b)])]
-    (/ (+ x 0.05) (+ y 0.05))))
-
-(defn- css-block
-  "{\"--name\" value} of the first rule whose selector is exactly `sel`."
-  [css sel]
-  (let [i (str/index-of css (str sel " {"))
-        _ (assert i (str "no rule " sel))
-        s (str/index-of css "{" i)
-        e (str/index-of css "}" s)]
-    (into {} (for [[_ k v] (re-seq #"(--[A-Za-z0-9-]+)\s*:\s*([^;]+);" (subs css s e))]
-               [k (str/trim v)]))))
-
 (defn token-minimums
   "{mode [ratio what]} — the lowest contrast in each mode of every token
   colour of highlight.css (its own background when the style gives it one,
-  else --codeBg and --codeHlBg), --codeColor and --codeLineNumber, on
-  theme.css's code surfaces for that mode."
+  composited over --codeBg, else --codeBg and --codeHlBg), --codeColor and
+  --codeLineNumber, on the code surfaces theme.css computes for that mode.
+  The two files are merged as they are linked (theme.css, then
+  highlight.css), so every rule that applies counts (`clogem.css-palette`)."
   [hl-css]
-  (let [theme (slurp theme-css)
-        modes {:light [(css-block theme ":root, .theme-mode-light") (css-block hl-css ":root, .theme-mode-light")]
-               :read  [(css-block theme ".theme-mode-read") (css-block hl-css ".theme-mode-dark, .theme-mode-read")]
-               :dark  [(css-block theme ".theme-mode-dark") (css-block hl-css ".theme-mode-dark, .theme-mode-read")]
-               :auto  [(css-block theme "  .theme-mode-auto") (css-block hl-css "  .theme-mode-auto")]
-               :print [(css-block theme "  html[class]") (css-block hl-css "  html[class]")]}]
+  (let [rules (cp/parse (str (slurp theme-css) "\n" hl-css))]
     (into (sorted-map)
-          (for [[m [t v]] modes]
+          (for [m (keys cp/modes)
+                :let [t (cp/palette rules m)
+                      code (cp/over (t "--codeBg") (cp/over (t "--mainBg") (cp/over (t "--bodyBg") cp/white)))
+                      hl   (cp/over (t "--codeHlBg") code)
+                      on   {"--codeBg" code "--codeHlBg" hl}]]
             [m (first
                 (sort-by first
                          (concat
-                          (for [[k fg] v
+                          (for [[k fg] t
                                 :when (re-matches #"--hl-[a-z0-9]+" k)
                                 :let [fg (if (= "initial" fg) (t "--codeColor") fg)
-                                      own-bg (get v (str k "-bg"))
+                                      own-bg (get t (str k "-bg"))
                                       bgs (if (and own-bg (not= "initial" own-bg))
-                                            [[own-bg (str k "-bg")]]
-                                            [[(t "--codeBg") "--codeBg"] [(t "--codeHlBg") "--codeHlBg"]])]
+                                            [[(cp/over own-bg code) (str k "-bg")]]
+                                            [[code "--codeBg"] [hl "--codeHlBg"]])]
                                 [bg bg-name] bgs]
-                            [(contrast fg bg) (str k " " fg " on " bg-name " " bg)])
+                            [(cp/contrast fg bg) (str k " " fg " on " bg-name " " (cp/hex bg))])
                           (for [fg ["--codeColor" "--codeLineNumber"]
-                                bg ["--codeBg" "--codeHlBg"]]
-                            [(contrast (t fg) (t bg)) (str fg " on " bg)]))))]))))
+                                [bg-name bg] on]
+                            [(cp/contrast (t fg) bg) (str fg " on " bg-name)]))))]))))
 
 (deftest every-token-reaches-wcag-aa-in-every-mode
   (testing "every token colour on its mode's --codeBg and on a highlighted

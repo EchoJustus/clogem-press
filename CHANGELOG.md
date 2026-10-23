@@ -5,7 +5,121 @@
 Phase 4, Task B1 — colour modes, an accessible palette, the mode toggle and
 icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
 (§11.3 items 7, 11, 16, 18), then Task C — code highlighting (§11.3 item
-10), then Task D — the dev loop (§11.3 item 12). The version stays 0.2.0.
+10), then Task D — the dev loop (§11.3 item 12), then Task B2a — the card
+and line page styles, focus rings and B1's follow-ups (the first half of
+B2, §11.3 item 1). The version stays 0.2.0. A site that already set
+`:theme :page-style :line` now gets that look: 0.2.0 and B1 accepted the
+value but drew card and line the same.
+
+**Task B2a — page styles** (§11.3 item 1, first half; B1's follow-ups):
+
+### Added (B2a)
+
+- **The card and line page styles** (vdoing's `pageStyle`). `:theme
+  :page-style :card`, the default, draws the main column of every page
+  kind, the sidebar, and the home page's right-bar sections and post cards
+  as `--mainBg` cards with a 5px radius and vdoing's shadows, on a page of
+  a contrasting colour. A home's post cards sit on the page, as vdoing's
+  do: their column is no box, and the home's own text above them is the
+  card. `:line` draws the same boxes flat — a 1px border, no shadow — on a
+  page of the card's colour, in every mode. Print draws no box in either
+  style: no shadow, border, radius, padding or transition on the boxes. A
+  highlighted code line keeps its accent bar in print. Both values were
+  accepted since 0.2.0 and drew the same thing.
+- **The mode button is named for the current mode** — "Colour mode: Dark",
+  "主题模式：深色模式" — in the page's language (the new `:mode/current`
+  string), and renamed on every change, another tab's included. It was
+  always "Colour mode".
+- **`js/mode.js` applies the reader's mode when the head script cannot
+  run** — a `Content-Security-Policy` without its `sha256` — as the head
+  script would: the stored mode, else `:default-mode`, else auto, and auto
+  follows the OS. Such a page used to stay in `:default-mode`, with
+  `clogem.getMode()` saying so. It is one frame late; the hash is still
+  the way to avoid that.
+
+### Changed (B2a)
+
+- **Dark mode's page is lighter than its card**, as vdoing's is: dark's
+  `--bodyBg` (and the auto media block's) is `#22252b`; the card,
+  `--mainBg`, stays `#16181d`. They were equal, so a card could not show.
+  Text, link-hover, muted and accent are 10.74, 7.66, 6.01 and 5.58:1 on
+  it. The rest of the palette is unchanged. Under `:line` the page is
+  `#16181d` again.
+- **One keyboard focus ring.** Everything focusable — links, `<summary>`,
+  buttons, heading anchors, Pagefind's trigger — draws `2px solid` in the
+  accent at a 2px offset (`--focusRing`); links, summaries and heading
+  anchors used to get the browser's thin default. Inside a code block the
+  ring is the code colour (`--codeFocusRing`): the accent on read mode's
+  dark code block was 2.41:1, under WCAG 1.4.11's 3:1. A focused heading
+  anchor is shown; it stayed invisible.
+- **The main column has a background and padding in both styles**, and the
+  sidebar's radius is 5px (was 8px). Site CSS that styled `.clogem-main`
+  may need adjusting.
+- **`:mode/label` is no longer rendered**; the mode button's name is
+  `:mode/current` (Added, above). A site that overrode `:mode/label` should
+  override `:mode/current` instead.
+- **Pagefind follows the mode in full.** The error box, its text, the
+  shadows, the scroll shadow and the modal backdrop were Pagefind's light
+  values in every mode (its dark ones sit under `[data-pf-theme="dark"]`,
+  which nothing sets). Dark now gets Pagefind's dark shadows and 0.7
+  backdrop, and the error colours come from the palette (`--errorBg`,
+  `--errorBorder`, `--errorText`, new in every mode block): Pagefind's own
+  error text was 4.41:1 in light and 4.42:1 in dark; every mode's now
+  reaches 5.9:1 or better.
+
+### Documentation (B2a)
+
+- README: page styles and focus rings; a CSP without the head script's hash
+  still gets the reader's mode. config.example.edn describes `:card` and
+  `:line`. DESIGN.md §8 records B2's split and marks B2a done; §11.3 items
+  2–5 and 9 carry B2a notes. test/browser/README.md's `modes` row.
+- **`[data-mode]` versus the mode class.** With JavaScript,
+  `theme-mode-auto` is replaced by the resolved `theme-mode-light` or
+  `theme-mode-dark`, so `.theme-mode-dark` covers both *Dark* and *Follow
+  system* on a dark OS. To style the reader's *choice*, use
+  `[data-mode="auto"|"light"|"dark"|"read"]`; `.theme-mode-auto` exists
+  only without JavaScript (README, Theme).
+
+### Tests (B2a)
+
+- **The contrast tests read every rule.** They read the first rule whose
+  selector was exactly `.theme-mode-dark` (and so on), so a later or
+  compound rule was never checked, and took `#ffffffe6` as opaque.
+  `test/clogem/css_palette.clj` merges every rule that applies to `<html>`
+  in cascade order, for every mode (auto in its dark media block, and
+  print) and both page styles, resolves `var()`, and composites a
+  translucent colour over what lies under it; `--blurBg`, the navbar, is a
+  surface now. `highlight_test` shares it, and `modes.test.mjs` asks the
+  browser for the merged values.
+- **`theme.css` has a budget**: at most 12,288 B gzipped, checked by `bb
+  test`. It is 30,785 B, 8,455 B gzipped (25,351 B and 6,980 B before
+  B2a). The print tests now cover everything the print rule hides.
+- `page_style_test` (new) and `modes.test.mjs` cover the page styles, focus
+  rings, Pagefind's variables and the toggle's name. The checks of what B2a
+  changes — the two styles, the dark page, the toggle's name, Pagefind's
+  added variables, the one focus ring — fail on the code before it
+  (`d037142`). The others pass there too and guard against regressions:
+  the palette reader's own tests, the real palette in every mode, B1's
+  toggle markup, the style class on every page, the banner column's
+  missing ring, the gzip budget, and in the browser B1's first frame,
+  toggle and print chrome.
+- **Fix round P4-B2a.1.** The print rule dropped every shadow, a
+  highlighted code line's accent bar too (it printed on 0.2.0), and a post
+  card's shadow faded out after the switch to print; it now names the
+  boxes, with `transition: none`. The mode button's name no longer expands
+  a `$&` in a mode label. Tests: every box's own background (the sidebar's
+  `--sidebarBg`, the rest `--mainBg`) in every mode and style, the post
+  cards' column being no box, print on four pages in both styles (no box,
+  the highlighted line's bar), a focused heading anchor shown and the
+  scrollable `<code>`'s inset ring, one gzip budget constant, read mode's
+  code ring at 4.5:1 or more (it pinned the accent's 2.41:1), and every
+  `--pf-*` the theme maps beating Pagefind's `:root` in light, dark and
+  read (set to a sentinel there, none shows through).
+
+### Needs native review (B2a)
+
+- `:mode/current` in **Malay** (`Mod warna: {{mode}}`) and **Tamil**
+  (`வண்ணப் பயன்முறை: {{mode}}`).
 
 **Task D — the dev loop** (§11.3 item 12):
 
