@@ -212,6 +212,17 @@ console.log(JSON.stringify([
     (testing "print and reduced motion"
       (is (str/includes? css "@media print {"))
       (is (str/includes? css "@media (prefers-reduced-motion: reduce) {"))
+      ;; P4-B2b: smooth scrolling is always on, but only where the reader
+      ;; has not asked for reduced motion, and the reduce block still wins
+      (let [rules (cp/parse css)
+            smooth (filter #(some (fn [[_ v]] (str/includes? v "smooth")) (:decls %)) rules)]
+        (is (seq smooth))
+        (is (every? #(= ["(prefers-reduced-motion: no-preference)"] (:media %)) smooth)
+            "`smooth` appears only inside a (prefers-reduced-motion: no-preference) block")
+        (is (= ["scroll-behavior" "auto" true]
+               (some #(when (= "scroll-behavior" (first %)) %)
+                     (:decls (first (filter #(= ["(prefers-reduced-motion: reduce)"] (:media %)) rules)))))
+            "the reduce block keeps scroll-behavior: auto !important"))
       (let [print (subs css (str/index-of css "@media print {"))]
         (doseq [c [".clogem-navbar" ".clogem-sidebar" ".clogem-toc" ".clogem-mode" ".clogem-search"
                    ".clogem-comments" ".clogem-lang-banner" ".clogem-prev-next" ".header-anchor" ".clogem-copy"]]

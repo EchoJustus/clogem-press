@@ -283,6 +283,20 @@ border, radius or padding — but keeps a highlighted code line's accent bar.
 Everything focusable draws one keyboard focus ring: 2px, in the accent (in the
 code colour inside a code block), at 3:1 or better on what is behind it.
 
+**The navbar** is one row, `--navbarHeight` (3.6rem) tall: the brand at
+the start; the nav, the languages, search and the mode button at the end.
+Above 50rem the languages are a dropdown, as vdoing's; at 64rem and below
+the search trigger is its icon alone, still named in the page's language.
+A nav too long for the row wraps its own items onto a second line inside
+the navbar, which grows taller rather than spill over the page; two lines
+fit in `--navbarHeight`, and with more the navbar is taller than the
+offset below, so keep the top level short and put the rest in a dropdown
+(`:items`). Every jump to a fragment — a link, the TOC, a fresh load of
+`…/#id` — and every focus move by Tab lands 0.75rem below the navbar (the
+root's `scroll-padding-top`), headings or not. Scrolling is smooth unless
+the reader's system asks for reduced motion; there is no key for it
+(vdoing's `smoothScroll`, off by default there, is not read).
+
 The mode and page-style classes are on `<html>`, unqualified:
 `.theme-mode-dark`, `.theme-style-card`. (0.2.0 put them on `<body>`; CSS
 written as `body.theme-mode-dark` must drop `body`.)

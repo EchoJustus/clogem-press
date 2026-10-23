@@ -1860,7 +1860,8 @@ order; each builds on A:
     documented). *Done (§11.3 items 2–5 and 9).*
   - **B2b — Mobile layout**: `--navbarHeight` and anchors, the one-row navbar, the mobile drawer
     and `js/nav.js`, sidebar collapse, the right menu bar, page buttons, background patterns, back
-    to top and smooth scroll.
+    to top and smooth scroll. *In progress:* `--navbarHeight`, anchors and smooth scroll; the
+    one-row desktop navbar with a language dropdown (§11.3 item 9).
 - **F — Analytics, verification, static root** (1 d) (§11.3 items 14, 15). *Done.*
 - **E1 — Blog identity, banner, htmlModules** (2.75 d) (§11.3 item 13).
 - **E2 — Article-page parity** (1.75 d): edit link, last-updated, update bar, `titleTag` rows,
@@ -2999,6 +3000,15 @@ their own findings. Item 19 onward are corrections.
    inset on the scrollable `<code>`; a focused heading anchor is shown. The ring reaches 3:1 on every
    surface and the code ring on `--codeBg`, in every mode (`page_style_test`); 40 Tab stops at 1280
    and 360 px, light and dark, all draw it (`modes.test.mjs`).
+   *B2b.* `:root { --navbarHeight: 3.6rem }` (vdoing's); the navbar is exactly that tall, one row,
+   and the root's `scroll-padding-top: calc(var(--navbarHeight) + 0.75rem)` replaces the h2–h6
+   `scroll-margin-top`, so the home's `h1`, any `id`, `scrollIntoView()` and focus scrolling land
+   below it too; `toc.js` measures the navbar's bottom. Smooth scrolling is always on, under
+   `prefers-reduced-motion: no-preference` only (vdoing's `smoothScroll` is off by default and is
+   not read). Above 50rem the language switcher is a `<details>` dropdown whose list is its next
+   sibling (CSS cannot show a closed `<details>`' content where `::details-content` is missing), and
+   the search trigger is its icon alone at ≤ 64rem. "Above 50rem" is written
+   `not all and (max-width: 50rem)`, so no fractional width between 800 and 801 px falls in a gap.
 10. **Highlighting on by default (C) — done.** `:highlight {:provider :chroma}`; `:none` or `--no-highlight`
     turns it off. A fetch failure is an error in `build` and a warning in `dev`. Line numbers are CSS
     counters, never text — Chroma's own numbers pollute the Pagefind index. One Chroma process per

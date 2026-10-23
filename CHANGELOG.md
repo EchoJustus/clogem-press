@@ -8,9 +8,67 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
 10), then Task D — the dev loop (§11.3 item 12), then Task B2a — the card
 and line page styles, focus rings and B1's follow-ups (the first half of
 B2, §11.3 item 1), then Task F — analytics, verification and a static root
-(§11.3 items 14, 15). The version stays 0.2.0. A site that already set
-`:theme :page-style :line` now gets that look: 0.2.0 and B1 accepted the
-value but drew card and line the same.
+(§11.3 items 14, 15), then Task B2b — the navbar, the mobile drawer and the
+page chrome (the second half of B2, §11.3 item 9, D-P4-9). The version
+stays 0.2.0. A site that already set `:theme :page-style :line` now gets
+that look: 0.2.0 and B1 accepted the value but drew card and line the same.
+
+**Task B2b — navbar, mobile drawer and page chrome** (§11.3 item 9, D-P4-9):
+
+### Added (B2b)
+
+- **`--navbarHeight`** (3.6rem, vdoing's value) on `:root`. The navbar is
+  exactly that tall, on one row, and the root's `scroll-padding-top`
+  (`--navbarHeight` + 0.75rem) puts every jump below it: a link to a
+  fragment, a TOC click, a fresh load of `…/#id`, `scrollIntoView()` and a
+  focus move by Tab — headings or not (the home's `h1` and any `id`
+  included). The TOC sticks 1rem below the navbar, and `js/toc.js` takes
+  its offset from the navbar's measured bottom instead of a fixed 80 px.
+- **Smooth scrolling**, always on, under `prefers-reduced-motion:
+  no-preference`; under `reduce` scrolling stays instant.
+- **A language dropdown** above 50rem: the switcher's list opens from a
+  `<details class="clogem-langs__toggle">` whose summary is the
+  `languages` icon, the page language's `:nav/language` and a chevron, as
+  vdoing's. The list is the summary's next sibling, not its content, so
+  wherever the summary is not rendered the list shows. Without JS the
+  summary still opens and closes it.
+- **An icon-only search trigger** at 64rem and below (CSS only): the
+  trigger keeps its name, the page language's `:nav/search`.
+
+### Changed (B2b)
+
+- **The navbar's order** is now brand, nav, languages, search, mode: the
+  languages moved from last place to just after the nav. On the desktop
+  the brand sits at the start and everything else at the end; the gap is
+  1rem.
+- **A nav too long for one row** wraps its own items inside the navbar,
+  which grows taller rather than spilling over the page; about two lines
+  fit in `--navbarHeight`.
+- **Smooth scrolling is always on.** vdoing's `smoothScroll` defaults to
+  off; clogem-press has no key for it, and reduced motion turns it off.
+
+### Fixed (B2b)
+
+- **Anchors on the home's `h1`, and on targets that are not headings**,
+  no longer land under the navbar: only `.clogem-content` h2–h6 had a
+  `scroll-margin-top` (4rem), now replaced by the root's scroll padding (the
+  two would add up). At 1280 px a heading used to land 5–6 px under the
+  navbar, and a Shift+Tab stop (a copy button) wholly under it.
+
+### Tests (B2b)
+
+- `test/browser/layout.test.mjs` (new): the navbar's height and one row at
+  1024–1440 px and at every width from 801 to 1600, anchors after a fresh
+  load and a TOC click, a `<p>` target, the TOC's offset under
+  `--navbarHeight: 6rem`, 30 Shift+Tab stops at 1280, smooth scrolling and
+  reduced motion; the language dropdown by keyboard, pointer and without
+  JS; the icon-only trigger at 801–1024; a ten-item nav at 1024.
+- `bb test`: `clogem.layout-test` (new) pins the markup and the CSS;
+  `theme_modes_test` checks that `smooth` appears only under
+  `(prefers-reduced-motion: no-preference)`. The contrast parser
+  (`test/clogem/css_palette.clj`) learnt a leading `not` and
+  `(scripting: …)`, through `:scripting?` (default true; `initial-only` is
+  false, as in Chromium).
 
 **Task F — analytics, verification and static root** (§11.3 items 14, 15):
 

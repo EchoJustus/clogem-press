@@ -277,13 +277,22 @@
 
   Phase 1 narrowed this to the article's own variants; the design specifies
   the site-wide switcher, with the per-article `variant-bar` below the title
-  as the place that lists only what the article has."
+  as the place that lists only what the article has.
+
+  P4-B2b: above 50rem the list is a dropdown, after vdoing's (`languages`,
+  the `:nav/language` label, `chevron-down`): a closed `<details>` whose
+  list is its NEXT SIBLING, not its content, so that CSS can show the list
+  wherever the summary is not rendered (the drawer, no JS) — a closed
+  `<details>` hides its content on every browser before `::details-content`."
   [{:keys [cfg lang] :as ctx}]
   (let [locales (get-in cfg [:langs :locales])
         langs   (config/lang-keys cfg)]
     (when (> (count langs) 1)
       [:nav.clogem-langs {:aria-label (i18n/tr ctx :nav/language)}
        [:span.clogem-langs__label (i18n/tr ctx :nav/language)]
+       [:details.clogem-langs__toggle
+        [:summary (icons/icon ctx :languages) [:span (i18n/tr ctx :nav/language)]
+         (icons/icon ctx :chevron-down {:class "clogem-navbar__caret"})]]
        (into [:ul]
              (for [l langs
                    :let [current? (= l lang)]]
@@ -426,15 +435,17 @@
                    (icons/icon ctx ic) " " [:span (i18n/tr ctx (keyword "mode" (name m)))]]]))]))
 
 (defn navbar
+  "P4-B2b: one row — the brand, the nav, the languages, search and the mode
+  toggle, in visual order."
   [{:keys [cfg lang] :as ctx}]
   [:header.clogem-navbar
    [:a.clogem-navbar__brand {:href (href ctx (model/home-url cfg lang))}
     (i18n/resolve-str ctx (get-in cfg [:site :title]))]
    [:nav.clogem-navbar__nav
     (into [:ul] (map #(nav-item ctx %) (:nav cfg)))]
+   (lang-switcher ctx)
    (search-box ctx)
-   (mode-toggle ctx)
-   (lang-switcher ctx)])
+   (mode-toggle ctx)])
 
 (defn- sidebar-node
   "One directory as <details>/<summary> — collapsible without JS — with its

@@ -52,7 +52,7 @@
   color-scheme: light;
 }
 
-:root { --maxWidth: 62rem; }
+:root { --maxWidth: 62rem; --navbarHeight: 3.6rem; }
 
 .theme-mode-read {
   --bodyBg: #ece6d6;
@@ -131,10 +131,11 @@
 * { box-sizing: border-box; }
 
 /* the background is the root's, so the very first frame (and any overscroll)
- * is in the mode */
+ * is in the mode. P4-B2b: every jump and focus scroll lands below the navbar */
 html {
   background: var(--bodyBg);
   color: var(--textColor);
+  scroll-padding-top: calc(var(--navbarHeight) + 0.75rem);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
                "Helvetica Neue", Arial, sans-serif;
 }
@@ -190,16 +191,21 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
   overflow: visible;
 }
 
+/* P4-B2b: one row, --navbarHeight tall; a long nav wraps inside it. The
+ * backdrop-filter makes it the containing block of anything fixed in it */
 .clogem-navbar {
-  display: flex; align-items: center; gap: 1.5rem;
-  padding: 0.75rem 1.25rem;
+  display: flex; align-items: center; gap: 1rem;
+  min-height: var(--navbarHeight); padding: 0 1.25rem;
   border-bottom: 1px solid var(--borderColor);
   position: sticky; top: 0; background: var(--blurBg); z-index: 10;
   -webkit-backdrop-filter: saturate(150%) blur(6px); backdrop-filter: saturate(150%) blur(6px);
-  flex-wrap: wrap;
 }
-.clogem-navbar__brand { font-weight: 700; font-size: 1.1rem; color: var(--textColor); }
-.clogem-navbar__nav > ul { list-style: none; display: flex; gap: 1rem; margin: 0; padding: 0; }
+.clogem-navbar__brand { font-weight: 700; font-size: 1.1rem; color: var(--textColor);
+  flex: none; max-width: 40%; margin-inline-end: auto;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clogem-navbar__nav { min-width: 0; }
+.clogem-navbar__nav > ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0 1rem; margin: 0; padding: 0; }
+.clogem-search { display: flex; }
 .clogem-navbar__item { position: relative; }
 .clogem-navbar__item details > summary { list-style: none; cursor: pointer; }
 .clogem-navbar__item details > summary::-webkit-details-marker { display: none; }
@@ -242,12 +248,31 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
 .clogem-mode__menu button[aria-pressed="true"] { color: var(--accent); font-weight: 600; }
 .clogem-navbar__menu li { padding: 0.2rem 0; }
 
-/* the list wraps, like the navbar around it: a long :label used to widen a
- * 360 px page past the viewport */
-.clogem-langs { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+/* the list wraps: a long :label widened a 360 px page. P4-B2b: above 50rem
+ * it is a dropdown, opened by the <details> before it */
+.clogem-langs { position: relative; display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
 .clogem-langs__label { color: var(--textColorSubtle); font-size: 0.85rem; }
 .clogem-langs ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; margin: 0; padding: 0; }
 .clogem-langs .is-current { color: var(--textColorSubtle); font-weight: 600; }
+.clogem-langs__toggle { display: none; }
+.clogem-langs__toggle > summary { display: flex; align-items: center; gap: 0.3rem; list-style: none; cursor: pointer;
+  white-space: nowrap; color: var(--textColor); }
+.clogem-langs__toggle > summary::-webkit-details-marker { display: none; }
+.clogem-langs__toggle[open] .clogem-navbar__caret { transform: rotate(180deg); }
+@media not all and (max-width: 50rem) {
+  .clogem-langs__toggle { display: block; }
+  .clogem-langs__label, .clogem-langs__toggle:not([open]) + ul { display: none; }
+  .clogem-langs ul { position: absolute; top: calc(100% + 0.6rem); inset-inline-end: 0; z-index: 20;
+    flex-direction: column; flex-wrap: nowrap; min-width: 10rem; padding: 0.4rem 0.8rem;
+    background: var(--mainBg); border: 1px solid var(--borderColor); border-radius: 6px; }
+}
+/* the trigger is its icon alone (Pagefind's rules are (3,1,0); the dialog
+ * has a .pf-trigger-shortcut too) */
+@media (max-width: 64rem) {
+  pagefind-modal-trigger :is(.pf-trigger-text, .pf-trigger-shortcut) { display: none !important; }
+  pagefind-modal-trigger .pf-trigger-btn { width: 36px !important; height: 36px !important;
+    padding: 0 !important; justify-content: center !important; }
+}
 
 .clogem-shell {
   display: grid;
@@ -312,7 +337,6 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
 /* D-P3-15: the giscus widget below the article */
 .clogem-comments { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--borderColor); }
 
-.clogem-content :is(h2, h3, h4, h5, h6) { scroll-margin-top: 4rem; }
 .header-anchor { opacity: 0; margin-left: 0.35rem; text-decoration: none; }
 :is(h1, h2, h3, h4, h5, h6):hover .header-anchor { opacity: 0.5; }
 .header-anchor:focus-visible { opacity: 1; }   /* a ring on nothing is no ring */
@@ -455,7 +479,7 @@ img { max-width: 100%; height: auto; }
   .clogem-shell--toc, .clogem-shell--single.clogem-shell--toc { grid-template-columns: minmax(0, 1fr); }
   .clogem-toc { display: none; }
 }
-.clogem-toc { position: sticky; top: 4rem; align-self: start; font-size: 0.85rem; border-left: 1px solid var(--borderColor); padding-left: 0.75rem; }
+.clogem-toc { position: sticky; top: calc(var(--navbarHeight) + 1rem); align-self: start; font-size: 0.85rem; border-left: 1px solid var(--borderColor); padding-left: 0.75rem; }
 .clogem-toc ul { list-style: none; margin: 0; padding: 0; }
 .clogem-toc li { padding: 0.15rem 0; }
 .clogem-toc li.level-3 { padding-left: 0.9rem; }
@@ -573,6 +597,7 @@ html.theme-mode-dark {
 }
 
 /* ---- Phase 4 B1: reduced motion and print (D-P4-4) ---- */
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     transition: none !important;

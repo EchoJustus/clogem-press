@@ -28,10 +28,14 @@
   if (!entries.length) return;
 
   var current = null;
-  var offset = 80; /* ≈ the sticky navbar plus scroll-margin-top */
+  var navbar = document.querySelector(".clogem-navbar");
 
   function update() {
     var y = window.scrollY || window.pageYOffset;
+    /* P4-B2b: a heading counts once it is at the navbar's bottom, which is
+     * where a jump puts it (theme.css's scroll-padding-top, 0.75rem below
+     * the navbar) — measured, not assumed: --navbarHeight can change */
+    var offset = (navbar ? Math.max(0, navbar.getBoundingClientRect().bottom) : 0) + 16;
     var active = entries[0];
     for (var i = 0; i < entries.length; i++) {
       if (entries[i].target.getBoundingClientRect().top + y - offset <= y) {
