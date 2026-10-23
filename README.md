@@ -316,6 +316,10 @@ page.
 from 80rem (1280 px) its TOC joins them on the right, in a shell 18rem
 wider than `--maxWidth`, as vdoing's TOC shows only from 1280 px. A page
 with a TOC and no sidebar shows it above 64rem.
+`:theme :right-menu-bar false` (vdoing's `rightMenuBar`) drops that TOC
+from every page; headings keep their ids and `#` anchors. vdoing nests the
+headings under the sidebar's link instead; clogem-press does not. The home
+page's right bar is not the TOC: its front matter's `hideRightBar` decides.
 
 The mode and page-style classes are on `<html>`, unqualified:
 `.theme-mode-dark`, `.theme-style-card`. (0.2.0 put them on `<body>`; CSS

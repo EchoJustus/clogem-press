@@ -68,6 +68,11 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   level: one warning says clogem-press always scrolls smoothly unless the
   reader asks for reduced motion, and that it is ignored (it used to be
   reported as an unknown option).
+- **`:theme :right-menu-bar`** (vdoing's `rightMenuBar`, default `true`):
+  `false` drops the right-hand TOC — its aside, `clogem-shell--toc` and
+  `js/toc.js` — from every page. Headings keep their ids and anchors, and
+  the home's right bar still follows `hideRightBar`. vdoing then nests the
+  headings under the sidebar's link; clogem-press does not.
 
 ### Changed (B2b)
 
@@ -143,6 +148,9 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   `0`, `7`, `1.5`, `"1"`, `:grid`, `true`) warns once and is repaired, and
   good values and `nil` are quiet; `smoothScroll` in `:theme` and at the top
   level warns once with its pinned message.
+- `bb test`: with `:right-menu-bar false` no page of a temp site has a
+  `clogem-toc`, `clogem-shell--toc` or `js/toc.js`, while its h2/h3 keep
+  their ids and anchors and the home keeps `clogem-home-right`.
 
 ### Needs native review (B2b)
 

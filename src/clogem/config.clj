@@ -474,7 +474,7 @@
                            :body-bg-img-opacity :planned :body-bg-img-interval :planned
                            :title-badge :planned
                            :title-badge-icons :planned :blogger :planned :footer :planned
-                           :update-bar :planned :right-menu-bar :planned :page-button :planned
+                           :update-bar :planned :right-menu-bar :ok :page-button :planned
                            :content-bg-style :planned :last-updated :planned
                            :sidebar-collapsed :planned :back-to-top :planned :logo :planned
                            :repo :planned}
@@ -571,7 +571,7 @@
    "social"                  [[:theme :social] :planned]
    "footer"                  [[:theme :footer] :planned]
    "updateBar"               [[:theme :update-bar] :planned]
-   "rightMenuBar"            [[:theme :right-menu-bar] :planned]
+   "rightMenuBar"            [[:theme :right-menu-bar] :ok]
    "pageButton"              [[:theme :page-button] :planned]
    "contentBgStyle"          [[:theme :content-bg-style] :planned]
    "lastUpdated"             [[:theme :last-updated] :planned]

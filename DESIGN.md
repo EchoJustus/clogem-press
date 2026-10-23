@@ -3457,6 +3457,10 @@ their own findings. Item 19 onward are corrections.
     it must be and the default, which it is repaired to. vdoing's `smoothScroll` is *implicit*:
     smooth scrolling is always on unless the reader asks for reduced motion, and there is no key.
     An `:implicit` entry of `vdoing-keys` carries its own note and hint.
+    `:right-menu-bar false` (vdoing's `rightMenuBar`) drops the TOC aside, its shell class and
+    `js/toc.js` (`layout/toc?`); headings keep their ids and anchors. vdoing nests the headings under
+    the sidebar's link when the right menu is off; clogem-press does not (the sidebar lists articles
+    only). The home's right bar follows `hideRightBar`.
     *Unknown-key warnings — done in A (part of D-P4-16).* `config/known-keys` is the one table of
     every section's keys ({path → {key :ok|:planned}}, `:*` for any key); `check-keys!` walks the
     site.edn as written and warns, never errors, on an unknown key — naming its path and the nearest

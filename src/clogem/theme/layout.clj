@@ -528,12 +528,19 @@
                     (not (false? (get-in cfg [:theme :sidebar-open])))
                     (ancestors-of (:dir-key group)))]]))
 
+(defn toc?
+  "Does the page render the TOC bar (and js/toc.js)? Only when it has
+  entries and `:theme :right-menu-bar` (vdoing's `rightMenuBar`) is not
+  false. Headings keep their ids and anchors either way."
+  [{:keys [cfg toc]}]
+  (boolean (and (seq toc) (not (false? (get-in cfg [:theme :right-menu-bar]))))))
+
 (defn toc
   "The right-hand TOC bar (D-P2-9): one link per entry of ctx :toc, levelled
-  by class, hidden when there is nothing to list. The scroll-spy in
+  by class, hidden when there is nothing to list (`toc?`). The scroll-spy in
   js/toc.js marks the current entry; without JS it is a plain list of links."
   [{:keys [toc] :as ctx}]
-  (when (seq toc)
+  (when (toc? ctx)
     [:aside.clogem-toc
      [:nav {:aria-label (i18n/tr ctx :page/toc)}
       (into [:ul]
@@ -1014,7 +1021,7 @@
         [:script {:src (asset-href ctx "js/comments.js") :defer true}])
       ;; vendored vanilla scroll-spy (D-P2-9); no CDN, no deps — deferred,
       ;; and only on a page that renders a TOC for it to spy on
-      (when (seq (:toc ctx))
+      (when (toc? ctx)
         [:script {:src (asset-href ctx "js/toc.js") :defer true}])
       (code-head ctx)
       ;; §11.3 item 14: LAST — the provider's script is the page's least

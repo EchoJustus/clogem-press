@@ -282,7 +282,7 @@
   "The page chrome's keys still :planned in `config/known-keys`: the tests
   below see them as items 9–13 make them, :ok. Each item takes its key
   out of this set when it flips it."
-  #{:sidebar-collapsed :right-menu-bar :page-button :content-bg-style :back-to-top})
+  #{:sidebar-collapsed :page-button :content-bg-style :back-to-top})
 
 (defn- as-ok [known]
   (reduce #(assoc-in %1 [[:theme] %2] :ok) known chrome-keys))
@@ -331,3 +331,47 @@
       (is (= "Remove it. In-page jumps are smooth unless the reader's system asks for reduced motion." (:hint (first ws))))
       (is (not (contains? (:theme cfg) :smooth-scroll)) "there is no :smooth-scroll key")))
   (is (nil? (get-in config/known-keys [[:theme] :smooth-scroll]))))
+
+;; ---------------------------------------------------------------------------
+;; 9. :theme :right-menu-bar
+
+(def ^:private a-toc-article
+  "---\ntitle: T\ndate: \"2026-02-01 00:00:00\"\npermalink: /pages/t00001/\n---\n\n# T\n\n## Alpha\n\nbody\n\n### Beta\n\nmore\n")
+
+(def ^:private a-post
+  "---\ntitle: P\ndate: \"2026-02-02 00:00:00\"\npermalink: /pages/p00001/\nsidebar: auto\n---\n\n# P\n\n## Gamma\n\nbody\n")
+
+(deftest right-menu-bar-false-drops-the-toc
+  (let [files {"index.md" "# Home\n" "01.Guide/01.t.md" a-toc-article "_posts/p.md" a-post}
+        on  (build-temp one-lang files)
+        off (build-temp (assoc one-lang :theme {:right-menu-bar false}) files)]
+    (testing "the default: the tree article and the post have a TOC"
+      (doseq [rel ["pages/t00001/index.html" "pages/p00001/index.html"]]
+        (is (str/includes? (on rel) "<aside class=\"clogem-toc\">") rel)
+        (is (str/includes? (on rel) "clogem-shell--toc") rel)
+        (is (str/includes? (on rel) "/js/toc.js") rel)))
+    (testing "false: no page has the aside, the class, the script or any clogem-toc"
+      (doseq [[rel page] off]
+        (is (not (str/includes? page "clogem-toc")) rel)
+        (is (not (str/includes? page "clogem-shell--toc")) rel)
+        (is (not (str/includes? page "js/toc.js")) rel)))
+    (testing "headings keep their ids and anchors"
+      (let [page (off "pages/t00001/index.html")]
+        (is (re-find #"<h2 id=\"alpha\"" page))
+        (is (re-find #"<h3 id=\"beta\"" page))
+        (is (str/includes? page "class=\"header-anchor\""))
+        (is (str/includes? (off "pages/p00001/index.html") "<h2 id=\"gamma\""))))
+    (testing "the home's right bar is not the TOC: it stays"
+      (is (str/includes? (off "index.html") "clogem-home-right"))
+      (is (str/includes? (off "index.html") "clogem-shell--home")))
+    (testing "the sidebar is untouched"
+      (is (str/includes? (off "pages/t00001/index.html") "<aside class=\"clogem-sidebar\"")))))
+
+(deftest right-menu-bar-is-a-known-key
+  (is (= :ok (get-in config/known-keys [[:theme] :right-menu-bar])))
+  (let [[_ ds] (load-site {:theme {:right-menu-bar false}})]
+    (is (empty? (diag/warnings ds))))
+  (let [[cfg ds] (load-site {:theme {:rightMenuBar false}})]
+    (is (= [(str ":theme :rightMenuBar is vdoing's spelling; clogem-press reads :theme :right-menu-bar. It is ignored.")]
+           (map :message (diag/warnings ds))))
+    (is (true? (get-in cfg [:theme :right-menu-bar])))))
