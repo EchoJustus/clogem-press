@@ -30,6 +30,7 @@
         (layout/variant-bar ctx)
         [:div.clogem-content (layout/search-terms ctx group) content-hiccup]]
        (layout/prev-next ctx)
+       (layout/page-buttons ctx)
        (layout/comments ctx)])
      (layout/footer ctx)))
 

@@ -231,6 +231,20 @@
        [:a.clogem-prev-next__next {:href (href ctx (:href next)) :rel "next" :lang (config/html-lang cfg (:lang next))}
         [:span (i18n/tr ctx :page/next)] " " (:title next)])]))
 
+(defn page-buttons
+  "vdoing's page buttons (`pageButton`, PageNav.vue): `prev-next`'s targets
+  again, as two chevrons fixed at the viewport's edges. Duplicates of the
+  visible links, so `aria-hidden` and out of the Tab order, and with no
+  `rel` (the visible links declare it). CSS shows them only from 84rem,
+  where they cover no box; `:theme :page-button false` omits them."
+  [{:keys [cfg prev next] :as ctx}]
+  (when-not (false? (get-in cfg [:theme :page-button]))
+    (for [[t cls ic] [[prev "is-prev" :chevron-left] [next "is-next" :chevron-right]]
+          :when t]
+      [:a.clogem-page-button {:class cls :href (href ctx (:href t)) :aria-hidden "true" :tabindex "-1"
+                              :title (:title t) :lang (config/html-lang cfg (:lang t))}
+       (icons/icon ctx ic)])))
+
 (defn article-row
   "One index row: title (linked per §6.8), fallback marker, ISO date."
   [{:keys [cfg] :as ctx} group]

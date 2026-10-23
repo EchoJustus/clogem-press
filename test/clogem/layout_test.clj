@@ -230,7 +230,10 @@
         (is (= "100%" (d "top")))
         (is (= "auto" (d "overflow-y")))
         (is (str/includes? css "max-height: calc(100vh - var(--navbarHeight)); max-height: calc(100dvh - var(--navbarHeight));")))
-      (is (not (re-find #"position:\s*fixed" css))))
+      ;; items 11 and 13 are fixed, outside the navbar; nothing in it is
+      (let [fixed (mapcat :selectors (filter #(some (fn [[p v]] (and (= "position" p) (= "fixed" v))) (:decls %)) rules))]
+        (is (every? #(re-find #"^\.clogem-(page-button|back-to-top)$" %) fixed) (pr-str fixed))
+        (is (not-any? #(re-find #"navbar|drawer" %) fixed))))
     (testing "a [hidden] toggle stays hidden whatever display it is given"
       (is (= "block" ((decls js-q ".clogem-navbar__toggle:not([hidden])") "display"))))
     (testing "the no-JS rules sit outside any scripting query: static, wrapping, no navbar offset"
@@ -282,7 +285,7 @@
   "The page chrome's keys still :planned in `config/known-keys`: the tests
   below see them as items 9–13 make them, :ok. Each item takes its key
   out of this set when it flips it."
-  #{:page-button :content-bg-style :back-to-top})
+  #{:content-bg-style :back-to-top})
 
 (defn- as-ok [known]
   (reduce #(assoc-in %1 [[:theme] %2] :ok) known chrome-keys))
@@ -434,3 +437,76 @@
     (is (some #(= ["(max-width: 50rem)"] (:media %))
               (filter #(some #{".clogem-sidebar-toggle"} (:selectors %)) rules))
         "at 50rem and below the button is not drawn")))
+
+;; ---------------------------------------------------------------------------
+;; 11. Page buttons: :theme :page-button
+
+(defn- visible-prev-next
+  "{:prev [href lang title] :next …} from the page's `.clogem-prev-next`."
+  [page]
+  (into {}
+        (for [[_ k href lang title] (re-seq #"<a class=\"clogem-prev-next__(prev|next)\" href=\"([^\"]+)\" lang=\"([^\"]+)\" rel=\"(?:prev|next)\"><span>[^<]*</span> (.*?)</a>" page)]
+          [(keyword k) [href lang title]])))
+
+(defn- page-buttons-of
+  "{:prev [href lang title] :next …} from the page's page buttons, which must
+  be exactly as rendered: aria-hidden, out of the Tab order, no rel, a
+  chevron and no text."
+  [page]
+  (into {}
+        (for [[_ k href lang title ic] (re-seq #"<a aria-hidden=\"true\" class=\"clogem-page-button is-(prev|next)\" href=\"([^\"]+)\" lang=\"([^\"]+)\" tabindex=\"-1\" title=\"([^\"]*)\"><svg[^>]*class=\"clogem-icon\"[^>]*><use href=\"[^\"]*#(chevron-left|chevron-right)\"(?:/>|></use>)</svg></a>" page)]
+          (do (is (= ic (if (= k "prev") "chevron-left" "chevron-right")))
+              [(keyword k) [href lang title]]))))
+
+(deftest page-buttons-repeat-prev-next
+  (let [ps (pages)
+        with (filter #(str/includes? (val %) "clogem-prev-next") ps)]
+    (is (>= (count with) 20))
+    (doseq [[rel page] ps]
+      (let [v (visible-prev-next page)
+            b (page-buttons-of page)]
+        (is (= (count (re-seq #"clogem-page-button" page)) (count b)) (str rel ": every button has the exact markup"))
+        (is (= (keys v) (keys b)) rel)
+        (doseq [k (keys v)]
+          (is (= (take 2 (v k)) (take 2 (b k))) (str rel " " k ": the same href and lang"))
+          (is (= (str/replace (nth (v k) 2) "\"" "&quot;") (nth (b k) 2)) (str rel " " k ": the target's title")))
+        (when (seq b)
+          (is (< (str/index-of page "</article>") (str/index-of page "clogem-page-button")) (str rel ": outside the article"))
+          (is (not (re-find #"<a [^>]*class=\"clogem-page-button[^>]*rel=" page)) (str rel ": no rel")))))
+    (testing "c0nta1: one rel=prev and one rel=next, both buttons"
+      (let [page (html "pages" "c0nta1" "index.html")]
+        (is (= 1 (count (re-seq #"rel=\"prev\"" page))))
+        (is (= 1 (count (re-seq #"rel=\"next\"" page))))
+        (is (= {:prev ["/pages/22deb7/" "en"] :next ["/pages/171a98/" "ta"]}
+               (update-vals (page-buttons-of page) #(vec (take 2 %)))))))
+    (testing "the catalogue has a next only; the first leaf has no prev"
+      (is (= [:next] (keys (page-buttons-of (html "pages" "559f0f" "index.html")))))
+      (is (= "/pages/c4d33p/" (first (:next (page-buttons-of (html "pages" "559f0f" "index.html"))))))
+      (is (nil? (:prev (page-buttons-of (html "pages" "3ce486" "index.html"))))))
+    (testing "no page buttons on the home or an index page"
+      (is (not (str/includes? (html "index.html") "clogem-page-button")))
+      (is (not (str/includes? (html "categories" "guide" "index.html") "clogem-page-button"))))))
+
+(deftest page-button-false-omits-them
+  (let [files {"index.md" "# Home\n" "01.Guide/01.t.md" a-toc-article
+               "01.Guide/02.u.md" (str/replace a-toc-article "t00001" "t00002")}
+        on (build-temp one-lang files)
+        off (build-temp (assoc one-lang :theme {:page-button false}) files)
+        alone (build-temp one-lang {"index.md" "# Home\n" "01.Guide/01.t.md" a-toc-article})]
+    (is (= [:next] (keys (page-buttons-of (on "pages/t00001/index.html")))))
+    (is (= [:prev] (keys (page-buttons-of (on "pages/t00002/index.html")))))
+    (is (not-any? #(str/includes? (val %) "clogem-page-button") off))
+    (is (str/includes? (off "pages/t00001/index.html") "rel=\"next\"") "the visible links stay")
+    (testing "a page without prev-next has neither"
+      (is (not (str/includes? (alone "pages/t00001/index.html") "clogem-prev-next")))
+      (is (not (str/includes? (alone "pages/t00001/index.html") "clogem-page-button"))))
+    (is (= :ok (get-in config/known-keys [[:theme] :page-button])))))
+
+(deftest page-buttons-show-from-84rem
+  (let [rules (cp/parse (slurp theme-css))
+        of (fn [q sel] (into {} (for [r rules :when (and (= q (:media r)) (some #{sel} (:selectors r))) [p v] (:decls r)] [p v])))]
+    (is (= "none" ((of [] ".clogem-page-button") "display")))
+    (let [d (of ["(min-width: 84rem)"] ".clogem-page-button")]
+      (is (= ["fixed" "flex" "50px" "70px" "0.55" "5"] (map d ["position" "display" "width" "height" "opacity" "z-index"]))))
+    (is (= "1" ((of ["(min-width: 84rem)"] ".clogem-page-button:hover") "opacity")))
+    (is (= "80px" ((of ["(min-width: 88rem)"] ".clogem-page-button") "width")))))

@@ -85,6 +85,14 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   50rem and below there is no button and the drawer always shows the
   sidebar. The choice holds across resizes but not across pages. Print
   hides the button.
+- **Page buttons** (`:theme :page-button`, vdoing's `pageButton`, default
+  `true`): an article or catalogue page repeats its previous and next links
+  as two chevrons fixed at the viewport's edges, vertically centred, 70 px
+  tall, at opacity 0.55 (1 on hover), as vdoing's. They are `aria-hidden`
+  duplicates out of the Tab order, with the target's title as their
+  `title` and no `rel`. Unlike vdoing's, which show from 961 px over the
+  content, they show only from 84rem (1344 px), 50 px wide and 80 px from
+  88rem, where they cover no box. Print hides them; `false` omits them.
 
 ### Changed (B2b)
 
@@ -171,6 +179,14 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   around the collapsed aside, the marker with and without JS and with
   `nav.js` aborted, 360 px and the drawer, a resize round trip, and reduced
   motion. `modes.test.mjs`' print check covers the button at 1280.
+- `bb test`: on every demo page the page buttons repeat `prev-next`'s
+  hrefs, `lang` and titles, with `aria-hidden`, `tabindex="-1"`, a chevron
+  and no `rel`, after `</article>`; `/pages/c0nta1/` keeps one `rel="prev"`
+  and one `rel="next"`; the first leaf has no prev button, a page without
+  neighbours has neither, and `false` omits them. `layout.test.mjs`: at
+  1344, 1407, 1408 and 1440 both are visible, centred, 50 or 80 px wide at
+  the edges, meet no sidebar, main or TOC box and leave every visible link's
+  centre clickable; hover, 40 Tab stops, and hidden at 1343, 900 and 360.
 
 ### Needs native review (B2b)
 

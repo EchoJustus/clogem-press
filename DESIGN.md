@@ -3467,6 +3467,14 @@ their own findings. Item 19 onward are corrections.
     it. The button (`:page/sidebar`, `aria-expanded`, `aria-controls="clogem-sidebar"`, a chevron
     mirrored in RTL) is the main column's first child, outside the article, rendered `hidden` until
     `nav.js` reveals it. The state is kept across resizes, not across pages.
+    vdoing's `pageButton` (`:page-button`, default true) is a pair of prev/next arrows: two `<a>`
+    duplicates of `prev-next` (`aria-hidden`, `tabindex="-1"`, the target's title and `lang`, no
+    `rel`), after it in the main column and outside the Pagefind body, `position: fixed` at the
+    viewport's edges, vertically centred, 70 px tall, opacity 0.55 (1 on hover), z-index 5. vdoing
+    shows them from 961 px, over the content; here they show from `min-width: 84rem`, where the 80rem
+    shell's gutter, `(100vw − 80rem) / 2 + 1.25rem`, is 52 px — 50 px wide, and 80 px from 88rem
+    (an 84 px gutter). Beside a classic scrollbar they reach a few px into the sidebar's and the
+    TOC's padding, never onto a link (owner's decision).
     *Unknown-key warnings — done in A (part of D-P4-16).* `config/known-keys` is the one table of
     every section's keys ({path → {key :ok|:planned}}, `:*` for any key); `check-keys!` walks the
     site.edn as written and warns, never errors, on an unknown key — naming its path and the nearest

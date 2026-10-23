@@ -155,6 +155,10 @@
                                       ; TOC (and js/toc.js) from every page; headings
                                       ; keep their ids and anchors. The home's right bar
                                       ; follows its front matter's hideRightBar instead
+         :page-button true            ; vdoing's pageButton: the previous and next pages
+                                      ; again, as chevrons fixed at the window's edges,
+                                      ; shown from 84rem (1344 px), where they cover
+                                      ; nothing; false omits them
          :per-page 10                 ; a positive integer: articles per page on the
                                       ; homepage and on category / tag pages (/page/2/, …)
          :fonts {:tamil :system}      ; :system | :self-hosted  (§6.9, D-P3-12)

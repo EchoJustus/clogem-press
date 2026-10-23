@@ -14,6 +14,7 @@
 //      fallbacks for no JS, no `@media (scripting)` and a failed nav.js;
 //   7. the home's text card pads like every other main at 50rem and below.
 //  10. the sidebar's collapse button (js/nav.js), above 50rem only;
+//  11. the page buttons, from 84rem only, never over a box or a link;
 //
 // Smooth scrolling is on in every test, and focus scrolling animates too:
 // positions are read under `reducedMotion: 'reduce'`, or once scrollY has
@@ -1012,6 +1013,89 @@ async function item10(t) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 11. Page buttons
+
+// runs in the page: the page buttons' boxes and what they would cover
+function pageButtonState() {
+  const r = (e) => { const b = e.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, width: b.width, height: b.height }; };
+  const btns = [...document.querySelectorAll('a.clogem-page-button')].map((a) => ({
+    cls: a.className, href: a.getAttribute('href'), shown: a.checkVisibility(), opacity: getComputedStyle(a).opacity,
+    z: getComputedStyle(a).zIndex, ...r(a) }));
+  const boxes = ['.clogem-sidebar', '.clogem-main', '.clogem-toc'].map((s) => [s, document.querySelector(s)]).filter(([, e]) => e).map(([s, e]) => ({ s, ...r(e) }));
+  const visible = { prev: document.querySelector('.clogem-prev-next__prev')?.getAttribute('href'),
+                    next: document.querySelector('.clogem-prev-next__next')?.getAttribute('href') };
+  return { btns, boxes, visible, innerHeight };
+}
+
+async function item11(t) {
+  const page = await t.newPage({ viewport: { width: 1440, height: 740 }, reducedMotion: 'reduce' });
+  await open(page, t, article);
+  for (const width of [1344, 1407, 1408, 1440]) {
+    await page.setViewportSize({ width, height: 740 });
+    const s = await page.evaluate(pageButtonState);
+    const want = width >= 1408 ? 80 : 50;
+    t.check(s.btns.length === 2 && s.btns.every((b) => b.shown), `${width}: both page buttons are visible (${JSON.stringify(s.btns)})`);
+    const prev = s.btns.find((b) => b.cls.includes('is-prev')), next = s.btns.find((b) => b.cls.includes('is-next'));
+    t.check(prev && next && prev.href === s.visible.prev && next.href === s.visible.next,
+            `${width}: the buttons go where prev/next go (${prev && prev.href}, ${next && next.href} vs ${s.visible.prev}, ${s.visible.next})`);
+    for (const b of s.btns) {
+      t.check(Math.abs((b.top + b.bottom) / 2 - s.innerHeight / 2) <= 1 && Math.abs(b.height - 70) <= 0.5,
+              `${width} ${b.cls}: vertically centred and 70 px tall (${b.top}–${b.bottom} in ${s.innerHeight})`);
+      t.check(Math.abs(b.width - want) <= 0.5, `${width} ${b.cls}: ${b.width} px wide, want ${want}`);
+      t.check(b.opacity === '0.55' && Number(b.z) < 10, `${width} ${b.cls}: opacity ${b.opacity}, z-index ${b.z}`);
+      for (const x of s.boxes) {
+        const meets = b.left < x.right && x.left < b.right && b.top < x.bottom && x.top < b.bottom;
+        t.check(!meets, `${width} ${b.cls} (${b.left}–${b.right}) meets ${x.s} (${x.left}–${x.right})`);
+      }
+    }
+    t.check(prev && next && prev.left === 0 && next.right === width, `${width}: at the viewport's edges (${prev && prev.left}, ${next && next.right})`);
+    // every link a reader can see stays reachable beside them
+    const covered = await page.evaluate(() => {
+      const out = [];
+      for (const a of document.querySelectorAll('.clogem-sidebar a[href], .clogem-content a[href], .clogem-toc a[href]')) {
+        if (!a.checkVisibility()) continue;
+        a.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'nearest' });
+        for (const r of a.getClientRects()) {
+          const x = r.left + r.width / 2, y = r.top + r.height / 2;
+          const hit = document.elementFromPoint(x, y);
+          if (!a.contains(hit)) out.push(`${a.textContent.trim().slice(0, 30)} → ${hit && hit.className}`);
+        }
+      }
+      scrollTo({ top: 0, behavior: 'instant' });
+      return out;
+    });
+    t.check(covered.length === 0, `${width}: every visible link's centre is the link (${covered.slice(0, 5).join('; ')})`);
+  }
+  // hover: opacity 1
+  await page.setViewportSize({ width: 1440, height: 740 });
+  await page.hover('a.clogem-page-button.is-next');
+  t.check(await page.evaluate(() => getComputedStyle(document.querySelector('a.clogem-page-button.is-next')).opacity) === '1',
+          '1440: a hovered page button is opaque');
+  // never a Tab stop
+  await page.mouse.move(700, 400);
+  await page.evaluate(() => document.activeElement.blur());
+  let landed = 0;
+  for (let i = 0; i < 40; i++) {
+    await page.keyboard.press('Tab');
+    if (await page.evaluate(() => !!document.activeElement.closest('.clogem-page-button'))) landed++;
+  }
+  t.check(landed === 0, `1440: ${landed} of 40 Tab stops landed on a page button`);
+  // hidden below 84rem
+  for (const width of [1343, 900, 360]) {
+    await page.setViewportSize({ width, height: 740 });
+    const shown = await page.evaluate(() => [...document.querySelectorAll('a.clogem-page-button')].map((a) => a.checkVisibility()));
+    t.check(shown.length === 2 && shown.every((v) => !v), `${width}: the page buttons are hidden (${shown})`);
+  }
+  // the catalogue has a next button only
+  await page.setViewportSize({ width: 1440, height: 740 });
+  await open(page, t, 'pages/559f0f/');
+  const c = await page.evaluate(pageButtonState);
+  t.check(c.btns.length === 1 && c.btns[0].cls.includes('is-next') && c.btns[0].shown && c.btns[0].href === c.visible.next,
+          `the catalogue at 1440: one next button (${JSON.stringify(c.btns)})`);
+  await page.close();
+}
+
 export default async function layout(t) {
   await item1(t);
   await item2(t);
@@ -1021,4 +1105,5 @@ export default async function layout(t) {
   await item6(t);
   await item7(t);
   await item10(t);
+  await item11(t);
 }

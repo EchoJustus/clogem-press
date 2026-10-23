@@ -330,6 +330,15 @@ is **not kept across pages**: each page starts as `:theme
 inverted). The button needs JavaScript; without it the sidebar always
 shows. In the mobile drawer the sidebar always shows.
 
+**Page buttons.** On by default, as in vdoing (`pageButton`): an article
+or catalogue page with a previous or next page repeats those two links as
+chevrons fixed at the window's left and right edges, half-opaque until
+hovered. They show only from 84rem (1344 px), where the window is wide
+enough for them to cover nothing, and print never shows them. They are
+duplicates for the mouse: screen readers and the keyboard use the
+previous/next links at the end of the article. `:theme :page-button false`
+omits them.
+
 The mode and page-style classes are on `<html>`, unqualified:
 `.theme-mode-dark`, `.theme-style-card`. (0.2.0 put them on `<body>`; CSS
 written as `body.theme-mode-dark` must drop `body`.)

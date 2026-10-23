@@ -497,6 +497,23 @@ img { max-width: 100%; height: auto; }
 .clogem-prev-next__next { margin-left: auto; text-align: right; }
 .clogem-prev-next span { display: block; font-size: 0.75rem; color: var(--textColorSubtle); }
 
+/* P4-B2b: vdoing's page buttons, fixed at the viewport's edges. The widest
+ * shell is 80rem, so its gutter is (100vw - 80rem) / 2 + 1.25rem: 52px at
+ * 84rem, 84px at 88rem. They show only from 84rem, 50px wide, then 80px —
+ * never over a box (beside a classic scrollbar, a few px of the sidebar's
+ * or the TOC's padding). Below the navbar and its drawer (z-index 10) */
+.clogem-page-button { display: none; }
+@media (min-width: 84rem) {
+  .clogem-page-button { position: fixed; top: calc(50% - 35px); z-index: 5; display: flex; align-items: center;
+    justify-content: center; width: 50px; height: 70px; font-size: 1.25rem; color: var(--textColorSubtle);
+    border-radius: 3px; opacity: 0.55; transition: opacity 0.2s, background-color 0.2s; }
+  .clogem-page-button:hover { opacity: 1; color: var(--textColorSubtle); background: rgba(153, 153, 153, 0.15); text-decoration: none; }
+  .clogem-page-button.is-prev { inset-inline-start: 0; }
+  .clogem-page-button.is-next { inset-inline-end: 0; }
+  [dir="rtl"] .clogem-page-button .clogem-icon { transform: scaleX(-1); }
+}
+@media (min-width: 88rem) { .clogem-page-button { width: 80px; } }
+
 /* ---- Phase 2: catalogue pages ---- */
 .clogem-catalogue__header { margin-bottom: 1.5rem; }
 .clogem-catalogue__img { max-height: 12rem; border-radius: 8px; }
@@ -701,7 +718,7 @@ html.theme-mode-dark {
   .clogem-navbar, .clogem-sidebar, .clogem-toc, .clogem-mode, .clogem-search,
   .clogem-comments, .clogem-lang-banner, .clogem-prev-next, .header-anchor,
   .clogem-navbar__toggle, .clogem-navbar__drawer, .clogem-langs__toggle,
-  .clogem-sidebar-toggle { display: none !important; }
+  .clogem-sidebar-toggle, .clogem-page-button { display: none !important; }
   .clogem-shell, .clogem-shell--toc, .clogem-shell--single.clogem-shell--toc {
     display: block; max-width: none; padding: 0;
   }
