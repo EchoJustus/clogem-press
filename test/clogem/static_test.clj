@@ -599,6 +599,42 @@
                 (pr-str ws)))
           (is (= 2 (count ws)) (pr-str ws)))))))
 
+(deftest a-root-inside-git-copies-nothing
+  (testing "P4-F.2 item 2, the root: an assets/ or static directory whose
+            real path is inside a .git — the site's own or a nested
+            repository's — copies nothing and says so, and the poller does
+            not walk it"
+    (with-site site-edn {}
+      (fn [dir out]
+        (fs/delete-tree (fs/path dir "public"))
+        (fs/create-dirs (fs/path dir ".git"))
+        (spit (fs/file dir ".git" "config") "[core]\n")
+        (fs/create-dirs (fs/path dir "vendor" "lib" ".git"))
+        (spit (fs/file dir "vendor" "lib" ".git" "config") "[core]\n")
+        (fs/create-sym-link (fs/path dir "assets") (fs/path ".git"))
+        (fs/create-sym-link (fs/path dir "public") (fs/path "vendor" "lib" ".git"))
+        (let [[_ ds ws] (build! dir out)]
+          (is (empty? (diag/errors ds)))
+          (is (not (fs/exists? (fs/path out "config"))))
+          (is (not (fs/exists? (fs/path out "assets" "config"))))
+          (doseq [d ["public" "assets"]]
+            (is (= 1 (count (filter #(re-find (re-pattern (str "^" d " is a link to .*, inside a \\.git directory; nothing is copied from it\\.$")) %) ws)))
+                (pr-str ws)))
+          (is (= 2 (count ws)) (pr-str ws)))
+        (doseq [d ["public" "assets"]]
+          (is (= [(str (fs/path dir d))] (dev/new-dir-batch (fs/path dir d) dir)) d)))))
+  (testing "a link earlier in the path counts too (:assets-dir \"a/.\")"
+    (with-site (assoc-in site-edn [:content :assets-dir] "a/.") {"CNAME" "c"}
+      (fn [dir out]
+        (fs/create-dirs (fs/path dir ".git"))
+        (spit (fs/file dir ".git" "config") "[core]\n")
+        (fs/create-sym-link (fs/path dir "a") (fs/path ".git"))
+        (let [[_ ds ws] (build! dir out)]
+          (is (empty? (diag/errors ds)))
+          (is (not (fs/exists? (fs/path out "assets" "config"))))
+          (is (= 1 (count ws)) (pr-str ws))
+          (is (re-find #"^a resolves to .*, inside a \.git directory; nothing is copied from it\.$" (str (first ws))) (pr-str ws)))))))
+
 (deftest junk-in-assets-is-not-published
   (testing "P4-F.2 items 3 and 4: assets/ copied editor and OS junk (as on
             main), and neither directory skipped an Emacs auto-save file"

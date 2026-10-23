@@ -3316,7 +3316,8 @@ their own findings. Item 19 onward are corrections.
     P4-F.1 item 4). `render/copied-tree`, shared with the site's `assets/` (P4-F.1 items 2, 3), walks
     a linked root at its real path when that is inside the site, and copies a linked file only when
     its real path is inside the site or the copied directory and not inside a `.git` of either (a
-    linked root included; P4-F.2 item 2: `public/gitcfg -> ../.git/config` was published). It skips
+    root included, however a link in its path reaches it; P4-F.2 item 2:
+    `public/gitcfg -> ../.git/config` was published). It skips
     `util/junk-file?` names in `assets/` too (item 3), and `editor-temp?` takes Emacs' `#x#`
     auto-save names (item 4); every other link is skipped and named
     once by `warn-skipped-links!`, which `check-output-collisions!` runs) into the
@@ -3334,9 +3335,9 @@ their own findings. Item 19 onward are corrections.
     (P4-F.1 item 5, CHANGELOG). The poller (`dev/snapshot`) and `new-dir-batch` list dotfiles too,
     skipping `.git` and `editor-temp?` names (P4-F.1 item 1). P4-F.2: `dev/tree-files` walks with
     `fs/walk-file-tree`, pruning a `.git` (`:skip-subtree`) rather than listing it — a 20,000-file
-    `.git` cost each pass ~75 ms — skips `util/junk-file?` names (a `.DS_Store` write rebuilt for
-    nothing), and walks a linked root at its real path when that is inside the site, as
-    `copied-tree` does, naming the files below the link (item 1: polling saw no edit under
+    `.git` cost each pass 75-250 ms — skips `util/junk-file?` names (a `.DS_Store` write rebuilt for
+    nothing), and walks a linked root at its real path when that is inside the site and not inside
+    a `.git` there, as `copied-tree` does, naming the files below the link (item 1: polling saw no edit under
     `public -> web/static`; `poll-watch!` takes `:site-fn`, `new-dir-batch` the site). A deleted static `.html` file leaves the output at the next build, in a directory
     marked before it (D.4); any other deleted file stays until `bb clean`. CNAME matters to branch
     deploys and other hosts; the Actions artifact flow ignores it. IndexNow's key file is just a

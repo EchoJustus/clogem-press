@@ -52,7 +52,7 @@ verification and a static root (§11.3 items 14, 15). The version stays 0.2.0.
   when one changes — a dotfile too, when it polls (`--poll`, or its
   fallback), which never saw one before P4-F.1, and a file under a linked
   static directory or a linked `assets/` (P4-F.2). Polling skips a `.git`
-  without listing it, and a `.DS_Store` write no longer rebuilds. A static file where the build writes — a page,
+  without listing it, and a `.DS_Store` write no longer makes it rebuild. A static file where the build writes — a page,
   `feed.xml`, `sitemap.xml`, `robots.txt`, a site asset, anything under
   `clogem/`, `assets/` or `pagefind/`, the `.clogem-output` marker, a
   temp-file or `.pagefind-…` name, or a page's directory — is an error

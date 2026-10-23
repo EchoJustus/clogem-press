@@ -761,8 +761,10 @@
   inside the site or `dir`: a link to anything else — a file outside the
   site, a directory (never descended), a missing target — is skipped, and
   `:skipped` names it (item 2: its target's bytes used to be published).
-  Nor is a link into a `.git` of the site or of `dir` followed, the root
-  included: `.git/config` can hold a remote's credentials (P4-F.2 item 2).
+  Nor is a link into a `.git` of the site or of `dir` followed, and nothing
+  is copied from a `dir` whose real path is inside a `.git` of the site,
+  however a link in its path reaches it: `.git/config` can hold a
+  remote's credentials (P4-F.2 item 2).
   `hidden?` lists dotfiles; `keep?` filters the paths relative to `dir`."
   [cfg dir {:keys [hidden? keep?] :or {keep? (constantly true)}}]
   (when (fs/directory? dir)
@@ -771,8 +773,10 @@
       (cond
         (and (fs/sym-link? dir) (not (under? site root)))
         {:skipped [[dir (str "is a link to " root ", outside the site; nothing is copied from it")]]}
-        (and (fs/sym-link? dir) (in-git? site root))
-        {:skipped [[dir (str "is a link to " root ", inside a .git directory; nothing is copied from it")]]}
+        ;; a link anywhere in the path counts, not only the last name's
+        (in-git? site root)
+        {:skipped [[dir (str (if (fs/sym-link? dir) "is a link to " "resolves to ") root
+                             ", inside a .git directory; nothing is copied from it")]]}
         :else
         (reduce
          (fn [acc p]

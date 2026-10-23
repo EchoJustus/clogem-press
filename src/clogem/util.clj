@@ -20,7 +20,7 @@
     (boolean
      (or (str/starts-with? n ".#")
          (str/ends-with? n "~")
-         (re-matches #"#.*#" n)
+         (re-matches #"#.+#" n)
          (= n "4913")
          (re-find #"(?i)\.(swp|swo|swx|tmp)$" n)
          (str/includes? n ".clogem-tmp-")

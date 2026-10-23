@@ -154,7 +154,7 @@
              "/s/content/.clogem-watch-probe-99" "/s/content/#a.md#"]]
     (is (dev/editor-temp? p) p))
   (doseq [p ["/s/content/a.md" "/s/content/4913.md" "/s/content/swp.md" "/s/site.edn"
-             "/s/overrides/custom.css" "/s/content/#a.md" "/s/content/a#b.md" "/s/content/#"]]
+             "/s/overrides/custom.css" "/s/content/#a.md" "/s/content/a#b.md" "/s/content/#" "/s/content/##"]]
     (is (not (dev/editor-temp? p)) p))
   (testing "the submitter drops them before they reach the queue"
     (let [q (LinkedBlockingQueue.)

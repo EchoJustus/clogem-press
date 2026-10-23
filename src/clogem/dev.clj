@@ -803,18 +803,20 @@
   "Every file below the directory `dir`, dotfiles included — the static
   directory's `.nojekyll`, `.well-known/` and `.domains` are outputs
   (P4-F.1 item 1) — but none under a `.git` segment, which is pruned from
-  the walk, not listed and then dropped (P4-F.2 item 5: a 20,000-file
-  `.git` cost every pass a quarter of a second), and no `u/junk-file?`
+  the walk, not listed and then dropped (P4-F.2 item 5: listing a
+  20,000-file `.git` cost every pass 75-250 ms), and no `u/junk-file?`
   name: neither is a change to rebuild for, nor a `.DS_Store` the build
-  never copies. A `dir` that is a link whose real path is inside `site`
-  is walked at that real path, as the build copies it (P4-F.2 item 1:
-  the walk never enters a linked root, so polling saw no edit under it);
-  the paths are still named below `dir`."
+  never copies. A `dir` that is a link whose real path is inside `site`,
+  and not inside a `.git` there, is walked at that real path, as the
+  build copies it (P4-F.2 item 1: the walk never enters a linked root, so
+  polling saw no edit under it); the paths are still named below `dir`."
   [dir & [site]]
   (let [root (if (and site (fs/sym-link? dir))
                (let [r (try (fs/real-path dir) (catch Exception _ nil))
                      s (try (str (fs/real-path site)) (catch Exception _ nil))]
-                 (if (and r s (or (= s (str r)) (str/starts-with? (str r) (str s File/separator))))
+                 (if (and r s
+                          (or (= s (str r)) (str/starts-with? (str r) (str s File/separator)))
+                          (not-any? #(= ".git" (str %)) (fs/components (fs/relativize s r))))
                    r
                    dir))
                dir)
