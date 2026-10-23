@@ -522,11 +522,29 @@
   current article are marked."
   [{:keys [cfg group] :as ctx}]
   (when-let [node (sidebar-node-of ctx)]
-    [:aside.clogem-sidebar
+    [:aside#clogem-sidebar.clogem-sidebar
      [:nav {:aria-label (i18n/tr ctx :page/sidebar)}
       (sidebar-node ctx node
                     (not (false? (get-in cfg [:theme :sidebar-open])))
                     (ancestors-of (:dir-key group)))]]))
+
+(defn sidebar-toggle
+  "P4-B2b: the sidebar's collapse button (vdoing's sidebar button), on a
+  page with a sidebar only: the main column's first child, outside the
+  article. Rendered `hidden`; js/nav.js reveals it, and collapses the
+  sidebar under a class only it sets (`is-sidebar-collapsed` on the
+  shell), above 50rem — so without JS, or with a failed nav.js, the
+  sidebar shows and there is no button. `chevron-left` while the sidebar
+  is expanded, `chevron-right` while it is collapsed (CSS, from
+  `aria-expanded`)."
+  [ctx]
+  (when (sidebar? ctx)
+    [:button.clogem-sidebar-toggle {:type "button" :hidden true :aria-expanded "true"
+                                    :aria-controls "clogem-sidebar"
+                                    :aria-label (i18n/tr ctx :page/sidebar)
+                                    :title (i18n/tr ctx :page/sidebar)}
+     (icons/icon ctx :chevron-left {:class "is-expanded"})
+     (icons/icon ctx :chevron-right {:class "is-collapsed"})]))
 
 (defn toc?
   "Does the page render the TOC bar (and js/toc.js)? Only when it has
@@ -551,11 +569,15 @@
 (defn shell
   "The page body between navbar and footer: the sidebar tree when the page
   has one, the main column, and the TOC bar when the page has headings."
-  [ctx main]
+  [{:keys [cfg] :as ctx} main]
   (let [sb (sidebar ctx)
         tc (toc ctx)]
-    [:div.clogem-shell {:class (str/join " " (remove nil? [(when-not sb "clogem-shell--single")
-                                                          (when tc "clogem-shell--toc")]))}
+    [:div.clogem-shell (cond-> {:class (str/join " " (remove nil? [(when-not sb "clogem-shell--single")
+                                                                   (when tc "clogem-shell--toc")]))}
+                         ;; P4-B2b: `:theme :sidebar-collapsed true`, read by
+                         ;; js/nav.js alone (no CSS rule reads it)
+                         (and sb (true? (get-in cfg [:theme :sidebar-collapsed])))
+                         (assoc :data-clogem-collapsed ""))
      sb
      main
      tc]))

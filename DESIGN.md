@@ -3444,7 +3444,7 @@ their own findings. Item 19 onward are corrections.
     :chroma` or `:tools :fswatcher` pin is a **warning** and is repaired to the built-in pin — nothing
     runs either tool yet, and 0.2.0's own §5.6 sketch (a single `:sha256` string) passed 0.2.0;
     Pagefind's pin stays an error (`config/fatal-tool-ids`, which C and D extend). vdoing's
-    `sidebarOpen` is the planned `:theme :sidebar-collapsed`, inverted — it says whether the sidebar
+    `sidebarOpen` is `:theme :sidebar-collapsed` (done in B2b), inverted — it says whether the sidebar
     *panel* starts open (vdoing `Layout.vue` `created()`); clogem's `:sidebar-open` is vdoing's
     `sidebar.collapsable`, inverted. `sidebar` is *implicit* (the structured sidebar is what
     clogem-press always builds), `algolia` *deferred*, `bodyBgImgInterval` planned; `vdoing-keys` now
@@ -3461,6 +3461,12 @@ their own findings. Item 19 onward are corrections.
     `js/toc.js` (`layout/toc?`); headings keep their ids and anchors. vdoing nests the headings under
     the sidebar's link when the right menu is off; clogem-press does not (the sidebar lists articles
     only). The home's right bar follows `hideRightBar`.
+    `:sidebar-collapsed true` puts `data-clogem-collapsed` on a sidebar page's shell; only
+    `js/nav.js` reads it, setting `is-sidebar-collapsed` on the shell, which CSS applies above 50rem
+    only — so without JS, or with a failed `nav.js`, the sidebar shows, and the drawer always shows
+    it. The button (`:page/sidebar`, `aria-expanded`, `aria-controls="clogem-sidebar"`, a chevron
+    mirrored in RTL) is the main column's first child, outside the article, rendered `hidden` until
+    `nav.js` reveals it. The state is kept across resizes, not across pages.
     *Unknown-key warnings — done in A (part of D-P4-16).* `config/known-keys` is the one table of
     every section's keys ({path → {key :ok|:planned}}, `:*` for any key); `check-keys!` walks the
     site.edn as written and warns, never errors, on an unknown key — naming its path and the nearest

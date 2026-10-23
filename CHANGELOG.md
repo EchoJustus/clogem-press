@@ -73,6 +73,18 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   `js/toc.js` — from every page. Headings keep their ids and anchors, and
   the home's right bar still follows `hideRightBar`. vdoing then nests the
   headings under the sidebar's link; clogem-press does not.
+- **Sidebar collapse** (`:theme :sidebar-collapsed`, vdoing's `sidebarOpen`
+  inverted, default `false`): above 50rem an article with a sidebar gets a
+  chevron button at the top of its main column, named by the page
+  language's `:page/sidebar`, with `aria-expanded` and `aria-controls` on
+  the aside's new `id="clogem-sidebar"`. It hides the sidebar (none of its
+  links can take focus) and gives the article its column: at 1280 px main
+  grows from 680 to 992 px. `true` starts every article collapsed. The
+  button is rendered `hidden` and revealed by `js/nav.js`, so without JS,
+  or with a failed `nav.js`, the sidebar shows and there is no button; at
+  50rem and below there is no button and the drawer always shows the
+  sidebar. The choice holds across resizes but not across pages. Print
+  hides the button.
 
 ### Changed (B2b)
 
@@ -151,6 +163,14 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
 - `bb test`: with `:right-menu-bar false` no page of a temp site has a
   `clogem-toc`, `clogem-shell--toc` or `js/toc.js`, while its h2/h3 keep
   their ids and anchors and the home keeps `clogem-home-right`.
+- `bb test`: the collapse button, the aside's id and `aria-controls` on
+  every sidebar page of the demo and on no other (the home, a category page,
+  the catalogue, a post), `hidden`, outside the article; the shell's marker
+  with `true` only, on sidebar pages only, and read by no CSS rule.
+  `layout.test.mjs`: the collapse by pointer and keyboard at 1280, Tab
+  around the collapsed aside, the marker with and without JS and with
+  `nav.js` aborted, 360 px and the drawer, a resize round trip, and reduced
+  motion. `modes.test.mjs`' print check covers the button at 1280.
 
 ### Needs native review (B2b)
 

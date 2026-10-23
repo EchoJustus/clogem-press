@@ -282,7 +282,7 @@
   "The page chrome's keys still :planned in `config/known-keys`: the tests
   below see them as items 9–13 make them, :ok. Each item takes its key
   out of this set when it flips it."
-  #{:sidebar-collapsed :page-button :content-bg-style :back-to-top})
+  #{:page-button :content-bg-style :back-to-top})
 
 (defn- as-ok [known]
   (reduce #(assoc-in %1 [[:theme] %2] :ok) known chrome-keys))
@@ -375,3 +375,62 @@
     (is (= [(str ":theme :rightMenuBar is vdoing's spelling; clogem-press reads :theme :right-menu-bar. It is ignored.")]
            (map :message (diag/warnings ds))))
     (is (true? (get-in cfg [:theme :right-menu-bar])))))
+
+;; ---------------------------------------------------------------------------
+;; 10. Sidebar collapse: :theme :sidebar-collapsed
+
+(def ^:private sidebar-toggle-re
+  #"<button aria-controls=\"clogem-sidebar\" aria-expanded=\"true\" aria-label=\"([^\"]+)\" class=\"clogem-sidebar-toggle\" hidden=\"hidden\" title=\"\1\" type=\"button\"><svg[^>]*class=\"clogem-icon is-expanded\"[^>]*><use href=\"[^\"]*#chevron-left\"(?:/>|></use>)</svg><svg[^>]*class=\"clogem-icon is-collapsed\"[^>]*><use href=\"[^\"]*#chevron-right\"(?:/>|></use>)</svg></button>")
+
+(deftest the-sidebar-toggle-is-on-sidebar-pages-only
+  (let [ps (pages)
+        sidebar-pages (filter #(str/includes? (val %) "<aside class=\"clogem-sidebar\" id=\"clogem-sidebar\">") ps)]
+    (is (>= (count sidebar-pages) 10))
+    (doseq [[rel page] ps]
+      (let [sb? (str/includes? page "<aside class=\"clogem-sidebar\"")]
+        (is (= (if sb? 1 0) (count (re-seq #"clogem-sidebar-toggle" page))) rel)
+        (is (= (if sb? 1 0) (count (re-seq #"aria-controls=\"clogem-sidebar\"" page))) rel)
+        (is (= (if sb? 1 0) (count (re-seq #"id=\"clogem-sidebar\"" page))) rel)
+        (when sb?
+          (testing (str rel ": hidden, named, both chevrons, the main's first child, outside the article")
+            (is (re-find sidebar-toggle-re page) rel)
+            (is (re-find #"<main class=\"clogem-main\"><button aria-controls=\"clogem-sidebar\"" page) rel)
+            (is (< (str/index-of page "clogem-sidebar-toggle") (str/index-of page "<article")) rel)
+            (is (not (re-find #"data-clogem-collapsed" page)) (str rel ": the default emits no marker"))))))
+    (testing "none on the home, a category page, the catalogue and a post"
+      (doseq [p [["index.html"] ["categories" "guide" "index.html"] ["pages" "559f0f" "index.html"] ["pages" "284c67" "index.html"]]]
+        (is (not (str/includes? (apply html p) "clogem-sidebar")) (str p))))
+    (testing "named in the page's language (:page/sidebar)"
+      (is (= "Sidebar" (second (re-find sidebar-toggle-re (html "pages" "c0nta1" "index.html")))))
+      (is (= "侧边栏" (second (re-find sidebar-toggle-re (html "zh-Hans" "pages" "c0nta1" "index.html"))))))))
+
+(deftest sidebar-collapsed-true-marks-the-shell
+  (let [files {"index.md" "# Home\n" "01.Guide/01.t.md" a-toc-article "_posts/p.md" a-post}
+        on (build-temp (assoc one-lang :theme {:sidebar-collapsed true}) files)
+        off (build-temp one-lang files)]
+    (is (re-find #"<div class=\"clogem-shell clogem-shell--toc\" data-clogem-collapsed=\"\">" (on "pages/t00001/index.html")))
+    (testing "on the sidebar page only"
+      (doseq [[rel page] on :when (not= rel "pages/t00001/index.html")]
+        (is (not (str/includes? page "data-clogem-collapsed")) rel)))
+    (testing "the default emits none"
+      (is (not-any? #(str/includes? (val %) "data-clogem-collapsed") off)))
+    (testing "no CSS rule reads the server's marker; nav.js does"
+      (is (not (str/includes? (slurp theme-css) "collapsed]")))
+      (is (not (str/includes? (slurp theme-css) "data-clogem-collapsed")))
+      (is (str/includes? (slurp "src/clogem/theme/resources/js/nav.js") "hasAttribute(\"data-clogem-collapsed\")")))
+    (testing "the key is known; vdoing's sidebarOpen names it, with no 'planned'"
+      (is (= :ok (get-in config/known-keys [[:theme] :sidebar-collapsed])))
+      (let [[_ ds] (load-site {:theme {:sidebarOpen false}})]
+        (is (= [(str ":theme :sidebarOpen is vdoing's spelling; clogem-press reads :theme :sidebar-collapsed "
+                     "(with the opposite sense: sidebarOpen false is :sidebar-collapsed true). It is ignored.")]
+               (map :message (diag/warnings ds))))))))
+
+(deftest the-collapse-css-is-above-50rem-only
+  (let [rules (cp/parse (slurp theme-css))
+        collapsing (filter #(some (fn [sel] (str/includes? sel "is-sidebar-collapsed")) (:selectors %)) rules)]
+    (is (seq collapsing))
+    (is (every? #(some #{"not all and (max-width: 50rem)" "(min-width: 80rem)"} (:media %)) collapsing)
+        (pr-str (map :selectors collapsing)))
+    (is (some #(= ["(max-width: 50rem)"] (:media %))
+              (filter #(some #{".clogem-sidebar-toggle"} (:selectors %)) rules))
+        "at 50rem and below the button is not drawn")))

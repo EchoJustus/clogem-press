@@ -527,6 +527,24 @@ img { max-width: 100%; height: auto; }
   }
   .clogem-shell--toc:not(.clogem-shell--single) > .clogem-toc { padding-right: 0.5rem; }
 }
+/* P4-B2b: the sidebar's collapse button, first in the main column. Only
+ * js/nav.js reveals it and sets `is-sidebar-collapsed`, and only above
+ * 50rem does either take effect: the drawer always shows the sidebar */
+.clogem-sidebar-toggle { float: inline-start; display: inline-flex; align-items: center; justify-content: center;
+  width: 1.75rem; height: 1.75rem; margin: -0.15rem 0.5rem 0 -0.35rem; padding: 0; font: inherit; font-size: 1rem;
+  color: var(--textColorSubtle); background: none; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
+.clogem-sidebar-toggle:hover { border-color: var(--borderColor); color: var(--textColor); }
+.clogem-sidebar-toggle[hidden], .clogem-sidebar-toggle[aria-expanded="false"] .is-expanded,
+.clogem-sidebar-toggle[aria-expanded="true"] .is-collapsed { display: none; }
+[dir="rtl"] .clogem-sidebar-toggle .clogem-icon { transform: scaleX(-1); }
+@media (max-width: 50rem) { .clogem-sidebar-toggle { display: none; } }
+@media not all and (max-width: 50rem) {
+  .clogem-shell.is-sidebar-collapsed { grid-template-columns: minmax(0, 1fr); }
+  .clogem-shell.is-sidebar-collapsed > .clogem-sidebar { display: none; }
+}
+@media (min-width: 80rem) {
+  .clogem-shell--toc.is-sidebar-collapsed:not(.clogem-shell--single) { grid-template-columns: minmax(0, 1fr) minmax(11rem, 14rem); }
+}
 /* stuck, it stays clear of the back-to-top button's band */
 .clogem-toc { position: sticky; top: calc(var(--navbarHeight) + 1rem); align-self: start; font-size: 0.85rem; border-left: 1px solid var(--borderColor); padding-left: 0.75rem;
   max-height: calc(100vh - var(--navbarHeight) - 6.2rem); overflow-y: auto; }
@@ -682,7 +700,8 @@ html.theme-mode-dark {
   }
   .clogem-navbar, .clogem-sidebar, .clogem-toc, .clogem-mode, .clogem-search,
   .clogem-comments, .clogem-lang-banner, .clogem-prev-next, .header-anchor,
-  .clogem-navbar__toggle, .clogem-navbar__drawer, .clogem-langs__toggle { display: none !important; }
+  .clogem-navbar__toggle, .clogem-navbar__drawer, .clogem-langs__toggle,
+  .clogem-sidebar-toggle { display: none !important; }
   .clogem-shell, .clogem-shell--toc, .clogem-shell--single.clogem-shell--toc {
     display: block; max-width: none; padding: 0;
   }

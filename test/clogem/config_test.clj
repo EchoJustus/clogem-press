@@ -620,9 +620,9 @@
                            :theme {:bodyBgImgInterval 15}})
         by (into {} (map (juxt :message :hint)) (diag/warnings ds))]
     (is (empty? (diag/errors ds)))
+    ;; P4-B2b item 10: :sidebar-collapsed is implemented, so no "planned"
     (is (contains? by (str ":sidebarOpen is vdoing's spelling; clogem-press reads :theme :sidebar-collapsed "
-                           "(with the opposite sense: sidebarOpen false is :sidebar-collapsed true) — planned, "
-                           "not implemented in 0.2.0. It is ignored."))
+                           "(with the opposite sense: sidebarOpen false is :sidebar-collapsed true). It is ignored."))
         (pr-str (keys by)))
     (let [m (str ":sidebar is not needed: clogem-press always generates the structured sidebar from the "
                  "numbered directory tree (vdoing's 'structuring' mode); it is ignored.")]

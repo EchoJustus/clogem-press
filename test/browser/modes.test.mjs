@@ -489,7 +489,7 @@ export default async function modes(t) {
   // which is false for the drawer's display: contents)
   const display = (sels) => Object.fromEntries(sels.map((s) =>
     [s, document.querySelector(s) ? getComputedStyle(document.querySelector(s)).display : 'absent']));
-  for (const [viewport, onScreen] of [[{ width: 1280, height: 720 }, ['.clogem-langs__toggle', '.clogem-navbar__drawer']],
+  for (const [viewport, onScreen] of [[{ width: 1280, height: 720 }, ['.clogem-langs__toggle', '.clogem-navbar__drawer', '.clogem-sidebar-toggle']],
                                       [{ width: 360, height: 740 }, ['.clogem-navbar__toggle']]]) {
     const page = await t.newPage({ colorScheme: 'dark', viewport });
     await page.addInitScript(() => { try { localStorage.setItem('clogem-mode', 'dark'); } catch (e) {} });

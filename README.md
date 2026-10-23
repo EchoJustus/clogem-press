@@ -321,6 +321,15 @@ from every page; headings keep their ids and `#` anchors. vdoing nests the
 headings under the sidebar's link instead; clogem-press does not. The home
 page's right bar is not the TOC: its front matter's `hideRightBar` decides.
 
+**Sidebar collapse.** Above 50rem an article's sidebar has a collapse
+button at the top of the article (a chevron); it hides the sidebar and
+gives the article its column, and the same button brings it back. The
+reader's choice holds while they stay on the page, across resizes, but it
+is **not kept across pages**: each page starts as `:theme
+:sidebar-collapsed` says (default `false`; vdoing's `sidebarOpen`,
+inverted). The button needs JavaScript; without it the sidebar always
+shows. In the mobile drawer the sidebar always shows.
+
 The mode and page-style classes are on `<html>`, unqualified:
 `.theme-mode-dark`, `.theme-style-card`. (0.2.0 put them on `<body>`; CSS
 written as `body.theme-mode-dark` must drop `body`.)

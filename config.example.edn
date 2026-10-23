@@ -142,8 +142,12 @@
                                       ; colour. Anything else warns and falls back to :card
          :sidebar-open true           ; true → every sidebar group starts open;
                                       ; false → only the current article's trail
-                                      ; (vdoing's `sidebar.collapsable`, inverted; vdoing's
-                                      ; `sidebarOpen` is the planned :sidebar-collapsed)
+                                      ; (vdoing's `sidebar.collapsable`, inverted)
+         :sidebar-collapsed false     ; vdoing's sidebarOpen, inverted: true → an article's
+                                      ; sidebar starts collapsed. A button at the top of
+                                      ; the article collapses and expands it, above 50rem
+                                      ; (the mobile drawer always shows it). Needs JS:
+                                      ; without it the sidebar shows. Not kept across pages
          :sidebar-depth 2             ; right-hand TOC depth, an integer 0–5: 0 = no TOC,
                                       ; 1 = h2, 2 = h2–h3, 3 = h2–h4; front matter
                                       ; `sidebarDepth:` overrides per page

@@ -13,6 +13,7 @@
 //   4–6. at 50rem and below, one row and a drawer (js/nav.js), with
 //      fallbacks for no JS, no `@media (scripting)` and a failed nav.js;
 //   7. the home's text card pads like every other main at 50rem and below.
+//  10. the sidebar's collapse button (js/nav.js), above 50rem only;
 //
 // Smooth scrolling is on in every test, and focus scrolling animates too:
 // positions are read under `reducedMotion: 'reduce'`, or once scrollY has
@@ -465,7 +466,7 @@ async function item3(t) {
     const page = await t.newPage({ viewport: { width: 1100, height: 740 } });
     await page.route(url(t, article), async (route) => {
       const res = await route.fetch();
-      const body = (await res.text()).replace(/<aside class="clogem-sidebar">[\s\S]*?<\/aside>/, '')
+      const body = (await res.text()).replace(/<aside class="clogem-sidebar"[^>]*>[\s\S]*?<\/aside>/, '')
         .replace('class="clogem-shell clogem-shell--toc"', 'class="clogem-shell clogem-shell--single clogem-shell--toc"');
       await route.fulfill({ response: res, body });
     });
@@ -896,6 +897,121 @@ async function item7(t) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 10. Sidebar collapse
+
+// runs in the page: the sidebar's and main's state, and the button's
+function collapseState() {
+  const aside = document.querySelector('aside.clogem-sidebar');
+  const btn = document.querySelector('.clogem-sidebar-toggle');
+  const main = document.querySelector('main.clogem-main');
+  return { aside: getComputedStyle(aside).display, asideShown: aside.checkVisibility(), inShell: !!aside.closest('.clogem-shell'),
+           main: main.getBoundingClientRect().width, expanded: btn.getAttribute('aria-expanded'),
+           btn: btn.checkVisibility(), btnW: btn.getBoundingClientRect().width, btnH: btn.getBoundingClientRect().height,
+           cls: document.querySelector('.clogem-shell').classList.contains('is-sidebar-collapsed'),
+           focused: document.activeElement === btn };
+}
+
+// rewrites the article so its shell carries the server's marker
+async function withMarker(page, t) {
+  await page.route(url(t, article), async (route) => {
+    const res = await route.fetch();
+    const body = (await res.text()).replace('<div class="clogem-shell clogem-shell--toc">', '<div class="clogem-shell clogem-shell--toc" data-clogem-collapsed="">');
+    await route.fulfill({ response: res, body });
+  });
+}
+
+async function item10(t) {
+  // a click collapses, Enter expands; focus stays on the button
+  {
+    const page = await t.newPage({ viewport: { width: 1280, height: 740 }, reducedMotion: 'reduce' });
+    await open(page, t, article);
+    const s0 = await page.evaluate(collapseState);
+    t.check(s0.btn && s0.btnW >= 24 && s0.btnH >= 24 && s0.expanded === 'true' && s0.asideShown,
+            `1280: nav.js reveals the button, ≥ 24×24, expanded, the sidebar shown (${JSON.stringify(s0)})`);
+    await page.locator('.clogem-sidebar-toggle').click();
+    const s1 = await page.evaluate(collapseState);
+    t.check(s1.aside === 'none' && s1.expanded === 'false' && s1.main - s0.main >= 200,
+            `1280: a click hides the aside (${s1.aside}), aria-expanded ${s1.expanded}, main ${s0.main} → ${s1.main}`);
+    const icons = await page.evaluate(() => [...document.querySelectorAll('.clogem-sidebar-toggle .clogem-icon')]
+      .filter((e) => e.checkVisibility()).map((e) => e.querySelector('use').getAttribute('href').split('#')[1]));
+    t.check(icons.join() === 'chevron-right', `collapsed: the button shows chevron-right (${icons})`);
+    // Tab from the top never lands inside the collapsed aside
+    await page.evaluate(() => { document.activeElement.blur(); scrollTo({ top: 0, behavior: 'instant' }); });
+    let inside = 0;
+    for (let i = 0; i < 40; i++) {
+      await page.keyboard.press('Tab');
+      if (await page.evaluate(() => !!document.activeElement.closest('aside.clogem-sidebar'))) inside++;
+    }
+    t.check(inside === 0, `collapsed: ${inside} of 40 Tab stops landed inside the aside`);
+    await page.focus('.clogem-sidebar-toggle');
+    await page.keyboard.press('Enter');
+    const s2 = await page.evaluate(collapseState);
+    t.check(s2.asideShown && s2.expanded === 'true' && Math.abs(s2.main - s0.main) <= 0.5 && s2.focused,
+            `1280: Enter expands it again and focus stays on the button (${JSON.stringify(s2)})`);
+    const icons2 = await page.evaluate(() => [...document.querySelectorAll('.clogem-sidebar-toggle .clogem-icon')]
+      .filter((e) => e.checkVisibility()).map((e) => e.querySelector('use').getAttribute('href').split('#')[1]));
+    t.check(icons2.join() === 'chevron-left', `expanded: the button shows chevron-left (${icons2})`);
+    // reduced motion: nothing here animates
+    const tr = await page.evaluate(() => ['aside.clogem-sidebar', 'main.clogem-main', '.clogem-shell', '.clogem-sidebar-toggle']
+      .map((s) => getComputedStyle(document.querySelector(s)).transitionDuration));
+    t.check(tr.every((d) => /^0s(, 0s)*$/.test(d)), `reduce: every transition is 0s (${tr.join(' | ')})`);
+    // RTL mirrors the chevron
+    const m = await page.evaluate(() => { document.documentElement.dir = 'rtl';
+      const v = getComputedStyle(document.querySelector('.clogem-sidebar-toggle .is-expanded')).transform;
+      document.documentElement.dir = 'ltr'; return v; });
+    t.check(m === 'matrix(-1, 0, 0, 1, 0, 0)', `rtl: the chevron is mirrored (${m})`);
+    await page.close();
+  }
+
+  // the server's marker: collapsed at load with JS; shown, and no button, without it
+  {
+    const page = await t.newPage({ viewport: { width: 1280, height: 740 } });
+    await withMarker(page, t);
+    await open(page, t, article);
+    const s = await page.evaluate(collapseState);
+    t.check(s.cls && s.aside === 'none' && s.expanded === 'false' && s.btn, `the marker: the page loads collapsed (${JSON.stringify(s)})`);
+    await page.close();
+  }
+  for (const [what, opts, abort] of [['no JS', { javaScriptEnabled: false }, false], ['nav.js aborted', {}, true]]) {
+    const page = await t.newPage({ viewport: { width: 1280, height: 740 }, ...opts });
+    await withMarker(page, t);
+    if (abort) await page.route('**/clogem/js/nav.js*', (route) => route.abort());
+    await page.goto(url(t, article), { waitUntil: 'load' });
+    const s = await page.evaluate(() => ({ marker: document.querySelector('.clogem-shell').hasAttribute('data-clogem-collapsed'),
+      aside: document.querySelector('aside.clogem-sidebar').checkVisibility(), btn: document.querySelector('.clogem-sidebar-toggle').checkVisibility() }));
+    t.check(s.marker && s.aside && !s.btn, `${what}, with the marker: the sidebar shows and the button is invisible (${JSON.stringify(s)})`);
+    await page.close();
+  }
+
+  // at 360 the button is not drawn; a collapsed state never hides the
+  // drawer's sidebar, and survives the trip back to 1280
+  {
+    const page = await t.newPage({ viewport: { width: 360, height: 740 } });
+    await open(page, t, article);
+    t.check(!(await page.evaluate(collapseState)).btn, '360: the button is not visible');
+    await page.setViewportSize({ width: 1280, height: 740 });
+    await page.waitForFunction(() => !!document.querySelector('aside.clogem-sidebar').closest('.clogem-shell'));
+    await page.locator('.clogem-sidebar-toggle').click();
+    t.check((await page.evaluate(collapseState)).aside === 'none', '1280: collapsed');
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.waitForFunction(() => !!document.querySelector('#clogem-drawer aside.clogem-sidebar'));
+    t.check(!(await page.evaluate(collapseState)).btn, '360 after a collapse: the button is not visible');
+    await page.locator('.clogem-navbar__toggle > summary').click();
+    const links = await page.evaluate(() => {
+      const as = [...document.querySelectorAll('#clogem-drawer aside.clogem-sidebar a[href]')];
+      return as.map((a) => { a.focus(); return a.checkVisibility() && document.activeElement === a; });
+    });
+    t.check(links.length >= 4 && links.every(Boolean), `360, the drawer open after a collapse: every sidebar link is shown and focusable (${links})`);
+    await page.locator('.clogem-navbar__toggle > summary').click();
+    await page.setViewportSize({ width: 1280, height: 740 });
+    await page.waitForFunction(() => !!document.querySelector('aside.clogem-sidebar').closest('.clogem-shell'));
+    const s = await page.evaluate(collapseState);
+    t.check(s.aside === 'none' && s.expanded === 'false' && s.btn, `back at 1280: still collapsed (${JSON.stringify(s)})`);
+    await page.close();
+  }
+}
+
 export default async function layout(t) {
   await item1(t);
   await item2(t);
@@ -904,4 +1020,5 @@ export default async function layout(t) {
   await item5(t);
   await item6(t);
   await item7(t);
+  await item10(t);
 }

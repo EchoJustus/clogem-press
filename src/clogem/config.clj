@@ -476,7 +476,7 @@
                            :title-badge-icons :planned :blogger :planned :footer :planned
                            :update-bar :planned :right-menu-bar :ok :page-button :planned
                            :content-bg-style :planned :last-updated :planned
-                           :sidebar-collapsed :planned :back-to-top :planned :logo :planned
+                           :sidebar-collapsed :ok :back-to-top :planned :logo :planned
                            :repo :planned}
    [:theme :fonts]        {:tamil :ok}
    [:highlight]           {:provider :ok :line-numbers :ok :copy-button :ok :style :ok :dark-style :ok}
@@ -549,7 +549,7 @@
    ;; (Layout.vue `created()`: `sidebarOpen === false` closes it); clogem's
    ;; :sidebar-open opens every group, which is vdoing's
    ;; `sidebar.collapsable` inverted (D-P4-16)
-   "sidebarOpen"             [[:theme :sidebar-collapsed] :planned
+   "sidebarOpen"             [[:theme :sidebar-collapsed] :ok
                               "with the opposite sense: sidebarOpen false is :sidebar-collapsed true"]
    "sidebarDepth"            [[:theme :sidebar-depth] :ok]
    "categoryText"            [[:content :category-text] :ok]

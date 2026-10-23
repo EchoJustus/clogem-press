@@ -4,7 +4,10 @@
  * back at a placeholder when it does not; focus into the drawer on open;
  * Escape, a click outside, a followed link or a bfcache pageshow close it;
  * outside the drawer layout, Escape or a click outside closes a dropdown.
- * A toggle rendered hidden (no :nav, one language) is revealed here. */
+ * A toggle rendered hidden (no :nav, one language) is revealed here.
+ * The sidebar's collapse button is revealed here too, and collapses it
+ * through a class on the shell (CSS applies it above 50rem only); the
+ * server's data-clogem-collapsed sets the state it starts in. */
 (function () {
   "use strict";
   window.clogem = window.clogem || {};
@@ -39,6 +42,20 @@
         mark = null;
       }
     }
+  }
+
+  var sbt = document.querySelector(".clogem-sidebar-toggle");
+  var shell = document.querySelector(".clogem-shell");
+  if (sbt && shell) {
+    var collapse = function (c) {
+      shell.classList.toggle("is-sidebar-collapsed", c);
+      sbt.setAttribute("aria-expanded", c ? "false" : "true");
+    };
+    collapse(shell.hasAttribute("data-clogem-collapsed"));
+    sbt.hidden = false;
+    sbt.addEventListener("click", function () {
+      collapse(!shell.classList.contains("is-sidebar-collapsed"));
+    });
   }
 
   // the nav and language dropdowns outside the drawer layout
