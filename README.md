@@ -56,7 +56,7 @@ and run it against local content with no packaging step.
 
 | Task | What it does |
 |---|---|
-| `bb build` | Render the site to the output directory (`dist/` by default; `--out` or `:build :out`). Writes missing front matter unless `--no-write`. Renders every page in memory first (in parallel; `CLOGEM_JOBS=1` for one thread) and writes only when all of it succeeded, file by file and atomically (temp file and rename; in place when the OS refuses the temp file or the rename), skipping files whose bytes are unchanged — a page that fails to render, or a site asset that cannot be read, leaves `dist/` and `permalinks.edn` as they were (an I/O error while writing, such as a full disk, or a Pagefind failure can still leave some files updated). Runs Pagefind last under `:search {:provider :pagefind}`; `--no-search` builds without search (no index, no search UI). Highlights code with Chroma unless `--no-highlight` (see Theme). Removes `.html` files in the output directory that the build did not write, so the output directory must be a directory of its own: it may not be, hold or sit inside `content/`, `assets/`, `i18n/` or `overrides/`, be or sit inside a `.git`, nor be the site directory or one of its ancestors; a `:build :out` written in `site.edn` must stay inside the site directory, while the default `dist` and `--out` may point elsewhere, through a symbolic link too (`dist -> /var/www/site`, `--out ../dist`). A build writes into any existing directory that passes those rules — one holding only `CNAME`, `.nojekyll` or a deploy worktree's `.git` included — and marks it with `.clogem-output`; it removes stale `.html` only in a directory a previous build marked, so the first build into a directory sweeps nothing. |
+| `bb build` | Render the site to the output directory (`dist/` by default; `--out` or `:build :out`). Writes missing front matter unless `--no-write`. Renders every page in memory first (in parallel; `CLOGEM_JOBS=1` for one thread) and writes only when all of it succeeded, file by file and atomically (temp file and rename; in place when the OS refuses the temp file or the rename), skipping files whose bytes are unchanged — a page that fails to render, or a site asset that cannot be read, leaves `dist/` and `permalinks.edn` as they were (an I/O error while writing, such as a full disk, or a Pagefind failure can still leave some files updated). Runs Pagefind last under `:search {:provider :pagefind}`; `--no-search` builds without search (no index, no search UI). Highlights code with Chroma unless `--no-highlight` (see Theme). Removes `.html` files in the output directory that the build did not write, so the output directory must be a directory of its own: it may not be, hold or sit inside `content/`, `assets/`, `i18n/` or `overrides/`, be or sit inside a `.git`, nor be the site directory or one of its ancestors; a `:build :out` written in `site.edn` must stay inside the site directory, while the default `dist` and `--out` may point elsewhere, through a symbolic link too (`dist -> /var/www/site`, `--out ../dist`). A build writes into any existing directory that passes those rules — one holding only `CNAME`, `.nojekyll` or a deploy worktree's `.git` included — and marks it with `.clogem-output`; it removes stale `.html` only in a directory a previous build marked, so the first build into a directory sweeps nothing. Copies the static directory, when `:content :static-dir` names one, to the output directory's root (see [Static files](#static-files)). |
 | `bb dev` | Build, serve on 127.0.0.1:1888 (printed as `http://localhost:1888/`), rebuild on change, push a reload to the browser. See [Working locally](#working-locally). |
 | `bb serve` | Serve an already-built directory at the site's `:base`, no watching: `--dir`, else `--out`, else `:build :out`, else `dist/`. `--host`, `--port`, `--base`. |
 | `bb doctor` | Report content problems without building. Exits non-zero on errors. |
@@ -75,14 +75,15 @@ bb --config ../clogem-press/bb.edn dev            # http://localhost:1888/
 ```
 
 `bb dev` builds, serves the output directory (`dist/` by default) and rebuilds on every change to `content/`,
-`assets/`, `i18n/`, `overrides/`, `site.edn` and the generator's own theme
+`assets/`, `i18n/`, `overrides/`, the static directory when `:content
+:static-dir` names one, `site.edn` and the generator's own theme
 resources — including a directory created while it runs (a new
 `content/07.Topic/` and the pages in it, an `overrides/` the site did not
 have, a tree copied in with `cp -r`), a watched directory deleted and made
 again, and a `site.edn` saved by an editor that replaces the file, or that is
 a symbolic link to one elsewhere. Saves are collected until 100 ms pass
 quietly, so a burst of writes is one rebuild, and editor temp files (`.#x`,
-`x~`, `4913`, `*.swp`, `*.tmp`) are ignored; so are dev's own writes — the
+`x~`, `#x#`, `4913`, `*.swp`, `*.tmp`) are ignored; so are dev's own writes — the
 front matter and `permalinks.edn` a build fills in never trigger another. A rebuild of the demo takes about 0.3 s; the page reloads about 0.6 s
 after a save, and a stylesheet-only change swaps the CSS in place. Search is
 re-indexed in the background after the reload; a page that loaded the previous
@@ -190,6 +191,71 @@ A Tamil-only article lives at `/pages/d4e5f6/`, in Tamil. Every article is
 reachable at its identity URL, so sidebar entries, index rows and links never
 need to know which languages exist.
 
+## Static files
+
+Files that must sit at the site's root exactly as they are — `CNAME`,
+`favicon.ico`, a search console's verification file
+(`google0123456789abcdef.html`, `BingSiteAuth.xml`), an IndexNow key file
+(`<key>.txt`), `.nojekyll`, `.well-known/security.txt` — go in a static
+directory, which a site switches on in `site.edn`:
+
+```clojure
+:content {:static-dir "public"}   ; off unless set; "public" is the convention
+```
+
+Every file under it is copied byte for byte to the same path below the output
+directory's root — `public/.well-known/security.txt` becomes
+`dist/.well-known/security.txt` — dotfiles included; a `.git` inside it is
+never copied, and neither are editor and OS leftovers: the names `bb dev`
+ignores (`.CNAME.swp` and vim's other swap files, `CNAME~`, `.#CNAME`,
+`#CNAME#`, `*.tmp`, `4913`, the build's own `.clogem-tmp-…` files) and `.DS_Store`, `Thumbs.db` and `desktop.ini`, skipped
+without a word. A linked file is copied (its target's bytes) only when the
+target is inside the site; a link to a file outside it, into a `.git`
+(`public/gitcfg -> ../.git/config`), to a directory, or
+to nothing is skipped with a warning naming it. The same rules hold for
+`assets/`, leftovers included. A static directory that is itself a link (`public ->
+web/static`) is copied from its target when that is inside the site, as is
+a linked `assets/`; a linked `assets/` whose target is outside the site
+warns and copies nothing. `--base` changes
+nothing on disk: a project site's `dist/` is served at its base, so
+`public/CNAME` is `/my-project/CNAME` there. Files are written only when
+their bytes change, and `bb dev` rebuilds when one is added or edited.
+
+It is a warning, and nothing is copied, when the static directory is not a
+relative path inside the site, sits inside a `.git` (the site's own, or a
+`.git` in its path), or is, holds or sits inside `content/`, `assets/`,
+`i18n/`, `overrides/` or the output directory (`:build :out` or `--out`).
+It is an error, before anything is written and
+in `bb doctor`, when a static file would land where the build writes: at
+the same path as a page, `feed.xml`, `sitemap.xml`, `robots.txt` (the
+generated one, or `assets/robots.txt`, which already replaces it) or a site
+asset; inside `clogem/`, `assets/` or `pagefind/`; on `.clogem-output`, a
+`.clogem-tmp-…` name or a top-level `.pagefind-…` name; or where a page's
+directory goes (a file `public/categories`). Each error says how to fix
+it.
+
+**Upgrading a site that already set `:content :static-dir`.** 0.2.0
+accepted the key, warned that it was planned, and copied nothing; now the
+directory is copied, so a file in it that collides fails the build where
+0.2.0 built. Setting the key is the opt-in, and a collision stays an error:
+move a file such as `public/assets/logo.png` to `assets/logo.png`, and
+ship your own `robots.txt` as `assets/robots.txt` (delete
+`public/robots.txt`, or merge it into the one already in `assets/`).
+
+A static `.html` file deleted from the static directory disappears from the
+output at the next build, as any `.html` the build no longer writes does
+(in an output directory a previous build marked). Any other file deleted
+from it — `CNAME`, `BingSiteAuth.xml` — stays in the output until `bb
+clean`. Prefer the static directory to placing files in `dist/` by hand:
+those survive a rebuild only when they are not `.html`, and are lost to
+`bb clean`.
+
+`CNAME` matters to a GitHub Pages branch deploy and to other hosts.
+GitHub's Actions artifact flow (`actions/deploy-pages`, what the publish
+workflow uses) ignores it and takes the custom domain from the repository's
+Pages settings. An IndexNow key file is just a static `<key>.txt`; nothing
+is generated, and pushing URLs to IndexNow is planned for Phase 5.
+
 ## Theme
 
 **Colour modes.** Four, in vdoing's order: *Follow system*, *Light*, *Dark*
@@ -265,6 +331,67 @@ The colours come from Chroma's `github` and `github-dark` styles
 reading mode uses the dark one, because its code block is dark. An unknown
 language is shown as plain text, with one warning per build.
 
+**Search-console verification.** The meta-tag method of Google Search
+Console and Bing Webmaster Tools, on every page (`bb dev` included; a
+redirect stub, which is `noindex`, has none):
+
+```clojure
+:seo {:verification {:google "abc123…"            ; <meta name="google-site-verification">
+                     :bing   ["1A2B…" "3C4D…"]}}   ; <meta name="msvalidate.01">, one per value
+```
+
+Each value is the `content` of the tag the console asks for: a string, or a
+vector of them for several owners. Any other value is a warning and is
+ignored. The file method works too: put the console's file in the
+[static directory](#static-files).
+
+**Analytics** is off by default (`:analytics {:provider :none}`). One
+provider can be chosen; its script is loaded only because the site owner
+chose it, and nothing of it ships under `:none`:
+
+```clojure
+:analytics {:provider :ga4 :id "G-XXXXXXXXXX"
+            :consent-default :denied}                    ; optional, GA4 only
+:analytics {:provider :plausible                         ; Plausible's new script:
+            :src "https://plausible.io/js/pa-XXXX.js"    ;   the site's own, from its settings
+            :init {:outbound-links true :file-downloads true}} ; plausible.init options, optional
+:analytics {:provider :plausible :domain "example.com"}  ; the legacy script (data-domain)
+:analytics {:provider :umami
+            :website-id "94db1cb1-74f4-4a40-ad6c-962362670409"}
+```
+
+`:src` overrides the provider's script URL — a self-hosted Umami, a proxied
+Plausible script — and must be `https://`. For Plausible, `:domain` selects
+the legacy script (default `https://plausible.io/js/script.js`), and without
+it `:src` is required; `:init` takes the options of `plausible.init`
+kebab-cased (`:hash-based-routing`, `:file-downloads {:file-extensions
+["pdf"]}`, `:custom-properties {…}`, whose own keys are passed as written).
+Umami's `:src` defaults to `https://cloud.umami.is/script.js`. A bad value
+is a warning that switches analytics off, never an error.
+
+The page loads `dist/clogem/js/analytics.js` (ours), the last thing in
+`<head>`, which loads the provider's script — and does nothing at all:
+
+- in `bb dev`, which never emits it;
+- on any host but `:site :url`'s, so `bb serve`, localhost, a fork or a
+  preview deploy count nothing (analytics needs `:site :url`);
+- when the reader's browser sends Do Not Track or Global Privacy Control,
+  unless `:respect-dnt false`. Umami is also told `data-do-not-track`.
+
+GA4 sets `_ga` cookies; Plausible and Umami are cookieless. With
+`:consent-default :denied`, GA4 starts in consent mode with every storage
+type denied, and the site's own consent UI grants it by calling
+`gtag('consent', 'update', {analytics_storage: 'granted'})`. clogem-press
+ships no consent banner.
+
+**Personal data.** Whether analytics needs consent is the site owner's
+question, not the generator's. Under Singapore's PDPA, the PDPC's Advisory
+Guidelines on the PDPA for Selected Topics (revised May 2024) discuss
+cookies at ¶7.7; say at ¶7.12 that an individual's failure to manage the
+browser's settings does not mean consent to every website; and put the duty
+at ¶7.13 on the organisation collecting the data, itself or through its
+data intermediaries. This is not legal advice.
+
 **Content-Security-Policy.** Every page carries exactly one inline script,
 the colour-mode script in `<head>`, and it is byte-identical on every page,
 so one hash covers the site:
@@ -280,6 +407,15 @@ Pagefind needs `worker-src 'self'` and `'wasm-unsafe-eval'` (DESIGN.md §6.8,
 `<script type="application/json">` data block, which CSP does not govern;
 `js/code.js` is a same-origin file. A policy without the hash still gets the
 reader's mode: `js/mode.js` (same-origin) applies it, one frame late.
+
+Analytics adds no inline script: `'self'` covers `js/analytics.js`, and the
+provider's own hosts are needed:
+
+| Provider | Add |
+|---|---|
+| GA4 (no Ads features) | `script-src https://www.googletagmanager.com` (Google lists it as `script-src-elem`); `img-src https://www.googletagmanager.com https://*.google-analytics.com`; `connect-src https://www.googletagmanager.com https://*.google-analytics.com https://*.google.com` |
+| Plausible | its host (`https://plausible.io`, or the `:src` host) in `script-src` and `connect-src` |
+| Umami Cloud | `script-src https://cloud.umami.is`; `connect-src https://gateway.umami.is` |
 
 ## Development
 

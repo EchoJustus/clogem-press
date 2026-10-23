@@ -21,6 +21,7 @@
             [clojure.string :as str]
             [clogem.config :as config]
             [clogem.i18n :as i18n]
+            [clogem.util :as u]
             [clogem.tools :as tools]))
 
 ;; ---------------------------------------------------------------------------
@@ -249,6 +250,18 @@
   pid alone is reused, and in a container `bb dev` is often pid 1 every
   time — and a number unique to that process. Group 1 is the kind."
   #"^\.pagefind-(staging|old|prev)-(\d+)-(\d+)-(\d+)$")
+
+(def work-dir-prefix
+  "What every name of `work-dir-re` and `legacy-work-dir-re` starts with:
+  a top-level entry of `<out>` named so is the search step's, and a static
+  file there would be swept or replaced (§11.3 item 15)."
+  ".pagefind-")
+
+(defn work-dir-name?
+  "Could `s`, a top-level name in `<out>`, be one of the search step's own
+  directories (`work-dir-prefix`)? Case-folded, for macOS and Windows."
+  [s]
+  (str/starts-with? (u/lower (str s)) work-dir-prefix))
 
 (def ^:private legacy-work-dir-re
   "The names of this branch's earlier dev builds — `.pagefind-prev`, and

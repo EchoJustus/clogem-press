@@ -7,9 +7,118 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
 (§11.3 items 7, 11, 16, 18), then Task C — code highlighting (§11.3 item
 10), then Task D — the dev loop (§11.3 item 12), then Task B2a — the card
 and line page styles, focus rings and B1's follow-ups (the first half of
-B2, §11.3 item 1). The version stays 0.2.0. A site that already set
+B2, §11.3 item 1), then Task F — analytics, verification and a static root
+(§11.3 items 14, 15). The version stays 0.2.0. A site that already set
 `:theme :page-style :line` now gets that look: 0.2.0 and B1 accepted the
 value but drew card and line the same.
+
+**Task F — analytics, verification and static root** (§11.3 items 14, 15):
+
+### Added (F)
+
+- **Analytics**: `:analytics {:provider :ga4 | :plausible | :umami}`
+  (default `:none`). Every page loads `dist/clogem/js/analytics.js`, our
+  own file and the last child of `<head>`, which loads the chosen
+  provider's script — only on the `:site :url` host (never under `bb
+  serve`, on localhost, a fork or a preview), never in `bb dev` (which
+  does not emit the tag), and, unless `:respect-dnt false`, not for a
+  browser sending Do Not Track or Global Privacy Control. No inline
+  script is added. GA4 takes `:id "G-…"` and an opt-in `:consent-default
+  :denied`, sent before `config` as Google's consent mode asks; Plausible
+  takes the site's own `:src` (`…/js/pa-XXXX.js`) and `plausible.init`
+  options as `:init`, or `:domain` for the legacy script; Umami takes
+  `:website-id`. `:src` overrides a provider's script URL (`https://`
+  only). Under `:none` no file ships and no page changes. Every bad value
+  is a warning that switches analytics off, never an error. An `:init`
+  option it does not know warns and is not passed to `plausible.init`;
+  `:src` and `:domain` are trimmed. README
+  "Analytics" lists the CSP each provider needs and notes the site
+  owner's duty under the PDPA.
+- **Search-console verification**: `:seo {:verification {:google … :bing
+  …}}`, each a string or a vector of them, emits one
+  `google-site-verification` or `msvalidate.01` meta tag per value on
+  every page (redirect stubs excepted). Any other value warns and is
+  ignored.
+- **A static directory**: `:content {:static-dir "public"}` (off unless
+  set) copies every file under it, dotfiles included, byte for byte to
+  the root of the output directory — `CNAME`, `favicon.ico`, a
+  verification file, an IndexNow `<key>.txt`, `.nojekyll`,
+  `.well-known/`. It never copies a `.git`, never follows a linked
+  directory, and silently skips editor and OS leftovers — the names `bb
+  dev` ignores (`.CNAME.swp`, `CNAME~`, `.#CNAME`, Emacs' auto-save
+  `#CNAME#`, `*.tmp`, `4913`) and
+  `.DS_Store`, `Thumbs.db`, `desktop.ini`. A linked file is copied only
+  when its target is inside the site and not inside a `.git` (a link to
+  `.git/config`, which can hold a remote's credentials, is not
+  published); any other link is skipped with a
+  warning naming it. A static directory that is itself a link inside the
+  site (`public -> web/static`) is copied from its target. Unchanged files are not rewritten, and `bb dev` rebuilds
+  when one changes — a dotfile too, when it polls (`--poll`, or its
+  fallback), which never saw one before P4-F.1, and a file under a linked
+  static directory or a linked `assets/` (P4-F.2). Polling skips a `.git`
+  without listing it, and a `.DS_Store` write no longer makes it rebuild. A static file where the build writes — a page,
+  `feed.xml`, `sitemap.xml`, `robots.txt`, a site asset, anything under
+  `clogem/`, `assets/` or `pagefind/`, the `.clogem-output` marker, a
+  temp-file or `.pagefind-…` name, or a page's directory — is an error
+  before anything is written, and in `bb doctor`, once per static file;
+  each error says how to fix it. A static directory
+  that is not a relative path inside the site, or overlaps a source
+  directory or the output directory, warns and is not copied.
+
+### Changed (F)
+
+- **A site that set `:analytics` on 0.2.0 now loads that provider.**
+  0.2.0 accepted the key and warned that it had no effect; after this
+  change a valid `:provider`/`:id` (with a `:site :url`) loads the
+  provider's script on the deployed site. Remove `:analytics`, or set
+  `:provider :none`, to keep it off.
+- **`:analytics :provider` no longer warns "has no effect in 0.2.0"**,
+  and `:content :static-dir` and `:seo :verification` no longer warn
+  "planned, not implemented in 0.2.0": all three are read. A `:provider`
+  set on a site with no `:site :url` warns that analytics needs it.
+  `:analytics :init`, `:consent-default` and `:respect-dnt` are known keys
+  (they used to warn "is not an analytics option").
+- **A site that set `:content :static-dir` on 0.2.0 can stop building.**
+  0.2.0 warned that the key was planned and copied nothing; now the
+  directory is copied, and a file in it that collides with the build's
+  own output — `public/robots.txt`, `public/assets/logo.png` — is an
+  error where 0.2.0 built. Setting the key is the opt-in, so a collision
+  stays an error; the message says what to do: move the file into
+  `assets/`, or ship `robots.txt` as `assets/robots.txt` (README "Static
+  files", "Upgrading").
+- **The site's `assets/` no longer publishes a link's target from outside
+  the site** (hardening behaviour 0.2.0 already had): a linked file is
+  copied only when its real path is inside the site, and any other link
+  is skipped with a warning naming it — the build does not fail. A linked
+  `assets/` directory inside the site is now copied from its target
+  (0.2.0 copied nothing from it, silently); one whose target is outside
+  the site warns and copies nothing. A link into a `.git` is skipped
+  the same way.
+- **The site's `assets/` no longer publishes editor and OS leftovers**
+  (hardening behaviour 0.2.0 already had): `CNAME~`, `#logo#`, `4913`,
+  `*.tmp`, `Thumbs.db`, `desktop.ini` and the other names the static
+  directory skips are not copied, silently. Dotfiles in `assets/` were
+  never copied.
+- **`bb dev` ignores Emacs' auto-save files** (`#x#`), as it already did
+  its lock and backup files.
+
+### Documentation (F)
+
+- README: "Static files" (what the static directory is for; why `CNAME`
+  matters to branch deploys and other hosts but not to the Actions
+  artifact flow), and in "Theme", search-console verification, analytics
+  (providers, gates, cookies, consent, CSP additions, a PDPA note citing
+  the PDPC's Advisory Guidelines on the PDPA for Selected Topics, revised
+  May 2024, ¶¶7.7, 7.12 and 7.13 — not legal advice). The static
+  directory is in the `bb build` row and in `bb dev`'s watched list.
+- `config.example.edn` shows every `:analytics`, `:seo :verification` and
+  `:content :static-dir` key. DESIGN.md §5.2, §5.3, §5.4, §5.6, §6.10,
+  D-13, §8 and §11.3 items 14–16 record what was built.
+- `test/browser/analytics.test.mjs`, listed in `test/browser/README.md`.
+  It covers all four Do Not Track signals the loader reads —
+  `navigator.doNotTrack`, `window.doNotTrack`, `navigator.msDoNotTrack`
+  and Global Privacy Control — and says what its "no request leaves the
+  test" check can and cannot see.
 
 **Task B2a — page styles** (§11.3 item 1, first half; B1's follow-ups):
 

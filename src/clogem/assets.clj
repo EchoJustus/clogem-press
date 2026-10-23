@@ -98,6 +98,9 @@
     "js/comments.js" (not= :giscus (get-in cfg [:comments :provider]))
     ;; §11.3 item 10: the copy button, unless :highlight :copy-button false
     "js/code.js"     (not (highlight/copy-button? cfg))
+    ;; §11.3 item 14: the loader, only when a page loads it — never under
+    ;; :analytics :none, never in `bb dev`
+    "js/analytics.js" (nil? (config/analytics cfg))
     false))
 
 (def custom-css

@@ -513,7 +513,10 @@
                                         :footer {:create-year 2020}
                                         :bodyBgImg "bg.png"}
                                 :seo {:indexnow {:enabled true :key "k"}}})]
-      (is (some #(= ":analytics :provider is :ga4, which has no effect in 0.2.0; no analytics script is emitted." %) ms))
+      ;; Task F (§11.3 item 14) reads :analytics; on a site with no :site :url
+      ;; the loader has no host to run on, so it is off, with this warning
+      (is (some #(= (str ":analytics :provider :ga4 needs :site :url: the loader runs only on the "
+                         "site's own host. Analytics is off.") %) ms))
       (is (some #(= ":theme :html-modules has no effect in 0.2.0; nothing is injected." %) ms))
       (is (some #(= ":theme :blogger is planned, not implemented in 0.2.0; it has no effect." %) ms))
       (is (some #(= ":theme :footer is planned, not implemented in 0.2.0; it has no effect." %) ms))

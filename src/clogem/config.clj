@@ -458,8 +458,10 @@
    [:content]             {:dir :ok :assets-dir :ok :category :ok :tag :ok :archive :ok
                            :category-text :ok :extend-frontmatter :ok :permalink-prefix :ok
                            :permalink-length :ok :write-front-matter :ok :permalinks-file :ok
-                           ;; Phase 4 Tasks E2 and F
-                           :edit-link :planned :static-dir :planned}
+                           ;; Phase 4 Task E2
+                           :edit-link :planned
+                           ;; Phase 4 Task F (§11.3 item 15): `check-static-dir!`
+                           :static-dir :ok}
    [:theme]               {:default-mode :ok :page-style :ok :sidebar-open :ok :sidebar-depth :ok
                            :per-page :ok :fonts :ok
                            ;; read, but a non-empty value has no effect yet (check-no-effect!)
@@ -479,12 +481,20 @@
                            ;; Phase 4 Task G
                            :cross-language :planned}
    [:comments]            (zipmap comments-keys (repeat :ok))
-   ;; the provider's own keys, as §5.6 sketches them (D-13); a provider
-   ;; other than :none has no effect yet (check-no-effect!)
-   [:analytics]           {:provider :ok :id :ok :domain :ok :src :ok :website-id :ok}
+   ;; the provider's own keys, as §5.6 sketches them (D-13), and Task F's
+   ;; (§11.3 item 14): `check-analytics!`
+   [:analytics]           {:provider :ok :id :ok :domain :ok :src :ok :website-id :ok
+                           :init :ok :consent-default :ok :respect-dnt :ok}
+   ;; Plausible's `plausible.init` options, kebab-cased; the VALUE of
+   ;; `:custom-properties` is the site's own data and is not walked
+   [:analytics :init]     {:endpoint :ok :hash-based-routing :ok :outbound-links :ok :file-downloads :ok
+                           :form-submissions :ok :auto-capture-pageviews :ok :custom-properties :ok
+                           :logging :ok}
+   [:analytics :init :file-downloads] {:file-extensions :ok}
    [:seo]                 {:sitemap :ok :hreflang :ok :x-default :ok :feeds :ok :indexnow :ok
-                           ;; Phase 4 Task F
-                           :verification :planned}
+                           ;; Phase 4 Task F (§11.3 item 15): `check-verification!`
+                           :verification :ok}
+   [:seo :verification]   {:google :ok :bing :ok}
    [:seo :indexnow]       {:enabled :ok :key :ok}
    [:build]               {:out :ok}
    [:tools]               {:cache-dir :ok :pagefind :ok :chroma :ok :fswatcher :ok}
@@ -709,11 +719,6 @@
             (if (coll? hm) (seq hm) (some? hm)))
       (diag/warn! nil (str ":theme :html-modules has no effect in " v "; nothing is injected.")
                   "htmlModules support is planned for Phase 4 (DESIGN.md §8)."))
-    (let [p (get-in cfg [:analytics :provider])]
-      (when (and (some? p) (not= :none p))
-        (diag/warn! nil (str ":analytics :provider is " (pr-str p) ", which has no effect in " v
-                             "; no analytics script is emitted.")
-                    "Analytics support is planned for Phase 4 (DESIGN.md §8).")))
     (when (true? (get-in cfg [:seo :indexnow :enabled]))
       (diag/warn! nil (str ":seo :indexnow :enabled true has no effect in " v
                            "; nothing is pushed to IndexNow.")
@@ -882,6 +887,206 @@
           (assoc-in cfg [:build :out] (get-in defaults [:build :out])))
       cfg)))
 
+;; ---------------------------------------------------------------------------
+;; Analytics, verification and the static directory (Phase 4 Task F, §11.3
+;; items 14 and 15). Every bad value is a WARNING that switches the feature
+;; off: 0.2.0 accepted (and ignored) all three, so a site that set one must
+;; not start failing.
+
+(declare site-url-root site-host)
+
+(def analytics-providers
+  "`:analytics :provider` values (D-13)."
+  #{:none :ga4 :plausible :umami})
+
+(def analytics-default-src
+  "Each provider's script when `:analytics :src` is not set. Plausible's is
+  the legacy script, the one that reads `data-domain`: the new one is a
+  per-site `…/js/pa-XXXX.js`, so it has no default. GA4's gets `?id=`."
+  {:ga4       "https://www.googletagmanager.com/gtag/js"
+   :plausible "https://plausible.io/js/script.js"
+   :umami     "https://cloud.umami.is/script.js"})
+
+(def ^:private ga4-id-re #"G-[A-Z0-9]+")
+
+(def ^:private uuid-re
+  #"(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+(defn- https-url?
+  "Is `s` an `https://` URL with a host? `http:` would be mixed content on
+  an https page, and the browser blocks it."
+  [s]
+  (boolean (and (string? s) (re-matches #"(?i)https://[^/?#\s]+(?:[/?#]\S*)?" (str/trim s)))))
+
+(defn- check-analytics!
+  "§11.3 item 14: `:analytics`. Under :none (the default) nothing is read
+  and nothing is said, whatever else the map holds. Otherwise every
+  problem is a warning that sets `:provider :none` — analytics off —
+  except a bad `:consent-default`, which counts as :denied. Leaves a
+  provider that is on with its `:src` filled in and `:respect-dnt` a
+  boolean."
+  [cfg]
+  (let [a    (:analytics cfg)
+        p    (when (map? a) (:provider a))
+        off! (fn [msg hint]
+               (diag/warn! nil (str msg " Analytics is off.") hint)
+               (assoc-in cfg [:analytics :provider] :none))
+        {:keys [id domain src website-id init consent-default respect-dnt]} a
+        ignored! (fn [k why] (diag/warn! nil (str ":analytics " k " " why "; it is ignored.")) nil)]
+    (cond
+      (or (nil? p) (= :none p))
+      (assoc-in cfg [:analytics :provider] :none)
+
+      (not (contains? analytics-providers p))
+      (off! (str ":analytics :provider is " (pr-str p) ", but it must be one of "
+                 (str/join ", " (map pr-str (sort (disj analytics-providers :none)))) " or :none.")
+            "See config.example.edn (DESIGN.md D-13).")
+
+      (nil? (site-url-root cfg))
+      (off! (str ":analytics :provider " (pr-str p) " needs :site :url: the loader runs only on "
+                 "the site's own host.")
+            (str "Set :site :url to the deployed origin; a page served from anywhere else — "
+                 "`bb serve`, localhost, a fork, a preview — then loads nothing."))
+
+      (nil? (site-host cfg))
+      (off! (str ":analytics :provider " (pr-str p) " needs a host in :site :url, and "
+                 (pr-str (site-url-root cfg)) " has none it can use.")
+            "Write the deployed origin, e.g. \"https://example.github.io\".")
+
+      (and (some? src) (not (https-url? src)))
+      (off! (str ":analytics :src is " (pr-str src) ", which is not an https:// URL.")
+            "An http: script on an https page is mixed content, which the browser blocks.")
+
+      (and (some? respect-dnt) (not (boolean? respect-dnt)))
+      (off! (str ":analytics :respect-dnt is " (pr-str respect-dnt) ", but it must be true or false.")
+            "true (the default) loads nothing for a reader whose browser sends Do Not Track or Global Privacy Control.")
+
+      (and (= :ga4 p) (not (and (string? id) (re-matches ga4-id-re id))))
+      (off! (if (and (string? id) (re-find #"(?i)^UA-" id))
+              (str ":analytics :id is " (pr-str id) ", a Universal Analytics id: Universal Analytics "
+                   "no longer collects data.")
+              (str ":analytics :id is " (pr-str id) ", but GA4 needs a measurement id like \"G-XXXXXXXXXX\"."))
+            "Use the GA4 property's measurement id (Admin → Data streams), which starts with G-.")
+
+      (and (= :plausible p) (some? domain) (not (u/blank->nil (when (string? domain) domain))))
+      (off! (str ":analytics :domain is " (pr-str domain) ", but it must be the site's domain as "
+                 "Plausible knows it, e.g. \"example.com\".")
+            "Leave :domain out to use Plausible's new script, with :src set to the site's own pa-….js.")
+
+      (and (= :plausible p) (nil? domain) (nil? src))
+      (off! (str ":analytics :provider :plausible needs either :src — the site's own script, "
+                 "https://plausible.io/js/pa-XXXX.js — or :domain, for the legacy script.")
+            "Copy the script URL from the site's settings in Plausible (Site installation).")
+
+      (and (= :plausible p) (nil? domain) (some? init) (not (map? init)))
+      (off! (str ":analytics :init is " (pr-str init) ", but it must be a map of plausible.init options.")
+            "For example {:outbound-links true :file-downloads true} (config.example.edn).")
+
+      (and (= :umami p) (not (and (string? website-id) (re-matches uuid-re website-id))))
+      (off! (str ":analytics :website-id is " (pr-str website-id) ", but Umami needs the website's id, a UUID.")
+            "Copy it from the website's settings in Umami (Tracking code: data-website-id).")
+
+      :else
+      (do
+        (when (and (some? init) (not (and (= :plausible p) (nil? domain))))
+          (ignored! :init (if (= :plausible p)
+                            "is read only by Plausible's new script, and :domain selects the legacy one"
+                            (str "is read only by Plausible's new script, not " (pr-str p)))))
+        (let [consent (when (some? consent-default)
+                        (cond
+                          (not= :ga4 p)
+                          (ignored! :consent-default (str "is read only by :ga4, not " (pr-str p)))
+                          (#{:granted :denied} consent-default)
+                          consent-default
+                          :else
+                          (do (diag/warn! nil (str ":analytics :consent-default is " (pr-str consent-default)
+                                                   ", but it must be :granted or :denied; using :denied.")
+                                          "Under :denied, GA4 sends no cookies until the site's own consent UI calls gtag('consent','update', …).")
+                              :denied)))]
+          (update cfg :analytics
+                  #(cond-> (assoc % :src (str/trim (or src (analytics-default-src p)))
+                                  :respect-dnt (if (false? respect-dnt) false true))
+                     true          (dissoc :consent-default)
+                     ;; trimmed, as :src is (P4-F.1 item 7)
+                     (string? domain) (assoc :domain (str/trim domain))
+                     consent       (assoc :consent-default consent))))))))
+
+(defn- check-verification!
+  "§11.3 item 15: `:seo :verification {:google … :bing …}`, each a
+  non-blank string or a vector of them. Anything else warns and is
+  ignored. Leaves each value a vector of trimmed, distinct strings."
+  [cfg]
+  (let [v (get-in cfg [:seo :verification])]
+    (cond
+      (nil? v) cfg
+
+      (not (map? v))
+      (do (diag/warn! nil (str ":seo :verification is " (pr-str v) ", but it must be a map like "
+                               "{:google \"…\" :bing \"…\"}; it is ignored.")
+                      "Each value is the content of the meta tag the search console asks for.")
+          (update cfg :seo dissoc :verification))
+
+      :else
+      (assoc-in cfg [:seo :verification]
+                (into {}
+                      (for [k [:google :bing]
+                            :let [x  (get v k)
+                                  xs (cond (string? x) [x] (vector? x) x :else ::bad)]
+                            :when (some? x)
+                            :let [ok? (and (not= ::bad xs) (seq xs)
+                                           (every? #(and (string? %) (not (str/blank? %))) xs))]
+                            :when (or ok?
+                                      (do (diag/warn! nil (str ":seo :verification " k " is " (pr-str x)
+                                                           ", but it must be a non-blank string or a vector of them; "
+                                                           "it is ignored.")
+                                                  "Write the token from the meta tag's content attribute.")
+                                          false))]
+                        [k (vec (distinct (map str/trim xs)))]))))))
+
+(defn- check-static-dir!
+  "§11.3 item 15: `:content :static-dir`, copied as it is to the root of
+  the output directory. Off by default (nil). It must be a relative path
+  to a directory inside the site that is not, does not hold and does not
+  sit inside a source directory (`protected-dirs`, `overrides/`, `.git`)
+  or the output directory — `:build :out` or `--out`, so this runs after
+  `check-out-dir!`. Anything else warns and switches the copy off."
+  [cfg]
+  (let [v (get-in cfg [:content :static-dir])]
+    (if (nil? v)
+      cfg
+      (let [site (real-path (:clogem/site-dir cfg))
+            s    (when (string? v) (u/blank->nil (str/trim v)))
+            p    (when s (fs/path s))
+            dir  (when (and p (not (fs/absolute? p)) (not (re-find #"^[/\\]" s)))
+                   (real-path (fs/path site s)))
+            out  (real-path (fs/path site (str (get-in cfg [:build :out]))))
+            dirs (concat (protected-dirs cfg site)
+                         [{:label "the overrides directory" :path (real-path (fs/path site "overrides"))}
+                          {:label "the site's .git"         :path (real-path (fs/path site ".git"))}
+                          {:label "the output directory"    :path out}])
+            why  (cond
+                   (nil? s)   "must be a directory name such as \"public\""
+                   (nil? dir) "is absolute, but it must be a path inside the site"
+                   (= (str dir) (str site)) "is the site directory itself"
+                   (not (within? site dir)) (str "is " dir ", outside the site directory")
+                   (some #(= ".git" (str %)) (iterator-seq (.iterator ^java.nio.file.Path p)))
+                   "is inside a .git directory"
+                   (and (fs/exists? dir) (not (fs/directory? dir))) (str "is " dir ", which is not a directory")
+                   :else
+                   (some (fn [{:keys [label path]}]
+                           (cond
+                             (= (str dir) (str path)) (str "is " label)
+                             (within? dir path)       (str "contains " label " " path)
+                             (within? path dir)       (str "is inside " label " " path)))
+                         dirs))]
+        (if why
+          (do (diag/warn! nil (str ":content :static-dir (" (pr-str v) ") " why
+                                   "; nothing is copied from it.")
+                          (str "It names a directory of its own, conventionally \"public\", whose files "
+                               "are copied as they are to the root of the output directory."))
+              (assoc-in cfg [:content :static-dir] nil))
+          (assoc-in cfg [:content :static-dir] s))))))
+
 (defn- validate!
   [{:keys [langs comments generator] :as cfg}]
   (let [{:keys [locales priority default default-declared]} langs]
@@ -932,7 +1137,9 @@
     (when (< (count priority) (count locales))
       (diag/warn! nil ":langs :priority does not cover every locale; missing ones were appended.")))
   (-> cfg check-theme! check-floor! check-fallback! check-site-url! check-x-default! check-search!
-      check-i18n-comments! check-out-dir! check-no-effect! check-highlight!))
+      check-i18n-comments! check-out-dir! check-no-effect! check-highlight!
+      ;; Task F; the static directory after the output directory it must avoid
+      check-analytics! check-verification! check-static-dir!))
 
 (defn- map-paths
   "Every path in `m` whose value is a map, outermost first."
@@ -1010,6 +1217,13 @@
 (defn permalinks-file [cfg] (fs/path (site-dir cfg) (get-in cfg [:content :permalinks-file])))
 (defn out-dir       [cfg] (fs/path (site-dir cfg) (get-in cfg [:build :out])))
 
+(defn static-dir
+  "§11.3 item 15: the directory whose files are copied as they are to the
+  root of the output directory, or nil — the default, and what a bad
+  `:content :static-dir` is repaired to (`check-static-dir!`)."
+  [cfg]
+  (some->> (get-in cfg [:content :static-dir]) u/blank->nil (fs/path (site-dir cfg))))
+
 (defn out-owned?
   "Did a build mark the directory `out` as its own: does it hold
   `out-marker`? Nothing else counts (P4-D.4 item 3: D.3 also adopted any
@@ -1059,6 +1273,26 @@
   this plus a base-inclusive path; nil means emit none of them."
   [cfg]
   (some-> (get-in cfg [:site :url]) str str/trim u/blank->nil (str/replace #"/+$" "")))
+
+(defn site-host
+  "The host of `:site :url`, lower-cased, without userinfo or port — what
+  the analytics loader compares `location.hostname` with — or nil. Read
+  with `java.net.URL`: `java.net.URI` has no host for an IDN, and
+  `java.net.IDN` is not in babashka 1.13.219, so an IDN stays Unicode
+  here and the loader punycodes both sides."
+  [cfg]
+  (when-let [root (site-url-root cfg)]
+    (try (some-> (.getHost (java.net.URL. root)) u/blank->nil u/lower)
+         (catch Exception _ nil))))
+
+(defn analytics
+  "The `:analytics` map when this build loads a provider — one other than
+  :none, outside `bb dev` (`:clogem/dev?`) — else nil (§11.3 item 14)."
+  [cfg]
+  (let [a (:analytics cfg)]
+    (when (and (map? a) (contains? (disj analytics-providers :none) (:provider a))
+               (not (:clogem/dev? cfg)))
+      a)))
 
 (defn absolute-url
   "The absolute URL of a base-inclusive site path, percent-encoded per

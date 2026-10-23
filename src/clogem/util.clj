@@ -8,6 +8,36 @@
            [java.util Locale]))
 
 ;; ---------------------------------------------------------------------------
+;; Editor and OS junk
+
+(defn editor-temp?
+  "Is `p` a file an editor or this program writes on the way to a save —
+  never a change to rebuild for? Emacs lock, backup and auto-save files
+  (`.#x`, `x~`, `#x#`), vim's swap files and its `4913` write probe, `*.tmp`, the build's own
+  atomic-write temp files (`.clogem-tmp-…`) and the watcher's probe."
+  [p]
+  (let [n (.getName (io/file (str p)))]
+    (boolean
+     (or (str/starts-with? n ".#")
+         (str/ends-with? n "~")
+         (re-matches #"#.+#" n)
+         (= n "4913")
+         (re-find #"(?i)\.(swp|swo|swx|tmp)$" n)
+         (str/includes? n ".clogem-tmp-")
+         (str/starts-with? n ".clogem-watch-probe-")))))
+
+(def ^:private os-junk
+  "What macOS's Finder and Windows' Explorer leave in a directory, lower-cased."
+  #{".ds_store" "thumbs.db" "desktop.ini"})
+
+(defn junk-file?
+  "Is `p` an `editor-temp?` file or OS junk (`.DS_Store`, `Thumbs.db`,
+  `desktop.ini`) — never a file to publish (P4-F.1 item 4)?"
+  [p]
+  (or (editor-temp? p)
+      (contains? os-junk (str/lower-case (.getName (io/file (str p)))))))
+
+;; ---------------------------------------------------------------------------
 ;; Source writes
 
 (def ^:dynamic *source-writes*
