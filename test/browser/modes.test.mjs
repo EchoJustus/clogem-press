@@ -489,11 +489,14 @@ export default async function modes(t) {
   // which is false for the drawer's display: contents)
   const display = (sels) => Object.fromEntries(sels.map((s) =>
     [s, document.querySelector(s) ? getComputedStyle(document.querySelector(s)).display : 'absent']));
-  for (const [viewport, onScreen] of [[{ width: 1280, height: 720 }, ['.clogem-langs__toggle', '.clogem-navbar__drawer', '.clogem-sidebar-toggle']],
-                                      [{ width: 360, height: 740 }, ['.clogem-navbar__toggle']]]) {
+  // (P4-B2b items 10, 11: the sidebar toggle once nav.js revealed it, the
+  // page buttons where both show)
+  for (const [viewport, onScreen, rel] of [[{ width: 1280, height: 720 }, ['.clogem-langs__toggle', '.clogem-navbar__drawer', '.clogem-sidebar-toggle']],
+                                           [{ width: 360, height: 740 }, ['.clogem-navbar__toggle']],
+                                           [{ width: 1440, height: 740 }, ['.clogem-page-button.is-prev', '.clogem-page-button.is-next'], 'pages/c0nta1/index.html']]) {
     const page = await t.newPage({ colorScheme: 'dark', viewport });
     await page.addInitScript(() => { try { localStorage.setItem('clogem-mode', 'dark'); } catch (e) {} });
-    await page.goto(url, { waitUntil: 'load' });
+    await page.goto(rel ? t.url(rel) : url, { waitUntil: 'load' });
     const screen = await page.evaluate(display, onScreen);
     for (const [s, d] of Object.entries(screen)) t.check(d !== 'none' && d !== 'absent', `${viewport.width}px: ${s} is drawn on screen (display ${d})`);
     await page.emulateMedia({ media: 'print' });

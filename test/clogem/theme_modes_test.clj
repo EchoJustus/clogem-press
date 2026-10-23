@@ -228,7 +228,7 @@ console.log(JSON.stringify([
                    ".clogem-comments" ".clogem-lang-banner" ".clogem-prev-next" ".header-anchor" ".clogem-copy"
                    ;; P4-B2b
                    ".clogem-navbar__toggle" ".clogem-navbar__drawer" ".clogem-langs__toggle"
-                   ".clogem-sidebar-toggle"]]
+                   ".clogem-sidebar-toggle" ".clogem-page-button"]]
           (is (str/includes? print c) (str c " is hidden in print")))
         (is (str/includes? print "--bodyBg: #ffffff") "print uses a light palette")
         ;; P4-B2a.1: the boxes lose their shadow (page_style_test), not `*`:
