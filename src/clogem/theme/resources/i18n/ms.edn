@@ -80,6 +80,9 @@
  :mode/light                  "Cerah"
  :mode/dark                   "Gelap"
  :mode/read                   "Bacaan"
+ ;; P4-B2a: the toggle's name, {{mode}} being the current mode's label above.
+ ;; Awaiting native review (CHANGELOG, Unreleased, "Needs native review (B2a)").
+ :mode/current                "Mod warna: {{mode}}"
 
  ;; Code blocks (Phase 4 C), the copy button. Awaiting native review (CHANGELOG, Unreleased).
  :code/copy                   "Salin"

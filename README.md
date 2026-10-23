@@ -271,9 +271,28 @@ every surface, which `bb test` checks against `theme.css` — and links inside
 prose are underlined. Pagefind's search dialog and giscus follow the mode;
 printing uses the light palette and drops the chrome.
 
+**Page styles.** `:theme :page-style` is vdoing's `pageStyle`. `:card` (the
+default) draws the main column of every page, the sidebar, and the home page's
+right-bar sections and post cards as cards — the card colour, a small radius
+and a shadow — on a page of a contrasting colour: darker in light and reading
+mode, lighter in dark. A home's post cards sit on the page, as vdoing's do, not
+in a card: their column is no box, and the home's own text above them is the
+card. `:line` draws the same boxes flat, with a 1px border and no shadow, on a
+page of the card's own colour. Print draws no box in either style — no shadow,
+border, radius or padding — but keeps a highlighted code line's accent bar.
+Everything focusable draws one keyboard focus ring: 2px, in the accent (in the
+code colour inside a code block), at 3:1 or better on what is behind it.
+
 The mode and page-style classes are on `<html>`, unqualified:
 `.theme-mode-dark`, `.theme-style-card`. (0.2.0 put them on `<body>`; CSS
 written as `body.theme-mode-dark` must drop `body`.)
+
+**Mode class or `[data-mode]`?** With JavaScript, `theme-mode-auto` is
+replaced by the *resolved* `theme-mode-light` or `theme-mode-dark`, so
+`.theme-mode-dark` covers both *Dark* and *Follow system* on a dark OS — style
+the palette with it. To style the reader's *choice*, use
+`[data-mode="auto"]`, `"light"`, `"dark"` or `"read"` on `<html>`.
+`.theme-mode-auto` exists only without JavaScript.
 
 **Your own CSS.** Put it in `overrides/custom.css` in your site. It ships as
 `dist/clogem/overrides/custom.css` with a cache-busting `?v=` and is linked
@@ -386,7 +405,8 @@ script-src 'self' 'sha256-aykGrfu05czJ6oIj+Xn+Qrjxa7JG8hF3RGl0W0liGmw='
 Pagefind needs `worker-src 'self'` and `'wasm-unsafe-eval'` (DESIGN.md §6.8,
 §11.2 items 42 and 49). The copy button's strings are a
 `<script type="application/json">` data block, which CSP does not govern;
-`js/code.js` is a same-origin file.
+`js/code.js` is a same-origin file. A policy without the hash still gets the
+reader's mode: `js/mode.js` (same-origin) applies it, one frame late.
 
 Analytics adds no inline script: `'self'` covers `js/analytics.js`, and the
 provider's own hosts are needed:
@@ -400,7 +420,7 @@ provider's own hosts are needed:
 ## Development
 
 ```bash
-bb test                                             # 249 tests / 975 assertions
+bb test                                             # 664 tests / ~20,700 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 

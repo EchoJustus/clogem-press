@@ -15,6 +15,7 @@
             [clogem.assets :as assets]
             [clogem.cli :as cli]
             [clogem.config :as config]
+            [clogem.css-palette :as cp]
             [clogem.diag :as diag]
             [clogem.i18n :as i18n]
             [clogem.render :as render]
@@ -156,36 +157,19 @@ console.log(JSON.stringify([
     "--textLightenColor" "--borderColor" "--codeBg" "--codeColor" "--accent" "--textColorSubtle"
     "--codeLineNumber" "--codeHlBg"})
 
-(defn- block
-  "The declarations of the first rule whose selector is exactly `sel`
-  (searched from `from`, an index into `css`) as {\"--name\" \"value\"}."
-  ([css sel] (block css sel 0))
-  ([css sel from]
-   (let [i (str/index-of css (str "\n" sel " {") from)
-         _ (assert i (str "no rule " sel))
-         s (str/index-of css "{" i)
-         e (str/index-of css "}" s)]
-     (into {} (for [[_ k v] (re-seq #"(--[A-Za-z0-9-]+|color-scheme)\s*:\s*([^;]+);" (subs css s e))]
-                [k (str/trim v)])))))
+(defn- mode-blocks
+  "{mode {property value}} — what each mode's OWN block declares (the full
+  set must be in each, not inherited from :root); the contrast tests below
+  use the merged cascade instead (`clogem.css-palette`)."
+  []
+  (let [css (slurp theme-css)]
+    {:light (cp/rule css ":root, .theme-mode-light")
+     :read  (cp/rule css ".theme-mode-read")
+     :dark  (cp/rule css ".theme-mode-dark")
+     :auto  (cp/rule css ".theme-mode-auto" ["(prefers-color-scheme: dark)"])}))
 
-(defn- mode-blocks []
-  (let [css (slurp theme-css)
-        media (str/index-of css "@media (prefers-color-scheme: dark) {")]
-    {:light (block css ":root, .theme-mode-light")
-     :read  (block css ".theme-mode-read")
-     :dark  (block css ".theme-mode-dark")
-     :auto  (block css "  .theme-mode-auto" media)}))
-
-(defn- luminance [hex]
-  (let [h (str/replace hex "#" "")
-        h (if (= 3 (count h)) (apply str (mapcat #(repeat 2 %) h)) h)
-        ch #(let [c (/ (Integer/parseInt (subs h % (+ % 2)) 16) 255.0)]
-              (if (<= c 0.03928) (/ c 12.92) (Math/pow (/ (+ c 0.055) 1.055) 2.4)))]
-    (+ (* 0.2126 (ch 0)) (* 0.7152 (ch 2)) (* 0.0722 (ch 4)))))
-
-(defn contrast [a b]
-  (let [[x y] (sort > [(luminance a) (luminance b)])]
-    (/ (+ x 0.05) (+ y 0.05))))
+(def luminance cp/luminance)
+(def contrast cp/contrast)
 
 (deftest every-mode-block-defines-the-full-variable-set
   (let [bs (mode-blocks)]
@@ -193,6 +177,10 @@ console.log(JSON.stringify([
       (is (empty? (set/difference full-set (set (keys vs)))) (str m " lacks " (set/difference full-set (set (keys vs)))))
       (is (contains? vs "color-scheme") (str m " sets color-scheme")))
     (is (= (:dark bs) (:auto bs)) "the no-JS auto block is exactly the dark block")
+    (testing "and so is everything that applies: auto under a dark OS computes what dark does"
+      (let [css (slurp theme-css)]
+        (doseq [s cp/styles]
+          (is (= (cp/palette css :dark s) (cp/palette css :auto s)) (str s)))))
     (is (= "dark" (get-in bs [:dark "color-scheme"])))
     (is (= "light" (get-in bs [:read "color-scheme"])))
     (testing "the brief's values"
@@ -204,28 +192,18 @@ console.log(JSON.stringify([
       ;; github-dark ships reaches 4.5:1 on it (`err` is not shipped)
       (is (= "#282c34" (get-in bs [:read "--codeBg"])) "read mode's code background is vdoing's"))))
 
-(def surfaces ["--bodyBg" "--mainBg" "--sidebarBg" "--customBlockBg"])
-
-(defn palette-minimums
-  "{mode {fg [ratio surface]}} — the lowest contrast of each foreground over
-  every surface, plus [:code] for --codeColor on --codeBg."
-  []
-  (into (sorted-map)
-        (for [[m vs] (mode-blocks)]
-          [m (assoc (into {} (for [fg ["--textColor" "--textColorSubtle" "--accent"]]
-                               [fg (first (sort-by first (for [s surfaces] [(contrast (vs fg) (vs s)) s])))]))
-                    :code [(contrast (vs "--codeColor") (vs "--codeBg")) "--codeBg"])])))
-
 (deftest the-palette-reaches-wcag-aa-in-every-mode
-  (testing "text, muted and accent on every surface, and code on its block,
-            at 4.5:1 or better — the auto media block included"
-    (doseq [[m fgs] (palette-minimums)
-            [fg [ratio surface]] fgs]
-      (is (>= ratio 4.5) (format "%s: %s on %s is %.2f:1" (name m) fg surface ratio)))
-    (let [mins (palette-minimums)
-          low  (fn [fg] (apply min (map #(first (get % fg)) (vals mins))))]
-      (println (format "theme-modes: contrast minimums — text %.2f, muted %.2f, accent %.2f, code %.2f"
-                       (low "--textColor") (low "--textColorSubtle") (low "--accent") (low :code))))))
+  (testing "text, link-hover, muted and accent on every surface (--blurBg
+            composited over the page and over a card), and code on its
+            block, at 4.5:1 or better — in every mode (auto's media block
+            and print included) and both page styles, from the merged
+            cascade"
+    (let [css (slurp theme-css)]
+      (is (= [] (cp/failures css)))
+      (let [mins (cp/palette-minimums css)
+            low  (fn [fg] (apply min (map #(first (get % fg)) (vals mins))))]
+        (println (format "theme-modes: contrast minimums — text %.2f, muted %.2f, accent %.2f, code %.2f"
+                         (low "--textColor") (low "--textColorSubtle") (low "--accent") (low :code)))))))
 
 (deftest prose-links-print-motion-and-fonts
   (let [css (slurp theme-css)]
@@ -236,9 +214,12 @@ console.log(JSON.stringify([
       (is (str/includes? css "@media (prefers-reduced-motion: reduce) {"))
       (let [print (subs css (str/index-of css "@media print {"))]
         (doseq [c [".clogem-navbar" ".clogem-sidebar" ".clogem-toc" ".clogem-mode" ".clogem-search"
-                   ".clogem-comments" ".clogem-lang-banner"]]
+                   ".clogem-comments" ".clogem-lang-banner" ".clogem-prev-next" ".header-anchor" ".clogem-copy"]]
           (is (str/includes? print c) (str c " is hidden in print")))
-        (is (str/includes? print "--bodyBg: #ffffff") "print uses a light palette")))
+        (is (str/includes? print "--bodyBg: #ffffff") "print uses a light palette")
+        ;; P4-B2a.1: the boxes lose their shadow (page_style_test), not `*`:
+        ;; a highlighted code line keeps its inset bar
+        (is (not (str/includes? print "*, *::before, *::after { box-shadow")) "no blanket shadow rule in print")))
     (testing "language font rules are zero-specificity, so code keeps its monospace stack"
       (is (str/includes? css ":where(:lang(ta))"))
       (is (str/includes? css ":where(:lang(zh-Hans))"))
@@ -253,11 +234,15 @@ console.log(JSON.stringify([
 
 (deftest pagefind-variables-are-mapped-to-the-palette
   (let [css (slurp theme-css)
-        b   (block css "html[class]")]
+        b   (cp/rule css "html[class]")]
     (is (= "var(--mainBg)" (b "--pf-background")))
     (is (= "var(--textColor)" (b "--pf-text")))
     (is (= "var(--borderColor)" (b "--pf-border")))
-    (is (every? #(str/starts-with? % "var(--") (vals b)) "every one follows the mode")))
+    ;; P4-B2a item 2: the shadows and the backdrop are Pagefind's own
+    ;; values, per mode (page_style_test); every colour follows the palette
+    (is (every? #(str/starts-with? % "var(--")
+                (vals (remove #(re-find #"^--pf-(shadow-|scroll-shadow|modal-backdrop)" (key %)) b)))
+        "every colour follows the mode")))
 
 ;; ---------------------------------------------------------------------------
 ;; 2. The toggle and its strings (D-P4-3)

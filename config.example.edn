@@ -131,8 +131,11 @@
  ;; `body.theme-mode-dark` (0.2.0's classes were on <body>).
  :theme {:default-mode :auto          ; :auto | :light | :dark | :read; anything else
                                       ; is a config error (giscus starts :read as light)
-         :page-style   :card          ; :card | :line — vdoing's pageStyle; anything else
-                                      ; warns and falls back to :card (B2 styles them)
+         :page-style   :card          ; :card | :line — vdoing's pageStyle. :card: the main
+                                      ; column, sidebar and home boxes are cards with a
+                                      ; shadow on a contrasting page; :line: the same boxes
+                                      ; flat, with a 1px border, on a page of their own
+                                      ; colour. Anything else warns and falls back to :card
          :sidebar-open true           ; true → every sidebar group starts open;
                                       ; false → only the current article's trail
                                       ; (vdoing's `sidebar.collapsable`, inverted; vdoing's

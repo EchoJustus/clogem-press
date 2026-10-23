@@ -113,7 +113,8 @@
   [{:keys [cfg home-fm body ids page total page-url] :as ctx}]
   (let [mode (post-list-mode home-fm)
         hide-right? (true? (:hideRightBar home-fm))
-        main [:main.clogem-main
+        ;; P4-B2a.1: post cards sit on the page, so their column is no card
+        main [:main.clogem-main {:class (when (and (= :detailed mode) (seq ids)) "clogem-main--posts")}
               ;; a home without a body of its own still has a heading — the
               ;; body's `# Title` is the h1 when there is one
               [:div.clogem-content

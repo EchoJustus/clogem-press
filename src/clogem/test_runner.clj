@@ -32,6 +32,7 @@
     clogem.comments-test
     clogem.theme-modes-test
     clogem.highlight-test
+    clogem.page-style-test
     ;; Phase 4 Task F
     clogem.analytics-test
     clogem.static-test])
