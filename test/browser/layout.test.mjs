@@ -894,4 +894,5 @@ export default async function layout(t) {
   await item4(t);
   await item5(t);
   await item6(t);
+  await item7(t);
 }

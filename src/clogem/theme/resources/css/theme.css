@@ -580,6 +580,7 @@ img { max-width: 100%; height: auto; }
  * home's own text above the list is the card instead */
 html[class] .clogem-main.clogem-main--posts { background: none; border: 0; border-radius: 0; box-shadow: none; padding: 0; }
 .clogem-main--posts > .clogem-content { background: var(--mainBg); border-radius: 5px; padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
+@media (max-width: 50rem) { .clogem-main--posts > .clogem-content { padding: 1rem; } }
 .theme-style-card :is(.clogem-main, .clogem-sidebar, .clogem-home-right > section, .clogem-main--posts > .clogem-content) {
   box-shadow: 0 1px 2px var(--shadowColor);
 }

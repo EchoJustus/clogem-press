@@ -1862,7 +1862,8 @@ order; each builds on A:
     and `js/nav.js`, sidebar collapse, the right menu bar, page buttons, background patterns, back
     to top and smooth scroll. *In progress:* `--navbarHeight`, anchors and smooth scroll; the
     one-row desktop navbar with a language dropdown; the 80rem three-column shell; the mobile
-    navbar, the drawer and `js/nav.js`, with its no-JS and failed-script fallbacks (§11.3 item 9). Sidebar collapse, the right menu bar switch, page buttons,
+    navbar, the drawer and `js/nav.js`, with its no-JS and failed-script fallbacks; the home's
+    text-card padding (§11.3 item 9). Sidebar collapse, the right menu bar switch, page buttons,
     background patterns and back to top remain.
 - **F — Analytics, verification, static root** (1 d) (§11.3 items 14, 15). *Done.*
 - **E1 — Blog identity, banner, htmlModules** (2.75 d) (§11.3 item 13). *From B2b:* the

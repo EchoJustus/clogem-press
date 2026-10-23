@@ -93,6 +93,9 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
 - **Navbar dropdowns overflowing a phone**: an open Malay "Semak imbas"
   menu widened the page by 44 px at 320 px (28 at 360) and Tamil's by 18;
   at 50rem and below the dropdowns are in the flow (`position: static`).
+- **The home's text card** (`.clogem-main--posts > .clogem-content`) kept
+  `20px 24px` of padding up to 800 px; at 50rem and below it now pads 1rem,
+  as every other main does.
 
 ### Tests (B2b)
 
@@ -109,7 +112,8 @@ that look: 0.2.0 and B1 accepted the value but drew card and line the same.
   open drawer within the viewport with everything in it open, the mode
   menu at 320, reduced motion and the focus ring in the drawer; without JS,
   without `(scripting: enabled)` and with `nav.js` blocked; the keyboard,
-  pointer, link, resize and no-duplicate behaviour of `nav.js`.
+  pointer, link, resize and no-duplicate behaviour of `nav.js`; the home's
+  text-card padding.
 - `overflow.test.mjs` also opens the drawer, and everything in it, on every
   page where its toggle renders; `modes.test.mjs` checks print at 1280 and
   360 px, each control first asserted drawn on screen, and at 1280 gives
