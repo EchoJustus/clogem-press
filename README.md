@@ -368,6 +368,25 @@ motion — and hides at once; the next Tab starts again at the navbar. It
 sits below the navbar, so the open mobile drawer covers it. It needs
 JavaScript; print never shows it. `:theme :back-to-top false` omits it.
 
+**Edit link.** `:content :edit-link` (vdoing's `editLinks`, `docsRepo`,
+`docsBranch` and `docsDir`) puts *Edit this page* (`:page/edit`, with a
+pencil) under every article and catalogue page — never under a home or an
+index page — and opens the page's own source file in the repository's web
+editor, in the same tab; a translation opens its own `.<lang>.md`:
+
+```clojure
+:content {:edit-link {:repo "owner/name"      ; or an https:// URL; absent: :theme :repo
+                      :branch "main"          ; the default
+                      :dir "docs"}}           ; where the site sits in the repository, default ""
+```
+
+github.com, and any host but two, get `<repo>/edit/<branch>/<path>`;
+gitlab.com gets `<repo>/-/edit/<branch>/<path>`, and bitbucket.org
+`<repo>/src/<branch>/<path>?mode=edit…`, as vdoing's do. Gitee and
+self-hosted forges get the GitHub form. Front matter `editLink: false`
+hides the link on that page. A bad value is a warning that turns the link
+off; print never shows it.
+
 The mode and page-style classes are on `<html>`, unqualified:
 `.theme-mode-dark`, `.theme-style-card`. (0.2.0 put them on `<body>`; CSS
 written as `body.theme-mode-dark` must drop `body`.)

@@ -21,6 +21,22 @@ buttons and a back-to-top button now appear by default, as in vdoing.
 
 ### Added (E2)
 
+- **The edit link** (D-P4-16; vdoing's `PageEdit`): with `:content
+  :edit-link`, every article and catalogue page (`article: false` ones
+  included) gets `<div class="clogem-page-edit">` right after
+  `</article>` — before prev/next, outside `data-pagefind-body` — holding
+  *Edit this page* (`:page/edit`, unused until now, with the `pencil`
+  icon). It opens the variant's own file (`:dir`, then the file relative
+  to the site, percent-encoded per segment; the host never) in the same
+  tab, as clogem's `:nav` links do (vdoing opens a new tab): `<repo>/edit/
+  <branch>/<path>` on github.com and any other host, Gitee included;
+  `/-/edit/` on gitlab.com; `/src/…?mode=edit&spa=0&at=<branch>&fileviewer=
+  file-view-default` on bitbucket.org, as vdoing's `createEditLink`. Front
+  matter `editLink: false` hides it; any value but `true`/`false` is a
+  warning naming the file, and is ignored. Never on a home or an index
+  page. Print hides it. `render/site-rel` is now `config/site-rel`, shared.
+  The demo turns it on, pointing at its own files in this repository.
+
 ### Changed (E2)
 
 - **`:content :edit-link`, `:theme :update-bar`, `:theme :last-updated`
@@ -47,6 +63,13 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   with 0 errors; `:content {:edit-link true}` is one warning; no E2 key's
   warning says "planned"; vdoing's spellings, `updateBar`'s own included.
   `config_test`'s `:updateBar` row is no longer planned.
+- The edit link: the exact href of `/pages/cjk001/` (a CJK path); each
+  variant's own file (`/zh-Hans/pages/643259/` → `.zh-Hans.md`); the
+  catalogue `/pages/559f0f/`; none on homes, `/archives/`, tag and
+  category pages; one per article page; GitLab, Bitbucket, `git.example`
+  and Gitee hrefs, the branch and path encoded per segment; `editLink:
+  false`, `true` and `1` (one warning, ignored, also with the link off);
+  the `:theme :repo` fallback; after `</article>`, no `target`.
 
 ### Needs native review (E2)
 

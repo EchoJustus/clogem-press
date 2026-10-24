@@ -730,14 +730,10 @@
                          t)))))
 
 (defn- site-rel
-  "`p` as the site author would name it: relative to the site directory
-  when it is inside it (`content/01.Guide/a.md`), else as it is."
+  "`config/site-rel`: `p` relative to the site directory, as its author
+  would name it, when it is inside it."
   [cfg p]
-  (let [site (fs/normalize (fs/absolutize (config/site-dir cfg)))
-        p    (fs/normalize (fs/absolutize p))]
-    (if (str/starts-with? (str p) (str site java.io.File/separator))
-      (str/replace (str (fs/relativize site p)) "\\" "/")
-      (str p))))
+  (config/site-rel cfg p))
 
 (defn- theme-file-what [rel] {:label (str "the theme file clogem/" rel)})
 

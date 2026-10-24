@@ -116,7 +116,21 @@
            ;; directory (anything else warns, and nothing is copied). A file
            ;; that would land where the build writes — a page, feed.xml,
            ;; robots.txt, under clogem/, assets/ or pagefind/ — is an error.
-           :static-dir nil}
+           :static-dir nil
+           ;; Task E2: vdoing's editLinks / docsRepo / docsBranch / docsDir.
+           ;; "Edit this page" under every article and catalogue page, opening
+           ;; the page's own source file (a translation its own .<lang>.md) in
+           ;; the same tab. nil (the default) is off; so is a page whose front
+           ;; matter says `editLink: false`.
+           ;;   :repo   "owner/name" (GitHub) or an https:// URL; absent, :theme
+           ;;           :repo is used. github.com and any other host: <repo>/edit/
+           ;;           <branch>/<path>; gitlab.com: <repo>/-/edit/…;
+           ;;           bitbucket.org: <repo>/src/…?mode=edit. (Gitee and other
+           ;;           hosts get the GitHub form.)
+           ;;   :branch default "main"
+           ;;   :dir    where the site sits in the repository, default ""
+           ;; e.g. {:repo "EchoJustus/EchoJustus.github.io"}
+           :edit-link nil}
 
  ;; --------------------------------------------------------------- theme ----
  ;; Colour modes (§11.3 items 2–4): the mode a FIRST visit sees. The navbar's

@@ -3,6 +3,7 @@
   "Page templates: article, home, and the redirect stub."
   (:require [clogem.config :as config]
             [clogem.theme.layout :as layout]
+            [clogem.theme.parity :as parity]
             [clogem.util :as u]))
 
 (defn article
@@ -29,6 +30,8 @@
         (layout/article-info ctx group variant)
         (layout/variant-bar ctx)
         [:div.clogem-content (layout/search-terms ctx group) content-hiccup]]
+       ;; Task E2: vdoing's PageEdit, between the article and PageNav
+       (parity/page-edit ctx)
        (layout/prev-next ctx)
        (layout/page-buttons ctx)
        (layout/comments ctx)])

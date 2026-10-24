@@ -1,0 +1,84 @@
+;; Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).
+(ns clogem.theme.parity
+  "Phase 4 Task E2 — article-page parity with vdoing (DESIGN.md §11.3 item
+  16, D-P4-13, D-P4-16): the edit link under an article or catalogue page.
+
+  This namespace requires `clogem.theme.layout`; layout never requires it,
+  so the page templates call in here and layout stays the shared chrome."
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]
+            [clogem.config :as config]
+            [clogem.diag :as diag]
+            [clogem.i18n :as i18n]
+            [clogem.theme.icons :as icons]
+            [clogem.util :as u]))
+
+;; ---------------------------------------------------------------------------
+;; The edit link (D-P4-16)
+
+(defn- host-of
+  "The lower-cased host of an `https://` URL, or \"\"."
+  [url]
+  (u/lower (or (second (re-find #"(?i)^https://([^/?#]+)" (str url))) "")))
+
+(defn edit-href
+  "The edit URL of the file at `path` (relative to the repository root, `/`
+  separators) in the repository `url` on `branch`, as vdoing's
+  `createEditLink` (PageEdit.vue) builds it:
+
+    gitlab.com    → <url>/-/edit/<branch>/<path>
+    bitbucket.org → <url>/src/<branch>/<path>?mode=edit&spa=0&at=<branch>&fileviewer=file-view-default
+    anything else → <url>/edit/<branch>/<path>    (GitHub's form; Gitee and
+                                                  other hosts get it too)
+
+  Only the path and the branch are percent-encoded, segment by segment;
+  the URL as configured is left alone."
+  [{:keys [url branch]} path]
+  (let [p (u/url-encode-path path)
+        b (u/url-encode-path branch)]
+    (case (str/replace (host-of url) #"^www\." "")
+      "gitlab.com"    (str url "/-/edit/" b "/" p)
+      "bitbucket.org" (str url "/src/" b "/" p "?mode=edit&spa=0&at=" (u/url-encode-segment branch)
+                           "&fileviewer=file-view-default")
+      (str url "/edit/" b "/" p))))
+
+(defn- edit-link?
+  "Front matter `editLink` on the variant: `false` hides its edit link,
+  `true` changes nothing, and anything else is a warning naming the file,
+  and is ignored (as vdoing's PageEdit reads it, per page)."
+  [variant]
+  (let [fm (:front-matter variant)
+        v  (get fm :editLink)]
+    (cond
+      (nil? v)     true
+      (boolean? v) v
+      :else (do (diag/warn! (:rel-path variant)
+                            (str "front matter editLink: " (pr-str v) " is not true or false; it is ignored."))
+                true))))
+
+(defn edit-url
+  "The edit link of the page's variant, or nil: `:content :edit-link` is
+  off, the variant says `editLink: false`, or its file is outside the site
+  directory (no repository path to give it). The path is `:dir`, then the
+  file relative to the site directory (`config/site-rel`)."
+  [{:keys [cfg variant]}]
+  ;; front matter first: a bad `editLink` is reported whether or not the
+  ;; site has an edit link
+  (let [shown? (edit-link? variant)
+        e      (config/edit-link cfg)]
+    (when (and shown? e (:path variant))
+      (let [rel (config/site-rel cfg (:path variant))]
+        (when-not (fs/absolute? rel)
+          (edit-href e (str/join "/" (remove str/blank? [(:dir e) rel]))))))))
+
+(defn page-edit
+  "vdoing's PageEdit, after the article (or the catalogue) and before the
+  prev/next links: the edit link — the `pencil` icon and `:page/edit` —
+  in the same tab, like every `:nav` link. Outside `<article
+  data-pagefind-body>`, so search never indexes it. Nil when there is
+  nothing to show."
+  [ctx]
+  (let [href (edit-url ctx)]
+    (when href
+      [:div.clogem-page-edit
+       [:a.clogem-page-edit__link {:href href} (icons/icon ctx :pencil) " " (i18n/tr ctx :page/edit)]])))

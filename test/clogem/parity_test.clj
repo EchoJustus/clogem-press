@@ -7,9 +7,35 @@
   test/browser/parity.test.mjs."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [clojure.test :refer [deftest is testing]]
+            [clojure.test :refer [deftest is testing use-fixtures]]
+            [clogem.cli :as cli]
             [clogem.config :as config]
-            [clogem.diag :as diag]))
+            [clogem.diag :as diag]
+            [clogem.render :as render]
+            [clogem.theme.parity :as parity]))
+
+(def demo "examples/demo-site")
+(def theme-css "src/clogem/theme/resources/css/theme.css")
+
+;; ---------------------------------------------------------------------------
+;; The demo, built once
+
+(def ^:dynamic *out* nil)
+
+(defn- build-fixture
+  [f]
+  (let [out (fs/create-temp-dir {:prefix "clogem-e2"})
+        cfg (first (diag/collecting
+                    (config/load-config demo nil {:build {:out (str out)}
+                                                  :content {:write-front-matter false}})))
+        [model _] (diag/collecting (cli/analyse cfg))]
+    (diag/collecting (render/build! cfg model))
+    (binding [*out* out]
+      (try (f) (finally (fs/delete-tree out))))))
+
+(use-fixtures :once build-fixture)
+
+(defn- html [& parts] (slurp (fs/file (apply fs/path *out* parts))))
 
 ;; ---------------------------------------------------------------------------
 ;; Helpers
@@ -21,6 +47,51 @@
     (spit (fs/file dir "site.edn") (pr-str edn))
     (try (diag/collecting (config/load-config (str dir)))
          (finally (fs/delete-tree dir)))))
+
+(defn- write-site!
+  "Write a site into `dir`: `edn` over a minimal site.edn (no search, no
+  highlighting) and `files` {path-under-content content}."
+  [dir edn files]
+  (spit (fs/file dir "site.edn")
+        (pr-str (merge-with #(if (and (map? %1) (map? %2)) (merge %1 %2) %2)
+                            {:site {:title "S"} :search {:provider :none} :highlight {:provider :none}}
+                            edn)))
+  (doseq [[rel content] files]
+    (fs/create-dirs (fs/parent (fs/path dir "content" rel)))
+    (spit (fs/file dir "content" rel) content)))
+
+(defn- build-dir
+  "Build the site in `dir` (read-only: no front matter written) into
+  `dir`/dist: {:pages {rel-path html} :warnings [message …]}."
+  [dir]
+  (let [[_ ds] (diag/collecting
+                (let [cfg (config/load-config (str dir) nil {:content {:write-front-matter false}})]
+                  (render/build! cfg (cli/analyse cfg))))
+        dist (fs/path dir "dist")]
+    {:pages    (into (sorted-map)
+                     (for [p (fs/glob dist "**.html")]
+                       [(str/replace (str (fs/relativize dist p)) "\\" "/") (slurp (fs/file p))]))
+     :warnings (mapv :message (diag/warnings ds))}))
+
+(defn- build-temp
+  "`write-site!` and `build-dir` in a temp directory, deleted afterwards."
+  [edn files]
+  (let [dir (fs/create-temp-dir {:prefix "clogem-e2"})]
+    (try (write-site! dir edn files)
+         (build-dir dir)
+         (finally (fs/delete-tree dir)))))
+
+(defn- article
+  "A minimal article's text with `fm` (a map of front-matter lines)."
+  [title permalink & [fm body]]
+  (str "---\ntitle: " title "\ndate: 2026-01-01 00:00:00\npermalink: " permalink "\n"
+       (apply str (for [[k v] fm] (str (name k) ": " v "\n")))
+       "---\n\n" (or body "Body text.") "\n"))
+
+(defn- page-edit-of
+  "The `<div class=\"clogem-page-edit\">` of `page`, or nil."
+  [page]
+  (re-find #"(?s)<div class=\"clogem-page-edit\">.*?</div>" (str page)))
 
 (defn- cfg-warnings
   "[cfg [warning message …]] for `edn`, asserting it raised no error."
@@ -173,3 +244,92 @@
                (str ":theme :updateBar is vdoing's spelling; clogem-press reads :theme :update-bar. It is ignored.")}
              (set ws)))
       (is (not-any? #(str/includes? % "planned") ws)))))
+
+;; ---------------------------------------------------------------------------
+;; Item 2: the edit link
+
+(deftest the-demo-links-each-variant-to-its-own-file
+  (testing "the exact href of the zh-Hans-only article, its CJK path encoded"
+    (let [page (html "pages" "cjk001" "index.html")]
+      (is (str/includes? page
+                         (str "<div class=\"clogem-page-edit\"><a class=\"clogem-page-edit__link\" "
+                              "href=\"https://github.com/EchoJustus/clogem-press/edit/main/examples/demo-site/content/"
+                              "04.%E4%B8%AD%E6%96%87%E7%AC%94%E8%AE%B0/01.first.zh-Hans.md\">")))
+      (testing "after </article>, before prev/next and comments, in the same tab"
+        (let [i-art  (str/index-of page "</article>")
+              i-edit (str/index-of page "<div class=\"clogem-page-edit\">")]
+          (is (< i-art i-edit))
+          (is (< i-edit (str/index-of page "<section class=\"clogem-comments\">")))
+          (when-let [i-pn (str/index-of page "<nav class=\"clogem-prev-next\">")]
+            (is (< i-edit i-pn))))
+        (is (not (str/includes? (page-edit-of page) "target=")))
+        (is (not (str/includes? (page-edit-of page) "data-pagefind")))
+        (is (str/includes? (page-edit-of page) "#pencil\"></use></svg> 编辑此页</a>")
+            "the pencil icon, then the page language's :page/edit"))))
+  (testing "each variant links its own file"
+    (is (str/includes? (page-edit-of (html "pages" "643259" "index.html"))
+                       "/edit/main/examples/demo-site/content/01.Guide/10.Basics/02.conventions.md\""))
+    (is (str/includes? (page-edit-of (html "zh-Hans" "pages" "643259" "index.html"))
+                       "/edit/main/examples/demo-site/content/01.Guide/10.Basics/02.conventions.zh-Hans.md\""))
+    (is (str/includes? (page-edit-of (html "zh-Hans" "pages" "643259" "index.html")) "> 编辑此页</a>")))
+  (testing "a catalogue page has one, before its prev/next links"
+    (let [page (html "pages" "559f0f" "index.html")]
+      (is (str/includes? (page-edit-of page) "/edit/main/examples/demo-site/content/00.Catalogue/01.Guide.md\""))
+      (is (< (str/index-of page "</article>") (str/index-of page "<div class=\"clogem-page-edit\">")))))
+  (testing "never on a home, an index or a tag page"
+    (doseq [p [["index.html"] ["zh-Hans" "index.html"] ["archives" "index.html"] ["tags" "index.html"]
+               ["tags" "meta" "index.html"] ["categories" "index.html"]]]
+      (is (not (str/includes? (apply html p) "clogem-page-edit")) (str/join "/" p))))
+  (testing "every article and catalogue page has exactly one"
+    (doseq [p (fs/glob *out* "**/pages/*/index.html")
+            :let [page (slurp (fs/file p))]]
+      (is (= 1 (count (re-seq #"<div class=\"clogem-page-edit\">" page))) (str p)))))
+
+(deftest edit-hrefs-follow-vdoing-s-patterns
+  (let [e (fn [url] {:url url :branch "main"})]
+    (is (= "https://github.com/o/n/edit/main/content/a%20b.md"
+           (parity/edit-href (e "https://github.com/o/n") "content/a b.md")))
+    (is (= "https://gitlab.com/o/n/-/edit/main/docs/content/x.md"
+           (parity/edit-href (e "https://gitlab.com/o/n") "docs/content/x.md")))
+    (is (= (str "https://bitbucket.org/o/n/src/main/content/x.md"
+                "?mode=edit&spa=0&at=main&fileviewer=file-view-default")
+           (parity/edit-href (e "https://bitbucket.org/o/n") "content/x.md")))
+    (is (= "https://git.example/o/n/edit/main/content/x.md"
+           (parity/edit-href (e "https://git.example/o/n") "content/x.md"))
+        "any other host gets GitHub's form")
+    (is (= "https://gitee.com/o/n/edit/main/content/x.md"
+           (parity/edit-href (e "https://gitee.com/o/n") "content/x.md"))
+        "Gitee too")
+    (is (= "https://github.com/o/n/edit/feat/x%3Fy/content/%23.md"
+           (parity/edit-href {:url "https://github.com/o/n" :branch "feat/x?y"} "content/#.md"))
+        "the branch and the path are encoded per segment; nothing can become a query or a fragment")
+    (is (= (str "https://bitbucket.org/o/n/src/a/b/c.md?mode=edit&spa=0&at=a%2Fb&fileviewer=file-view-default")
+           (parity/edit-href {:url "https://bitbucket.org/o/n" :branch "a/b"} "c.md"))
+        "the at= parameter is one encoded value")))
+
+(deftest edit-link-front-matter-and-fallbacks
+  (let [files {"01.A/01.one.md"   (article "One" "/pages/one001/")
+               "01.A/02.two.md"   (article "Two" "/pages/two002/" {:editLink "false"})
+               "01.A/03.three.md" (article "Three" "/pages/thr003/" {:editLink 1})
+               "01.A/04.four.md"  (article "Four" "/pages/fou004/" {:editLink "true"})}]
+    (testing "GitLab, with :branch and :dir"
+      (let [{:keys [pages warnings]}
+            (build-temp {:content {:edit-link {:repo "https://gitlab.com/g/site" :branch "trunk" :dir "/web/"}}} files)]
+        (is (str/includes? (page-edit-of (pages "pages/one001/index.html"))
+                           "href=\"https://gitlab.com/g/site/-/edit/trunk/web/content/01.A/01.one.md\""))
+        (testing "editLink: false hides it; true changes nothing"
+          (is (nil? (page-edit-of (pages "pages/two002/index.html"))))
+          (is (str/includes? (page-edit-of (pages "pages/fou004/index.html")) "/04.four.md\"")))
+        (testing "a non-boolean editLink is one warning naming the file, and is ignored"
+          (is (= ["front matter editLink: 1 is not true or false; it is ignored."]
+                 (filterv #(str/includes? % "editLink") warnings)))
+          (is (str/includes? (page-edit-of (pages "pages/thr003/index.html")) "/03.three.md\"")))))
+    (testing "Bitbucket, from :theme :repo"
+      (let [{:keys [pages]} (build-temp {:theme {:repo "https://bitbucket.org/b/site"} :content {:edit-link {}}} files)]
+        (is (str/includes? (page-edit-of (pages "pages/one001/index.html"))
+                           (str "href=\"https://bitbucket.org/b/site/src/main/content/01.A/01.one.md"
+                                "?mode=edit&amp;spa=0&amp;at=main&amp;fileviewer=file-view-default\"")))))
+    (testing "off without :edit-link — and editLink: 1 still warns"
+      (let [{:keys [pages warnings]} (build-temp {} files)]
+        (is (not-any? #(str/includes? % "clogem-page-edit") (vals pages)))
+        (is (= 1 (count (filter #(str/includes? % "editLink") warnings))))))))

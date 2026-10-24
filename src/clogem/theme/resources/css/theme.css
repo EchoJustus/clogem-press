@@ -510,6 +510,8 @@ img { max-width: 100%; height: auto; }
 .clogem-prev-next { display: flex; justify-content: space-between; gap: 1rem; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--borderColor); }
 .clogem-prev-next__next { margin-left: auto; text-align: right; }
 .clogem-prev-next span { display: block; font-size: 0.75rem; color: var(--textColorSubtle); }
+/* P4-E2: vdoing's PageEdit */
+.clogem-page-edit { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin-top: 1.5rem; font-size: 0.85rem; color: var(--textColorSubtle); }
 
 /* P4-B2b: vdoing's page buttons, fixed at the viewport's edges. The widest
  * shell is 80rem, so its gutter is (100vw - 80rem) / 2 + 1.25rem: 52px at
@@ -781,4 +783,5 @@ html.theme-mode-dark {
   pre.clogem-code, pre.clogem-code > code { white-space: pre-wrap; overflow: visible; }
   pre.clogem-code > code { display: block; }
   .clogem-copy { display: none !important; }
+  .clogem-page-edit__link { display: none !important; }
 }

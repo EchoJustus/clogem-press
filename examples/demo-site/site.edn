@@ -42,7 +42,10 @@
            :permalink-prefix "/pages/"
            :write-front-matter true
            :permalinks-file "permalinks.edn"
-           :assets-dir "assets"}
+           :assets-dir "assets"
+           ;; Task E2: "Edit this page" under every article and catalogue
+           ;; page, pointing at this file in the generator's own repository
+           :edit-link {:repo "EchoJustus/clogem-press" :dir "examples/demo-site"}}
 
  ;; D-P2-11: site pages are prefixed per language (`/` → `/zh-Hans/`), a
  ;; permalink resolves to the reader's variant, and :items makes a dropdown.
