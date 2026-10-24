@@ -328,16 +328,23 @@ console.log(JSON.stringify([
       (is (= "/clogem/icons.svg" path) rel)
       (is (= (str "?v=" v) q) (str rel ": the sprite URL carries its fingerprint"))
       (is (contains? ids frag) (str rel ": #" frag " is in the sprite")))
-    (testing "the default sprite: every UI icon, no brand, at most 12 KB"
-      (is (= (set (map name (sprite/ui-names))) ids))
+    ;; P4-E1a (deliberate): the demo's :theme :social uses github and
+    ;; mastodon, so its sprite holds those two brands and their notice
+    (testing "the demo's sprite: every UI icon plus the brands in use, at most 12 KB"
+      (is (= (into (set (map name (sprite/ui-names))) ["brand-github" "brand-mastodon"]) ids))
       (is (<= (count (.getBytes ^String svg "UTF-8")) 12288) (str (count svg) " bytes"))
       (println (format "theme-modes: icons.svg is %d bytes, %d symbols" (count (.getBytes ^String svg "UTF-8")) (count ids))))
+    (testing "the default sprite: every UI icon, no brand"
+      (let [d (sprite/sprite (sprite/brands-in-use config/defaults))]
+        (is (= (set (map name (sprite/ui-names))) (sprite-ids d)))
+        (is (= 9375 (count (.getBytes ^String d "UTF-8"))) "unchanged by E1a")
+        (is (not (str/includes? d "Simple Icons")) "no brands, no brand notice")))
     (testing "the licence notices travel with it"
       (let [comment (second (re-find #"(?s)<!--(.*?)-->" svg))]
         (is (str/includes? comment "Lucide 1.52.0"))
         (is (str/includes? comment "ISC License. Copyright (c) 2026 Lucide Icons and Contributors"))
         (is (str/includes? comment "Copyright (c) 2013-present Cole Bemis") "the Feather-derived icons' MIT notice")
-        (is (not (str/includes? comment "Simple Icons")) "no brands, no brand notice")
+        (is (str/includes? comment "Simple Icons 16.34.0: github mastodon.") "the brand notice, for the brands in use")
         (is (not (str/includes? comment "--")) "a valid XML comment")))
     (testing "the vendored sources never ship"
       (is (not (fs/exists? (out-file "clogem" "icons" "MANIFEST.edn"))))

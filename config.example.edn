@@ -173,8 +173,54 @@
                                       ; 400/700 woff2 (~24 KB each, SIL OFL) and
                                       ; links clogem/fonts/tamil.css; :system
                                       ; ships no font bytes at all
-         :html-modules {}}            ; raw HTML for vdoing's 7 slots (Phase 4 Task E1);
+         :html-modules {}             ; raw HTML for vdoing's 7 slots (Phase 4 Task E1b);
                                       ; anything here warns: no effect in 0.2.0
+
+         ;; Phase 4 Task E1a: the blog identity (vdoing's blogger, social,
+         ;; footer, bannerBg, bodyBgImg* and titleBadge*). Every bad value
+         ;; warns and is dropped or set to its default; none fails a build.
+         ;; An image is an https: URL, a data:image/… URI (needs `img-src
+         ;; data:` under a CSP) or a site path ("assets/me.png" is
+         ;; "/assets/me.png"; the base is prefixed). Names, slogans and
+         ;; titles are text, a string or a per-language map, and escaped.
+         :blogger {:avatar "/assets/avatar.png"  ; decorative: alt=""
+                   :name {:en "Jane Doe" :zh-Hans "简"}
+                   :slogan "Notes on everything"} ; a card heading the home's right
+                                      ; bar and, on a phone, the menu drawer; it needs
+                                      ; a :name or an :avatar
+         :social {:icons [{:icon :github :title "GitHub" :link "https://github.com/jane"}
+                          {:icon :mail :title "Email" :link "mailto:jane@example.com"}
+                          {:icon :rss :title "Feed" :link "/feed.xml"}]}
+                                      ; in the card and the footer, rel="me", in the same
+                                      ; tab. :icon is a vendored brand (bilibili bluesky
+                                      ; csdn discord douban facebook gitee github gitlab
+                                      ; instagram juejin linkedin mastodon npm qq telegram
+                                      ; v2ex wechat weibo x youtube zhihu — only those used
+                                      ; are built into the sprite; :x is X) or a UI icon
+                                      ; (:mail :rss :link :globe …); an unknown one warns
+                                      ; and shows :link. Or :svg "assets/me.svg", your own
+                                      ; image. :link is http(s), mailto: or a site path
+         :footer {:create-year 2019   ; "© 2019–<newest article's year> …"
+                  ;; :end-year 2025   ; instead of the newest dated article's year
+                  :copyright-info "Jane Doe"   ; trusted HTML, per language too;
+                                      ; {{base}} is the site's base; "" hides it
+                  :powered-by true}   ; false drops "Powered by clogem-press"
+         :banner-bg "auto"            ; the home banner's background, when the home's
+                                      ; front matter asks for a banner (heroImage,
+                                      ; heroText, tagline, actionText + actionLink,
+                                      ; bannerBg — which overrides this): "auto" (a grid
+                                      ; on #28282d), "none", an image, or trusted CSS
+                                      ; "background: …" (a style attribute: a strict CSP
+                                      ; needs style-src-attr)
+         ;; :body-bg-img ["/assets/bg1.jpg" "/assets/bg2.jpg"]   ; one image or several,
+                                      ; fixed behind the page; several rotate (js/bodybg.js,
+                                      ; not under reduced motion). Forces :page-style :card
+         :body-bg-img-opacity 0.5     ; (0, 1], in tenths
+         :body-bg-img-interval 15     ; seconds between images, at least 1
+         :title-badge true            ; an icon before article and archive titles, the
+                                      ; same for every language of an article
+         :title-badge-icons []}       ; [] is the built-ins (book-open pencil hash); or
+                                      ; images and UI icon keywords, e.g. [:sun "/b.png"]
 
  :nav [{:text {:en "Home" :zh-Hans "首页"} :link "/"}]
 

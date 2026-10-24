@@ -186,7 +186,8 @@
       (is (re-find #"#menu\"[^>]*>(?:</use>)?</svg><svg[^>]*class=\"clogem-icon is-close\"[^>]*><use href=\"[^\"]*#x\"" nb)
           (str rel ": the menu and x icons"))
       (is (= 1 (count (re-seq #"id=\"clogem-drawer\"" page))) (str rel ": one drawer"))
-      (is (re-find #"<div class=\"clogem-navbar__drawer\" id=\"clogem-drawer\"><nav class=\"clogem-navbar__nav\">.*</ul></nav><nav aria-label=\"[^\"]+\" class=\"clogem-langs\">.*</ul></nav></div><div class=\"clogem-search\">" nb)
+      ;; P4-E1a (deliberate): the demo's blogger card, hidden, may come first
+      (is (re-find #"<div class=\"clogem-navbar__drawer\" id=\"clogem-drawer\">(?:<div class=\"clogem-blogger clogem-blogger--drawer\" hidden=\"hidden\">.*?</div>)?<nav class=\"clogem-navbar__nav\">.*</ul></nav><nav aria-label=\"[^\"]+\" class=\"clogem-langs\">.*</ul></nav></div><div class=\"clogem-search\">" nb)
           (str rel ": the drawer holds the nav and the languages, then search follows")))
     (testing ":nav/menu in the page's language"
       (doseq [[p want] [[["index.html"] "Menu"] [["zh-Hans" "index.html"] "菜单"] [["zh-Hant" "index.html"] "選單"]

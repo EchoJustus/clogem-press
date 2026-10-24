@@ -610,3 +610,68 @@
       (let [js (slurp bodybg-js)]
         (is (str/includes? js "matchMedia(\"(prefers-reduced-motion: reduce)\")"))
         (is (str/includes? js "if (still.matches || document.hidden) return;"))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 12: the demo
+
+(defn- build-demo
+  "{rel-path → html} of the demo, built (no front-matter writes) with `overrides`."
+  [overrides]
+  (let [out (fs/create-temp-dir {:prefix "clogem-e1a-demo"})]
+    (try
+      (let [cfg (first (diag/collecting
+                        (config/load-config "examples/demo-site" nil
+                                            (merge-with merge {:build {:out (str out)}
+                                                               :content {:write-front-matter false}}
+                                                        overrides))))
+            [model _] (diag/collecting (cli/analyse cfg))]
+        (diag/collecting ((requiring-resolve 'clogem.render/build!) cfg model))
+        {:pages (into (sorted-map)
+                      (for [p (fs/glob out "**.html")]
+                        [(str (fs/relativize out p)) (slurp (fs/file p))]))
+         :files (set (map #(str (fs/relativize out %)) (fs/glob out "**")))})
+      (finally (fs/delete-tree out)))))
+
+(deftest the-demo-shows-the-identity
+  (let [{:keys [pages]} (build-demo {})
+        zh (pages "zh-Hans/index.html")]
+    (testing "the en home's banner on / only: no heroText, so the body's h1 stays the one h1"
+      (is (str/includes? (pages "index.html") "<div class=\"clogem-hero clogem-hero--auto\"><img alt=\"\" class=\"clogem-hero__img\" src=\"/assets/demo.png\" /><p class=\"clogem-hero__tagline\">"))
+      (is (str/includes? (pages "index.html") "<a class=\"clogem-hero__action\" href=\"/pages/559f0f/\">Read the guide</a>"))
+      (is (re-find #"<h1 id=\"clogem-press-demo-site\">" (pages "index.html")))
+      (is (contains? pages "page/2/index.html"))
+      (doseq [[rel html] pages :when (re-find #"(^|/)page/\d+/index\.html$" rel)]
+        (is (not (str/includes? html "clogem-hero")) rel))
+      (doseq [[rel html] pages :when (str/includes? html "clogem-navbar")]
+        (is (= 1 (count (re-seq #"<h1[ >]" html))) rel)))
+    (testing "the zh-Hans home's right bar: blogger, categories, tags (postList: simple)"
+      (is (= ["clogem-blogger" "clogem-home-cats" "clogem-home-tags"] (section-order (aside-of zh))))
+      (is (str/includes? (aside-of zh) "<p class=\"clogem-blogger__name\">clogem-press 演示</p>")))
+    (testing "no card in the en home's main; a hidden one in every drawer"
+      (is (not (str/includes? (re-find #"(?s)<main.*?</main>" (pages "index.html")) "clogem-blogger")))
+      (doseq [[rel html] pages :when (str/includes? html "id=\"clogem-drawer\"")]
+        (is (str/includes? html "id=\"clogem-drawer\"><div class=\"clogem-blogger clogem-blogger--drawer\" hidden=\"hidden\">") rel)))
+    (testing "the footer: links, © 2024–<newest>, powered by; still a <p> for custom.css"
+      (let [f (footer-of (pages "index.html"))]
+        (is (re-find #"<p class=\"clogem-footer__copyright\">© 2024–20\d\d <a href=\"/pages/559f0f/\">clogem-press contributors</a></p>" f) f)
+        (is (str/includes? f "#brand-github"))
+        (is (str/includes? f "#brand-mastodon"))
+        (is (str/includes? f "href=\"/feed.xml\" rel=\"me\""))))
+    (testing "every title badge is the sprite's"
+      (is (every? #(re-find #"#(book-open|pencil|hash)\"" %)
+                  (keep #(re-find #"<svg[^>]*clogem-title-badge[^>]*><use href=\"[^\"]+\"" (val %)) pages)))))
+  (testing "under CI's --base /clogem-demo/, every new site-path link resolves"
+    (let [{:keys [pages files]} (build-demo {:site {:base "/clogem-demo/"}})
+          home (pages "index.html")
+          found (for [re [#"class=\"clogem-hero__img\" src=\"([^\"]+)\""
+                          #"class=\"clogem-hero__action\" href=\"([^\"]+)\""
+                          #"class=\"clogem-blogger__avatar\" src=\"([^\"]+)\""
+                          #"<a [^>]*href=\"(/[^\"]+)\" rel=\"me\""
+                          #"clogem-footer__copyright\">© [^<]*<a href=\"([^\"]+)\""]]
+                  (map second (re-seq re home)))
+          links (apply concat found)]
+      (is (every? seq found) "the hero image and action, the avatar, the feed link and {{base}}")
+      (doseq [l links
+              :let [rel (subs l (count "/clogem-demo/"))]]
+        (is (str/starts-with? l "/clogem-demo/") l)
+        (is (or (contains? files rel) (contains? files (str rel "index.html"))) l)))))

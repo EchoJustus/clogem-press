@@ -3,6 +3,12 @@ home: true
 title: clogem-press demo
 postList: detailed
 hideRightBar: true
+# P4-E1a: vdoing's banner, on / only (never /page/2/). No heroText: the
+# body's own `# clogem-press demo site` stays the page's one h1
+heroImage: /assets/demo.png
+tagline: A five-language fixture for every content convention
+actionText: Read the guide
+actionLink: /pages/559f0f/
 ---
 
 # clogem-press demo site
