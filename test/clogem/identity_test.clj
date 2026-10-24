@@ -12,6 +12,8 @@
             [clogem.config :as config]
             [clogem.css-palette :as cp]
             [clogem.diag :as diag]
+            [clogem.fake-tools :as fake]
+            [clogem.search :as search]
             [clogem.sprite :as sprite]))
 
 (defn- load-site
@@ -675,3 +677,31 @@
               :let [rel (subs l (count "/clogem-demo/"))]]
         (is (str/starts-with? l "/clogem-demo/") l)
         (is (or (contains? files rel) (contains? files (str rel "index.html"))) l)))))
+
+(deftest result-titles-stay-badge-free-under-real-pagefind
+  (if-let [real (System/getenv "CLOGEM_PAGEFIND")]
+    (let [site (fs/create-temp-dir {:prefix "clogem-e1a-pf"})]
+      (try
+        (fs/copy-tree "examples/demo-site" site)
+        (binding [diag/*sink* (atom [])
+                  search/*env* {"CLOGEM_PAGEFIND" real}]
+          (let [out (fs/path site "dist")
+                _ (with-out-str (cli/build {:site-dir (str site) :out (str out) :no-write true}))
+                frags (fake/read-fragments out)
+                h1-text (fn [url]
+                          (let [f (fs/file (fs/path out (str (subs url 1) "index.html")))
+                                html (slurp f)
+                                h1 (re-find #"<h1>.*?</h1>" html)]
+                            ;; a catalogue's h1 is clogem's own: no badge, as in vdoing
+                            [(= (boolean (re-find #"clogem-title-badge" h1))
+                                (not (str/includes? html "clogem-catalogue\"")))
+                             (-> h1 (str/replace #"<span class=\"clogem-title-tag\".*?</span>" "")
+                                 (str/replace #"<[^>]+>" "") (str/replace "&amp;" "&"))]))]
+            (is (< 20 (count frags)))
+            (doseq [{:keys [url meta]} frags
+                    :let [[badge? text] (h1-text url)]]
+              (is badge? (str url ": an article carries a badge, a catalogue none"))
+              (is (= text (:title meta)) (str url ": the result title is the h1's text alone")))))
+        (finally (fs/delete-tree site))))
+    (do (is (nil? (System/getenv "GITHUB_ACTIONS")) "CI sets CLOGEM_PAGEFIND, so this always runs there")
+        (println "result-titles-stay-badge-free-under-real-pagefind: skipped — CLOGEM_PAGEFIND is not set"))))

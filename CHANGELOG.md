@@ -112,9 +112,23 @@ gets it, and title badges appear by default, as in vdoing.
   in five languages, the banner (h1, page 2, base, each `bannerBg` kind,
   `:theme :banner-bg`, the warning), the badge (CRC32, stable across builds
   and variants, off, custom), the background image (one, two, base, no
-  inline script), the budgets and the colour pairs in every mode, and the
-  demo, whose new links all resolve under `--base /clogem-demo/`.
-- New `test/browser/identity.test.mjs`.
+  inline script), the budgets and the colour pairs in every mode, the
+  demo, whose new links all resolve under `--base /clogem-demo/`, and, with
+  `CLOGEM_PAGEFIND`, every indexed article's result title equal to its
+  `<h1>` text with the badge in place.
+- New `test/browser/identity.test.mjs`; its reduced-motion check records
+  every `src` the image takes (one sample missed a full red → blue → red
+  turn).
+- Mutants, each killed: an unknown social icon kept (`social-links`,
+  `the-sprite-holds-exactly-the-brands-in-use`, …); identity.css linked
+  with nothing on (`identity-css-ships-and-is-linked-only-when-used`);
+  `icon*` taking a brand not in use (`the-icon-helper`); the drawer card
+  without `hidden` (`the-drawer-card`, `the-demo-shows-the-identity`,
+  layout_test's drawer pin); the end year from the create year
+  (`footer-years`); the hero on `/page/2/` (`the-hero`); the badge hashed
+  on the language URL (`the-title-badge`); bodybg.js shipped with one image
+  and the reduced-motion check removed (`the-body-background`, and the
+  browser test).
 - Pins changed deliberately: `config_test`'s pre-flight warnings (6 → 4),
   `a-new-key-is-registered-in-one-place` (now Task G's
   `:search :cross-language`) and the `bodyBgImgInterval` messages;
