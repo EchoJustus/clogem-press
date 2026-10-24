@@ -46,6 +46,11 @@
  ;; Task E2: the navbar's repository link. Awaiting native review
  ;; (CHANGELOG, Unreleased, "Needs native review (E2)").
  :nav/source           "மூலக் குறியீடு"
+ ;; Task E2: the 404 page. Awaiting native review (CHANGELOG, Unreleased,
+ ;; "Needs native review (E2)").
+ :not-found/title      "பக்கம் கிடைக்கவில்லை"
+ :not-found/message    "இந்த முகவரியில் பக்கம் இல்லை. அது நகர்த்தப்பட்டிருக்கலாம், அல்லது இணைப்பு தவறாக இருக்கலாம்."
+ :not-found/home       "முகப்புப் பக்கத்துக்குச் செல்"
  :container/theorem    "தேற்றம்"
  ;; Search UI (D-P3-10): Pagefind 1.5.2 translations/ta.json.
  ;; [SEARCH_TERM], [COUNT] and [DIFFERENT_TERM] are Pagefind's placeholders; keep them.

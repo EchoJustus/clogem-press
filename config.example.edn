@@ -115,7 +115,8 @@
            ;; not content/, assets/, i18n/, overrides/, .git or the output
            ;; directory (anything else warns, and nothing is copied). A file
            ;; that would land where the build writes — a page, feed.xml,
-           ;; robots.txt, under clogem/, assets/ or pagefind/ — is an error.
+           ;; robots.txt, under clogem/, assets/ or pagefind/ — is an error,
+           ;; except a root 404.html, which replaces the generated 404 page.
            :static-dir nil
            ;; Task E2: vdoing's editLinks / docsRepo / docsBranch / docsDir.
            ;; "Edit this page" under every article and catalogue page, opening

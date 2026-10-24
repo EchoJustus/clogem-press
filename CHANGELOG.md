@@ -12,8 +12,10 @@ B2, §11.3 item 1), then Task F — analytics, verification and a static root
 page chrome (the second half of B2, §11.3 item 9, D-P4-9), then Task E2 —
 article-page parity (§11.3 item 16, D-P4-13). The version stays 0.2.0.
 Every article page now ends with an update bar by default, as in vdoing
-(`:theme :update-bar {:show-to-article false}` drops it), and an
-article's `titleTag` badge now shows in every list row. A site that already set `:theme :page-style :line` now gets
+(`:theme :update-bar {:show-to-article false}` drops it), an
+article's `titleTag` badge now shows in every list row, and every build
+now writes `dist/404.html` (a root `404.html` in the static directory
+replaces it). A site that already set `:theme :page-style :line` now gets
 that look: 0.2.0 and B1 accepted the value but drew card and line the same.
 Likewise a site that set any of the five keys 0.2.0 listed as planned —
 `:theme :sidebar-collapsed`, `:right-menu-bar`, `:page-button`,
@@ -113,6 +115,24 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   in the navbar's `shown?`: a one-language site with no `:nav` but a
   `:repo` gets the drawer. The demo sets both, with its own
   `assets/logo.svg`.
+- **A 404 page** (D-P4-16; vdoing's `404.vue`, without its random Chinese
+  messages): one `dist/404.html` per build, at the output root whatever
+  the base (`render/page-file` honours the page-map thunk's
+  `:clogem/file`, at both `uri->file` call sites), rendered through
+  `layout/page` — navbar, `main.clogem-main`, footer — by
+  `parity/not-found` as `page-not-found` (`<body class="lang-en
+  page-not-found">`), in the default language: `:not-found/title`, `<h1>
+  404`, `:not-found/message` and one link per language to its home, in
+  `:priority` order and in that language's own `:not-found/home`
+  (`:not-found/*`, new in all five languages). Every link is
+  root-relative with the base. It carries `<meta name="robots"
+  content="noindex">` (after the verification tags) and no `:seo`, so no
+  canonical, hreflang, `og:locale`, sitemap entry or language banner; no
+  `data-pagefind-body`, and no JS of its own. A root `404.html` in the
+  static directory replaces it, with no collision error. `bb dev` and `bb
+  serve` answer a miss under the base with it, status 404 (dev injects
+  its reload script); outside the base, or with no `404.html`, the stub
+  as before. The demo's build is now 243 pages.
 
 ### Changed (E2)
 
@@ -187,12 +207,32 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   logo loads, 2.2rem tall, `alt=""`, the title hidden at 1024 and below
   and shown from 1025, the brand still named by it; print hides the edit
   link and the update bar.
+- The 404 page: on the demo, at the root, in English, the shell, every
+  home in its own words, `noindex` before the stylesheets, no canonical,
+  hreflang, `og:locale`, language data or `data-pagefind-body`, one inline
+  script, not in `sitemap.xml`; `<body class="lang-en page-not-found">`
+  opening with `<pagefind-config>`; under `--base /clogem-demo/` still
+  `dist/404.html`, every link under the base; a static `public/404.html`
+  wins with no error or warning, a rebuild keeps it, and once deleted the
+  generated page comes back and is not swept; `doctor` sees no collision;
+  `make-handler` answers `/nope/` with 404 and the page (dev with the
+  reload script), a real file 200, outside the base the stub, a `dist/`
+  with no `404.html` the stub. `overflow.test.mjs` visits `/404.html` at
+  320 and 360.
 
 ### Needs native review (E2)
 
 - `ms`: `:nav/source` "Kod sumber" (the navbar's repository link, when
   its host is not GitHub, GitLab or Bitbucket).
 - `ta`: `:nav/source` "மூலக் குறியீடு".
+- `ms`: the 404 page's `:not-found/title` "Halaman tidak ditemui",
+  `:not-found/message` "Tiada halaman di alamat ini. Halaman itu mungkin
+  telah dipindahkan, atau pautannya salah." and `:not-found/home` "Pergi
+  ke laman utama".
+- `ta`: `:not-found/title` "பக்கம் கிடைக்கவில்லை", `:not-found/message`
+  "இந்த முகவரியில் பக்கம் இல்லை. அது நகர்த்தப்பட்டிருக்கலாம், அல்லது
+  இணைப்பு தவறாக இருக்கலாம்." and `:not-found/home` "முகப்புப்
+  பக்கத்துக்குச் செல்".
 
 **Task B2b — navbar, mobile drawer and page chrome** (§11.3 item 9, D-P4-9):
 

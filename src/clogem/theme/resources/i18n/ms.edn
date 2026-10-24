@@ -48,6 +48,11 @@
  ;; Task E2: the navbar's repository link. Awaiting native review
  ;; (CHANGELOG, Unreleased, "Needs native review (E2)").
  :nav/source           "Kod sumber"
+ ;; Task E2: the 404 page. Awaiting native review (CHANGELOG, Unreleased,
+ ;; "Needs native review (E2)").
+ :not-found/title      "Halaman tidak ditemui"
+ :not-found/message    "Tiada halaman di alamat ini. Halaman itu mungkin telah dipindahkan, atau pautannya salah."
+ :not-found/home       "Pergi ke laman utama"
  :container/theorem    "Teorem"
  ;; Search UI (D-P3-10): Pagefind ships no Malay; written for clogem-press — awaiting native review (CHANGELOG).
  ;; [SEARCH_TERM], [COUNT] and [DIFFERENT_TERM] are Pagefind's placeholders; keep them.

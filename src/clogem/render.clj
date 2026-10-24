@@ -32,6 +32,7 @@
             [clogem.theme.indexes :as indexes]
             [clogem.theme.layout :as layout]
             [clogem.theme.page :as page]
+            [clogem.theme.parity :as parity]
             [clogem.util :as u]))
 
 ;; ---------------------------------------------------------------------------
@@ -466,6 +467,14 @@
             n (highlight/code-nodes ast)]
       (highlight/warn-unknown! hl path (:lang (highlight/parse-info (:info n)))))))
 
+(declare static-files)
+
+(defn- static-404?
+  "Does the static directory ship its own root `404.html` (case-folded)? It
+  then replaces the generated page (Task E2)."
+  [cfg]
+  (boolean (some (fn [[_ rel]] (= parity/not-found-file (u/lower (str rel)))) (static-files cfg))))
+
 (defn page-map
   "{uri → (fn [] hiccup)} for every emitted document.
 
@@ -559,7 +568,15 @@
       (home-pages model ctx-for)
 
       ;; index pages
-      (index-pages model ctx-for)))))
+      (index-pages model ctx-for)
+
+      ;; Task E2: the 404 page, at the output root whatever the base
+      ;; (`page-file`), unless the static directory ships its own
+      (when-not (static-404? cfg)
+        [[(str (config/base-path cfg) parity/not-found-file)
+          (with-meta
+            (fn [] (parity/not-found (ctx-for (config/default-lang cfg) {})))
+            {:clogem/file parity/not-found-file})]])))))
 
 (defn check-code-languages!
   "`doctor`: the unknown code languages `build` would warn about, when a
@@ -616,6 +633,15 @@
     (if (str/blank? rel)
       (fs/path out "index.html")
       (fs/path out rel "index.html"))))
+
+(defn page-file
+  "The output file of the page-map entry `uri` → `f`: `uri->file`, unless
+  its thunk names its own file — `:clogem/file`, relative to the output
+  root whatever the base (the 404 page, Task E2)."
+  [base out uri f]
+  (if-let [file (:clogem/file (meta f))]
+    (fs/path out file)
+    (uri->file base out uri)))
 
 (def jobs-env
   "The environment variable that bounds the render pool (D-P4-11)."
@@ -1474,7 +1500,7 @@
         pages (page-map model)]
     (vec (concat
           (for [[uri f] pages]
-            {:file (uri->file base out uri) :what (page-what cfg uri f)})
+            {:file (page-file base out uri f) :what (page-what cfg uri f)})
           (for [rel (keys (assets/files cfg))]
             {:file (fs/path out "clogem" rel) :what (theme-file-what rel)})
           (for [[p file] (site-assets cfg)]
@@ -1560,7 +1586,7 @@
         [rendered ds] (render-pages pages n)
         _           (diag/emit-all! ds)
         page-outs   (mapv (fn [[uri bytes]]
-                            {:file (uri->file base out uri) :bytes bytes
+                            {:file (page-file base out uri (get pages uri)) :bytes bytes
                              :what (page-what cfg uri (get pages uri))})
                           rendered)]
     {:outputs  (vec (concat page-outs

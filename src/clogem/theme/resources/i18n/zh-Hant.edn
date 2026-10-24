@@ -43,6 +43,9 @@
  :page/sidebar         "側邊欄"
  :page/back-to-top     "返回頂部"
  :nav/source           "原始碼"
+ :not-found/title      "找不到頁面"
+ :not-found/message    "此網址沒有頁面。它可能已被移動，或連結有誤。"
+ :not-found/home       "返回首頁"
  :container/theorem    "定理"
  ;; Search UI (D-P3-10): Pagefind 1.5.2 translations/zh-tw.json.
  ;; [SEARCH_TERM], [COUNT] and [DIFFERENT_TERM] are Pagefind's placeholders; keep them.

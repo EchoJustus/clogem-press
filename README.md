@@ -230,7 +230,8 @@ It is an error, before anything is written and
 in `bb doctor`, when a static file would land where the build writes: at
 the same path as a page, `feed.xml`, `sitemap.xml`, `robots.txt` (the
 generated one, or `assets/robots.txt`, which already replaces it) or a site
-asset; inside `clogem/`, `assets/` or `pagefind/`; on `.clogem-output`, a
+asset (a root `404.html` is the exception: it replaces the generated 404
+page, below); inside `clogem/`, `assets/` or `pagefind/`; on `.clogem-output`, a
 `.clogem-tmp-…` name or a top-level `.pagefind-…` name; or where a page's
 directory goes (a file `public/categories`). Each error says how to fix
 it.
@@ -250,6 +251,18 @@ from it — `CNAME`, `BingSiteAuth.xml` — stays in the output until `bb
 clean`. Prefer the static directory to placing files in `dist/` by hand:
 those survive a rebuild only when they are not `.html`, and are lost to
 `bb clean`.
+
+**The 404 page.** Every build writes `dist/404.html` — at the output
+root whatever `--base`, which is where GitHub Pages, Netlify, Cloudflare
+Pages and `bb serve` look for it. It is in the site's default language,
+with the navbar and footer, says that there is no page at this address,
+and links every language's home, each in that language's words; every link
+carries the base, since a host serves the page at whatever address was
+missed. It is `noindex`, not in `sitemap.xml`, and has no canonical,
+hreflang or `og:locale`. A root `404.html` in the static directory
+replaces it. `bb dev` and `bb serve` answer a missing page under the base
+with it, status 404 (the plain stub outside the base, or with no
+`404.html`).
 
 `CNAME` matters to a GitHub Pages branch deploy and to other hosts.
 GitHub's Actions artifact flow (`actions/deploy-pages`, what the publish

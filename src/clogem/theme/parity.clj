@@ -2,7 +2,8 @@
 (ns clogem.theme.parity
   "Phase 4 Task E2 — article-page parity with vdoing (DESIGN.md §11.3 item
   16, D-P4-13, D-P4-16): the edit link and the last-updated date under an
-  article or catalogue page, and the update bar under an article.
+  article or catalogue page, the update bar under an article, and the
+  404 page.
 
   This namespace requires `clogem.theme.layout`; layout never requires it,
   so the page templates call in here and layout stays the shared chrome."
@@ -142,3 +143,32 @@
          [:h2 (i18n/tr ctx :index/updates)]
          (into [:ul.clogem-list] (map #(layout/article-row ctx (get-in model [:articles %])) ids))
          (more-article ctx)]))))
+
+;; ---------------------------------------------------------------------------
+;; The 404 page (D-P4-16)
+
+(def not-found-file
+  "The 404 page's file at the root of the output directory, whatever the
+  base: what GitHub Pages, Netlify, Cloudflare Pages and `bb serve` answer
+  a miss with."
+  "404.html")
+
+(defn not-found
+  "One `/404.html`, in the site default language (`ctx`'s `:lang`), through
+  `layout/page` — the navbar, `main.clogem-main`, the footer — as
+  `:page-kind :not-found`, `noindex` (`:noindex?`) and with no `:seo`, so
+  no canonical, hreflang, `og:locale` or sitemap entry. It lists every
+  language's home, in `:priority` order, each in that language's own words
+  (`:not-found/home`). Every link is root-relative with the base, since a
+  host serves the page at any depth. No JS of its own."
+  [{:keys [cfg] :as ctx}]
+  (let [ctx (assoc ctx :page-kind :not-found :noindex? true :title (i18n/tr ctx :not-found/title))]
+    (layout/page ctx
+                 [:div.clogem-content
+                  [:h1 "404"]
+                  [:p (i18n/tr ctx :not-found/message)]
+                  (into [:ul]
+                        (for [l (config/lang-keys cfg)]
+                          [:li {:lang (config/html-lang cfg l)}
+                           [:a {:href (layout/href ctx (model/home-url cfg l))}
+                            (i18n/tr (assoc ctx :lang l) :not-found/home)]]))])))

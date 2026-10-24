@@ -1121,6 +1121,8 @@
       ;; §11.3 item 15: the search consoles' ownership tokens, on every
       ;; page (a redirect stub, noindex, never comes through here)
       (verification-head cfg)
+      ;; Task E2: the 404 page
+      (when (:noindex? ctx) [:meta {:name "robots" :content "noindex"}])
       (seo-head ctx)
       ;; D-P3-13/14: the preference, the banner data and :redirect — before
       ;; the stylesheets, which the inline redirect would otherwise wait for

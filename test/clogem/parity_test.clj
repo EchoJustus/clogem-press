@@ -11,6 +11,7 @@
             [clojure.test :refer [deftest is testing use-fixtures]]
             [clogem.cli :as cli]
             [clogem.config :as config]
+            [clogem.dev :as dev]
             [clogem.diag :as diag]
             [clogem.gitlog :as gitlog]
             [clogem.render :as render]
@@ -798,4 +799,108 @@
           (let [r (binding [*out* (java.io.StringWriter.) *err* (java.io.StringWriter.)]
                     (cli/doctor {:site-dir (str dir)}))]
             (is (= 1 (count (filter #(str/includes? (:message %) ":logo") (:warnings r))))))
+          (finally (fs/delete-tree dir)))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 8: the 404 page
+
+(deftest the-demo-writes-one-404-page
+  (let [page (html "404.html")]
+    (testing "at the output root, in the default language, the layout's shell"
+      (is (str/starts-with? page "<!DOCTYPE html>\n<html "))
+      (is (re-find #"<html [^>]*lang=\"en\"" page))
+      (is (str/includes? page "<title>Page not found · clogem-press demo</title>"))
+      (is (str/includes? page "<body class=\"lang-en page-not-found\"><pagefind-config ")
+          "page-not-found after lang-, and <pagefind-config> first in <body>")
+      (is (str/includes? page "<header class=\"clogem-navbar\">"))
+      (is (str/includes? page "<main class=\"clogem-main\"><div class=\"clogem-content\"><h1>404</h1>"))
+      (is (str/includes? page "<footer class=\"clogem-footer\">")))
+    (testing "every language's home, in priority order, each in its own words"
+      (is (str/includes? page (str "<ul><li lang=\"en\"><a href=\"/\">Go to the home page</a></li>"
+                                   "<li lang=\"zh-Hans\"><a href=\"/zh-Hans/\">返回首页</a></li>"
+                                   "<li lang=\"zh-Hant\"><a href=\"/zh-Hant/\">返回首頁</a></li>"
+                                   "<li lang=\"ms\"><a href=\"/ms/\">Pergi ke laman utama</a></li>"
+                                   "<li lang=\"ta\"><a href=\"/ta/\">முகப்புப் பக்கத்துக்குச் செல்</a></li></ul>"))))
+    (testing "noindex, and none of the tags a page with :seo gets"
+      (is (str/includes? page "<meta content=\"noindex\" name=\"robots\" />"))
+      (is (< (str/index-of page "name=\"robots\"") (str/index-of page "<link href=\"/clogem/css/theme.css")))
+      (is (not (re-find #"rel=\"canonical\"|hreflang=\"x-default\"|rel=\"alternate\"|og:locale|clogem-lang-data" page)))
+      (is (not (str/includes? page "data-pagefind-body")))
+      (is (not (str/includes? page "<script>(function(){try{var p=localStorage")) "no redirect script")
+      (is (= 1 (count (re-seq #"<script>" page))) "one inline script, the mode script"))
+    (testing "not in the sitemap; nothing else named 404"
+      (is (not (str/includes? (slurp (fs/file *out* "sitemap.xml")) "404")))
+      (is (= ["404.html"] (mapv #(str (fs/relativize *out* %)) (fs/glob *out* "**404*")))))
+    (testing "the switcher sends each language to its home"
+      (is (str/includes? page "<a data-clogem-lang=\"zh-Hans\" href=\"/zh-Hans/\" hreflang=\"zh-Hans\" lang=\"zh-Hans\">")))
+    (testing "the default language's page is the only noindex page but the stubs"
+      (doseq [p (fs/glob *out* "**.html")
+              :let [h (slurp (fs/file p))]
+              :when (str/includes? h "name=\"robots\"")]
+        (is (or (= "404.html" (str (fs/relativize *out* p))) (str/includes? h "http-equiv=\"refresh\"")) (str p))))))
+
+(deftest the-404-page-under-a-base-a-static-override-and-the-sweep
+  (let [site {:site {:title "S" :url "https://s.example" :base "/clogem-demo/"}
+              :langs {:priority [:en :zh-Hans] :locales {:zh-Hant nil :ms nil :ta nil}}}
+        files {"01.A/01.one.md" (article "One" "/pages/one001/")}]
+    (testing "--base /clogem-demo/: still dist/404.html, every link base-prefixed"
+      (let [{:keys [pages]} (build-temp site files)
+            page (pages "404.html")]
+        (is (some? page))
+        (is (str/includes? page "<li lang=\"en\"><a href=\"/clogem-demo/\">Go to the home page</a></li>"))
+        (is (str/includes? page "<li lang=\"zh-Hans\"><a href=\"/clogem-demo/zh-Hans/\">返回首页</a></li>"))
+        (is (str/includes? page "href=\"/clogem-demo/clogem/css/theme.css?v="))
+        (is (not (contains? pages "clogem-demo/404.html")))
+        (is (every? #(or (str/starts-with? % "/clogem-demo/") (re-find #"^[a-z]+:" %))
+                    (map second (re-seq #"(?:href|src)=\"([^\"#]+)" page)))
+            "every root-relative href and src resolves under the base")))
+    (testing "a static 404.html replaces it, with no collision error; neither is swept"
+      (let [dir (fs/create-temp-dir {:prefix "clogem-e2"})]
+        (try
+          (write-site! dir (assoc site :content {:static-dir "public"}) files)
+          (fs/create-dirs (fs/path dir "public"))
+          (spit (fs/file dir "public" "404.html") "<!doctype html><title>mine</title><p>my own 404")
+          (let [{:keys [pages warnings]} (build-dir dir)]
+            (is (= "<!doctype html><title>mine</title><p>my own 404" (pages "404.html")))
+            (is (not-any? #(str/includes? % "404") warnings)))
+          (let [{:keys [pages]} (build-dir dir)]
+            (is (= "<!doctype html><title>mine</title><p>my own 404" (pages "404.html")) "a rebuild keeps it"))
+          (fs/delete (fs/path dir "public" "404.html"))
+          (let [{:keys [pages]} (build-dir dir)]
+            (is (str/includes? (pages "404.html") "<h1>404</h1>") "the generated page is back"))
+          (let [{:keys [pages]} (build-dir dir)]
+            (is (str/includes? (pages "404.html") "<h1>404</h1>") "and is not swept on the next build"))
+          (testing "doctor, too, sees no collision"
+            (let [r (binding [*out* (java.io.StringWriter.) *err* (java.io.StringWriter.)]
+                      (spit (fs/file dir "public" "404.html") "x")
+                      (cli/doctor {:site-dir (str dir)}))]
+              (is (empty? (:errors r)))))
+          (finally (fs/delete-tree dir)))))))
+
+(deftest dev-and-serve-answer-a-miss-with-the-404-page
+  (let [root *out*]
+    (testing "serve: 404, the page itself"
+      (let [r ((dev/make-handler root {}) {:uri "/nope/"})]
+        (is (= 404 (:status r)))
+        (is (str/includes? (let [b (:body r)] (if (bytes? b) (String. ^bytes b "UTF-8") (str b))) "<h1>404</h1>"))
+        (is (str/starts-with? (get-in r [:headers "Content-Type"]) "text/html"))))
+    (testing "dev: 404, the page with the reload script"
+      (let [r ((dev/make-handler root {:inject-reload? true}) {:uri "/pages/zzzzzz/"})]
+        (is (= 404 (:status r)))
+        (is (str/includes? (:body r) "<h1>404</h1>"))
+        (is (str/includes? (:body r) dev/reload-script))))
+    (testing "a file that exists is still 200"
+      (is (= 200 (:status ((dev/make-handler root {}) {:uri "/404.html"}))))
+      (is (= 200 (:status ((dev/make-handler root {}) {:uri "/"})))))
+    (testing "outside the base: the stub, which names the base"
+      (let [r ((dev/make-handler root {:base "/proj/"}) {:uri "/elsewhere"})]
+        (is (= 404 (:status r)))
+        (is (str/includes? (:body r) "This site is served at"))))
+    (testing "a dist/ with no 404.html: the stub"
+      (let [dir (fs/create-temp-dir {:prefix "clogem-e2-no404"})]
+        (try
+          (spit (fs/file dir "index.html") "<p>home")
+          (let [r ((dev/make-handler dir {}) {:uri "/nope/"})]
+            (is (= 404 (:status r)))
+            (is (str/includes? (:body r) "<p>Not found.")))
           (finally (fs/delete-tree dir)))))))
