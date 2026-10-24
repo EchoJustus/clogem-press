@@ -666,11 +666,11 @@ async function item2Resize(t) {
     await page.close();
     return { before, ...r };
   };
-  // Each resize is measured against the same page with nav.js aborted: the
-  // browser's own scroll anchoring reflows text above the heading too, by
-  // a different amount under different fonts (1024 → 768 moves it 31 px on
-  // CI's runners, about 4 px here; 360 → 1280, three columns from one, ~116 px
-  // everywhere), and what must not move it is the aside nav.js moves
+  // The bound is relative to the same page with nav.js aborted, not to where
+  // the heading was: the article's own reflow moves it with or without
+  // nav.js, by an amount the fonts decide (768 → 1024: 31.2 px on CI, 4.0 px
+  // in a sandbox with other fonts; 360 → 1280, three columns from one,
+  // 116.4–116.6 px), and what must not move it is the aside nav.js moves
   for (const [from, to] of [[700, 900], [768, 1024], [360, 1280], [900, 700], [1024, 768]]) {
     const base = await at(from, to, true);
     const r = await at(from, to, false);

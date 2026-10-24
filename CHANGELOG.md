@@ -50,8 +50,8 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   (dropdowns collapsed until opened) and every language. A site with no
   `:nav` and one language gets no toggle, except on a page with a
   sidebar, where it is rendered `hidden` and revealed by `js/nav.js`.
-- **`js/nav.js`** (same-origin, `defer`, after `mode.js`; 1,979 B
-  gzipped with the sidebar collapse, back to top and B2b.1, budget 2,000 B): while the drawer layout is active — read from
+- **`js/nav.js`** (same-origin, `defer`, after `mode.js`; 2,095 B
+  gzipped with the sidebar collapse, back to top, B2b.1 and B2b.2, budget 2,200 B): while the drawer layout is active — read from
   the CSS, at start-up and on every resize — it moves the page's sidebar
   into the drawer and puts it back on leaving it. On open, focus moves
   into the drawer; Escape closes it and focuses the toggle, as do a click
@@ -180,7 +180,7 @@ buttons and a back-to-top button now appear by default, as in vdoing.
 - `bb test`: one toggle per page with a nav or languages, `:nav/menu` in
   the page's language, the hidden toggle of a one-language `:nav []` site
   on sidebar pages only, the drawer's CSS, `nav.js` linked once after
-  `mode.js`, and its budget (`nav-js-budget`, 2,000 B).
+  `mode.js`, and its budget (`nav-js-budget`, 2,200 B since B2b.2).
 - `bb test`: `clogem.layout-test` (new) pins the markup and the CSS;
   `theme_modes_test` checks that `smooth` appears only under
   `(prefers-reduced-motion: no-preference)`. The contrast parser
@@ -358,6 +358,14 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   gzipped, and `nav.js` was at 1,979; the alternatives, CSS alone, did not
   hold in Chromium 141 (DESIGN.md §11.3 item 9).
 
+- **Unobservable code dropped**: the `preventScroll` that B2b.1 added
+  where focus returns to a navbar control (closing the drawer, Escape on a
+  dropdown, opening and closing the mode menu in `mode.js`) changed
+  nothing, since a control in the sticky navbar is never scrolled to (no
+  test failed without it, in Chromium 141 or 153); nor did `nav.js`'s
+  `matchMedia` change listener, which only repeated `resize`. Back to
+  top's focus on `<body>` keeps its `preventScroll`.
+
 ### Tests (B2b.2)
 
 - `layout.test.mjs`: the Shift+Tab check now starts at each page's last
@@ -375,6 +383,11 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   heading lands below the navbar. Without `nav.js`'s `ResizeObserver`
   `--navbarMeasured` stayed 57.6 px and it landed 12.6 px under; the old
   check loaded `#nesting` fresh at each width, so it never saw this.
+- The resize test's comment, and B2b.1's entry above, gave the article's
+  own reflow as "31 px on CI, about 4 px here": the bound is relative to
+  the same page with `nav.js` aborted, where the heading moves 31.2 px at
+  768 → 1024 on CI (4.0 px in this sandbox, whose fonts differ) and
+  116.4–116.6 px at 360 → 1280, with or without `nav.js`.
 
 ### Needs native review (B2b)
 

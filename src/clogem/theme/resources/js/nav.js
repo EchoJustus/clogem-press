@@ -8,7 +8,7 @@
   var drawer = document.getElementById("clogem-drawer");
   var summary = toggle && toggle.querySelector("summary");
   var aside = document.querySelector("aside.clogem-sidebar");
-  var mark = null, active = false, still = { preventScroll: true };
+  var mark = null, active = false;
 
   // theme.css: smooth scrolling once loaded (not the jump to #id) or clicked
   var root = document.documentElement, raf = requestAnimationFrame;
@@ -39,7 +39,7 @@
 
   function close(refocus) {
     toggle.open = false;
-    if (refocus) summary.focus(still);
+    if (refocus) summary.focus();
   }
 
   function sync() {
@@ -95,7 +95,7 @@
       going = true;
       up.hidden = true;
       // focus stays on <body>, the next Tab starting at the top
-      if (had) { b.tabIndex = -1; b.focus(still); b.removeAttribute("tabindex"); }
+      if (had) { b.tabIndex = -1; b.focus({ preventScroll: true }); b.removeAttribute("tabindex"); }
       window.scrollTo({ top: 0 });
     });
   }
@@ -124,8 +124,6 @@
       ticking = true;
       raf(function () { ticking = false; sync(); });
     });
-    var mq = window.matchMedia && window.matchMedia("(max-width: 50rem)");
-    if (mq && mq.addEventListener) mq.addEventListener("change", sync);
     window.addEventListener("pageshow", function (e) { if (e.persisted) close(false); });
   }
 
@@ -135,7 +133,7 @@
     dropdowns().forEach(function (d) {
       var focused = box(d).contains(document.activeElement);
       d.open = false;
-      if (focused || document.activeElement === document.body) d.querySelector("summary").focus(still);
+      if (focused || document.activeElement === document.body) d.querySelector("summary").focus();
     });
   });
 

@@ -3060,7 +3060,9 @@ their own findings. Item 19 onward are corrections.
    `backdrop-filter` makes it the containing block of anything `fixed`), shown only while the toggle
    is open; `js/nav.js` moves the sidebar in while the menu summary is rendered (read from the CSS,
    so no `(scripting)` support means no move). B2b.1: Chromium lays out a widened page before any
-   script runs, `matchMedia`'s change event included, so above 50rem the drawer's aside is
+   script runs, a `matchMedia` change event included (B2b.2 drops that listener: `resize` fires on
+   every flip a viewport or zoom change makes, and a default font-size change, which flips the
+   `rem` query with no resize, fired no change event in Chromium 141 or 153 either), so above 50rem the drawer's aside is
    `display: none` and main keeps column 2 until the move back — laid out in the navbar
    (`display: contents`) it had shifted the reading position by ~400 px. A long nav wraps the
    navbar; `nav.js` measures it when it runs, before the load's jump to `#id` (a page with no other
