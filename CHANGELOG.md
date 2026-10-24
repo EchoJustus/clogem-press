@@ -219,6 +219,15 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   reload script), a real file 200, outside the base the stub, a `dist/`
   with no `404.html` the stub. `overflow.test.mjs` visits `/404.html` at
   320 and 360.
+- `layout.test.mjs` (B2b) keeps its scenarios on the demo's new pages:
+  the h4-at-the-end and the page-that-fits-then-grows checks strip the
+  edit line and the update bar from their routed page (`withoutE2`), so
+  the page still ends where its article does; the long nav loaded at 1280
+  and narrowed to 801 and 850 adds 13 items, not 10 (`longNav`'s new
+  `count`), since the brand is the logo alone at 64rem and below and 10
+  no longer wrap there. Item 2's 801–1600 scan, the closed drawer's
+  `menu brand search mode` and the drawer-link checks are unchanged and
+  pass with the logo and the repo link.
 
 ### Needs native review (E2)
 
