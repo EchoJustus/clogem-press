@@ -3023,7 +3023,10 @@ their own findings. Item 19 onward are corrections.
    below it too; `toc.js` measures the navbar's bottom. B2b.1: not a root `scroll-padding-top`, which
    covered the sticky navbar's own controls, so Chromium centred one on focus and moved the page;
    inside `.clogem-navbar` the margin is 0. Smooth scrolling is always on, under
-   `prefers-reduced-motion: no-preference` only (vdoing's `smoothScroll` is off by default; here it
+   `prefers-reduced-motion: no-preference` only, on `html:focus-within` and
+   `html:has(:is(a, button, summary):hover)` (B2b.1: a root `smooth` also animated the browser's
+   load-time jump to `#id`; Chromium does not focus a clicked link, hence the hover; back to top
+   scrolls before it hides itself) (vdoing's `smoothScroll` is off by default; here it
    is *implicit*, a known key that warns and is ignored). Above 50rem the language switcher is a `<details>` dropdown whose list is its next
    sibling (CSS cannot show a closed `<details>`' content where `::details-content` is missing), and
    the search trigger is its icon alone at ≤ 64rem. "Above 50rem" is written

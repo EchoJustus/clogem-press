@@ -255,6 +255,12 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   Pages without headings, and every page below 80rem, are unchanged.
 - **Read mode's `--linesColor`** is `rgba(50, 0, 0, 0.03)`: where pattern
   1's gradients cross, 0.05 twice took a link to 4.22:1 (4.40 measured).
+- **A fresh load of `…/#id` jumps at once** instead of animating from the
+  top for ~600 ms: smooth scrolling applies while a link, button or
+  summary is hovered or anything has focus (`html:focus-within`,
+  `html:has(:is(a, button, summary):hover)`), which a click, a tap or a key
+  always is; still never under reduced motion. Back to top scrolls before
+  it hides itself, while it is still hovered or focused.
 - **Desktop dropdowns close when focus leaves them**, as vdoing's
   `DropdownLink` does: Tab past the language list's or a nav dropdown's
   last link used to leave it open over the page.
@@ -279,6 +285,10 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   focused and the language dropdown open, one Escape closes only the mode
   menu (`e.defaultPrevented`, which only a text pin covered); back to top
   is hidden at 50 px and shown at 101 (`y <= 100 * 0` survived every test).
+  A fresh load of `/pages/c0nta1/#nesting` under no-preference has no
+  frame between 0 and its final `scrollY` (31 before), while a TOC click
+  and a heading anchor's click each have one; `theme_modes_test` pins the
+  two selectors.
   The comment saying that opening the drawer scrolls the page up is
   corrected: Playwright's `locator.click()` does that, a reader does not.
 - `bb test`: the `"y <= 100"` text pin is gone, replaced by the browser

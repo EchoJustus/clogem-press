@@ -263,8 +263,17 @@ async function item1(t) {
   for (const rm of ['no-preference', 'reduce']) {
     const page = await t.newPage({ viewport: { width: 1280, height: 740 }, reducedMotion: rm });
     await open(page, t, article);
-    const sb = await page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior);
-    t.check(sb === (rm === 'reduce' ? 'auto' : 'smooth'), `${rm}: the root's scroll-behavior is ${sb}`);
+    // smooth while a link is hovered or anything has focus (P4-B2b.1 item 6)
+    const sb = () => page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior);
+    const rest = await sb();
+    await page.hover('.clogem-toc a[href="#in-a-list-item"]');
+    const hovered = await sb();
+    await page.mouse.move(640, 400);
+    await page.focus('.clogem-toc a[href="#in-a-list-item"]');
+    const focused = await sb();
+    await page.evaluate(() => document.activeElement.blur());
+    t.check(rest === 'auto' && hovered === (rm === 'reduce' ? 'auto' : 'smooth') && focused === hovered,
+            `${rm}: the root's scroll-behavior is ${rest} at rest, ${hovered} with a link hovered, ${focused} with one focused`);
     t.check(await scrollTop(page, 0) === 0, `${rm}: scrollY reached 0`);
     await page.evaluate(() => {
       window.__samples = [];
@@ -281,6 +290,45 @@ async function item1(t) {
     else t.check(samples.some((y) => y > 0 && y < final), `no-preference: a frame between 0 and ${final} (${samples.slice(0, 8).join(', ')}…)`);
     await page.close();
   }
+}
+
+// P4-B2b.1 item 6: under no-preference a fresh load of `#id` jumps at once
+// (root scroll-behavior: smooth animated the browser's own jump from the top
+// for ~600 ms), while a TOC click and a heading anchor's click stay smooth
+async function item1Load(t) {
+  const page = await t.newPage({ viewport: { width: 1280, height: 740 }, reducedMotion: 'no-preference' });
+  await page.addInitScript(() => {
+    window.__frames = [];
+    const f = () => { window.__frames.push(scrollY); if (window.__frames.length < 600) requestAnimationFrame(f); };
+    requestAnimationFrame(f);
+    addEventListener('load', () => { window.__load = window.__frames.length; });
+  });
+  await open(page, t, article, 'nesting');
+  const r = await page.evaluate(() => {
+    const fin = scrollY, fr = window.__frames;
+    return { fin, load: window.__load, reached: fr.indexOf(fin), between: fr.filter((y) => y > 0 && y < fin).length };
+  });
+  t.check(r.fin > 500 && r.between === 0, `a fresh load of #nesting: ${r.between} frames between 0 and the final ${r.fin}`);
+  t.check(r.reached >= 0 && r.reached <= r.load + 2, `a fresh load of #nesting: the final scrollY at frame ${r.reached}, load at ${r.load}`);
+  // in-page jumps stay smooth: a TOC click, and a click on a heading's #
+  for (const [what, sel, id] of [['a TOC click', '.clogem-toc a[href="#in-a-list-item"]', 'in-a-list-item'],
+                                 ['a heading anchor click', '#inside-a-fenced-code-block .header-anchor', 'inside-a-fenced-code-block']]) {
+    await scrollTop(page, 0);
+    await settle(page);
+    if (what.startsWith('a heading')) {
+      // bring the heading into view below its target position, instantly
+      await page.evaluate((id) => scrollTo({ top: document.getElementById(id).getBoundingClientRect().top + scrollY - 500, behavior: 'instant' }), id);
+      await settle(page);
+    }
+    const y0 = await page.evaluate(() => scrollY);
+    await page.evaluate(() => { window.__s = []; const f = () => { window.__s.push(scrollY); if (window.__s.length < 240) requestAnimationFrame(f); }; requestAnimationFrame(f); });
+    await clickAt(page, sel);
+    await settle(page);
+    const s = await page.evaluate(() => ({ samples: window.__s, fin: scrollY }));
+    const lo = Math.min(y0, s.fin), hi = Math.max(y0, s.fin);
+    t.check(hi - lo > 100 && s.samples.some((y) => y > lo && y < hi), `${what}: from ${y0} to ${s.fin}, a frame strictly between (${s.samples.slice(0, 6).join(', ')}…)`);
+  }
+  await page.close();
 }
 
 // P4-B2b.1 item 1: focusing a navbar control never moves the page. Part 1's
@@ -1590,7 +1638,7 @@ async function item13(t) {
 // those
 export default async function layout(t) {
   const only = (process.env.CLOGEM_LAYOUT_ITEMS || '').split(',').filter(Boolean);
-  for (const item of [item1, item1Focus, item2, item2Resize, item2LongNav, item3, item3RightMenuBar, item4, item5, item6, item6Desktop, item7,
+  for (const item of [item1, item1Load, item1Focus, item2, item2Resize, item2LongNav, item3, item3RightMenuBar, item4, item5, item6, item6Desktop, item7,
                       item10, item11, item12, item13]) {
     if (only.length && !only.includes(item.name)) continue;
     try {

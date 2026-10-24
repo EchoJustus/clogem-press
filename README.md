@@ -298,7 +298,10 @@ in a dropdown (`:items`). Every jump to a fragment — a link, the TOC, a
 fresh load of `…/#id` — and every focus move by Tab lands 0.75rem below the
 navbar (a `scroll-margin-top` on every `id` and focused element outside the
 navbar; the navbar's own controls never scroll the page), headings or not.
-Scrolling is smooth unless the reader's system asks for reduced motion; there is no key for it
+Scrolling is smooth unless the reader's system asks for reduced motion
+(the browser's own jump to a fresh load's `#id` is instant: smooth applies
+while a link or button is hovered or something has focus, which is how a
+click, a tap or a key starts an in-page jump); there is no key for it
 (vdoing's `smoothScroll`, off by default there, is known and ignored: a
 site that sets it is told to remove it).
 

@@ -81,11 +81,11 @@
     place();
     up.addEventListener("click", function () {
       var b = document.body, had = document.activeElement === up;
+      window.scrollTo({ top: 0 });
       going = true;
       up.hidden = true;
       // focus stays on <body>, the next Tab starting at the top
       if (had) { b.tabIndex = -1; b.focus(still); b.removeAttribute("tabindex"); }
-      window.scrollTo({ top: 0 });
     });
   }
 

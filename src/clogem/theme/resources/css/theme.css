@@ -723,7 +723,13 @@ html.theme-mode-dark {
 }
 
 /* ---- Phase 4 B1: reduced motion and print (D-P4-4) ---- */
-@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+/* B2b.1: smooth while a link, button or summary is hovered (a click, a tap)
+ * or anything has focus (a key), so the browser's own jump to a fresh load's
+ * #fragment, with neither, is instant. Chromium does not focus a clicked link;
+ * js/nav.js's back to top scrolls before it hides itself */
+@media (prefers-reduced-motion: no-preference) {
+  html:focus-within, html:has(:is(a, button, summary):hover) { scroll-behavior: smooth; }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     transition: none !important;
