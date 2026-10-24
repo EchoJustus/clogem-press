@@ -143,12 +143,14 @@ html {
                "Helvetica Neue", Arial, sans-serif;
 }
 
-/* P4-B2b: every jump and focus scroll lands below the navbar. A margin on
- * the targets, not a scroll-padding on the root, which covered the navbar's own
- * controls too, and Chromium centred one on focus, moving the page (B2b.1).
- * --navbarMeasured is the navbar's height, set by js/nav.js: a long nav wraps */
+/* P4-B2b: every scroll into view — a #fragment (an id or an <a name>), a
+ * focus move, scrollIntoView() — lands below the navbar. A margin on every
+ * element outside the navbar, not a scroll-padding on the root, which
+ * covered the navbar's own controls too, and Chromium centred one on focus,
+ * moving the page (B2b.1). --navbarMeasured is the navbar's height, set by
+ * js/nav.js: a long nav wraps */
 :root { --jumpOffset: calc(var(--navbarMeasured, var(--navbarHeight)) + 0.75rem); }
-:where([id], :focus) { scroll-margin-top: var(--jumpOffset); }
+:where(body *) { scroll-margin-top: var(--jumpOffset); }
 .clogem-navbar * { scroll-margin-top: 0; }
 
 body {
@@ -593,8 +595,9 @@ img { max-width: 100%; height: auto; }
   .clogem-shell--toc.is-sidebar-collapsed:not(.clogem-shell--single) { grid-template-columns: minmax(0, 1fr) minmax(11rem, 14rem); }
 }
 /* stuck, it stays clear of the back-to-top button's band */
-.clogem-toc { position: sticky; top: calc(var(--navbarHeight) + 1rem); align-self: start; font-size: 0.85rem; border-left: 1px solid var(--borderColor); padding-left: 0.75rem;
-  max-height: calc(100vh - var(--navbarHeight) - 6.2rem); overflow-y: auto; }
+.clogem-toc { position: sticky; top: calc(var(--navbarMeasured, var(--navbarHeight)) + 1rem); align-self: start; font-size: 0.85rem;
+  border-left: 1px solid var(--borderColor); padding-left: 0.75rem;
+  max-height: calc(100vh - var(--navbarMeasured, var(--navbarHeight)) - 6.2rem); overflow-y: auto; }
 .clogem-toc ul { list-style: none; margin: 0; padding: 0; }
 .clogem-toc li { padding: 0.15rem 0; }
 .clogem-toc li.level-3 { padding-left: 0.9rem; }
@@ -723,13 +726,10 @@ html.theme-mode-dark {
 }
 
 /* ---- Phase 4 B1: reduced motion and print (D-P4-4) ---- */
-/* B2b.1: smooth while a link, button or summary is hovered (a click, a tap)
- * or anything has focus (a key), so the browser's own jump to a fresh load's
- * #fragment, with neither, is instant. Chromium does not focus a clicked link;
- * js/nav.js's back to top scrolls before it hides itself */
-@media (prefers-reduced-motion: no-preference) {
-  html:focus-within, html:has(:is(a, button, summary):hover) { scroll-behavior: smooth; }
-}
+/* B2b.1: js/nav.js sets clogem-loading until the page has loaded, so the
+ * browser's own jump to a fresh load's #fragment is instant; every jump after
+ * it — a click, a tap, a key, history — is smooth. Without JS, all are */
+@media (prefers-reduced-motion: no-preference) { html:not(.clogem-loading) { scroll-behavior: smooth; } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     transition: none !important;

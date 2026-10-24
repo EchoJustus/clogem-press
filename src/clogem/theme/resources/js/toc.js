@@ -35,9 +35,8 @@
 
   var current = null;
   var navbar = document.querySelector(".clogem-navbar");
-  // the target of the fragment last followed, kept until the reader leaves
-  // the end of the page (a smooth jump reaches it a few frames later)
-  var followed = null, atEnd = false;
+  // the target of the fragment last followed (on load, or a hashchange)
+  var followed = null;
   function follow() { followed = location.hash ? byFragment(location.hash.slice(1)) : null; }
   follow();
 
@@ -55,18 +54,19 @@
         break;
       }
     }
-    var end = y >= document.documentElement.scrollHeight - window.innerHeight - 1;
-    if (end) {
+    // at the end the last headings never reach the line: the followed one, if
+    // it is still where its jump left it (in view, not under the navbar), else
+    // the last whose top is in view
+    if (y >= document.documentElement.scrollHeight - window.innerHeight - 1) {
       var last = null;
       for (var j = 0; j < entries.length; j++) {
-        if (entries[j].target === followed) { last = entries[j]; break; }
-        if (entries[j].target.getBoundingClientRect().top < window.innerHeight) last = entries[j];
+        var top = entries[j].target.getBoundingClientRect().top;
+        if (top >= window.innerHeight) break;
+        last = entries[j];
+        if (entries[j].target === followed && top >= offset - 17) break;
       }
       if (last) active = last;
-    } else if (atEnd) {
-      followed = null;
     }
-    atEnd = end;
     if (active === current) return;
     if (current) current.link.parentNode.classList.remove("is-active");
     active.link.parentNode.classList.add("is-active");

@@ -22,15 +22,16 @@ buttons and a back-to-top button now appear by default, as in vdoing.
 ### Added (B2b)
 
 - **`--navbarHeight`** (3.6rem, vdoing's value) on `:root`. The navbar is
-  exactly that tall, on one row, and a `scroll-margin-top` on every `[id]`
-  and focused element outside the navbar (`--jumpOffset`: the navbar's
-  height + 0.75rem) puts every jump below it: a link to a
+  exactly that tall, on one row, and a `scroll-margin-top` on every
+  element outside the navbar (`--jumpOffset`: the navbar's height +
+  0.75rem) puts every jump below it: a link to a
   fragment, a TOC click, a fresh load of `…/#id`, `scrollIntoView()` and a
-  focus move by Tab — headings or not (the home's `h1` and any `id`
-  included). The TOC sticks 1rem below the navbar, and `js/toc.js` takes
+  focus move by Tab — headings or not (the home's `h1`, any `id` and an
+  `<a name>` included). The TOC sticks 1rem below the navbar, and `js/toc.js` takes
   its offset from the navbar's measured bottom instead of a fixed 80 px.
 - **Smooth scrolling**, always on, under `prefers-reduced-motion:
-  no-preference`; under `reduce` scrolling stays instant.
+  no-preference`; under `reduce` scrolling stays instant. The browser's own
+  jump to a fresh load's `#id` is instant (B2b.1).
 - **A language dropdown** above 50rem: the switcher's list opens from a
   `<details class="clogem-langs__toggle">` whose summary is the
   `languages` icon, the page language's `:nav/language` and a chevron, as
@@ -49,8 +50,8 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   (dropdowns collapsed until opened) and every language. A site with no
   `:nav` and one language gets no toggle, except on a page with a
   sidebar, where it is rendered `hidden` and revealed by `js/nav.js`.
-- **`js/nav.js`** (same-origin, `defer`, after `mode.js`; 1,847 B
-  gzipped with the sidebar collapse and back to top, budget 2,000 B): while the drawer layout is active — read from
+- **`js/nav.js`** (same-origin, `defer`, after `mode.js`; 1,988 B
+  gzipped with the sidebar collapse, back to top and B2b.1, budget 2,000 B): while the drawer layout is active — read from
   the CSS, at start-up and on every resize — it moves the page's sidebar
   into the drawer and puts it back on leaving it. On open, focus moves
   into the drawer; Escape closes it and focuses the toggle, as do a click
@@ -102,8 +103,9 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   `contentBgStyle`, default `nil`): `1`–`6` draw vdoing's grid, horizontal,
   vertical, two diagonal and dotted patterns on the main column of articles
   and catalogues (the class `clogem-bg-style-N`), in a new `--linesColor`,
-  set in every mode: `rgba(50, 0, 0, 0.05)` in light and read,
-  `rgba(125, 125, 125, 0.05)` in dark. Print draws none.
+  set in every mode: `rgba(50, 0, 0, 0.05)` in light, `rgba(50, 0, 0,
+  0.03)` in read (B2b.1), `rgba(125, 125, 125, 0.05)` in dark. Print draws
+  none.
 - **Back to top** (`:theme :back-to-top`, default `true`; vdoing always
   shows it): a round `arrow-up` button, named by the page language's new
   `:page/back-to-top` (all five languages), fixed 2rem from the right and
@@ -141,8 +143,8 @@ buttons and a back-to-top button now appear by default, as in vdoing.
 
 - **Anchors on the home's `h1`, and on targets that are not headings**,
   no longer land under the navbar: only `.clogem-content` h2–h6 had a
-  `scroll-margin-top` (4rem), now replaced by the root's scroll padding (the
-  two would add up). At 1280 px a heading used to land 5–6 px under the
+  `scroll-margin-top` (4rem), now replaced by one on every element outside
+  the navbar (B2b.1; B2b had the root's scroll padding). At 1280 px a heading used to land 5–6 px under the
   navbar, and a Shift+Tab stop (a copy button) wholly under it.
 
 - **Navbar dropdowns overflowing a phone**: an open Malay "Semak imbas"
@@ -233,12 +235,15 @@ buttons and a back-to-top button now appear by default, as in vdoing.
 
 - **Focusing a navbar control no longer throws the page up.** The root's
   `scroll-padding-top` covered the whole sticky navbar, so Chromium took
-  every control in it for obscured and centred it on focus: scrolled to
-  1000 px at 360×740, the first Tab landed at 624, Escape on the drawer or
-  the mode menu at 607–824, and a page scrolled less than ~376 px went to
-  the top (`main` moved 0 px). The offset is now a `scroll-margin-top` on
-  `:where([id], :focus)`, zero inside `.clogem-navbar`; the scripted focus
-  calls of `nav.js` and `mode.js` pass `preventScroll` too.
+  every control in it for obscured and centred it on focus: at 360×740,
+  scrolled to 1000 px, the first Tab landed at 624 and Escape on the mode
+  menu at 607; scrolled to 1200, Escape on the drawer at 822; a page
+  scrolled less than ~376 px went to the top (`main` moved 0 px). The
+  offset is now a `scroll-margin-top` on `:where(body *)` — every element,
+  so an `<a name>` target and `scrollIntoView()` keep it — and zero inside
+  `.clogem-navbar`; the calls that refocus a navbar control (closing the
+  drawer, a dropdown or the mode menu, opening the mode menu) pass
+  `preventScroll` too.
 - **Widening past 50rem while scrolled** no longer moves the reading
   position by ~400 px: the aside, still in the drawer until `nav.js` moves
   it back, was laid out inside the navbar (`display: contents`), 306 px
@@ -246,9 +251,11 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   column, so the move back shifts nothing.
 - **A long nav above 50rem**: the language summary no longer overlaps the
   search trigger (by up to 36 px; `.clogem-langs` shrank below it), the
-  page no longer overflows without JS (by up to 15 px), and a jump lands
-  below a wrapped navbar: `nav.js` measures the navbar (a
-  `ResizeObserver`, into an adopted stylesheet's `--navbarMeasured`).
+  page no longer overflows without JS (by up to 15 px), and with JS a jump
+  lands below a wrapped navbar and the stuck TOC stays below it: `nav.js`
+  measures the navbar when it runs, before the load's jump to `#id`, and
+  on every resize (a `ResizeObserver`), into an adopted stylesheet's
+  `--navbarMeasured`.
 - **`:right-menu-bar false`** left the article 584 px wide at 1280, the
   TOC-less 62rem shell: a sidebar page whose TOC the key dropped now gets
   `clogem-shell--wide`, and from 80rem the TOC's room (872 px at 1280).
@@ -256,19 +263,22 @@ buttons and a back-to-top button now appear by default, as in vdoing.
 - **Read mode's `--linesColor`** is `rgba(50, 0, 0, 0.03)`: where pattern
   1's gradients cross, 0.05 twice took a link to 4.22:1 (4.40 measured).
 - **A fresh load of `…/#id` jumps at once** instead of animating from the
-  top for ~600 ms: smooth scrolling applies while a link, button or
-  summary is hovered or anything has focus (`html:focus-within`,
-  `html:has(:is(a, button, summary):hover)`), which a click, a tap or a key
-  always is; still never under reduced motion. Back to top scrolls before
-  it hides itself, while it is still hovered or focused.
+  top for ~600 ms: `nav.js` puts `clogem-loading` on `<html>` until two
+  frames after `load`, and smooth scrolling is `html:not(.clogem-loading)`.
+  Every jump after it — a click, a tap, Enter on a link, history back —
+  stays smooth, and none is under reduced motion. Without JS (or with
+  `nav.js` failing) the load's jump animates, as before.
 - **The TOC at the end of the page** marks the entry just followed: a
   heading that cannot reach the top left an earlier entry active, and
   B2b's wider article made that four entries of `/pages/17c887/` (it was
   the last three). Scrolled to the end, `toc.js` marks the followed
-  fragment's entry, else the last heading whose top is in view.
-- **Desktop dropdowns close when focus leaves them**, as vdoing's
-  `DropdownLink` does: Tab past the language list's or a nav dropdown's
-  last link used to leave it open over the page.
+  fragment's entry while its heading is still where the jump left it (in
+  view, not under the navbar), else the last heading whose top is in view.
+- **Desktop dropdowns close when focus leaves them** for another control,
+  as vdoing's `DropdownLink` does: Tab past the language list's or a nav
+  dropdown's last link used to leave it open over the page. A press on
+  something unfocusable inside one (its padding, the current language)
+  leaves it open; outside, the click handler closes it.
 
 ### Tests (B2b.1)
 
@@ -280,30 +290,39 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   down lands within 24 px of where it lands with `nav.js` aborted (it was
   ~400 px off; the browser's own scroll anchoring reflows the text above
   it by a font-dependent amount either way: 31 px for 1024 → 768 on CI's
-  runners, 0 here, ~116 px for 360 → 1280); a 13-item nav scanned at 801–1600
+  runners, about 4 px here, ~116 px for 360 → 1280); a 13-item nav scanned at 801–1600
   in 10 px steps on three pages, with JS and without, has no overlapping
   controls, no overflow and no control outside the navbar, and `#nesting`
-  lands below it at 801, 850, 1024 and 1280; a `:right-menu-bar false`
+  lands below it at 801, 850, 1024 and 1280 (and the home's `h1` on `/` and
+  `/page/2/`, which load before any `ResizeObserver` callback, at 801 and
+  850); with longer labels the navbar wraps at 1280 and the stuck TOC
+  stays below it; a `:right-menu-bar false`
   temp build gives the article ≥ 600 px at 1280 and 1440 and changes
   nothing at 900 and 1024. Each item now runs in its own `try`, so a throw
   fails that item and the rest still run (`CLOGEM_LAYOUT_ITEMS` picks
-  items). At 1280, Tab through the language dropdown's and Browse's links
+  items, and an unknown name fails). At 1280, Tab through the language dropdown's and Browse's links
   keeps each open and Tab past the last closes it; with the mode menu
   focused and the language dropdown open, one Escape closes only the mode
-  menu (`e.defaultPrevented`, which only a text pin covered); back to top
+  menu (`e.defaultPrevented`, which only a text pin covered); a press on
+  Browse's padding or the current language leaves the dropdown open and
+  the tab alive; back to top
   is hidden at 50 px and shown at 101 (`y <= 100 * 0` survived every test).
   A fresh load of `/pages/c0nta1/#nesting` under no-preference has no
-  frame between 0 and its final `scrollY` (31 before), while a TOC click
-  and a heading anchor's click each have one; `theme_modes_test` pins the
-  two selectors.
+  frame between 0 and its final `scrollY` (31 before), while a TOC click,
+  a heading anchor's click, Enter on a focused TOC link and history back
+  each have one; `theme_modes_test` pins the selector. An `<a name>` target
+  and `scrollIntoView()` on a `<p>` without an id land below the navbar.
   Item 1's TOC clicks cover every entry of `/pages/17c887/`, at 1280×740,
   1440×740 and 1280×1024, each active once scrolling settles (13 failed
-  before); the exclusion of the last entries is gone.
+  before); the exclusion of the last entries is gone. `#nesting` followed,
+  then the end of the page, marks the last heading in view; a page that
+  grows 150 px after load (as giscus's iframe does) still marks the entry
+  clicked.
   The comment saying that opening the drawer scrolls the page up is
-  corrected: Playwright's `locator.click()` does that, a reader does not.
+  corrected: since item 1 it keeps the page where it is.
 - `bb test`: the `"y <= 100"` text pin is gone, replaced by the browser
-  check; no `scroll-padding` declaration, the `--jumpOffset` per media
-  query, the wide shell on the `:right-menu-bar false` tree article and on
+  check; no `scroll-padding` declaration, the margin on `:where(body *)`,
+  the `--jumpOffset` per media query, the TOC's measured offset, the wide shell on the `:right-menu-bar false` tree article and on
   no default page; the contrast check gains the surface "--linesColor twice
   over --mainBg", where read's old 0.05 fails at 4.22:1.
 

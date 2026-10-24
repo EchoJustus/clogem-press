@@ -102,19 +102,21 @@
   (let [css (slurp theme-css)
         rules (cp/parse css)]
     (is (= "3.6rem" ((cp/computed rules {:classes #{}} {}) "--navbarHeight")) "vdoing's value")
-    (testing "P4-B2b.1 item 1: a scroll margin on every target and focus outside the navbar, not the root's padding"
+    (testing "P4-B2b.1 item 1: a scroll margin on every element outside the navbar, not the root's padding"
       (is (not (re-find #"scroll-padding[-a-z]*\s*:" css)) "the root's padding covered the navbar's own controls")
-      (is (= "var(--jumpOffset)" ((cp/rule rules ":where([id], :focus)") "scroll-margin-top")))
+      (is (= "var(--jumpOffset)" ((cp/rule rules ":where(body *)") "scroll-margin-top"))
+          "every element: an id, an <a name>, a focus, scrollIntoView()")
       (is (= "0" ((cp/rule rules ".clogem-navbar *") "scroll-margin-top")))
       (let [off #(get (cp/computed rules {:classes #{}} %) "--jumpOffset")
             sticky "calc(3.6rem + 0.75rem)"]
         (is (= sticky (off {:width 1280})) "the navbar's measured height (js/nav.js), --navbarHeight without it")
         (is (= sticky (off {:width 360})) "the sticky one-row navbar")
         (is (= "0.75rem" (off {:width 360 :scripting? false})) "the static no-JS navbar needs no offset")))
-    (testing "the navbar is --navbarHeight tall, the TOC sticks below it"
+    (testing "the navbar is --navbarHeight tall, the TOC sticks below it (below a wrapped one too)"
       (is (= "var(--navbarHeight)" ((cp/rule rules ".clogem-navbar") "min-height")))
       (is (= "0 1.25rem" ((cp/rule rules ".clogem-navbar") "padding")))
-      (is (str/includes? css ".clogem-toc { position: sticky; top: calc(var(--navbarHeight) + 1rem);")))
+      (is (= "calc(var(--navbarMeasured, var(--navbarHeight)) + 1rem)" ((cp/rule rules ".clogem-toc") "top")))
+      (is (= "calc(100vh - var(--navbarMeasured, var(--navbarHeight)) - 6.2rem)" ((cp/rule rules ".clogem-toc") "max-height"))))
     (testing "toc.js measures the navbar instead of assuming 80 px"
       (let [js (slurp "src/clogem/theme/resources/js/toc.js")]
         (is (not (str/includes? js "offset = 80")))

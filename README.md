@@ -296,12 +296,12 @@ offset below follows the navbar's real height (`js/nav.js` measures it);
 without, it assumes one row, so keep the top level short and put the rest
 in a dropdown (`:items`). Every jump to a fragment — a link, the TOC, a
 fresh load of `…/#id` — and every focus move by Tab lands 0.75rem below the
-navbar (a `scroll-margin-top` on every `id` and focused element outside the
-navbar; the navbar's own controls never scroll the page), headings or not.
-Scrolling is smooth unless the reader's system asks for reduced motion
-(the browser's own jump to a fresh load's `#id` is instant: smooth applies
-while a link or button is hovered or something has focus, which is how a
-click, a tap or a key starts an in-page jump); there is no key for it
+navbar (a `scroll-margin-top` on every element outside the navbar, so an
+`<a name>` target and `scrollIntoView()` too; with JavaScript the navbar's
+own controls never scroll the page), headings or not. Scrolling is smooth
+unless the reader's system asks for reduced motion, except the browser's
+own jump to a fresh load's `#id`, which `js/nav.js` keeps instant (without
+JavaScript it animates too); there is no key for it
 (vdoing's `smoothScroll`, off by default there, is known and ignored: a
 site that sets it is told to remove it).
 

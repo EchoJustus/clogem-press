@@ -221,9 +221,10 @@ console.log(JSON.stringify([
         (is (seq smooth))
         (is (every? #(= ["(prefers-reduced-motion: no-preference)"] (:media %)) smooth)
             "`smooth` appears only inside a (prefers-reduced-motion: no-preference) block")
-        ;; P4-B2b.1 item 6: only while a control is hovered or anything has
-        ;; focus, so the load-time jump to a #fragment is instant
-        (is (= [["html:focus-within" "html:has(:is(a, button, summary):hover)"]] (map :selectors smooth)))
+        ;; P4-B2b.1 item 6: not while js/nav.js's clogem-loading is on, so
+        ;; the load-time jump to a #fragment is instant
+        (is (= [["html:not(.clogem-loading)"]] (map :selectors smooth)))
+        (is (str/includes? (slurp "src/clogem/theme/resources/js/nav.js") "root.classList.remove(\"clogem-loading\")"))
         (is (= ["scroll-behavior" "auto" true]
                (some #(when (= "scroll-behavior" (first %)) %)
                      (:decls (first (filter #(= ["(prefers-reduced-motion: reduce)"] (:media %)) rules)))))

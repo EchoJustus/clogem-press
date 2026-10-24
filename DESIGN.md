@@ -3017,16 +3017,18 @@ their own findings. Item 19 onward are corrections.
    surface and the code ring on `--codeBg`, in every mode (`page_style_test`); 40 Tab stops at 1280
    and 360 px, light and dark, all draw it (`modes.test.mjs`).
    *B2b.* `:root { --navbarHeight: 3.6rem }` (vdoing's); the navbar is exactly that tall, one row,
-   and `:where([id], :focus) { scroll-margin-top: var(--jumpOffset) }` (`--navbarHeight` + 0.75rem;
+   and `:where(body *) { scroll-margin-top: var(--jumpOffset) }` (`--navbarHeight` + 0.75rem;
    the navbar's measured height, `--navbarMeasured`, when `nav.js` has set it) replaces the h2–h6
-   `scroll-margin-top`, so the home's `h1`, any `id`, `scrollIntoView()` and focus scrolling land
-   below it too; `toc.js` measures the navbar's bottom. B2b.1: not a root `scroll-padding-top`, which
-   covered the sticky navbar's own controls, so Chromium centred one on focus and moved the page;
-   inside `.clogem-navbar` the margin is 0. Smooth scrolling is always on, under
-   `prefers-reduced-motion: no-preference` only, on `html:focus-within` and
-   `html:has(:is(a, button, summary):hover)` (B2b.1: a root `smooth` also animated the browser's
-   load-time jump to `#id`; Chromium does not focus a clicked link, hence the hover; back to top
-   scrolls before it hides itself) (vdoing's `smoothScroll` is off by default; here it
+   `scroll-margin-top`, so the home's `h1`, any `id`, an `<a name>`, `scrollIntoView()` and focus
+   scrolling land below it too; `toc.js` measures the navbar's bottom. B2b.1: not a root
+   `scroll-padding-top`, which covered the sticky navbar's own controls, so Chromium centred one on
+   focus and moved the page; inside `.clogem-navbar` the margin is 0. Smooth scrolling is always on,
+   under `prefers-reduced-motion: no-preference` only, as `html:not(.clogem-loading)`: `nav.js` sets
+   that class when it runs and removes it two frames after `load`, so the browser's own jump to a
+   fresh load's `#id` (right after DOMContentLoaded, re-applied until `load`) is instant (B2b.1).
+   A `:focus-within`/`:hover` rule was tried and dropped: Chromium focuses no clicked link and drops
+   focus before a keyboard-started fragment jump, so Enter on a link and history traversal were
+   instant (vdoing's `smoothScroll` is off by default; here it
    is *implicit*, a known key that warns and is ignored). Above 50rem the language switcher is a `<details>` dropdown whose list is its next
    sibling (CSS cannot show a closed `<details>`' content where `::details-content` is missing), and
    the search trigger is its icon alone at ≤ 64rem. "Above 50rem" is written
@@ -3044,8 +3046,10 @@ their own findings. Item 19 onward are corrections.
    script runs, `matchMedia`'s change event included, so above 50rem the drawer's aside is
    `display: none` and main keeps column 2 until the move back — laid out in the navbar
    (`display: contents`) it had shifted the reading position by ~400 px. A long nav wraps the
-   navbar; `nav.js` measures it (a `ResizeObserver` writing `--navbarMeasured` into an adopted
-   stylesheet: no `style` attribute) and the jump offset follows. The no-JS rules sit outside any
+   navbar; `nav.js` measures it when it runs, before the load's jump to `#id` (a page with no other
+   subresource loads before any `ResizeObserver` callback), and on every resize, writing
+   `--navbarMeasured` into an adopted stylesheet (no `style` attribute); the jump offset and the
+   stuck TOC follow. The no-JS rules sit outside any
    scripting query: the old wrapping navbar, `static`, every link shown, `--jumpOffset: 0.75rem`.
    A failed `nav.js` leaves the native `<details>` toggle working.
 10. **Highlighting on by default (C) — done.** `:highlight {:provider :chroma}`; `:none` or `--no-highlight`

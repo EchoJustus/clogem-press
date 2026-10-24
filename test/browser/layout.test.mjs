@@ -172,6 +172,26 @@ async function nonHeading(t, widths) {
     await open(page, t, article, 'clogem-b2b-target');
     checkAnchor(t, await page.evaluate(anchorState, 'clogem-b2b-target'), `${width}px, a fresh load of #clogem-b2b-target (a <p>)`);
     await page.close();
+    // an <a name> (raw HTML in Markdown) and scrollIntoView() on an element
+    // without an id land below the navbar too (P4-B2b.1: the margin on
+    // [id] alone missed them; the root's padding had covered them)
+    const named = await t.newPage({ viewport: { width, height: 740 }, reducedMotion: 'reduce' });
+    await named.route(url(t, article), async (route) => {
+      const res = await route.fetch();
+      const body = (await res.text()).replace(/(<h2 id="in-a-list-item")/, '<p><a name="clogem-b2b-name"></a>A target named, not ided.</p>$1');
+      await route.fulfill({ response: res, body });
+    });
+    await open(named, t, article, 'clogem-b2b-name');
+    const state = () => named.evaluate(() => {
+      const p = document.querySelector('a[name="clogem-b2b-name"]').parentElement;
+      return { top: p.getBoundingClientRect().top, navBottom: Math.max(0, document.querySelector('.clogem-navbar').getBoundingClientRect().bottom),
+               atMax: scrollY >= document.documentElement.scrollHeight - innerHeight - 1, scrollY };
+    });
+    checkAnchor(t, await state(), `${width}px, a fresh load of #clogem-b2b-name (an <a name>)`);
+    await scrollTop(named, 0);
+    await named.evaluate(() => document.querySelector('a[name="clogem-b2b-name"]').parentElement.scrollIntoView());
+    checkAnchor(t, await state(), `${width}px, scrollIntoView() on a <p> without an id`);
+    await named.close();
   }
 }
 
@@ -212,6 +232,42 @@ async function item1(t) {
   }
 
   await nonHeading(t, [1280]);
+
+  // the end of the page, beyond a click (P4-B2b.1 item 9): a fragment
+  // followed mid-page does not win once the reader scrolls on to the end
+  // (the last heading in view does); and a page that grows below the reader
+  // after load (giscus adds its iframe) still marks the entry clicked
+  for (const rm of ['reduce', 'no-preference']) {
+    const page = await t.newPage({ viewport: { width: 1280, height: 740 }, reducedMotion: rm });
+    await open(page, t, article, 'nesting');
+    await page.evaluate(() => scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }));
+    await settle(page);
+    const r = await page.evaluate(() => {
+      const ls = [...document.querySelectorAll('.clogem-toc a')];
+      const inView = ls.filter((a) => document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1))).getBoundingClientRect().top < innerHeight);
+      return { want: inView.pop().getAttribute('href'), got: document.querySelector('.clogem-toc li.is-active a').getAttribute('href') };
+    });
+    t.check(r.got === r.want, `${rm}: #nesting followed, then the end of the page: ${r.got} is active, want the last heading in view ${r.want}`);
+    await page.close();
+  }
+  for (const rm of ['reduce', 'no-preference']) {
+    // /zh-Hans/pages/643259/ fits 1280×1024 when toc.js first looks; then
+    // 150 px join the page below the article, as giscus's iframe does
+    const page = await t.newPage({ viewport: { width: 1280, height: 1024 }, reducedMotion: rm });
+    await open(page, t, 'zh-Hans/pages/643259/');
+    const fits = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
+    await page.evaluate(() => { const d = document.createElement('div'); d.style.height = '150px'; document.querySelector('main').appendChild(d); });
+    // the first entry: its heading cannot reach the top either, and the
+    // last heading in view is another
+    const href = '#' + encodeURIComponent('编号目录');
+    await clickAt(page, `.clogem-toc a[href="${href}"]`);
+    await settle(page);
+    const got = await page.evaluate(() => [document.querySelector('.clogem-toc li.is-active a').getAttribute('href'),
+                                           scrollY, document.documentElement.scrollHeight - innerHeight]);
+    t.check(fits <= 0 && got[1] > 0 && got[1] >= got[2] - 1 && got[0] === href,
+            `${rm}: a page that fitted (${fits}) grows 150 px, a click on #编号目录, which ends at the end, marks it (${got})`);
+    await page.close();
+  }
 
   // the TOC's offset follows the navbar: with --navbarHeight 6rem the
   // navbar is 96 px and headings land at 108; a fixed offset of 80 fails
@@ -268,17 +324,10 @@ async function item1(t) {
   for (const rm of ['no-preference', 'reduce']) {
     const page = await t.newPage({ viewport: { width: 1280, height: 740 }, reducedMotion: rm });
     await open(page, t, article);
-    // smooth while a link is hovered or anything has focus (P4-B2b.1 item 6)
-    const sb = () => page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior);
-    const rest = await sb();
-    await page.hover('.clogem-toc a[href="#in-a-list-item"]');
-    const hovered = await sb();
-    await page.mouse.move(640, 400);
-    await page.focus('.clogem-toc a[href="#in-a-list-item"]');
-    const focused = await sb();
-    await page.evaluate(() => document.activeElement.blur());
-    t.check(rest === 'auto' && hovered === (rm === 'reduce' ? 'auto' : 'smooth') && focused === hovered,
-            `${rm}: the root's scroll-behavior is ${rest} at rest, ${hovered} with a link hovered, ${focused} with one focused`);
+    // once loaded: nav.js has removed clogem-loading (P4-B2b.1 item 6)
+    const sb = await page.evaluate(() => [getComputedStyle(document.documentElement).scrollBehavior,
+                                          document.documentElement.classList.contains('clogem-loading')]);
+    t.check(sb[0] === (rm === 'reduce' ? 'auto' : 'smooth') && !sb[1], `${rm}: the loaded page's root scroll-behavior is ${sb[0]} (clogem-loading ${sb[1]})`);
     t.check(await scrollTop(page, 0) === 0, `${rm}: scrollY reached 0`);
     await page.evaluate(() => {
       window.__samples = [];
@@ -315,23 +364,31 @@ async function item1Load(t) {
   });
   t.check(r.fin > 500 && r.between === 0, `a fresh load of #nesting: ${r.between} frames between 0 and the final ${r.fin}`);
   t.check(r.reached >= 0 && r.reached <= r.load + 2, `a fresh load of #nesting: the final scrollY at frame ${r.reached}, load at ${r.load}`);
-  // in-page jumps stay smooth: a TOC click, and a click on a heading's #
-  for (const [what, sel, id] of [['a TOC click', '.clogem-toc a[href="#in-a-list-item"]', 'in-a-list-item'],
-                                 ['a heading anchor click', '#inside-a-fenced-code-block .header-anchor', 'inside-a-fenced-code-block']]) {
-    await scrollTop(page, 0);
+  // in-page jumps stay smooth: a TOC click, a click on a heading's #, Enter
+  // on a focused TOC link (Chromium drops focus before the jump, so a
+  // :focus-within rule missed it) and history back, with the pointer away
+  const frames = () => page.evaluate(() => { window.__y0 = scrollY; window.__s = []; const f = () => { window.__s.push(scrollY); if (window.__s.length < 240) requestAnimationFrame(f); }; requestAnimationFrame(f); });
+  const toc = '.clogem-toc a[href="#in-a-list-item"]';
+  const jumps = [
+    ['a TOC click', async () => { await scrollTop(page, 0); await settle(page); await frames(); await clickAt(page, toc); }],
+    ['a heading anchor click', async () => {
+      await page.evaluate(() => scrollTo({ top: document.getElementById('inside-a-fenced-code-block').getBoundingClientRect().top + scrollY - 500, behavior: 'instant' }));
+      await settle(page); await frames(); await clickAt(page, '#inside-a-fenced-code-block .header-anchor'); }],
+    ['Enter on a focused TOC link', async () => {
+      await page.evaluate(() => { history.replaceState(null, '', location.pathname); });
+      await scrollTop(page, 0); await settle(page); await page.mouse.move(1270, 730);
+      await page.focus(toc); await frames(); await page.keyboard.press('Enter'); }],
+    ['history back', async () => {
+      await scrollTop(page, 0); await settle(page); await clickAt(page, toc); await settle(page);
+      await page.mouse.move(1270, 730); await frames(); await page.evaluate(() => history.back()); }],
+  ];
+  for (const [what, act] of jumps) {
+    await act();
     await settle(page);
-    if (what.startsWith('a heading')) {
-      // bring the heading into view below its target position, instantly
-      await page.evaluate((id) => scrollTo({ top: document.getElementById(id).getBoundingClientRect().top + scrollY - 500, behavior: 'instant' }), id);
-      await settle(page);
-    }
-    const y0 = await page.evaluate(() => scrollY);
-    await page.evaluate(() => { window.__s = []; const f = () => { window.__s.push(scrollY); if (window.__s.length < 240) requestAnimationFrame(f); }; requestAnimationFrame(f); });
-    await clickAt(page, sel);
-    await settle(page);
-    const s = await page.evaluate(() => ({ samples: window.__s, fin: scrollY }));
-    const lo = Math.min(y0, s.fin), hi = Math.max(y0, s.fin);
-    t.check(hi - lo > 100 && s.samples.some((y) => y > lo && y < hi), `${what}: from ${y0} to ${s.fin}, a frame strictly between (${s.samples.slice(0, 6).join(', ')}…)`);
+    const s = await page.evaluate(() => ({ samples: window.__s, from: window.__y0, fin: scrollY }));
+    const lo = Math.min(s.from, s.fin), hi = Math.max(s.from, s.fin);
+    t.check(hi - lo > 100 && s.samples.some((y) => y > lo && y < hi),
+            `${what}: from ${s.from} to ${s.fin}, a frame strictly between (${s.samples.slice(0, 6).join(', ')}…)`);
   }
   await page.close();
 }
@@ -516,7 +573,7 @@ async function item2Resize(t) {
   // Each resize is measured against the same page with nav.js aborted: the
   // browser's own scroll anchoring reflows text above the heading too, by
   // a different amount under different fonts (1024 → 768 moves it 31 px on
-  // CI's runners, 0 here; 360 → 1280, three columns from one, ~116 px
+  // CI's runners, about 4 px here; 360 → 1280, three columns from one, ~116 px
   // everywhere), and what must not move it is the aside nav.js moves
   for (const [from, to] of [[700, 900], [768, 1024], [360, 1280], [900, 700], [1024, 768]]) {
     const base = await at(from, to, true);
@@ -530,10 +587,10 @@ async function item2Resize(t) {
 // a nav too long for one row (10 items added, 13 in all): above 50rem no
 // two controls overlap, nothing overflows, every control is inside the
 // navbar, and a jump lands below it however tall it wraps (P4-B2b.1 item 3)
-async function longNav(page, t, rel) {
+async function longNav(page, t, rel, label = 'Item') {
   await page.route(url(t, rel), async (route) => {
     const res = await route.fetch();
-    const extra = Array.from({ length: 10 }, (_, i) => `<li class="clogem-navbar__item"><a href="/">Item ${i + 1}</a></li>`).join('');
+    const extra = Array.from({ length: 10 }, (_, i) => `<li class="clogem-navbar__item"><a href="/">${label} ${i + 1}</a></li>`).join('');
     const body = (await res.text()).replace('<nav class="clogem-navbar__nav"><ul>', '<nav class="clogem-navbar__nav"><ul>' + extra);
     await route.fulfill({ response: res, body });
   });
@@ -595,6 +652,31 @@ async function item2LongNav(t) {
       });
       t.check(children.length === 0, `${what}: every navbar child is inside the navbar (${children.join(', ')})`);
       checkAnchor(t, await page.evaluate(anchorState, 'nesting'), `${what} (navbar ${s.height.toFixed(1)} px), a fresh load of #nesting`);
+      await page.close();
+    }
+  }
+  // longer labels wrap the navbar at 1280 too: the stuck TOC stays below it
+  {
+    const page = await t.newPage({ viewport: { width: 1280, height: 740 }, reducedMotion: 'reduce' });
+    await longNav(page, t, article, 'Documentation');
+    await open(page, t, article);
+    await scrollTop(page, 900);
+    await settle(page);
+    const r = await page.evaluate(() => ({ nav: document.querySelector('.clogem-navbar').getBoundingClientRect().bottom,
+                                           toc: document.querySelector('.clogem-toc').getBoundingClientRect().top }));
+    t.check(r.nav > 70 && r.toc >= r.nav, `a long nav of longer labels, 1280px: the navbar wraps (bottom ${r.nav.toFixed(1)}) and the stuck TOC's top ${r.toc.toFixed(1)} is below it`);
+    await page.close();
+  }
+  // pages that finish loading early (no toc.js, code.js…): the browser's
+  // jump to the fragment comes before any ResizeObserver callback, so nav.js
+  // measures the navbar when it runs (P4-B2b.1)
+  for (const rel of ['', 'page/2/']) {
+    for (const width of [801, 850]) {
+      const page = await t.newPage({ viewport: { width, height: 740 }, reducedMotion: 'reduce' });
+      await longNav(page, t, rel);
+      await open(page, t, rel, 'clogem-press-demo-site');
+      const h = await page.evaluate(() => document.querySelector('.clogem-navbar').getBoundingClientRect().height);
+      checkAnchor(t, await page.evaluate(anchorState, 'clogem-press-demo-site'), `a long nav, ${width}px /${rel} (navbar ${h.toFixed(1)} px), a fresh load of #clogem-press-demo-site`);
       await page.close();
     }
   }
@@ -1178,6 +1260,28 @@ async function item6Desktop(t) {
     t.check(!await isOpenNow(), `1280: Tab past the last link of ${what} closes it`);
     await page.keyboard.press('Escape');
   }
+  // a mouse press inside an open dropdown, not on a link (the menu's padding,
+  // the current language) leaves it open and the tab alive: the focusout
+  // with no relatedTarget it causes is not focus outside (P4-B2b.1: closing
+  // the <details> during that mousedown crashed Chromium 153's renderer)
+  let crashed = false;
+  page.on('crash', () => { crashed = true; });
+  for (const [what, sel, spot] of [['Browse', '.clogem-navbar__item > details:has(> summary > span)', '.clogem-navbar__item > details:has(> summary > span) .clogem-navbar__menu'],
+                                   ['the language dropdown', '.clogem-langs__toggle', '.clogem-langs ul .is-current']]) {
+    await clickAt(page, `${sel} > summary`);
+    t.check(await page.evaluate((s) => document.querySelector(s).open, sel), `1280: a click opens ${what}`);
+    const xy = await page.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.left + 3, r.top + 3]; }, spot);
+    const target = await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e && !e.closest('a[href]') ? e.tagName : 'a link'; }, xy);
+    await page.mouse.click(xy[0], xy[1]);
+    await page.waitForTimeout(100);
+    t.check(!crashed, `1280: a press inside ${what} (on ${target}) crashed the page`);
+    if (crashed) break;
+    t.check(target !== 'a link' && await page.evaluate((s) => document.querySelector(s).open, sel), `1280: a press inside ${what}, on ${target}, leaves it open`);
+    await page.mouse.click(640, 500);
+    t.check(await page.evaluate((s) => !document.querySelector(s).open, sel), `1280: then a click outside closes ${what}`);
+  }
+  if (crashed) { await page.close().catch(() => {}); return; }
+
   // both open, focus in the mode menu: one Escape closes the mode menu only
   await clickAt(page, '.clogem-mode__button');
   await page.evaluate(() => { document.querySelector('.clogem-langs__toggle').open = true; });
@@ -1597,10 +1701,9 @@ async function item13(t) {
     // 480 px tall, so the open drawer reaches the bottom of the viewport
     const page = await t.newPage({ viewport: { width: 360, height: 480 }, reducedMotion: 'reduce' });
     await open(page, t, article);
-    // the drawer, open after 200 px, covers it. (A reader who opens it by
-    // mouse, tap or Enter keeps the position; Playwright's locator.click()
-    // scrolls the page first, so the page is put back at 200, and the
-    // drawer is scrolled in steps.)
+    // the drawer, open after 200 px, covers it. (Opening it keeps the page
+    // at 200 — before P4-B2b.1 item 1 it did not — so the second scrollTop
+    // is only a guard; the drawer is scrolled in steps.)
     await scrollTop(page, 200);
     await page.waitForFunction(() => document.querySelector('.clogem-back-to-top').checkVisibility(), null, { timeout: 1000 });
     await page.locator('.clogem-navbar__toggle > summary').click();
@@ -1642,9 +1745,11 @@ async function item13(t) {
 // and the later items still run. CLOGEM_LAYOUT_ITEMS=item1,item13 runs only
 // those
 export default async function layout(t) {
-  const only = (process.env.CLOGEM_LAYOUT_ITEMS || '').split(',').filter(Boolean);
-  for (const item of [item1, item1Load, item1Focus, item2, item2Resize, item2LongNav, item3, item3RightMenuBar, item4, item5, item6, item6Desktop, item7,
-                      item10, item11, item12, item13]) {
+  const items = [item1, item1Load, item1Focus, item2, item2Resize, item2LongNav, item3, item3RightMenuBar, item4, item5, item6, item6Desktop, item7,
+                 item10, item11, item12, item13];
+  const only = (process.env.CLOGEM_LAYOUT_ITEMS || '').split(',').map((n) => n.trim()).filter(Boolean);
+  for (const n of only) t.check(items.some((i) => i.name === n), `CLOGEM_LAYOUT_ITEMS: no item ${n} (${items.map((i) => i.name).join(', ')})`);
+  for (const item of items) {
     if (only.length && !only.includes(item.name)) continue;
     try {
       await item(t);
