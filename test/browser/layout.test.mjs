@@ -513,18 +513,18 @@ async function item2Resize(t) {
     await page.close();
     return { before, ...r };
   };
-  for (const [from, to] of [[700, 900], [768, 1024], [900, 700], [1024, 768]]) {
+  // Each resize is measured against the same page with nav.js aborted: the
+  // browser's own scroll anchoring reflows text above the heading too, by
+  // a different amount under different fonts (1024 → 768 moves it 31 px on
+  // CI's runners, 0 here; 360 → 1280, three columns from one, ~116 px
+  // everywhere), and what must not move it is the aside nav.js moves
+  for (const [from, to] of [[700, 900], [768, 1024], [360, 1280], [900, 700], [1024, 768]]) {
+    const base = await at(from, to, true);
     const r = await at(from, to, false);
-    t.check(Math.abs(r.top - r.before) <= 24, `resize ${from} → ${to}: #in-a-list-item moved from ${r.before.toFixed(1)} to ${r.top.toFixed(1)}`);
+    t.check(Math.abs(r.top - base.top) <= 24,
+            `resize ${from} → ${to}: #in-a-list-item went from ${r.before.toFixed(1)} to ${r.top.toFixed(1)}; with nav.js aborted, to ${base.top.toFixed(1)}`);
     if (to > 800) t.check(r.inShell, `resize ${from} → ${to}: the sidebar is back in the shell`);
   }
-  // 360 → 1280 reflows main from one column into three: the browser's own
-  // scroll anchoring (main is its anchor) moves the heading ~116 px with
-  // nav.js aborted too, so here the measure is that page
-  const base = await at(360, 1280, true);
-  const r = await at(360, 1280, false);
-  t.check(Math.abs(r.top - base.top) <= 24 && r.inShell,
-          `resize 360 → 1280: #in-a-list-item lands at ${r.top.toFixed(1)}, ${base.top.toFixed(1)} with nav.js aborted (from ${r.before.toFixed(1)})`);
 }
 
 // a nav too long for one row (10 items added, 13 in all): above 50rem no

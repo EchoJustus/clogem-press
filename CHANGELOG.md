@@ -275,10 +275,12 @@ buttons and a back-to-top button now appear by default, as in vdoing.
 - `layout.test.mjs`: at 360×740, 768×1024 and 1280×800, under both motion
   settings and scrolled to 1000, the first Tab, the drawer, the mode menu
   and the language dropdown (each opened and closed with Escape) leave
-  `scrollY` unchanged; widening 700 → 900 and 768 → 1024 and narrowing
-  back move a heading 200 px down by ≤ 24 px, and 360 → 1280 lands within
-  24 px of where it lands with `nav.js` aborted (the browser's own scroll
-  anchoring moves it 116 px either way); a 13-item nav scanned at 801–1600
+  `scrollY` unchanged; after widening 700 → 900, 768 → 1024 and
+  360 → 1280, and narrowing 900 → 700 and 1024 → 768, a heading 200 px
+  down lands within 24 px of where it lands with `nav.js` aborted (it was
+  ~400 px off; the browser's own scroll anchoring reflows the text above
+  it by a font-dependent amount either way: 31 px for 1024 → 768 on CI's
+  runners, 0 here, ~116 px for 360 → 1280); a 13-item nav scanned at 801–1600
   in 10 px steps on three pages, with JS and without, has no overlapping
   controls, no overflow and no control outside the navbar, and `#nesting`
   lands below it at 801, 850, 1024 and 1280; a `:right-menu-bar false`
