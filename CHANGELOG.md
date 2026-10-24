@@ -383,6 +383,10 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   heading lands below the navbar. Without `nav.js`'s `ResizeObserver`
   `--navbarMeasured` stayed 57.6 px and it landed 12.6 px under; the old
   check loaded `#nesting` fresh at each width, so it never saw this.
+- `layout.test.mjs`'s `settle()` caps its wait for `document.fonts.ready`
+  at 1 s: Chromium 141 resolves it only once the document has loaded, so
+  B2b.1's TOC click before `load` (an image never answered) hung the file
+  there; Chromium 153 resolves it earlier.
 - The resize test's comment, and B2b.1's entry above, gave the article's
   own reflow as "31 px on CI, about 4 px here": the bound is relative to
   the same page with `nav.js` aborted, where the heading moves 31.2 px at

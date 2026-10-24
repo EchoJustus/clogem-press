@@ -40,9 +40,11 @@ function url(t, rel, id) {
   return new URL(p, t.baseURL).href + (id ? '#' + encodeURIComponent(id) : '');
 }
 
-// waits until scrollY has been still for 10 animation frames (3 s cap)
+// waits until scrollY has been still for 10 animation frames (3 s cap).
+// fonts.ready is capped at 1 s: Chromium 141 resolves it only once the
+// document has loaded, which item1Load's pending image never lets happen
 async function settle(page) {
-  await page.evaluate(() => document.fonts.ready);
+  await page.evaluate(() => Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 1000))]));
   await page.waitForTimeout(150);
   await page.evaluate(() => new Promise((resolve) => {
     let last = scrollY, still = 0;
