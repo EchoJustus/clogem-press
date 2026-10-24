@@ -365,10 +365,16 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   `/pages/c0nta1/`, `/` and `/pages/17c887/`, at 360, 1024 and 1280 by
   600, 740, 800 and 900 under reduced motion and at 1280×800 under
   no-preference, and fails on a focused element whose top is above the
-  navbar's bottom (1 px allowed). It failed 34 of 39 combinations in
-  Chromium 141 before the fix (CI's Chromium 153 does not need it). The
+  navbar's bottom (1 px allowed). Before the fix, Chromium 141 hid a
+  stop in 25 of the 39 page-size runs (40 stops); CI's Chromium 153
+  counts the margin itself and hid none. The
   no-jump checks gain Tab into the open language list, then Escape: the
   summary takes focus and `scrollY` stays.
+- `layout.test.mjs`: the 13-item nav loaded at 1280 (one row), narrowed
+  to 801 and to 850 (82.6 px, wrapped), then `#nesting` followed: the
+  heading lands below the navbar. Without `nav.js`'s `ResizeObserver`
+  `--navbarMeasured` stayed 57.6 px and it landed 12.6 px under; the old
+  check loaded `#nesting` fresh at each width, so it never saw this.
 
 ### Needs native review (B2b)
 

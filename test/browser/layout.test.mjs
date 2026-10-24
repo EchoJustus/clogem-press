@@ -751,6 +751,24 @@ async function item2LongNav(t) {
       await page.close();
     }
   }
+  // loaded on one row at 1280, then narrowed until it wraps: the offset
+  // follows (nav.js's ResizeObserver, P4-B2b.2 item 2)
+  {
+    const page = await t.newPage({ viewport: { width: 1280, height: 740 }, reducedMotion: 'reduce' });
+    await longNav(page, t, article);
+    await open(page, t, article);
+    for (const width of [801, 850]) {
+      await page.setViewportSize({ width, height: 740 });
+      await settle(page);   // the observer's callback, as a reader's next jump would see
+      await page.evaluate(() => { location.hash = ''; });
+      await page.evaluate(() => { location.hash = 'nesting'; });
+      await settle(page);
+      const h = await page.evaluate(() => document.querySelector('.clogem-navbar').getBoundingClientRect().height);
+      t.check(h > 70, `a long nav loaded at 1280, narrowed to ${width}: the navbar wraps (${h.toFixed(1)} px)`);
+      checkAnchor(t, await page.evaluate(anchorState, 'nesting'), `a long nav loaded at 1280, narrowed to ${width} (navbar ${h.toFixed(1)} px), #nesting followed`);
+    }
+    await page.close();
+  }
   // longer labels wrap the navbar at 1280 too: the stuck TOC stays below it
   {
     const page = await t.newPage({ viewport: { width: 1280, height: 740 }, reducedMotion: 'reduce' });
