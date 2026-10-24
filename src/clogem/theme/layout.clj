@@ -231,6 +231,28 @@
        [:a.clogem-prev-next__next {:href (href ctx (:href next)) :rel "next" :lang (config/html-lang cfg (:lang next))}
         [:span (i18n/tr ctx :page/next)] " " (:title next)])]))
 
+(defn content-bg
+  "`:theme :content-bg-style` 1–6 (vdoing's `contentBgStyle`): the main
+  column's attributes for that pattern, on articles and catalogues; nil
+  without one, so `<main class=\"clogem-main\"` stays as it was."
+  [{:keys [cfg]}]
+  (when-let [n (get-in cfg [:theme :content-bg-style])]
+    {:class (str "clogem-bg-style-" n)}))
+
+(defn page-buttons
+  "vdoing's page buttons (`pageButton`, PageNav.vue): `prev-next`'s targets
+  again, as two chevrons fixed at the viewport's edges. Duplicates of the
+  visible links, so `aria-hidden` and out of the Tab order, and with no
+  `rel` (the visible links declare it). CSS shows them only from 84rem,
+  where they cover no box; `:theme :page-button false` omits them."
+  [{:keys [cfg prev next] :as ctx}]
+  (when-not (false? (get-in cfg [:theme :page-button]))
+    (for [[t cls ic] [[prev "is-prev" :chevron-left] [next "is-next" :chevron-right]]
+          :when t]
+      [:a.clogem-page-button {:class cls :href (href ctx (:href t)) :aria-hidden "true" :tabindex "-1"
+                              :title (:title t) :lang (config/html-lang cfg (:lang t))}
+       (icons/icon ctx ic)])))
+
 (defn article-row
   "One index row: title (linked per §6.8), fallback marker, ISO date."
   [{:keys [cfg] :as ctx} group]
@@ -277,13 +299,22 @@
 
   Phase 1 narrowed this to the article's own variants; the design specifies
   the site-wide switcher, with the per-article `variant-bar` below the title
-  as the place that lists only what the article has."
+  as the place that lists only what the article has.
+
+  P4-B2b: above 50rem the list is a dropdown, after vdoing's (`languages`,
+  the `:nav/language` label, `chevron-down`): a closed `<details>` whose
+  list is its NEXT SIBLING, not its content, so that CSS can show the list
+  wherever the summary is not rendered (the drawer, no JS) — a closed
+  `<details>` hides its content on every browser before `::details-content`."
   [{:keys [cfg lang] :as ctx}]
   (let [locales (get-in cfg [:langs :locales])
         langs   (config/lang-keys cfg)]
     (when (> (count langs) 1)
       [:nav.clogem-langs {:aria-label (i18n/tr ctx :nav/language)}
        [:span.clogem-langs__label (i18n/tr ctx :nav/language)]
+       [:details.clogem-langs__toggle
+        [:summary (icons/icon ctx :languages) [:span (i18n/tr ctx :nav/language)]
+         (icons/icon ctx :chevron-down {:class "clogem-navbar__caret"})]]
        (into [:ul]
              (for [l langs
                    :let [current? (= l lang)]]
@@ -425,16 +456,36 @@
              [:li [:button {:type "button" :data-mode (name m) :aria-pressed "false"}
                    (icons/icon ctx ic) " " [:span (i18n/tr ctx (keyword "mode" (name m)))]]]))]))
 
+(defn- menu-toggle
+  "P4-B2b: the drawer's toggle — a `<details>` holding only its summary;
+  CSS shows its next siblings' `#clogem-drawer` while it is open."
+  [ctx hidden?]
+  [:details.clogem-navbar__toggle (when hidden? {:hidden true})
+   [:summary {:aria-controls "clogem-drawer"}
+    (icons/icon ctx :menu {:class "is-menu"}) (icons/icon ctx :x {:class "is-close"})
+    [:span.clogem-visually-hidden (i18n/tr ctx :nav/menu)]]])
+
 (defn navbar
-  [{:keys [cfg lang] :as ctx}]
-  [:header.clogem-navbar
-   [:a.clogem-navbar__brand {:href (href ctx (model/home-url cfg lang))}
-    (i18n/resolve-str ctx (get-in cfg [:site :title]))]
-   [:nav.clogem-navbar__nav
-    (into [:ul] (map #(nav-item ctx %) (:nav cfg)))]
-   (search-box ctx)
-   (mode-toggle ctx)
-   (lang-switcher ctx)])
+  "One row (P4-B2b), in visual order: the brand, the nav, the languages,
+  search and the mode toggle. At 50rem and below, with JS, the nav and the
+  languages are in `#clogem-drawer`, behind the menu toggle, first; above
+  it the drawer is `display: contents`. A one-language site with no `:nav`
+  has nothing to put there, except the sidebar js/nav.js moves in: it gets
+  the drawer, with the toggle `hidden`, on a page with a sidebar
+  (`:sidebar?`) only."
+  [{:keys [cfg lang sidebar?] :as ctx}]
+  (let [nav    [:nav.clogem-navbar__nav (into [:ul] (map #(nav-item ctx %) (:nav cfg)))]
+        langs  (lang-switcher ctx)
+        shown? (boolean (or (seq (:nav cfg)) langs))]
+    [:header.clogem-navbar
+     (when (or shown? sidebar?) (menu-toggle ctx (not shown?)))
+     [:a.clogem-navbar__brand {:href (href ctx (model/home-url cfg lang))}
+      (i18n/resolve-str ctx (get-in cfg [:site :title]))]
+     (if (or shown? sidebar?)
+       [:div#clogem-drawer.clogem-navbar__drawer nav langs]
+       nav)
+     (search-box ctx)
+     (mode-toggle ctx)]))
 
 (defn- sidebar-node
   "One directory as <details>/<summary> — collapsible without JS — with its
@@ -467,6 +518,19 @@
   (let [segs (remove str/blank? (str/split (str dir-key) #"/"))]
     (set (map #(str "/" (str/join "/" (take % segs))) (range 1 (inc (count segs)))))))
 
+(defn- sidebar-node-of
+  "The sidebar tree node a page shows (`sidebar`), or nil."
+  [{:keys [model group]}]
+  (when-let [top (and group
+                      (not (false? (get-in group [:variants (:primary group) :front-matter :sidebar])))
+                      (model/top-dir group))]
+    (get-in model [:sidebar top])))
+
+(defn sidebar?
+  "Does the page show a sidebar tree?"
+  [ctx]
+  (some? (sidebar-node-of ctx)))
+
 (defn sidebar
   "The left sidebar tree of D-P2-1, or nil when the page has none:
 
@@ -478,23 +542,45 @@
   Every directory is a <details> group; [:theme :sidebar-open true] opens all
   of them, false only the active trail. The leaf AND every ancestor of the
   current article are marked."
-  [{:keys [cfg model group] :as ctx}]
-  (when-let [top (and group
-                      (not (false? (get-in group [:variants (:primary group) :front-matter :sidebar])))
-                      (model/top-dir group))]
-    (when-let [node (get-in model [:sidebar top])]
-      [:aside.clogem-sidebar
-       [:nav {:aria-label (i18n/tr ctx :page/sidebar)}
-        (sidebar-node ctx node
-                      (not (false? (get-in cfg [:theme :sidebar-open])))
-                      (ancestors-of (:dir-key group)))]])))
+  [{:keys [cfg group] :as ctx}]
+  (when-let [node (sidebar-node-of ctx)]
+    [:aside#clogem-sidebar.clogem-sidebar
+     [:nav {:aria-label (i18n/tr ctx :page/sidebar)}
+      (sidebar-node ctx node
+                    (not (false? (get-in cfg [:theme :sidebar-open])))
+                    (ancestors-of (:dir-key group)))]]))
+
+(defn sidebar-toggle
+  "P4-B2b: the sidebar's collapse button (vdoing's sidebar button), on a
+  page with a sidebar only: the main column's first child, outside the
+  article. Rendered `hidden`; js/nav.js reveals it, and collapses the
+  sidebar under a class only it sets (`is-sidebar-collapsed` on the
+  shell), above 50rem — so without JS, or with a failed nav.js, the
+  sidebar shows and there is no button. `chevron-left` while the sidebar
+  is expanded, `chevron-right` while it is collapsed (CSS, from
+  `aria-expanded`)."
+  [ctx]
+  (when (sidebar? ctx)
+    [:button.clogem-sidebar-toggle {:type "button" :hidden true :aria-expanded "true"
+                                    :aria-controls "clogem-sidebar"
+                                    :aria-label (i18n/tr ctx :page/sidebar)
+                                    :title (i18n/tr ctx :page/sidebar)}
+     (icons/icon ctx :chevron-left {:class "is-expanded"})
+     (icons/icon ctx :chevron-right {:class "is-collapsed"})]))
+
+(defn toc?
+  "Does the page render the TOC bar (and js/toc.js)? Only when it has
+  entries and `:theme :right-menu-bar` (vdoing's `rightMenuBar`) is not
+  false. Headings keep their ids and anchors either way."
+  [{:keys [cfg toc]}]
+  (boolean (and (seq toc) (not (false? (get-in cfg [:theme :right-menu-bar]))))))
 
 (defn toc
   "The right-hand TOC bar (D-P2-9): one link per entry of ctx :toc, levelled
-  by class, hidden when there is nothing to list. The scroll-spy in
+  by class, hidden when there is nothing to list (`toc?`). The scroll-spy in
   js/toc.js marks the current entry; without JS it is a plain list of links."
   [{:keys [toc] :as ctx}]
-  (when (seq toc)
+  (when (toc? ctx)
     [:aside.clogem-toc
      [:nav {:aria-label (i18n/tr ctx :page/toc)}
       (into [:ul]
@@ -504,12 +590,23 @@
 
 (defn shell
   "The page body between navbar and footer: the sidebar tree when the page
-  has one, the main column, and the TOC bar when the page has headings."
-  [ctx main]
+  has one, the main column, and the TOC bar when the page has headings.
+  `clogem-shell--wide`: a sidebar page whose TOC `:right-menu-bar false`
+  dropped."
+  [{:keys [cfg] :as ctx} main]
   (let [sb (sidebar ctx)
         tc (toc ctx)]
-    [:div.clogem-shell {:class (str/join " " (remove nil? [(when-not sb "clogem-shell--single")
-                                                          (when tc "clogem-shell--toc")]))}
+    [:div.clogem-shell (cond-> {:class (str/join " " (remove nil? [(when-not sb "clogem-shell--single")
+                                                                   (when tc "clogem-shell--toc")
+                                                                   ;; P4-B2b.1: the TOC dropped by
+                                                                   ;; `:right-menu-bar false`, its
+                                                                   ;; room goes to the article from 80rem
+                                                                   (when (and sb (seq (:toc ctx)) (not tc))
+                                                                     "clogem-shell--wide")]))}
+                         ;; P4-B2b: `:theme :sidebar-collapsed true`, read by
+                         ;; js/nav.js alone (no CSS rule reads it)
+                         (and sb (true? (get-in cfg [:theme :sidebar-collapsed])))
+                         (assoc :data-clogem-collapsed ""))
      sb
      main
      tc]))
@@ -907,6 +1004,18 @@
   (when-let [attrs (analytics-attrs cfg)]
     [:script (merge {:src (asset-href ctx "js/analytics.js") :defer true} attrs)]))
 
+(defn back-to-top
+  "P4-B2b: the back-to-top button, last in `<body>` on every page with the
+  navbar, unless `:theme :back-to-top` is false. Rendered `hidden`:
+  js/nav.js shows it while the page is scrolled more than 100 px down
+  (vdoing's threshold), so without JS there is none."
+  [{:keys [cfg] :as ctx}]
+  (when-not (false? (get-in cfg [:theme :back-to-top]))
+    [:button.clogem-back-to-top {:type "button" :hidden true
+                                 :aria-label (i18n/tr ctx :page/back-to-top)
+                                 :title (i18n/tr ctx :page/back-to-top)}
+     (icons/icon ctx :arrow-up)]))
+
 (defn document
   "Wrap body hiccup in a complete HTML document.
 
@@ -968,21 +1077,26 @@
         [:link {:rel "stylesheet" :href (asset-href ctx assets/custom-css)}])
       ;; D-P4-3: the toggle and window.clogem.getMode/setMode
       [:script {:src (asset-href ctx "js/mode.js") :defer true}]
+      ;; P4-B2b: the drawer and the navbar's dropdowns
+      [:script {:src (asset-href ctx "js/nav.js") :defer true}]
       ;; D-P3-15: window.clogem.setCommentsTheme, beside the widget it drives
       (when (comments? ctx)
         [:script {:src (asset-href ctx "js/comments.js") :defer true}])
       ;; vendored vanilla scroll-spy (D-P2-9); no CDN, no deps — deferred,
       ;; and only on a page that renders a TOC for it to spy on
-      (when (seq (:toc ctx))
+      (when (toc? ctx)
         [:script {:src (asset-href ctx "js/toc.js") :defer true}])
       (code-head ctx)
       ;; §11.3 item 14: LAST — the provider's script is the page's least
       ;; important resource
       (analytics-head ctx)]
-     (into [:body {:class (str "lang-" (name lang)
-                               (when-let [k (:page-kind ctx)] (str " page-" (name k))))}
-            (search-config ctx)]
-           body)]))
+     (-> [:body {:class (str "lang-" (name lang)
+                             (when-let [k (:page-kind ctx)] (str " page-" (name k))))}
+          (search-config ctx)]
+         (into body)
+         ;; every page built here has the navbar; outside it, which is the
+         ;; containing block of anything fixed inside it
+         (conj (back-to-top ctx)))]))
 
 (defn page
   "A page with no sidebar tree — home, index, catalogue and paginated pages

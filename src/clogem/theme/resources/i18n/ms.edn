@@ -5,6 +5,9 @@
  :nav/search           "Cari"
  :nav/language         "Bahasa"
  :nav/home             "Laman utama"
+ ;; P4-B2b: the mobile menu toggle. Awaiting native review (CHANGELOG,
+ ;; Unreleased, "Needs native review (B2b)").
+ :nav/menu             "Menu"
  :page/last-updated    "Dikemas kini {{date}}"
  :page/prev            "Sebelumnya"
  :page/next            "Seterusnya"
@@ -39,6 +42,9 @@
  :page/categories      "Kategori"
  :page/tags            "Tag"
  :page/sidebar         "Bar sisi"
+ ;; P4-B2b: the back-to-top button. Awaiting native review (CHANGELOG,
+ ;; Unreleased, "Needs native review (B2b)").
+ :page/back-to-top     "Kembali ke atas"
  :container/theorem    "Teorem"
  ;; Search UI (D-P3-10): Pagefind ships no Malay; written for clogem-press — awaiting native review (CHANGELOG).
  ;; [SEARCH_TERM], [COUNT] and [DIFFERENT_TERM] are Pagefind's placeholders; keep them.

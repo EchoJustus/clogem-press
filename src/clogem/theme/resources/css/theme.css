@@ -49,10 +49,11 @@
   --errorBorder: #fecaca;
   --errorText: #b91c1c;
   --shadowColor: rgba(0, 0, 0, 0.1);
+  --linesColor: rgba(50, 0, 0, 0.05);
   color-scheme: light;
 }
 
-:root { --maxWidth: 62rem; }
+:root { --maxWidth: 62rem; --navbarHeight: 3.6rem; }
 
 .theme-mode-read {
   --bodyBg: #ece6d6;
@@ -73,6 +74,7 @@
   --errorBorder: #e8c4b4;
   --errorText: #9f1d1d;
   --shadowColor: rgba(0, 0, 0, 0.1);
+  --linesColor: rgba(50, 0, 0, 0.03);   /* lighter: the accent on pattern 1's crossings (B2b.1) */
   color-scheme: light;
 }
 
@@ -95,6 +97,7 @@
   --errorBorder: #5c2828;
   --errorText: #f87171;
   --shadowColor: rgba(0, 0, 0, 0.4);
+  --linesColor: rgba(125, 125, 125, 0.05);
   color-scheme: dark;
 }
 
@@ -119,6 +122,7 @@
     --errorBorder: #5c2828;
     --errorText: #f87171;
     --shadowColor: rgba(0, 0, 0, 0.4);
+    --linesColor: rgba(125, 125, 125, 0.05);
     color-scheme: dark;
   }
 }
@@ -138,6 +142,16 @@ html {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
                "Helvetica Neue", Arial, sans-serif;
 }
+
+/* P4-B2b: every scroll into view — a #fragment (an id or an <a name>), a
+ * focus move, scrollIntoView() — lands below the navbar. A margin on every
+ * element outside the navbar, not a scroll-padding on the root, which
+ * covered the navbar's own controls too, and Chromium centred one on focus,
+ * moving the page (B2b.1). --navbarMeasured is the navbar's height, set by
+ * js/nav.js: a long nav wraps */
+:root { --jumpOffset: calc(var(--navbarMeasured, var(--navbarHeight)) + 0.75rem); }
+:where(body *) { scroll-margin-top: var(--jumpOffset); }
+.clogem-navbar * { scroll-margin-top: 0; }
 
 body {
   margin: 0;
@@ -190,16 +204,29 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
   overflow: visible;
 }
 
+/* P4-B2b: one row, --navbarHeight tall; a long nav wraps inside it. The
+ * backdrop-filter makes it the containing block of anything fixed in it */
 .clogem-navbar {
-  display: flex; align-items: center; gap: 1.5rem;
-  padding: 0.75rem 1.25rem;
+  display: flex; align-items: center; gap: 1rem;
+  min-height: var(--navbarHeight); padding: 0 1.25rem;
   border-bottom: 1px solid var(--borderColor);
   position: sticky; top: 0; background: var(--blurBg); z-index: 10;
   -webkit-backdrop-filter: saturate(150%) blur(6px); backdrop-filter: saturate(150%) blur(6px);
-  flex-wrap: wrap;
 }
-.clogem-navbar__brand { font-weight: 700; font-size: 1.1rem; color: var(--textColor); }
-.clogem-navbar__nav > ul { list-style: none; display: flex; gap: 1rem; margin: 0; padding: 0; }
+.clogem-navbar__brand { font-weight: 700; font-size: 1.1rem; color: var(--textColor);
+  flex: none; max-width: 40%; margin-inline-end: auto;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clogem-navbar__nav { min-width: 0; }
+.clogem-navbar__nav > ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0 1rem; margin: 0; padding: 0; }
+.clogem-search { display: flex; }
+/* the drawer's toggle and the drawer (P4-B2b): see 50rem and below */
+.clogem-navbar__toggle { display: none; }
+.clogem-navbar__toggle > summary { display: flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; font-size: 1.3rem; color: var(--textColor); list-style: none; cursor: pointer; }
+.clogem-navbar__toggle > summary::-webkit-details-marker { display: none; }
+.clogem-navbar__toggle .is-close, .clogem-navbar__toggle[open] .is-menu { display: none; }
+.clogem-navbar__toggle[open] .is-close { display: inline; }
+.clogem-navbar__drawer { display: contents; }
 .clogem-navbar__item { position: relative; }
 .clogem-navbar__item details > summary { list-style: none; cursor: pointer; }
 .clogem-navbar__item details > summary::-webkit-details-marker { display: none; }
@@ -242,12 +269,32 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
 .clogem-mode__menu button[aria-pressed="true"] { color: var(--accent); font-weight: 600; }
 .clogem-navbar__menu li { padding: 0.2rem 0; }
 
-/* the list wraps, like the navbar around it: a long :label used to widen a
- * 360 px page past the viewport */
-.clogem-langs { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+/* the list wraps: a long :label widened a 360 px page. P4-B2b: above 50rem
+ * it is a dropdown, opened by the <details> before it */
+.clogem-langs { position: relative; display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
 .clogem-langs__label { color: var(--textColorSubtle); font-size: 0.85rem; }
 .clogem-langs ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; margin: 0; padding: 0; }
 .clogem-langs .is-current { color: var(--textColorSubtle); font-weight: 600; }
+.clogem-langs__toggle { display: none; }
+.clogem-langs__toggle > summary { display: flex; align-items: center; gap: 0.3rem; list-style: none; cursor: pointer;
+  white-space: nowrap; color: var(--textColor); }
+.clogem-langs__toggle > summary::-webkit-details-marker { display: none; }
+.clogem-langs__toggle[open] .clogem-navbar__caret { transform: rotate(180deg); }
+@media not all and (max-width: 50rem) {
+  .clogem-langs { flex: none; }   /* shrunk, its summary overlapped the search trigger (B2b.1) */
+  .clogem-langs__toggle { display: block; }
+  .clogem-langs__label, .clogem-langs__toggle:not([open]) + ul { display: none; }
+  .clogem-langs ul { position: absolute; top: calc(100% + 0.6rem); inset-inline-end: 0; z-index: 20;
+    flex-direction: column; flex-wrap: nowrap; min-width: 10rem; padding: 0.4rem 0.8rem;
+    background: var(--mainBg); border: 1px solid var(--borderColor); border-radius: 6px; }
+}
+/* the trigger is its icon alone (Pagefind's rules are (3,1,0); the dialog
+ * has a .pf-trigger-shortcut too) */
+@media (max-width: 64rem) {
+  pagefind-modal-trigger :is(.pf-trigger-text, .pf-trigger-shortcut) { display: none !important; }
+  pagefind-modal-trigger .pf-trigger-btn { width: 36px !important; height: 36px !important;
+    padding: 0 !important; justify-content: center !important; }
+}
 
 .clogem-shell {
   display: grid;
@@ -260,6 +307,36 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
 @media (max-width: 50rem) {
   .clogem-shell { grid-template-columns: minmax(0, 1fr); }
   .clogem-sidebar { order: 2; }
+}
+/* P4-B2b: 50rem and below. Outside any scripting query, so a browser
+ * without the feature gets them: the navbar of old, static, wrapping, every
+ * link shown; jumps need no navbar offset */
+@media (max-width: 50rem) {
+  :root { --jumpOffset: 0.75rem; }
+  .clogem-navbar { position: static; flex-wrap: wrap; gap: 0.25rem 1rem; padding: 0.5rem 1.25rem; }
+  .clogem-navbar__brand { max-width: 100%; }
+  .clogem-navbar__menu { position: static; }
+}
+/* with scripting: one sticky row (toggle, brand, search, mode) and a drawer
+ * below it, shown while the toggle is open. Absolute, not fixed: the
+ * navbar's backdrop-filter would size a fixed drawer to the navbar. A
+ * failed js/nav.js leaves the toggle working, and the sidebar in place */
+@media (scripting: enabled) and (max-width: 50rem) {
+  :root { --jumpOffset: calc(var(--navbarMeasured, var(--navbarHeight)) + 0.75rem); }
+  .clogem-navbar { position: sticky; flex-wrap: nowrap; gap: 0.5rem; padding: 0 0.75rem; }
+  .clogem-navbar__toggle:not([hidden]) { display: block; margin-inline-start: -0.5rem; }
+  .clogem-navbar__brand { flex: 1 1 auto; min-width: 0; }
+  .clogem-navbar__drawer { display: none; }
+  .clogem-navbar__toggle[open] ~ .clogem-navbar__drawer {
+    display: block; position: absolute; top: 100%; inset-inline-start: 0; width: min(20rem, 100%);
+    max-height: calc(100vh - var(--navbarHeight)); max-height: calc(100dvh - var(--navbarHeight));
+    overflow-y: auto; overscroll-behavior: contain; padding: 0.5rem 1.25rem 1.25rem;
+    background: var(--mainBg); border: 1px solid var(--borderColor); border-width: 0 1px 1px 0;
+  }
+  .clogem-navbar__drawer .clogem-navbar__nav > ul { flex-direction: column; }
+  .clogem-navbar__drawer .clogem-langs { flex-wrap: wrap; margin-top: 0.5rem; padding-top: 0.5rem;
+    border-top: 1px solid var(--borderColor); }
+  .clogem-navbar__drawer > .clogem-sidebar { margin-top: 0.75rem; }
 }
 
 .clogem-sidebar { background: var(--sidebarBg); border-radius: 5px; padding: 1rem; align-self: start; }
@@ -312,7 +389,6 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
 /* D-P3-15: the giscus widget below the article */
 .clogem-comments { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--borderColor); }
 
-.clogem-content :is(h2, h3, h4, h5, h6) { scroll-margin-top: 4rem; }
 .header-anchor { opacity: 0; margin-left: 0.35rem; text-decoration: none; }
 :is(h1, h2, h3, h4, h5, h6):hover .header-anchor { opacity: 0.5; }
 .header-anchor:focus-visible { opacity: 1; }   /* a ring on nothing is no ring */
@@ -435,6 +511,33 @@ img { max-width: 100%; height: auto; }
 .clogem-prev-next__next { margin-left: auto; text-align: right; }
 .clogem-prev-next span { display: block; font-size: 0.75rem; color: var(--textColorSubtle); }
 
+/* P4-B2b: vdoing's page buttons, fixed at the viewport's edges. The widest
+ * shell is 80rem, so its gutter is (100vw - 80rem) / 2 + 1.25rem: 52px at
+ * 84rem, 84px at 88rem. They show only from 84rem, 50px wide, then 80px —
+ * never over a box (beside a classic scrollbar, a few px of the sidebar's
+ * or the TOC's padding). Below the navbar and its drawer (z-index 10) */
+.clogem-page-button { display: none; }
+@media (min-width: 84rem) {
+  .clogem-page-button { position: fixed; top: calc(50% - 35px); z-index: 5; display: flex; align-items: center;
+    justify-content: center; width: 50px; height: 70px; font-size: 1.25rem; color: var(--textColorSubtle);
+    border-radius: 3px; opacity: 0.55; transition: opacity 0.2s, background-color 0.2s; }
+  .clogem-page-button:hover { opacity: 1; color: var(--textColorSubtle); background: rgba(153, 153, 153, 0.15); text-decoration: none; }
+  .clogem-page-button.is-prev { inset-inline-start: 0; }
+  .clogem-page-button.is-next { inset-inline-end: 0; }
+  [dir="rtl"] .clogem-page-button .clogem-icon { transform: scaleX(-1); }
+}
+@media (min-width: 88rem) { .clogem-page-button { width: 80px; } }
+
+/* P4-B2b: back to top, as vdoing's (Buttons.vue), below the navbar and its
+ * drawer (z-index 10). js/nav.js shows it past 100 px of scrolling */
+.clogem-back-to-top { position: fixed; right: 2rem; bottom: 2.5rem; z-index: 5; display: flex; align-items: center;
+  justify-content: center; width: 2.2rem; height: 2.2rem; padding: 0; font: inherit; font-size: 1.1rem;
+  color: var(--textColor); background: var(--blurBg); border: 0; border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); cursor: pointer; }
+.clogem-back-to-top:hover { color: var(--accent); }
+.clogem-back-to-top[hidden] { display: none; }
+@media (max-width: 50rem) { .clogem-back-to-top { right: 1rem; bottom: 1.5rem; } }
+
 /* ---- Phase 2: catalogue pages ---- */
 .clogem-catalogue__header { margin-bottom: 1.5rem; }
 .clogem-catalogue__img { max-height: 12rem; border-radius: 8px; }
@@ -448,14 +551,53 @@ img { max-width: 100%; height: auto; }
 .clogem-catalogue__sub { margin-top: 0.75rem; padding-left: 0.75rem; border-left: 2px solid var(--borderColor); }
 .clogem-catalogue__sub h4 { margin: 0.25rem 0; }
 
-/* ---- Phase 2: TOC bar ---- */
-.clogem-shell--toc { grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr) minmax(11rem, 14rem); }
+/* ---- Phase 2: TOC bar ----
+ * P4-B2b: beside a sidebar the TOC shows from 80rem, as vdoing's, in a
+ * shell 18rem wider; below that the page is sidebar | main. Without a
+ * sidebar it shows above 64rem, in the 62rem shell. */
 .clogem-shell--single.clogem-shell--toc { grid-template-columns: minmax(0, 1fr) minmax(11rem, 14rem); }
 @media (max-width: 64rem) {
-  .clogem-shell--toc, .clogem-shell--single.clogem-shell--toc { grid-template-columns: minmax(0, 1fr); }
-  .clogem-toc { display: none; }
+  .clogem-shell--single.clogem-shell--toc { grid-template-columns: minmax(0, 1fr); }
+  .clogem-shell--single > .clogem-toc { display: none; }
 }
-.clogem-toc { position: sticky; top: 4rem; align-self: start; font-size: 0.85rem; border-left: 1px solid var(--borderColor); padding-left: 0.75rem; }
+@media not all and (min-width: 80rem) { .clogem-shell--toc:not(.clogem-shell--single) > .clogem-toc { display: none; } }
+@media (min-width: 80rem) {
+  .clogem-shell--toc:not(.clogem-shell--single) {
+    grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr) minmax(11rem, 14rem);
+    gap: 1.5rem; max-width: calc(var(--maxWidth) + 18rem);
+  }
+  .clogem-shell--toc:not(.clogem-shell--single) > .clogem-toc { padding-right: 0.5rem; }
+  /* P4-B2b.1: :right-menu-bar false dropped the TOC; the article takes its
+   * room (584 px at 1280 in the 62rem shell), as vdoing's does */
+  .clogem-shell--wide { max-width: calc(var(--maxWidth) + 18rem); }
+}
+/* P4-B2b: the sidebar's collapse button, first in the main column. Only
+ * js/nav.js reveals it and sets `is-sidebar-collapsed`, and only above
+ * 50rem does either take effect: the drawer always shows the sidebar */
+.clogem-sidebar-toggle { float: inline-start; display: inline-flex; align-items: center; justify-content: center;
+  width: 1.75rem; height: 1.75rem; margin: -0.15rem 0.5rem 0 -0.35rem; padding: 0; font: inherit; font-size: 1rem;
+  color: var(--textColorSubtle); background: none; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
+.clogem-sidebar-toggle:hover { border-color: var(--borderColor); color: var(--textColor); }
+.clogem-sidebar-toggle[hidden], .clogem-sidebar-toggle[aria-expanded="false"] .is-expanded,
+.clogem-sidebar-toggle[aria-expanded="true"] .is-collapsed { display: none; }
+[dir="rtl"] .clogem-sidebar-toggle .clogem-icon { transform: scaleX(-1); }
+@media (max-width: 50rem) { .clogem-sidebar-toggle { display: none; } }
+@media not all and (max-width: 50rem) {
+  .clogem-shell.is-sidebar-collapsed { grid-template-columns: minmax(0, 1fr); }
+  .clogem-shell.is-sidebar-collapsed > .clogem-sidebar { display: none; }
+  /* widened past 50rem, the aside is in the drawer until js/nav.js moves it
+   * back: never laid out in the navbar, main keeps its column, and the
+   * reading position stays put (B2b.1) */
+  .clogem-navbar__drawer > .clogem-sidebar { display: none; }
+  .clogem-shell:not(.clogem-shell--single, .clogem-shell--home, .is-sidebar-collapsed):not(:has(> .clogem-sidebar)) > .clogem-main { grid-column: 2; }
+}
+@media (min-width: 80rem) {
+  .clogem-shell--toc.is-sidebar-collapsed:not(.clogem-shell--single) { grid-template-columns: minmax(0, 1fr) minmax(11rem, 14rem); }
+}
+/* stuck, it stays clear of the back-to-top button's band */
+.clogem-toc { position: sticky; top: calc(var(--navbarMeasured, var(--navbarHeight)) + 1rem); align-self: start; font-size: 0.85rem;
+  border-left: 1px solid var(--borderColor); padding-left: 0.75rem;
+  max-height: calc(100vh - var(--navbarMeasured, var(--navbarHeight)) - 6.2rem); overflow-y: auto; }
 .clogem-toc ul { list-style: none; margin: 0; padding: 0; }
 .clogem-toc li { padding: 0.15rem 0; }
 .clogem-toc li.level-3 { padding-left: 0.9rem; }
@@ -499,6 +641,16 @@ img { max-width: 100%; height: auto; }
  * page of the same colour (above). */
 .clogem-main { background: var(--mainBg); border-radius: 5px; padding: 1.25rem 1.5rem; align-self: start; }
 @media (max-width: 50rem) { .clogem-main { padding: 1rem; } }
+/* P4-B2b: vdoing's contentBgStyle patterns (Page.vue), on the main column of
+ * articles and catalogues (`:theme :content-bg-style` 1–6), in --linesColor
+ * over the card. Longhands only: the card's `background` above stays */
+.clogem-main.clogem-bg-style-1 { background-image: linear-gradient(90deg, var(--linesColor) 3%, transparent 3%),
+  linear-gradient(0deg, var(--linesColor) 3%, transparent 3%); background-position: center center; background-size: 20px 20px; }
+.clogem-main.clogem-bg-style-2 { background-image: repeating-linear-gradient(0deg, var(--linesColor) 0, var(--linesColor) 1px, transparent 0, transparent 50%); background-size: 30px 30px; }
+.clogem-main.clogem-bg-style-3 { background-image: repeating-linear-gradient(90deg, var(--linesColor) 0, var(--linesColor) 1px, transparent 0, transparent 50%); background-size: 30px 30px; }
+.clogem-main.clogem-bg-style-4 { background-image: repeating-linear-gradient(-45deg, var(--linesColor) 0, var(--linesColor) 1px, transparent 0, transparent 50%); background-size: 20px 20px; }
+.clogem-main.clogem-bg-style-5 { background-image: repeating-linear-gradient(45deg, var(--linesColor) 0, var(--linesColor) 1px, transparent 0, transparent 50%); background-size: 20px 20px; }
+.clogem-main.clogem-bg-style-6 { background-image: radial-gradient(var(--linesColor) 1px, transparent 1px); background-size: 10px 10px; }
 .clogem-home-right > section { background: var(--mainBg); border-radius: 5px; padding: 0.25rem 1rem 0.75rem; }
 .clogem-home-right > section + section { margin-top: 1rem; }
 /* P4-B2a.1: a home whose main column lists post cards is no box itself —
@@ -506,6 +658,7 @@ img { max-width: 100%; height: auto; }
  * home's own text above the list is the card instead */
 html[class] .clogem-main.clogem-main--posts { background: none; border: 0; border-radius: 0; box-shadow: none; padding: 0; }
 .clogem-main--posts > .clogem-content { background: var(--mainBg); border-radius: 5px; padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
+@media (max-width: 50rem) { .clogem-main--posts > .clogem-content { padding: 1rem; } }
 .theme-style-card :is(.clogem-main, .clogem-sidebar, .clogem-home-right > section, .clogem-main--posts > .clogem-content) {
   box-shadow: 0 1px 2px var(--shadowColor);
 }
@@ -573,6 +726,10 @@ html.theme-mode-dark {
 }
 
 /* ---- Phase 4 B1: reduced motion and print (D-P4-4) ---- */
+/* B2b.1: js/nav.js sets clogem-loading until the page has loaded, so the
+ * browser's own jump to a fresh load's #fragment is instant; every jump after
+ * it — a click, a tap, a key, history — is smooth. Without JS, all are */
+@media (prefers-reduced-motion: no-preference) { html:not(.clogem-loading) { scroll-behavior: smooth; } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     transition: none !important;
@@ -605,7 +762,9 @@ html.theme-mode-dark {
     color-scheme: light;
   }
   .clogem-navbar, .clogem-sidebar, .clogem-toc, .clogem-mode, .clogem-search,
-  .clogem-comments, .clogem-lang-banner, .clogem-prev-next, .header-anchor { display: none !important; }
+  .clogem-comments, .clogem-lang-banner, .clogem-prev-next, .header-anchor,
+  .clogem-navbar__toggle, .clogem-navbar__drawer, .clogem-langs__toggle,
+  .clogem-sidebar-toggle, .clogem-page-button, .clogem-back-to-top { display: none !important; }
   .clogem-shell, .clogem-shell--toc, .clogem-shell--single.clogem-shell--toc {
     display: block; max-width: none; padding: 0;
   }
@@ -617,6 +776,7 @@ html.theme-mode-dark {
                   .clogem-main--posts > .clogem-content) {
     border: 0; padding: 0; border-radius: 0; box-shadow: none; transition: none;
   }
+  html[class] .clogem-main { background-image: none; }   /* no pattern */
   .clogem-content a { text-decoration: underline; }
   pre.clogem-code, pre.clogem-code > code { white-space: pre-wrap; overflow: visible; }
   pre.clogem-code > code { display: block; }

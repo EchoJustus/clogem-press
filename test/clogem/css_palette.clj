@@ -151,28 +151,40 @@
     (* (parse-double n) (if (= "px" u) 1 16))))
 
 (defn- media-true?
-  "One media query list against `env` {:print? :dark? :width}. A feature
-  this does not know throws, so a new query cannot be silently false."
+  "One media query list against `env` {:print? :dark? :width :scripting?}.
+  A feature this does not know throws, so a new query cannot be silently
+  false. A query may start with `not`, which negates it whole (P4-B2b:
+  `not all and (max-width: 50rem)`); `(scripting: enabled)` follows
+  `:scripting?`, default true, and `initial-only` is false, as in
+  Chromium."
   [env q]
-  (boolean
-   (some (fn [one]
-           (every? (fn [term]
-                     (let [term (str/trim term)]
-                       (cond
-                         (= term "print")  (:print? env)
-                         (= term "screen") (not (:print? env))
-                         (= term "all")    true
-                         :else
-                         (let [[_ f v] (or (re-matches #"\(\s*([a-z-]+)\s*:\s*([^)]+?)\s*\)" term)
-                                           (throw (ex-info (str "unknown media query: " term) {})))]
-                           (case f
-                             "prefers-color-scheme"   (= v (if (:dark? env) "dark" "light"))
-                             "prefers-reduced-motion" (= v "no-preference")
-                             "max-width"              (<= (:width env 1280) (length-px v))
-                             "min-width"              (>= (:width env 1280) (length-px v))
-                             (throw (ex-info (str "unknown media feature: " f) {})))))))
-                   (str/split (str/trim one) #"\s+and\s+")))
-         (split-top q \,))))
+  (let [term-true?
+        (fn [term]
+          (let [term (str/trim term)]
+            (cond
+              (= term "print")  (:print? env)
+              (= term "screen") (not (:print? env))
+              (= term "all")    true
+              :else
+              (let [[_ f v] (or (re-matches #"\(\s*([a-z-]+)\s*:\s*([^)]+?)\s*\)" term)
+                                (throw (ex-info (str "unknown media query: " term) {})))]
+                (case f
+                  "prefers-color-scheme"   (= v (if (:dark? env) "dark" "light"))
+                  "prefers-reduced-motion" (= v "no-preference")
+                  "max-width"              (<= (:width env 1280) (length-px v))
+                  "min-width"              (>= (:width env 1280) (length-px v))
+                  "scripting"              (case v
+                                             "enabled"      (:scripting? env true)
+                                             "none"         (not (:scripting? env true))
+                                             "initial-only" false
+                                             (throw (ex-info (str "unknown scripting value: " v) {})))
+                  (throw (ex-info (str "unknown media feature: " f) {})))))))]
+    (boolean
+     (some (fn [one]
+             (let [[_ neg body] (re-matches #"(?s)\s*(not\s+)?(.*?)\s*" one)]
+               (not= (boolean neg)
+                     (every? term-true? (str/split body #"\s+and\s+")))))
+           (split-top q \,)))))
 
 ;; ---------------------------------------------------------------------------
 ;; The cascade
@@ -299,9 +311,10 @@
 (defn surfaces
   "[[name opaque-colour] …] — every background text sits on, each
   composited over what lies under it: the page (over the canvas), the
-  card and the sidebar over the page, a custom block over the card, and
-  the navbar's translucent --blurBg over the page and over a card
-  scrolling beneath it."
+  card and the sidebar over the page, a custom block over the card, the
+  navbar's translucent --blurBg over the page and over a card scrolling
+  beneath it, and a background pattern's --linesColor over the card, once
+  and (P4-B2b.1: where pattern 1's two gradients cross) twice."
   [p]
   (let [body (over (p "--bodyBg") white)
         main (over (p "--mainBg") body)]
@@ -310,7 +323,10 @@
      ["--sidebarBg" (over (p "--sidebarBg") body)]
      ["--customBlockBg" (over (p "--customBlockBg") main)]
      ["--blurBg over --bodyBg" (over (p "--blurBg") body)]
-     ["--blurBg over --mainBg" (over (p "--blurBg") main)]]))
+     ["--blurBg over --mainBg" (over (p "--blurBg") main)]
+     ;; P4-B2b: a background pattern's lines on the card
+     ["--linesColor over --mainBg" (over (p "--linesColor") main)]
+     ["--linesColor twice over --mainBg" (over (p "--linesColor") (over (p "--linesColor") main))]]))
 
 (def foregrounds
   "Text, its hover/link-lighten colour, muted text and the accent (links)."

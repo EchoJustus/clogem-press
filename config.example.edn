@@ -129,6 +129,10 @@
  ;; dist/clogem/overrides/custom.css, cache-busted, linked LAST — after the
  ;; theme's and Pagefind's stylesheets. Write `.theme-mode-dark { … }`, not
  ;; `body.theme-mode-dark` (0.2.0's classes were on <body>).
+ ;;
+ ;; Smooth scrolling has no key: in-page jumps are always smooth, unless the
+ ;; reader's system asks for reduced motion (vdoing's `smoothScroll` is
+ ;; ignored, with a warning to remove it).
  :theme {:default-mode :auto          ; :auto | :light | :dark | :read; anything else
                                       ; is a config error (giscus starts :read as light)
          :page-style   :card          ; :card | :line — vdoing's pageStyle. :card: the main
@@ -138,11 +142,30 @@
                                       ; colour. Anything else warns and falls back to :card
          :sidebar-open true           ; true → every sidebar group starts open;
                                       ; false → only the current article's trail
-                                      ; (vdoing's `sidebar.collapsable`, inverted; vdoing's
-                                      ; `sidebarOpen` is the planned :sidebar-collapsed)
+                                      ; (vdoing's `sidebar.collapsable`, inverted)
+         :sidebar-collapsed false     ; vdoing's sidebarOpen, inverted: true → an article's
+                                      ; sidebar starts collapsed. A button at the top of
+                                      ; the article collapses and expands it, above 50rem
+                                      ; (the mobile drawer always shows it). Needs JS:
+                                      ; without it the sidebar shows. Not kept across pages
          :sidebar-depth 2             ; right-hand TOC depth, an integer 0–5: 0 = no TOC,
                                       ; 1 = h2, 2 = h2–h3, 3 = h2–h4; front matter
                                       ; `sidebarDepth:` overrides per page
+         :right-menu-bar true         ; vdoing's rightMenuBar: false drops the right-hand
+                                      ; TOC (and js/toc.js) from every page; headings
+                                      ; keep their ids and anchors. The home's right bar
+                                      ; follows its front matter's hideRightBar instead
+         :page-button true            ; vdoing's pageButton: the previous and next pages
+                                      ; again, as chevrons fixed at the window's edges,
+                                      ; shown from 84rem (1344 px), where they cover
+                                      ; nothing; false omits them
+         :content-bg-style nil        ; vdoing's contentBgStyle: nil, or 1–6 for a faint
+                                      ; pattern on the article and catalogue column:
+                                      ; 1 grid, 2 horizontal lines, 3 vertical lines,
+                                      ; 4 and 5 the two diagonals, 6 dots
+         :back-to-top true            ; a back-to-top button at the bottom right, shown
+                                      ; once the page is scrolled 100 px down (needs
+                                      ; JS; vdoing always shows it); false omits it
          :per-page 10                 ; a positive integer: articles per page on the
                                       ; homepage and on category / tag pages (/page/2/, …)
          :fonts {:tamil :system}      ; :system | :self-hosted  (§6.9, D-P3-12)

@@ -14,10 +14,11 @@
   ;; rows (layout/fallback-badge).
   (layout/document
      (assoc ctx :title (:title variant))
-     (layout/navbar ctx)
+     (layout/navbar (assoc ctx :sidebar? (layout/sidebar? ctx)))
      (layout/shell
       ctx
-      [:main.clogem-main
+      [:main.clogem-main (layout/content-bg ctx)
+       (layout/sidebar-toggle ctx)
        (layout/breadcrumbs ctx group)
        ;; D-P3-9: only an article's own body is indexed; once any page
        ;; carries data-pagefind-body, Pagefind skips every page that does
@@ -29,6 +30,7 @@
         (layout/variant-bar ctx)
         [:div.clogem-content (layout/search-terms ctx group) content-hiccup]]
        (layout/prev-next ctx)
+       (layout/page-buttons ctx)
        (layout/comments ctx)])
      (layout/footer ctx)))
 

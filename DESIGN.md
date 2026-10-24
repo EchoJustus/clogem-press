@@ -783,6 +783,10 @@ any more). Note what arrived: `:generator`, `:langs`, `:i18n`, `:analytics`, `:s
 
  :theme {:default-mode :auto          ; :auto | :light | :dark | :read (§11.2 item 49)
          :page-style :card :sidebar-open true
+         ;; the page chrome (B2b): vdoing's sidebarOpen (inverted), rightMenuBar,
+         ;; pageButton and contentBgStyle (nil | 1–6), and clogem's back to top
+         :sidebar-collapsed false :right-menu-bar true :page-button true
+         :content-bg-style nil :back-to-top true
          :banner-bg "auto" :body-bg-img nil :title-badge true
          :blogger {:avatar "…" :name "…" :slogan "…"}
          :social  {:icons [{:icon :github :title "GitHub" :link "…"}]}
@@ -1860,9 +1864,22 @@ order; each builds on A:
     documented). *Done (§11.3 items 2–5 and 9).*
   - **B2b — Mobile layout**: `--navbarHeight` and anchors, the one-row navbar, the mobile drawer
     and `js/nav.js`, sidebar collapse, the right menu bar, page buttons, background patterns, back
-    to top and smooth scroll.
+    to top and smooth scroll. *Done:* `--navbarHeight`, anchors and smooth scroll; the
+    one-row desktop navbar with a language dropdown; the 80rem three-column shell; the mobile
+    navbar, the drawer and `js/nav.js`, with its no-JS and failed-script fallbacks; the home's
+    text-card padding (§11.3 item 9); and the five chrome keys of §11.3 item 16 — sidebar
+    collapse, the right menu bar switch, page buttons, background patterns and back to top.
 - **F — Analytics, verification, static root** (1 d) (§11.3 items 14, 15). *Done.*
-- **E1 — Blog identity, banner, htmlModules** (2.75 d) (§11.3 item 13).
+- **E1 — Blog identity, banner, htmlModules** (2.75 d) (§11.3 item 13). *From B2b:* the
+  `sidebar-t`/`sidebar-b` slots go inside `aside.clogem-sidebar`, around its `<nav>`, as vdoing's
+  (`Sidebar.vue`), so `nav.js`'s move carries them into the drawer and a collapse hides them; their
+  CSS must not depend on where the aside sits (no `.clogem-shell > .clogem-sidebar + …`, no
+  `nth-child`) and must fit the drawer (`max-width: 100%`). A mobile blogger card goes into
+  `#clogem-drawer`, rendered on the server. `window-rb` takes its inline-end offset from B2b's
+  back-to-top button, not vdoing's 80px, and stays below the navbar's z-index 10 or is hidden at
+  ≤ 960px; inside the navbar, `position: fixed` is relative to the navbar. Anything E1 or E2 add to
+  the navbar goes into the drawer at ≤ 50rem, or must fit the row: at 320 px the brand gets about
+  160 px.
 - **E2 — Article-page parity** (1.75 d): edit link, last-updated, update bar, `titleTag` rows,
   logo/repo, `pageClass`, a 404 page (§11.3 item 16).
 - **G — Cross-language search, then release 0.3.0** (2 d) (§11.3 item 17).
@@ -2999,6 +3016,64 @@ their own findings. Item 19 onward are corrections.
    inset on the scrollable `<code>`; a focused heading anchor is shown. The ring reaches 3:1 on every
    surface and the code ring on `--codeBg`, in every mode (`page_style_test`); 40 Tab stops at 1280
    and 360 px, light and dark, all draw it (`modes.test.mjs`).
+   *B2b.* `:root { --navbarHeight: 3.6rem }` (vdoing's); the navbar is exactly that tall, one row,
+   and `:where(body *) { scroll-margin-top: var(--jumpOffset) }` (`--navbarHeight` + 0.75rem;
+   the navbar's measured height, `--navbarMeasured`, when `nav.js` has set it) replaces the h2–h6
+   `scroll-margin-top`, so the home's `h1`, any `id`, an `<a name>`, `scrollIntoView()` and focus
+   scrolling land below it too; `toc.js` measures the navbar's bottom, and (B2b.1) at the end of a
+   page that scrolls, where the last headings never reach that line, marks the section holding the
+   followed fragment while the target sits where its jump left it, else the last heading in view; a
+   `ResizeObserver` on the root re-reads a page that grows (giscus). B2b.1: not a root
+   `scroll-padding-top`, which covered the sticky navbar's own controls, so Chromium centred one on
+   focus and moved the page; inside `.clogem-navbar` the margin is 0. B2b.2: the margin places an
+   element only once a scroll happens, and Chromium 141 does not scroll a focus whose box is already
+   in the viewport (Chromium 153 does, the margin included), so Shift+Tab left one at y 0–57 under
+   the navbar (WCAG 2.2 SC 2.4.11); `nav.js` handles `focusin`: a `:focus-visible` element outside
+   the navbar whose top is above the navbar's bottom is scrolled by `scrollBy` (the root's
+   scroll-behavior, so instant under reduced motion) to its `scroll-margin-top`. Chosen over (a) the
+   root padding back with a negative `scroll-margin-top` on the navbar's controls, which Chromium
+   141 honoured only in part (a Tab into the nav still moved the page 13–18 px, and other values
+   up to 663 px), and (c) a fixed navbar with a padded page, which a wrapped long nav and the
+   static no-JS navbar at 50rem and below would each need their own offset for. Without JS an old
+   Chromium keeps the gap above 50rem, where the navbar is sticky. Smooth scrolling is always on,
+   under `prefers-reduced-motion: no-preference` only, as `html:not(.clogem-loading)`: `nav.js` sets
+   that class when it runs and removes it two frames after `load` or on the first click (capture
+   phase: a tap, Enter on a link and back to top are clicks), so the browser's own jump to a fresh
+   load's `#id` (right after DOMContentLoaded) is instant and a reader's jump never is; history
+   traversal before `load` is (B2b.1). A `:focus-within`/`:hover` rule was tried and dropped:
+   Chromium focuses a clicked link on mousedown but clears focus before any fragment jump, by mouse
+   or by key, so only `:hover` kept clicks smooth, and Enter on a link and history traversal were
+   instant. The element margins, unlike the root's padding, do not shorten Space/Page Down's step
+   (87.5% of the window), so under ~460 px of window height a line passes under the navbar — as on
+   `main`; the root padding's other effect, on the navbar's own controls, was the bug (vdoing's `smoothScroll` is off by default; here it
+   is *implicit*, a known key that warns and is ignored). Above 50rem the language switcher is a `<details>` dropdown whose list is its next
+   sibling (CSS cannot show a closed `<details>`' content where `::details-content` is missing), and
+   the search trigger is its icon alone at ≤ 64rem. "Above 50rem" is written
+   `not all and (max-width: 50rem)`, so no fractional width between 800 and 801 px falls in a gap.
+   Columns: beside a sidebar the TOC now shows only from 80rem, as vdoing's (`Page.vue` hides it at
+   ≤ 1279px), in a three-column shell `calc(var(--maxWidth) + 18rem)` wide with a 1.5rem gap (the
+   article 632 px at 1280, 615 beside a 17 px scrollbar; 2rem would give 599) — so it is **hidden at
+   1025–1279 px, where it used to show**, and that range is sidebar | article. A `--single` page keeps
+   its TOC above 64rem. The TOC's `max-height` leaves the back-to-top button's band clear.
+   At ≤ 50rem, with `@media (scripting: enabled)`: one sticky row (a `<details>` menu toggle, the
+   brand, search, mode) and `#clogem-drawer` below it, `position: absolute` (the navbar's
+   `backdrop-filter` makes it the containing block of anything `fixed`), shown only while the toggle
+   is open; `js/nav.js` moves the sidebar in while the menu summary is rendered (read from the CSS,
+   so no `(scripting)` support means no move). B2b.1: Chromium lays out a widened page before any
+   script runs, a `matchMedia` change event included (B2b.2 drops that listener: `resize` fires on
+   every flip a viewport or zoom change makes, and a default font-size change, which flips the
+   `rem` query with no resize, fired no change event in Chromium 141 or 153 either), so above 50rem the drawer's aside is
+   `display: none` and main keeps column 2 until the move back — laid out in the navbar
+   (`display: contents`) it had shifted the reading position by ~400 px. A long nav wraps the
+   navbar; `nav.js` measures it when it runs, before the load's jump to `#id` (a page with no other
+   subresource loads before any `ResizeObserver` callback), and on every resize, writing
+   `--navbarMeasured` into an adopted stylesheet (no `style` attribute); the jump offset and the
+   stuck TOC follow. The no-JS rules sit outside any
+   scripting query: the old wrapping navbar, `static`, every link shown, `--jumpOffset: 0.75rem`.
+   Above 50rem a dropdown also closes when focus leaves it for another control (`focusout` with a
+   `relatedTarget`: a mousedown on its unfocusable padding blurs with none, and closing the
+   `<details>` then crashed Chromium 153's renderer) or for a frame (window `blur`).
+   A failed `nav.js` leaves the native `<details>` toggle working.
 10. **Highlighting on by default (C) — done.** `:highlight {:provider :chroma}`; `:none` or `--no-highlight`
     turns it off. A fetch failure is an error in `build` and a warning in `dev`. Line numbers are CSS
     counters, never text — Chroma's own numbers pollute the Pagefind index. One Chroma process per
@@ -3403,20 +3478,65 @@ their own findings. Item 19 onward are corrections.
 16. **Parity details (E2, and A).** `:content :edit-link {:repo :branch :dir}` plus `editLink: false`;
     `:theme :last-updated` from one `git log` pass; `:theme :sidebar-collapsed`, keeping
     `:sidebar-open`'s 0.2.0 meaning; right-menu-bar, page-button, content-bg-style, back-to-top,
-    logo, repo link, hero keys, `pageClass`, and a 404 page (`noindex`, not in the sitemap).
+    logo, repo link, hero keys, `pageClass`, and a 404 page (`noindex`, not in the sitemap). *The
+    five chrome keys — `:sidebar-collapsed`, `:right-menu-bar`, `:page-button`,
+    `:content-bg-style`, `:back-to-top` — are done in B2b (below).*
     *Fix round P4-A.1.* `:site :author` is checked only in its named shape (`:name`/`:link`, keyword
     or string keys, as `i18n/resolve-author` reads them); its per-language shape is user data. `:nav`
     items are walked (`:nav 1 :items 0 :lnk`), never their per-language `:text`. A bad `:tools
     :chroma` or `:tools :fswatcher` pin is a **warning** and is repaired to the built-in pin — nothing
     runs either tool yet, and 0.2.0's own §5.6 sketch (a single `:sha256` string) passed 0.2.0;
     Pagefind's pin stays an error (`config/fatal-tool-ids`, which C and D extend). vdoing's
-    `sidebarOpen` is the planned `:theme :sidebar-collapsed`, inverted — it says whether the sidebar
+    `sidebarOpen` is `:theme :sidebar-collapsed` (done in B2b), inverted — it says whether the sidebar
     *panel* starts open (vdoing `Layout.vue` `created()`); clogem's `:sidebar-open` is vdoing's
     `sidebar.collapsable`, inverted. `sidebar` is *implicit* (the structured sidebar is what
     clogem-press always builds), `algolia` *deferred*, `bodyBgImgInterval` planned; `vdoing-keys` now
     covers every key vdoing's `themeConfig` declares. Retired clogem keys have their own message
     (`config/retired-keys`: `:generator :ref`, D-14; `:tools :chroma :style`, now `:highlight`). A
     scalar `:theme :html-modules` warns instead of crashing every task.
+    *B2b.* The page chrome's five `:theme` keys (`:sidebar-collapsed`, `:right-menu-bar`,
+    `:page-button`, `:content-bg-style`, `:back-to-top`) have one check, `config/check-page-chrome!`:
+    nil is the default, and any other bad value is a **warning** that names the key, the value, what
+    it must be and the default, which it is repaired to. vdoing's `smoothScroll` is *implicit*:
+    smooth scrolling is always on unless the reader asks for reduced motion, and there is no key.
+    An `:implicit` entry of `vdoing-keys` carries its own note and hint.
+    `:right-menu-bar false` (vdoing's `rightMenuBar`) drops the TOC aside, its shell class and
+    `js/toc.js` (`layout/toc?`); headings keep their ids and anchors. B2b.1: a sidebar page whose
+    TOC it dropped gets `clogem-shell--wide`, the TOC shell's `max-width` from 80rem, so the article
+    takes the TOC's room (584 px in the 62rem shell at 1280). vdoing nests the headings under
+    the sidebar's link when the right menu is off; clogem-press does not (the sidebar lists articles
+    only). The home's right bar follows `hideRightBar`.
+    `:sidebar-collapsed true` puts `data-clogem-collapsed` on a sidebar page's shell; only
+    `js/nav.js` reads it, setting `is-sidebar-collapsed` on the shell, which CSS applies above 50rem
+    only — so without JS, or with a failed `nav.js`, the sidebar shows, and the drawer always shows
+    it. The button (`:page/sidebar`, `aria-expanded`, `aria-controls="clogem-sidebar"`, a chevron
+    mirrored in RTL) is the main column's first child, outside the article, rendered `hidden` until
+    `nav.js` reveals it. The state is kept across resizes, not across pages.
+    vdoing's `pageButton` (`:page-button`, default true) is a pair of prev/next arrows: two `<a>`
+    duplicates of `prev-next` (`aria-hidden`, `tabindex="-1"`, the target's title and `lang`, no
+    `rel`), after it in the main column and outside the Pagefind body, `position: fixed` at the
+    viewport's edges, vertically centred, 70 px tall, opacity 0.55 (1 on hover), z-index 5. vdoing
+    shows them from 961 px, over the content; here they show from `min-width: 84rem`, where the 80rem
+    shell's gutter, `(100vw − 80rem) / 2 + 1.25rem`, is 52 px — 50 px wide, and 80 px from 88rem
+    (an 84 px gutter). Beside a classic scrollbar they reach a few px into the sidebar's and the
+    TOC's padding, never onto a link (owner's decision).
+    `:back-to-top` (clogem's own key; vdoing always shows it, `Buttons.vue`) renders a `hidden`
+    `<button>` last in `<body>`, outside the navbar (whose `backdrop-filter` would make it the
+    containing block), named `:page/back-to-top`, with the sprite's `arrow-up`. `nav.js` shows it
+    while `scrollY > 100` (vdoing's threshold, read once per animation frame), hides it as soon as
+    it is used — focus is left on `<body>` with the next Tab starting at the top — and calls
+    `scrollTo({top: 0})`, smooth unless reduced motion. `position: fixed` at `right: 2rem; bottom:
+    2.5rem`, 1rem and 1.5rem at ≤ 50rem (vdoing switches at 959px), 2.2rem round on `--blurBg`,
+    z-index 5 (vdoing's is 11): below the navbar, so the drawer covers it. The TOC's `max-height`
+    keeps its bottom above it.
+    vdoing's `contentBgStyle` (`:content-bg-style`, nil or 1–6) puts `clogem-bg-style-N` on the main
+    column of articles and catalogues, where vdoing's `Page.vue` draws it, and nowhere else: its six
+    patterns in `background-image`/`background-size`/`background-position` only (`0deg` for vdoing's
+    unitless `0`), never the shorthand, over the card's own `background`. `--linesColor` is in every
+    mode block, vdoing's `rgba(50, 0, 0, 0.05)` in light and `rgba(125, 125, 125, 0.05)` in dark and
+    auto, and `rgba(50, 0, 0, 0.03)` in read (B2b.1); the palette check composites it over the card
+    once and twice (pattern 1's crossings, where read's 0.05 took the accent to 4.22:1). Print draws
+    none.
     *Unknown-key warnings — done in A (part of D-P4-16).* `config/known-keys` is the one table of
     every section's keys ({path → {key :ok|:planned}}, `:*` for any key); `check-keys!` walks the
     site.edn as written and warns, never errors, on an unknown key — naming its path and the nearest

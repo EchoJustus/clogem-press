@@ -6,6 +6,7 @@
  :nav/search           "搜尋"
  :nav/language         "語言"
  :nav/home             "首頁"
+ :nav/menu             "選單"
  :page/last-updated    "最後更新於 {{date}}"
  :page/prev            "上一篇"
  :page/next            "下一篇"
@@ -40,6 +41,7 @@
  :page/categories      "分類"
  :page/tags            "標籤"
  :page/sidebar         "側邊欄"
+ :page/back-to-top     "返回頂部"
  :container/theorem    "定理"
  ;; Search UI (D-P3-10): Pagefind 1.5.2 translations/zh-tw.json.
  ;; [SEARCH_TERM], [COUNT] and [DIFFERENT_TERM] are Pagefind's placeholders; keep them.

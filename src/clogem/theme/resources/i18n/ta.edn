@@ -3,6 +3,9 @@
  :nav/search           "தேடு"
  :nav/language         "மொழி"
  :nav/home             "முகப்பு"
+ ;; P4-B2b: the mobile menu toggle. Awaiting native review (CHANGELOG,
+ ;; Unreleased, "Needs native review (B2b)").
+ :nav/menu             "மெனு"
  :page/last-updated    "கடைசியாக {{date}} அன்று புதுப்பிக்கப்பட்டது"
  :page/prev            "முந்தையது"
  :page/next            "அடுத்தது"
@@ -37,6 +40,9 @@
  :page/categories      "பிரிவுகள்"
  :page/tags            "குறிச்சொற்கள்"
  :page/sidebar         "பக்கப்பட்டை"
+ ;; P4-B2b: the back-to-top button. Awaiting native review (CHANGELOG,
+ ;; Unreleased, "Needs native review (B2b)").
+ :page/back-to-top     "மேலே செல்"
  :container/theorem    "தேற்றம்"
  ;; Search UI (D-P3-10): Pagefind 1.5.2 translations/ta.json.
  ;; [SEARCH_TERM], [COUNT] and [DIFFERENT_TERM] are Pagefind's placeholders; keep them.

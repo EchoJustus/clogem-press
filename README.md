@@ -283,6 +283,91 @@ border, radius or padding — but keeps a highlighted code line's accent bar.
 Everything focusable draws one keyboard focus ring: 2px, in the accent (in the
 code colour inside a code block), at 3:1 or better on what is behind it.
 
+**The navbar** is one row, `--navbarHeight` (3.6rem) tall: the brand at
+the start; the nav, the languages, search and the mode button at the end.
+Above 50rem the languages are a dropdown, as vdoing's; it and the nav's
+dropdowns close on Escape, a click outside or when focus leaves them. At
+64rem and below the search trigger is its icon alone, still named in the
+page's language.
+A nav too long for the row wraps its own items onto a second line inside
+the navbar, which grows taller rather than spill over the page, and keeps
+the languages, search and mode on the row's end. With JavaScript the jump
+offset below follows the navbar's real height (`js/nav.js` measures it);
+without, it assumes one row, so keep the top level short and put the rest
+in a dropdown (`:items`). Every jump to a fragment — a link, the TOC, a
+fresh load of `…/#id` — and every focus move by Tab lands 0.75rem below the
+navbar (a `scroll-margin-top` on every element outside the navbar, so an
+`<a name>` target and `scrollIntoView()` too; with JavaScript the navbar's
+own controls never scroll the page), headings or not. Scrolling is smooth
+unless the reader's system asks for reduced motion, except the browser's
+own jump to a fresh load's `#id`, which `js/nav.js` keeps instant (without
+JavaScript it animates too); until the page has loaded, history back and
+forward are instant as well, while a click is smooth. Space and Page Down
+step by the browser's usual 87.5% of the window, so in a window under about
+460 px tall the line just above the old fold passes under the sticky
+navbar, as before B2b. There is no key for smooth scrolling
+(vdoing's `smoothScroll`, off by default there, is known and ignored: a
+site that sets it is told to remove it).
+
+**Mobile layout.** At 50rem (800 px) and below the navbar is one sticky
+row: a menu button, the brand (cut short with an ellipsis), the search
+icon and the mode button. The menu button opens a drawer below the
+navbar with the nav, every language and, on an article, the sidebar,
+which `js/nav.js` moves there (and back, if the window widens). Escape, a
+click outside or following a link closes it. Without JavaScript — or in
+a browser without `@media (scripting)` — the navbar is the full wrapping
+one, every link shown, and it does not stick; the sidebar follows the
+article. If `js/nav.js` fails to load, the menu button still opens the
+drawer (it is a `<details>`), and the sidebar stays below the article.
+One limitation: without JavaScript, Tab reaches the sidebar before the
+article, which is drawn above it, because the sidebar comes first in the
+page.
+
+**Columns.** Above 50rem an article with a sidebar is sidebar | article;
+from 80rem (1280 px) its TOC joins them on the right, in a shell 18rem
+wider than `--maxWidth`, as vdoing's TOC shows only from 1280 px. A page
+with a TOC and no sidebar shows it above 64rem.
+`:theme :right-menu-bar false` (vdoing's `rightMenuBar`) drops that TOC
+from every page; headings keep their ids and `#` anchors, and from 80rem
+the article takes the TOC's room, as vdoing's does. vdoing nests the
+headings under the sidebar's link instead; clogem-press does not. The home
+page's right bar is not the TOC: its front matter's `hideRightBar` decides.
+
+**Sidebar collapse.** Above 50rem an article's sidebar has a collapse
+button at the top of the article (a chevron); it hides the sidebar and
+gives the article its column, and the same button brings it back. The
+reader's choice holds while they stay on the page, across resizes, but it
+is **not kept across pages**: each page starts as `:theme
+:sidebar-collapsed` says (default `false`; vdoing's `sidebarOpen`,
+inverted). The button needs JavaScript; without it the sidebar always
+shows. In the mobile drawer the sidebar always shows.
+
+**Page buttons.** On by default, as in vdoing (`pageButton`): an article
+or catalogue page with a previous or next page repeats those two links as
+chevrons fixed at the window's left and right edges, half-opaque until
+hovered. They show only from 84rem (1344 px), where the window is wide
+enough for them to cover nothing, and print never shows them. They are
+duplicates for the mouse: screen readers and the keyboard use the
+previous/next links at the end of the article. `:theme :page-button false`
+omits them.
+
+**Background patterns.** `:theme :content-bg-style` (vdoing's
+`contentBgStyle`) draws a faint pattern on the column of articles and
+catalogue pages: `1` a grid, `2` horizontal lines, `3` vertical lines, `4`
+and `5` the two diagonals, `6` dots; the default, `nil`, draws none. The
+lines are `--linesColor` (5% opaque, lighter in dark mode, 3% in read
+mode, where pattern 1's crossings draw it twice), which you can
+set in `overrides/custom.css`; `bb test` checks that text keeps 4.5:1 on
+them. Print draws no pattern.
+
+**Back to top.** On by default, as in vdoing: once the page is scrolled
+more than 100 px down, a round arrow button shows at the bottom right
+(2rem from the right and 2.5rem from the bottom; 1rem and 1.5rem at 50rem
+and below). It scrolls smoothly to the top — instantly under reduced
+motion — and hides at once; the next Tab starts again at the navbar. It
+sits below the navbar, so the open mobile drawer covers it. It needs
+JavaScript; print never shows it. `:theme :back-to-top false` omits it.
+
 The mode and page-style classes are on `<html>`, unqualified:
 `.theme-mode-dark`, `.theme-style-card`. (0.2.0 put them on `<body>`; CSS
 written as `body.theme-mode-dark` must drop `body`.)
@@ -405,7 +490,7 @@ script-src 'self' 'sha256-aykGrfu05czJ6oIj+Xn+Qrjxa7JG8hF3RGl0W0liGmw='
 Pagefind needs `worker-src 'self'` and `'wasm-unsafe-eval'` (DESIGN.md §6.8,
 §11.2 items 42 and 49). The copy button's strings are a
 `<script type="application/json">` data block, which CSP does not govern;
-`js/code.js` is a same-origin file. A policy without the hash still gets the
+`js/code.js` and `js/nav.js` (the drawer) are same-origin files. A policy without the hash still gets the
 reader's mode: `js/mode.js` (same-origin) applies it, one frame late.
 
 Analytics adds no inline script: `'self'` covers `js/analytics.js`, and the

@@ -155,7 +155,9 @@ console.log(JSON.stringify([
   checked in highlight_test.clj, against every token colour."
   #{"--bodyBg" "--mainBg" "--sidebarBg" "--blurBg" "--customBlockBg" "--textColor"
     "--textLightenColor" "--borderColor" "--codeBg" "--codeColor" "--accent" "--textColorSubtle"
-    "--codeLineNumber" "--codeHlBg"})
+    "--codeLineNumber" "--codeHlBg"
+    ;; P4-B2b: the background patterns' lines
+    "--linesColor"})
 
 (defn- mode-blocks
   "{mode {property value}} — what each mode's OWN block declares (the full
@@ -212,9 +214,27 @@ console.log(JSON.stringify([
     (testing "print and reduced motion"
       (is (str/includes? css "@media print {"))
       (is (str/includes? css "@media (prefers-reduced-motion: reduce) {"))
+      ;; P4-B2b: smooth scrolling is always on, but only where the reader
+      ;; has not asked for reduced motion, and the reduce block still wins
+      (let [rules (cp/parse css)
+            smooth (filter #(some (fn [[_ v]] (str/includes? v "smooth")) (:decls %)) rules)]
+        (is (seq smooth))
+        (is (every? #(= ["(prefers-reduced-motion: no-preference)"] (:media %)) smooth)
+            "`smooth` appears only inside a (prefers-reduced-motion: no-preference) block")
+        ;; P4-B2b.1 item 6: not while js/nav.js's clogem-loading is on, so
+        ;; the load-time jump to a #fragment is instant
+        (is (= [["html:not(.clogem-loading)"]] (map :selectors smooth)))
+        (is (str/includes? (slurp "src/clogem/theme/resources/js/nav.js") "root.classList.remove(\"clogem-loading\")"))
+        (is (= ["scroll-behavior" "auto" true]
+               (some #(when (= "scroll-behavior" (first %)) %)
+                     (:decls (first (filter #(= ["(prefers-reduced-motion: reduce)"] (:media %)) rules)))))
+            "the reduce block keeps scroll-behavior: auto !important"))
       (let [print (subs css (str/index-of css "@media print {"))]
         (doseq [c [".clogem-navbar" ".clogem-sidebar" ".clogem-toc" ".clogem-mode" ".clogem-search"
-                   ".clogem-comments" ".clogem-lang-banner" ".clogem-prev-next" ".header-anchor" ".clogem-copy"]]
+                   ".clogem-comments" ".clogem-lang-banner" ".clogem-prev-next" ".header-anchor" ".clogem-copy"
+                   ;; P4-B2b
+                   ".clogem-navbar__toggle" ".clogem-navbar__drawer" ".clogem-langs__toggle"
+                   ".clogem-sidebar-toggle" ".clogem-page-button" ".clogem-back-to-top"]]
           (is (str/includes? print c) (str c " is hidden in print")))
         (is (str/includes? print "--bodyBg: #ffffff") "print uses a light palette")
         ;; P4-B2a.1: the boxes lose their shadow (page_style_test), not `*`:

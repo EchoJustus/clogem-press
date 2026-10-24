@@ -53,7 +53,7 @@
      (assoc ctx :title (:title variant))
      (layout/navbar ctx)
      [:div.clogem-shell.clogem-shell--single
-      [:main.clogem-main
+      [:main.clogem-main (layout/content-bg ctx)
        (layout/breadcrumbs ctx group)
        [:article.clogem-article.clogem-catalogue
         (layout/pagefind ctx :data-pagefind-body)       ; D-P3-9
@@ -72,5 +72,6 @@
                (map #(card ctx %) dirs)))]
        ;; a catalogue page is a leaf of its directory's tree like any other,
        ;; so it has neighbours (D-P2-7: not skipped for being a non-article)
-       (layout/prev-next ctx)]]
+       (layout/prev-next ctx)
+       (layout/page-buttons ctx)]]
      (layout/footer ctx))))

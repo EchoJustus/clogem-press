@@ -4,6 +4,7 @@
  :nav/search           "Search"
  :nav/language         "Language"
  :nav/home             "Home"
+ :nav/menu             "Menu"
  :page/last-updated    "Last updated {{date}}"
  :page/prev            "Previous"
  :page/next            "Next"
@@ -38,6 +39,7 @@
  :page/categories      "Categories"
  :page/tags            "Tags"
  :page/sidebar         "Sidebar"
+ :page/back-to-top     "Back to top"
  :container/theorem    "Theorem"
  ;; Search UI (D-P3-10): Pagefind 1.5.2 translations/en.json.
  ;; [SEARCH_TERM], [COUNT] and [DIFFERENT_TERM] are Pagefind's placeholders; keep them.

@@ -997,7 +997,9 @@
   (testing ":show-fallback-notice false drops the text but keeps the class"
     (let [html (page-html #(assoc-in % [:i18n :show-fallback-notice] false) "/pages/3ce486/")]
       (is (str/includes? html "class=\"is-untranslated\" data-clogem-lang=\"ta\" href=\"/ta/\""))
-      (is (not (str/includes? html "clogem-visually-hidden"))))))
+      ;; P4-B2b: the menu toggle's own label is visually hidden too, so
+      ;; the check is on the switcher's entries
+      (is (not (re-find #"class=\"is-untranslated\"[^>]*>[^<]*<span class=\"clogem-visually-hidden\"" html))))))
 
 (deftest category-labels-apply-to-sidebar-groups-and-catalogue-headings
   (testing "fix 3: a string label goes through category-label's string branch in every language"

@@ -345,6 +345,18 @@ html.theme-mode-dark { --f: 1; }
   and printed (P4-B2a.1 item 6)."
   12288)
 
+(def nav-js-budget
+  "P4-B2b item 6: js/nav.js, items 10 and 13 of B2b included, in gzipped
+  bytes; 2,200 since B2b.2's focusin step (CHANGELOG)."
+  2200)
+
+(deftest nav-js-stays-within-its-budget
+  (let [bs (fs/read-all-bytes "src/clogem/theme/resources/js/nav.js")
+        gz (gzip-size bs)]
+    (is (= 2200 nav-js-budget) "raising the budget is a decision, not a test edit")
+    (is (<= gz nav-js-budget) (str gz " bytes gzipped"))
+    (println (format "page-style: js/nav.js is %d bytes, %d gzipped (budget %d)" (count bs) gz nav-js-budget))))
+
 (deftest theme-css-stays-within-its-budget
   (testing "report 1's budget: theme.css at most 12 KB gzipped"
     (let [bs (fs/read-all-bytes theme-css)
