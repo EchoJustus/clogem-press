@@ -27,6 +27,14 @@
     new ResizeObserver(measure).observe(nb);
   }
 
+  // a keyboard focus under the sticky navbar moves out to its scroll-margin
+  // (SC 2.4.11): Chromium 141 does not scroll a focus already in the viewport
+  if (nb) document.addEventListener("focusin", function (e) {
+    var t = e.target, y = t.getBoundingClientRect().top;
+    if (!nb.contains(t) && t.matches(":focus-visible") && y < nb.getBoundingClientRect().bottom)
+      scrollBy(0, y - parseFloat(getComputedStyle(t).scrollMarginTop));
+  });
+
   function rendered(e) { return e.getClientRects().length > 0; }
 
   function close(refocus) {

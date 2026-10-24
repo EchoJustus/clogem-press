@@ -3025,7 +3025,17 @@ their own findings. Item 19 onward are corrections.
    followed fragment while the target sits where its jump left it, else the last heading in view; a
    `ResizeObserver` on the root re-reads a page that grows (giscus). B2b.1: not a root
    `scroll-padding-top`, which covered the sticky navbar's own controls, so Chromium centred one on
-   focus and moved the page; inside `.clogem-navbar` the margin is 0. Smooth scrolling is always on,
+   focus and moved the page; inside `.clogem-navbar` the margin is 0. B2b.2: the margin places an
+   element only once a scroll happens, and Chromium 141 does not scroll a focus whose box is already
+   in the viewport (Chromium 153 does, the margin included), so Shift+Tab left one at y 0–57 under
+   the navbar (WCAG 2.2 SC 2.4.11); `nav.js` handles `focusin`: a `:focus-visible` element outside
+   the navbar whose top is above the navbar's bottom is scrolled by `scrollBy` (the root's
+   scroll-behavior, so instant under reduced motion) to its `scroll-margin-top`. Chosen over (a) the
+   root padding back with a negative `scroll-margin-top` on the navbar's controls, which Chromium
+   141 honoured only in part (a Tab into the nav still moved the page 13–18 px, and other values
+   up to 663 px), and (c) a fixed navbar with a padded page, which a wrapped long nav and the
+   static no-JS navbar at 50rem and below would each need their own offset for. Without JS an old
+   Chromium keeps the gap above 50rem, where the navbar is sticky. Smooth scrolling is always on,
    under `prefers-reduced-motion: no-preference` only, as `html:not(.clogem-loading)`: `nav.js` sets
    that class when it runs and removes it two frames after `load` or on the first click (capture
    phase: a tap, Enter on a link and back to top are clicks), so the browser's own jump to a fresh

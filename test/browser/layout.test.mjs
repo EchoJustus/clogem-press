@@ -343,33 +343,46 @@ async function item1(t) {
     await page.close();
   }
 
-  // focus: Shift+Tab back from the end never leaves a focused element under
-  // the navbar (WCAG 2.2 SC 2.4.11)
-  {
-    const page = await t.newPage({ viewport: { width: 1280, height: 740 }, reducedMotion: 'reduce' });
-    await open(page, t, article);
-    await page.evaluate(() => {
-      const all = [...document.querySelectorAll('a[href], button, summary, input, [tabindex]:not([tabindex="-1"])')]
-        .filter((e) => e.checkVisibility() && !e.closest('[inert]'));
-      all[all.length - 1].focus();
-    });
-    let bad = 0;
-    for (let i = 0; i < 30; i++) {
-      await page.keyboard.press('Shift+Tab');
-      const f = await page.evaluate(() => {
-        const e = document.activeElement;
-        const nb = document.querySelector('.clogem-navbar');
-        if (!e || e === document.body || nb.contains(e)) return null;
-        return { what: e.tagName.toLowerCase() + (typeof e.className === 'string' && e.className ? '.' + e.className.split(' ')[0] : ''),
-                 bottom: e.getBoundingClientRect().bottom, top: e.getBoundingClientRect().top, nav: nb.getBoundingClientRect().bottom };
-      });
-      if (f && f.bottom <= f.nav) {
-        bad++;
-        t.check(false, `Shift+Tab stop ${i + 1} (${f.what}, y ${f.top.toFixed(0)}–${f.bottom.toFixed(0)}) is under the navbar (bottom ${f.nav.toFixed(0)})`);
+  // focus: Shift+Tab from the last stop back through every stop never leaves
+  // a focused element's top above the navbar's bottom (WCAG 2.2 SC 2.4.11).
+  // P4-B2b.2: Chromium 141 does not scroll a focus already inside the
+  // viewport, so one at y 0–57 stayed under the navbar; js/nav.js moves it
+  // out. Every height, since the stops' positions decide which ones hide
+  for (const [rm, sizes] of [['reduce', [360, 1024, 1280].flatMap((w) => [600, 740, 800, 900].map((h) => [w, h]))],
+                             ['no-preference', [[1280, 800]]]]) {
+    for (const [width, height] of sizes) {
+      const page = await t.newPage({ viewport: { width, height }, reducedMotion: rm });
+      for (const rel of [article, '', 'pages/17c887/']) {
+        await open(page, t, rel);
+        await page.evaluate(() => {
+          const all = [...document.querySelectorAll('a[href], button, summary, input, iframe, [tabindex]:not([tabindex="-1"])')]
+            .filter((e) => e.checkVisibility() && !e.closest('[inert]'));
+          scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' });
+          all[all.length - 1].focus();
+        });
+        await settle(page);
+        let bad = 0, n = 0;
+        for (let i = 0; i < 200; i++) {
+          await page.keyboard.press('Shift+Tab');
+          if (rm !== 'reduce') await settle(page);
+          const f = await page.evaluate(() => {
+            const e = document.activeElement;
+            const nb = document.querySelector('.clogem-navbar');
+            if (!e || e === document.body || nb.contains(e)) return null;
+            return { what: e.tagName.toLowerCase() + (typeof e.className === 'string' && e.className ? '.' + e.className.split(' ')[0] : ''),
+                     top: e.getBoundingClientRect().top, bottom: e.getBoundingClientRect().bottom, nav: nb.getBoundingClientRect().bottom };
+          });
+          if (!f) break;   // the navbar: every stop before it is checked
+          n++;
+          if (f.top < f.nav - 1) {
+            bad++;
+            t.check(false, `${width}×${height} ${rm} /${rel}: Shift+Tab stop ${i + 1} (${f.what}, y ${f.top.toFixed(1)}–${f.bottom.toFixed(1)}) is under the navbar (bottom ${f.nav.toFixed(1)})`);
+          }
+        }
+        t.check(n >= 10 && bad === 0, `${width}×${height} ${rm} /${rel}: ${n} Shift+Tab stops before the navbar, ${bad} under it`);
       }
+      await page.close();
     }
-    t.check(bad === 0, `focus never lands under the navbar (${bad} stops did)`);
-    await page.close();
   }
 
   // smooth scrolling, unless reduced motion
@@ -514,6 +527,17 @@ async function item1Focus(t) {
         await page.keyboard.press('Escape');
         t.check(await page.evaluate(() => !document.querySelector('.clogem-langs__toggle').open), `${what}: Escape closes the language dropdown`);
         await still(y0, 'Escape on the language dropdown');
+        // Escape from a link in the open list: the summary takes focus
+        y0 = await start();
+        await clickAt(page, '.clogem-langs__toggle > summary');
+        await page.keyboard.press('Tab');
+        t.check(await focusIn(page, '.clogem-langs > ul'), `${what}: Tab enters the open language list`);
+        await still(y0, 'Tab into the language list');
+        await page.keyboard.press('Escape');
+        t.check(await page.evaluate(() => !document.querySelector('.clogem-langs__toggle').open
+                                          && document.activeElement === document.querySelector('.clogem-langs__toggle > summary')),
+                `${what}: Escape from a list link closes the language dropdown and focuses its summary`);
+        await still(y0, 'Escape from a language list link');
       }
       await page.close();
     }

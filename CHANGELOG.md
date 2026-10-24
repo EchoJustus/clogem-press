@@ -339,6 +339,37 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   no default page; the contrast check gains the surface "--linesColor twice
   over --mainBg", where read's old 0.05 fails at 4.22:1.
 
+### Fixed (B2b.2)
+
+- **Shift+Tab no longer leaves a focused element under the sticky
+  navbar** (WCAG 2.2 SC 2.4.11), a regression from B2b.1: the
+  `scroll-margin-top` that replaced the root's `scroll-padding-top` places
+  an element only once a scroll happens, and Chromium 141 does not scroll
+  a focus already in the viewport. At 1280×800 on `/pages/c0nta1/`,
+  scrolled to the end, a heading anchor took focus at y 28–57 under the
+  57.6 px navbar; Shift+Tab from the end of `/pages/c0nta1/`, `/` and
+  `/pages/17c887/` at 360, 1024 and 1280 by 600, 740, 800 and 900 left one
+  under it in 24 of the 36 (in Chromium 153, which counts the margin, in
+  none). `nav.js` now scrolls a keyboard-focused element outside the
+  navbar whose top is above the navbar's bottom down to its
+  `scroll-margin-top`, in the root's scroll-behavior; the navbar's own
+  controls are left alone, so focusing one still moves nothing.
+  **`nav-js-budget` is 2,200 B** (was 2,000): the handler is ~190 B
+  gzipped, and `nav.js` was at 1,979; the alternatives, CSS alone, did not
+  hold in Chromium 141 (DESIGN.md §11.3 item 9).
+
+### Tests (B2b.2)
+
+- `layout.test.mjs`: the Shift+Tab check now starts at each page's last
+  stop and walks back through every stop to the navbar, on
+  `/pages/c0nta1/`, `/` and `/pages/17c887/`, at 360, 1024 and 1280 by
+  600, 740, 800 and 900 under reduced motion and at 1280×800 under
+  no-preference, and fails on a focused element whose top is above the
+  navbar's bottom (1 px allowed). It failed 34 of 39 combinations in
+  Chromium 141 before the fix (CI's Chromium 153 does not need it). The
+  no-jump checks gain Tab into the open language list, then Escape: the
+  summary takes focus and `scrollY` stays.
+
 ### Needs native review (B2b)
 
 - `:nav/menu`: ms "Menu", ta "மெனு".
