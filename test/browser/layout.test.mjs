@@ -183,19 +183,24 @@ async function item1(t) {
   await anchorsAt(t, [1024, 1280, 1440]);
 
   // TOC clicks, where the TOC shows; an entry clicked is marked once
-  // scrolling settles (not the last entries: an older toc.js bug, out of
-  // scope, marks an earlier one at the end of the page)
-  for (const width of [1280, 1440]) {
-    const page = await t.newPage({ viewport: { width, height: 740 } });
+  // scrolling settles, the last ones too, whose heading cannot reach the top
+  // (P4-B2b.1 item 9: toc.js marked an earlier entry at the end of the page)
+  for (const [width, height] of [[1280, 740], [1440, 740], [1280, 1024]]) {
+    const page = await t.newPage({ viewport: { width, height } });
     for (const [rel, id] of [[article, 'nesting'], [article, 'in-a-list-item'], [article, 'inside-a-fenced-code-block'],
-                             ['pages/17c887/', '你好世界']]) {
+                             ['pages/17c887/', '你好世界'], ['pages/17c887/', 'வணக்கம்-உலகம்'], ['pages/17c887/', 'hello,-world!'],
+                             ['pages/17c887/', '100%-done'], ['pages/17c887/', 'bahasa-melayu']]) {
       await open(page, t, rel);
-      const href = '#' + encodeURIComponent(id);
+      // the href as the page writes it (`,` and `!` stay unencoded)
+      const href = await page.evaluate((id) => [...document.querySelectorAll('.clogem-toc a')]
+        .map((a) => a.getAttribute('href')).find((h) => decodeURIComponent(h.slice(1)) === id), id);
+      t.check(!!href, `${width}×${height} /${rel}: a TOC entry for #${id}`);
+      if (!href) continue;
       await page.locator(`.clogem-toc a[href="${href}"]`).click();
       await settle(page);
-      checkAnchor(t, await page.evaluate(anchorState, id), `${width}px /${rel}, TOC click on #${id}`);
+      checkAnchor(t, await page.evaluate(anchorState, id), `${width}×${height} /${rel}, TOC click on #${id}`);
       t.check(await page.evaluate((href) => document.querySelector(`.clogem-toc a[href="${href}"]`).parentElement.classList.contains('is-active'), href),
-              `${width}px /${rel}: the TOC entry #${id} is active once scrolling settles`);
+              `${width}×${height} /${rel}: the TOC entry #${id} is active once scrolling settles`);
     }
     // the TOC sticks below the navbar
     await open(page, t, article);

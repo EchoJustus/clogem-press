@@ -261,6 +261,11 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   `html:has(:is(a, button, summary):hover)`), which a click, a tap or a key
   always is; still never under reduced motion. Back to top scrolls before
   it hides itself, while it is still hovered or focused.
+- **The TOC at the end of the page** marks the entry just followed: a
+  heading that cannot reach the top left an earlier entry active, and
+  B2b's wider article made that four entries of `/pages/17c887/` (it was
+  the last three). Scrolled to the end, `toc.js` marks the followed
+  fragment's entry, else the last heading whose top is in view.
 - **Desktop dropdowns close when focus leaves them**, as vdoing's
   `DropdownLink` does: Tab past the language list's or a nav dropdown's
   last link used to leave it open over the page.
@@ -289,6 +294,9 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   frame between 0 and its final `scrollY` (31 before), while a TOC click
   and a heading anchor's click each have one; `theme_modes_test` pins the
   two selectors.
+  Item 1's TOC clicks cover every entry of `/pages/17c887/`, at 1280×740,
+  1440×740 and 1280×1024, each active once scrolling settles (13 failed
+  before); the exclusion of the last entries is gone.
   The comment saying that opening the drawer scrolls the page up is
   corrected: Playwright's `locator.click()` does that, a reader does not.
 - `bb test`: the `"y <= 100"` text pin is gone, replaced by the browser
