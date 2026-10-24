@@ -9,13 +9,46 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
 and line page styles, focus rings and B1's follow-ups (the first half of
 B2, §11.3 item 1), then Task F — analytics, verification and a static root
 (§11.3 items 14, 15), then Task B2b — the navbar, the mobile drawer and the
-page chrome (the second half of B2, §11.3 item 9, D-P4-9). The version
-stays 0.2.0. A site that already set `:theme :page-style :line` now gets
+page chrome (the second half of B2, §11.3 item 9, D-P4-9), then Task E2 —
+article-page parity (§11.3 item 16, D-P4-13). The version stays 0.2.0. A site that already set `:theme :page-style :line` now gets
 that look: 0.2.0 and B1 accepted the value but drew card and line the same.
 Likewise a site that set any of the five keys 0.2.0 listed as planned —
 `:theme :sidebar-collapsed`, `:right-menu-bar`, `:page-button`,
 `:content-bg-style` or `:back-to-top` — now gets that behaviour, and page
 buttons and a back-to-top button now appear by default, as in vdoing.
+
+**Task E2 — article-page parity** (§11.3 item 16, D-P4-13):
+
+### Added (E2)
+
+### Changed (E2)
+
+- **`:content :edit-link`, `:theme :update-bar`, `:theme :last-updated`
+  and `:theme :repo` are read** (`config/check-article-parity!`, after
+  `check-page-chrome!`): 0.2.0 warned that each was planned and had no
+  effect. Every bad value is a warning that repairs it to its default or
+  turns the feature off, never an error, with the hint "See
+  config.example.edn (vdoing's …)". `:edit-link {:repo :branch :dir}` is
+  stored as `{:url :branch :dir}`: `:repo` is `"owner/name"` (GitHub's) or
+  an `https://` URL, else the valid `:theme :repo`; `:branch` defaults to
+  `"main"`, `:dir` to `""` (no `..` segment, no `\`). `:update-bar` holds
+  `:show-to-article` (default `true`) and `:more-article` (a site path or an
+  `https://` URL). `:theme :update-bar` and `:content :edit-link` are now
+  walked for unknown keys, so vdoing's `updateBar.showToArticle` and
+  `.moreArticle` name their kebab spellings. vdoing's `editLinks`,
+  `docsRepo`, `docsDir`, `docsBranch`, `updateBar`, `lastUpdated` and
+  `repo` name the keys that replace them; `editLinkText` says the label is
+  the i18n string `:page/edit`. Accessors: `config/edit-link`,
+  `last-updated?`, `update-bar`, `repo-url`.
+
+### Tests (E2)
+
+- `clogem.parity-test` (new): every rule of `check-article-parity!`, each
+  with 0 errors; `:content {:edit-link true}` is one warning; no E2 key's
+  warning says "planned"; vdoing's spellings, `updateBar`'s own included.
+  `config_test`'s `:updateBar` row is no longer planned.
+
+### Needs native review (E2)
 
 **Task B2b — navbar, mobile drawer and page chrome** (§11.3 item 9, D-P4-9):
 
