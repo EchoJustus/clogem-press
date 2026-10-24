@@ -414,8 +414,9 @@ github.com, and any host but two, get `<repo>/edit/<branch>/<path>`;
 gitlab.com gets `<repo>/-/edit/<branch>/<path>`, and bitbucket.org
 `<repo>/src/<branch>/<path>?mode=edit…`, as vdoing's do. Gitee and
 self-hosted forges get the GitHub form. Front matter `editLink: false`
-hides the link on that page. A bad value is a warning that turns the link
-off; print never shows it.
+hides the link on that page. A bad `:repo`, no repository at all, or an
+`:edit-link` that is not a map is a warning that turns the link off; a bad
+`:branch` or `:dir` warns and takes the default. Print never shows it.
 
 **Last updated.** `:theme :last-updated true` (vdoing's `lastUpdated`; off
 by default) adds *Last updated 2026-10-04* (`:page/last-updated`, with a

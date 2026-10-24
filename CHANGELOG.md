@@ -49,8 +49,10 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   line then ends with `<span class="clogem-page-edit__updated">` — the
   `clock` icon and `<time datetime="<ISO>">` holding `:page/last-updated`
   (unused until now) with the author's calendar date, `yyyy-mm-dd` in
-  every language (babashka has no zh, ms or ta locale). Outside git, or
-  with git missing, there are no dates, silently; a shallow clone (`git
+  every language (babashka has no zh, ms or ta locale). git runs under
+  `LC_ALL=C`, so a translated git's "not a git repository" is still
+  recognized. Outside git, or with git missing, there are no dates,
+  silently; a shallow clone (`git
   rev-parse --is-shallow-repository`) is one warning naming `fetch-depth:
   0`, and any other git failure one warning quoting git's first stderr
   line ("dubious ownership", a repository with no commits) — no dates
@@ -124,7 +126,9 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   page-not-found">`), in the default language: `:not-found/title`, `<h1>
   404`, `:not-found/message` and one link per language to its home, in
   `:priority` order and in that language's own `:not-found/home`
-  (`:not-found/*`, new in all five languages). Every link is
+  (`:not-found/*`, new in all five languages; a site-added language
+  without the string is marked with the language its fallback words are
+  in, as the language banner is). Every link is
   root-relative with the base. It carries `<meta name="robots"
   content="noindex">` (after the verification tags) and no `:seo`, so no
   canonical, hreflang, `og:locale`, sitemap entry or language banner; no
@@ -173,8 +177,9 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   rename commit; an untracked file undated; a site in a subdirectory of
   its repository; not a repository: no dates, 0 warnings; git missing: the
   same; `git clone --depth 1 file://…`: 1 warning, no dates; a failing
-  git: 1 warning quoting it; the key off, or `doctor`: git never runs; the
-  rendered date beside the edit link, alone when `editLink: false`.
+  git: 1 warning quoting it; git runs under `LC_ALL=C`; the key off, or
+  `doctor`: git never runs; the rendered date beside the edit link, alone
+  when `editLink: false`.
 - The update bar: 3 rows, never the current page, on every article page
   of the demo; after the comments; the fallback badge on an untranslated
   row; none on catalogues, `article: false` pages, homes or index pages;
@@ -192,8 +197,9 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   each, naming the file; `5` ignored with one warning; a paginated home's
   and a category overview's bad token warn once per file; the demo and a
   page without it unchanged.
-- The navbar: `:logo` and `:repo-label` rules (`//…`, `http:`, a blank
-  label, an empty map warn); vdoing's `repoLabel`; the demo's brand, logo
+- The navbar: `:logo` and `:repo-label` rules (a path with a space is
+  fine; `//…`, `http:`, a blank label, an empty map warn); vdoing's
+  `repoLabel`; the demo's brand, logo
   and repo link on every navbar page, the link last in the nav, before
   the languages, with no `target`; no `:logo`, the brand unchanged; only
   `:repo` on a one-language site with no `:nav` gets the toggle and the
@@ -217,8 +223,9 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   generated page comes back and is not swept; `doctor` sees no collision;
   `make-handler` answers `/nope/` with 404 and the page (dev with the
   reload script), a real file 200, outside the base the stub, a `dist/`
-  with no `404.html` the stub. `overflow.test.mjs` visits `/404.html` at
-  320 and 360.
+  with no `404.html` the stub; a site-added `ja` without
+  `:not-found/home` gets its link marked `lang="en"`.
+  `overflow.test.mjs` visits `/404.html` at 320 and 360.
 - `layout.test.mjs` (B2b) keeps its scenarios on the demo's new pages:
   the h4-at-the-end and the page-that-fits-then-grows checks strip the
   edit line and the update bar from their routed page (`withoutE2`), so

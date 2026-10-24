@@ -20,13 +20,15 @@
 
 (defn run-git
   "Run `git <args>` in `dir`: {:exit :out :err}, or nil when git cannot be
-  started (not installed, not on PATH). `env` is added to the inherited
-  environment."
+  started (not installed, not on PATH). Under `LC_ALL=C`, so a translated
+  git still says \"not a git repository\" (`not-a-repo?`) and a warning
+  quotes it in English; `-z` keeps paths raw either way. `env` is added to
+  the inherited environment."
   ([dir args] (run-git dir args nil))
   ([dir args env]
    (try
      (let [r @(p/process {:cmd (into ["git"] args) :dir (str dir)
-                          :out :string :err :string :extra-env (or env {})})]
+                          :out :string :err :string :extra-env (merge {"LC_ALL" "C"} env)})]
        {:exit (:exit r) :out (:out r) :err (:err r)})
      (catch java.io.IOException _ nil))))
 

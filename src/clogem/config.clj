@@ -880,7 +880,7 @@
                           "the edit link is off" "docsRepo"))
           (nil? url)
           (diag/warn! nil (str ":content :edit-link has no :repo, and :theme :repo names none; the edit link is off.")
-                      "Set :content :edit-link :repo, or :theme :repo, to \"owner/name\" or an https:// URL (config.example.edn; vdoing's docsRepo)."))
+                      "See config.example.edn (vdoing's docsRepo)."))
         (if-not url
           (off cfg)
           (let [branch (cond
@@ -933,7 +933,7 @@
 (defn logo-ok?
   "`:theme :logo`: a site path (`/…`, not `//…`) or an `https://` URL."
   [v]
-  (boolean (and (string? v) (re-find #"^(?:/(?!/)|(?i:https://)\S)" v) (not (re-find #"\s" v)))))
+  (boolean (and (string? v) (re-find #"^(?:/(?!/)|(?i:https://)\S)" v))))
 
 (defn- label-ok?
   "`:theme :repo-label`: a non-blank string, or a per-language map of them

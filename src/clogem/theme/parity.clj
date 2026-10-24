@@ -159,8 +159,9 @@
   `:page-kind :not-found`, `noindex` (`:noindex?`) and with no `:seo`, so
   no canonical, hreflang, `og:locale` or sitemap entry. It lists every
   language's home, in `:priority` order, each in that language's own words
-  (`:not-found/home`). Every link is root-relative with the base, since a
-  host serves the page at any depth. No JS of its own."
+  (`:not-found/home`; a language without the string is marked with the
+  language its fallback came from). Every link is root-relative with the
+  base, since a host serves the page at any depth. No JS of its own."
   [{:keys [cfg] :as ctx}]
   (let [ctx (assoc ctx :page-kind :not-found :noindex? true :title (i18n/tr ctx :not-found/title))]
     (layout/page ctx
@@ -168,7 +169,12 @@
                   [:h1 "404"]
                   [:p (i18n/tr ctx :not-found/message)]
                   (into [:ul]
-                        (for [l (config/lang-keys cfg)]
-                          [:li {:lang (config/html-lang cfg l)}
+                        (for [l (config/lang-keys cfg)
+                              :let [lctx (assoc ctx :lang l)
+                                    ;; the language the words come from: a
+                                    ;; site-added language without the key
+                                    ;; gets the fallback chain's
+                                    shown (or (i18n/resolved-lang lctx :not-found/home) l)]]
+                          [:li {:lang (config/html-lang cfg shown)}
                            [:a {:href (layout/href ctx (model/home-url cfg l))}
-                            (i18n/tr (assoc ctx :lang l) :not-found/home)]]))])))
+                            (i18n/tr lctx :not-found/home)]]))])))

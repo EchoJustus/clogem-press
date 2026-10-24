@@ -222,9 +222,16 @@
                                 :theme {:last-updated true :repo "o/n"
                                         :update-bar {:show-to-article true :more-article "/archives/"}}})]
       (is (= [] ws))))
-  (testing "the hint names config.example.edn and vdoing's key"
+  (testing "the hint names config.example.edn and vdoing's key, every one of them"
     (let [[_ ds] (load-cfg {:theme {:last-updated "x"}})]
-      (is (= ["See config.example.edn (vdoing's lastUpdated)."] (map :hint (diag/warnings ds)))))))
+      (is (= ["See config.example.edn (vdoing's lastUpdated)."] (map :hint (diag/warnings ds)))))
+    (let [[_ ds] (load-cfg {:content {:edit-link {}}})]
+      (is (= ["See config.example.edn (vdoing's docsRepo)."] (map :hint (diag/warnings ds)))))
+    (let [[_ ds] (load-cfg {:content {:edit-link 1}
+                            :theme {:last-updated 2 :update-bar {:show-to-article 1 :more-article 2}
+                                    :repo 4 :logo 5 :repo-label 6}})]
+      (is (every? #(re-matches #"See config\.example\.edn \(vdoing's [A-Za-z.]+\)\." %) (map :hint (diag/warnings ds)))
+          (pr-str (map :hint (diag/warnings ds)))))))
 
 (deftest vdoing-spellings-of-the-e2-keys
   (testing "updateBar's own keys are walked under :theme :update-bar"
@@ -436,6 +443,11 @@
           (is (nil? ds))
           (is (= [] ws)))
         (finally (fs/delete-tree dir)))))
+  (testing "git runs under LC_ALL=C, so a translated git's \"not a git repository\" is recognized"
+    (let [seen (atom nil)]
+      (with-redefs [p/process (fn [opts] (reset! seen (:extra-env opts)) (delay {:exit 0 :out "false\n" :err ""}))]
+        (gitlog/run-git "." ["rev-parse"] {"X" "1"}))
+      (is (= {"LC_ALL" "C" "X" "1"} @seen))))
   (testing "git cannot be started: no dates, no warning"
     (let [[cfg] (diag/collecting (config/load-config demo nil {:theme {:last-updated true}}))
           [ds ws] (binding [gitlog/*git* (fn [_ _] nil)] (diag/collecting (gitlog/dates cfg)))]
@@ -707,11 +719,11 @@
 (defn- navbar-of [page] (re-find #"(?s)<header class=\"clogem-navbar\">.*?</header>" (str page)))
 
 (deftest logo-and-repo-label-are-checked
-  (doseq [ok ["/assets/logo.svg" "https://cdn.example/logo.png"]]
+  (doseq [ok ["/assets/logo.svg" "https://cdn.example/logo.png" "/assets/my logo.png"]]
     (let [[cfg ws] (cfg-warnings {:theme {:logo ok}})]
       (is (= [] ws))
       (is (= ok (get-in cfg [:theme :logo])))))
-  (doseq [bad ["assets/logo.svg" "//cdn.example/x.png" "http://x/y.png" "/a b.png" 3]]
+  (doseq [bad ["assets/logo.svg" "//cdn.example/x.png" "http://x/y.png" " /a.png" 3]]
     (let [[cfg ws] (cfg-warnings {:theme {:logo bad}})]
       (is (= [(str ":theme :logo is " (pr-str bad) ", but it must be a site path starting with / (such as "
                    "\"/assets/logo.svg\") or an https:// URL; there is no logo.")] ws))
@@ -906,3 +918,12 @@
             (is (= 404 (:status r)))
             (is (str/includes? (:body r) "<p>Not found.")))
           (finally (fs/delete-tree dir)))))))
+
+(deftest a-404-link-is-marked-with-the-language-of-its-words
+  (let [{:keys [pages]} (build-temp {:langs {:priority [:en :ja]
+                                             :locales {:zh-Hans nil :zh-Hant nil :ms nil :ta nil
+                                                       :ja {:label "日本語" :html-lang "ja"}}}
+                                     :i18n {:missing-key :silent}}
+                                    {"01.A/01.one.md" (article "One" "/pages/one001/")})]
+    (is (str/includes? (pages "404.html") "<li lang=\"en\"><a href=\"/ja/\">Go to the home page</a></li>")
+        "ja has no :not-found/home: the English words are marked en")))
