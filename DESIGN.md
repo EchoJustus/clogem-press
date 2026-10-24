@@ -3020,15 +3020,22 @@ their own findings. Item 19 onward are corrections.
    and `:where(body *) { scroll-margin-top: var(--jumpOffset) }` (`--navbarHeight` + 0.75rem;
    the navbar's measured height, `--navbarMeasured`, when `nav.js` has set it) replaces the h2–h6
    `scroll-margin-top`, so the home's `h1`, any `id`, an `<a name>`, `scrollIntoView()` and focus
-   scrolling land below it too; `toc.js` measures the navbar's bottom. B2b.1: not a root
+   scrolling land below it too; `toc.js` measures the navbar's bottom, and (B2b.1) at the end of a
+   page that scrolls, where the last headings never reach that line, marks the section holding the
+   followed fragment while the target sits where its jump left it, else the last heading in view; a
+   `ResizeObserver` on the root re-reads a page that grows (giscus). B2b.1: not a root
    `scroll-padding-top`, which covered the sticky navbar's own controls, so Chromium centred one on
    focus and moved the page; inside `.clogem-navbar` the margin is 0. Smooth scrolling is always on,
    under `prefers-reduced-motion: no-preference` only, as `html:not(.clogem-loading)`: `nav.js` sets
-   that class when it runs and removes it two frames after `load`, so the browser's own jump to a
-   fresh load's `#id` (right after DOMContentLoaded, re-applied until `load`) is instant (B2b.1).
-   A `:focus-within`/`:hover` rule was tried and dropped: Chromium focuses no clicked link and drops
-   focus before a keyboard-started fragment jump, so Enter on a link and history traversal were
-   instant (vdoing's `smoothScroll` is off by default; here it
+   that class when it runs and removes it two frames after `load` or on the first click (capture
+   phase: a tap, Enter on a link and back to top are clicks), so the browser's own jump to a fresh
+   load's `#id` (right after DOMContentLoaded) is instant and a reader's jump never is; history
+   traversal before `load` is (B2b.1). A `:focus-within`/`:hover` rule was tried and dropped:
+   Chromium focuses a clicked link on mousedown but clears focus before any fragment jump, by mouse
+   or by key, so only `:hover` kept clicks smooth, and Enter on a link and history traversal were
+   instant. The element margins, unlike the root's padding, do not shorten Space/Page Down's step
+   (87.5% of the window), so under ~460 px of window height a line passes under the navbar — as on
+   `main`; the root padding's other effect, on the navbar's own controls, was the bug (vdoing's `smoothScroll` is off by default; here it
    is *implicit*, a known key that warns and is ignored). Above 50rem the language switcher is a `<details>` dropdown whose list is its next
    sibling (CSS cannot show a closed `<details>`' content where `::details-content` is missing), and
    the search trigger is its icon alone at ≤ 64rem. "Above 50rem" is written
@@ -3051,6 +3058,9 @@ their own findings. Item 19 onward are corrections.
    `--navbarMeasured` into an adopted stylesheet (no `style` attribute); the jump offset and the
    stuck TOC follow. The no-JS rules sit outside any
    scripting query: the old wrapping navbar, `static`, every link shown, `--jumpOffset: 0.75rem`.
+   Above 50rem a dropdown also closes when focus leaves it for another control (`focusout` with a
+   `relatedTarget`: a mousedown on its unfocusable padding blurs with none, and closing the
+   `<details>` then crashed Chromium 153's renderer) or for a frame (window `blur`).
    A failed `nav.js` leaves the native `<details>` toggle working.
 10. **Highlighting on by default (C) — done.** `:highlight {:provider :chroma}`; `:none` or `--no-highlight`
     turns it off. A fetch failure is an error in `build` and a warning in `dev`. Line numbers are CSS

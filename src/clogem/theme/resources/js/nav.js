@@ -10,14 +10,14 @@
   var aside = document.querySelector("aside.clogem-sidebar");
   var mark = null, active = false, still = { preventScroll: true };
 
-  // theme.css's smooth scrolling waits for the load's jump to a #fragment
+  // theme.css: smooth scrolling once loaded (not the jump to #id) or clicked
   var root = document.documentElement, raf = requestAnimationFrame;
+  var ready = function () { root.classList.remove("clogem-loading"); };
   root.classList.add("clogem-loading");
-  window.addEventListener("load", function () {
-    raf(function () { raf(function () { root.classList.remove("clogem-loading"); }); });
-  });
+  window.addEventListener("load", function () { raf(function () { raf(ready); }); });
+  document.addEventListener("click", ready, true);
 
-  // theme.css's jump offset follows a wrapped navbar (measured before it)
+  // theme.css's jump offset follows a wrapped navbar
   var nb = document.querySelector(".clogem-navbar"), sheet, measure;
   if (nb && window.ResizeObserver && document.adoptedStyleSheets) {
     sheet = new CSSStyleSheet();
@@ -92,7 +92,7 @@
     });
   }
 
-  // the nav and language dropdowns outside the drawer layout
+  // the dropdowns outside the drawer layout
   function dropdowns() {
     return [].slice.call(document.querySelectorAll(".clogem-navbar__item details[open], .clogem-langs__toggle[open]"));
   }
@@ -116,7 +116,6 @@
       ticking = true;
       raf(function () { ticking = false; sync(); });
     });
-    // a hint only: what the CSS renders decides
     var mq = window.matchMedia && window.matchMedia("(max-width: 50rem)");
     if (mq && mq.addEventListener) mq.addEventListener("change", sync);
     window.addEventListener("pageshow", function (e) { if (e.persisted) close(false); });
@@ -136,6 +135,7 @@
     dropdowns().forEach(function (d) { var b = box(d); if (b.contains(from || b) && !b.contains(t)) d.open = false; });
   }
   document.addEventListener("focusout", function (e) { if (!active && e.relatedTarget) shut(e.relatedTarget, e.target); });
+  window.addEventListener("blur", function () { if (!active) shut(document.activeElement); });
 
   document.addEventListener("click", function (e) {
     var t = e.target;

@@ -54,18 +54,22 @@
         break;
       }
     }
-    // at the end the last headings never reach the line: the followed one, if
-    // it is still where its jump left it (in view, not under the navbar), else
-    // the last whose top is in view
-    if (y >= document.documentElement.scrollHeight - window.innerHeight - 1) {
-      var last = null;
+    // at the end of a page that scrolls (or one a fragment was followed on)
+    // the last headings never reach the line: the section holding the
+    // followed target, if that is still where its jump left it (in view, not
+    // under the navbar), else the last heading whose top is in view
+    var max = document.documentElement.scrollHeight - window.innerHeight;
+    if (y >= max - 1 && (max > 0 || followed)) {
+      var last = null, mine = null;
+      var ft = followed ? followed.getBoundingClientRect().top : -1;
       for (var j = 0; j < entries.length; j++) {
-        var top = entries[j].target.getBoundingClientRect().top;
-        if (top >= window.innerHeight) break;
-        last = entries[j];
-        if (entries[j].target === followed && top >= offset - 17) break;
+        var t = entries[j].target;
+        // the followed target is this heading, or comes after it
+        if (followed && (t === followed || t.compareDocumentPosition(followed) & 4)) mine = entries[j];
+        if (t.getBoundingClientRect().top < window.innerHeight) last = entries[j];
       }
-      if (last) active = last;
+      if (mine && ft >= offset - 17 && ft < window.innerHeight) active = mine;
+      else if (last) active = last;
     }
     if (active === current) return;
     if (current) current.link.parentNode.classList.remove("is-active");
@@ -84,5 +88,7 @@
   // already at the end, a followed fragment scrolls nothing
   window.addEventListener("hashchange", function () { follow(); onScroll(); });
   window.addEventListener("resize", onScroll);
+  // the page can grow under the reader (giscus's iframe), changing its end
+  if (window.ResizeObserver) new ResizeObserver(onScroll).observe(document.documentElement);
   update();
 })();

@@ -250,6 +250,33 @@ async function item1(t) {
     t.check(r.got === r.want, `${rm}: #nesting followed, then the end of the page: ${r.got} is active, want the last heading in view ${r.want}`);
     await page.close();
   }
+  // a followed target that is no TOC heading (an h4) marks its section
+  {
+    const page = await t.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+    await page.route(url(t, article), async (route) => {
+      const res = await route.fetch();
+      const body = (await res.text()).replace('<div class="custom-block tip">\n<p class="custom-block-title">A heading inside</p>',
+        '<h4 id="clogem-b2b-h4">A deeper heading</h4><div class="custom-block tip">\n<p class="custom-block-title">A heading inside</p>');
+      await route.fulfill({ response: res, body });
+    });
+    await open(page, t, article, 'clogem-b2b-h4');
+    const r = await page.evaluate(() => ({ h4: !!document.getElementById('clogem-b2b-h4'),
+      end: scrollY >= document.documentElement.scrollHeight - innerHeight - 1,
+      active: document.querySelector('.clogem-toc li.is-active a').getAttribute('href') }));
+    t.check(r.h4 && r.end && r.active === '#inside-a-fenced-code-block',
+            `an h4 followed to the end of the page: ${r.active} is active, want its section #inside-a-fenced-code-block (${JSON.stringify(r)})`);
+    await page.close();
+  }
+  // a page that fits the viewport marks its first entry, not its last
+  {
+    const page = await t.newPage({ viewport: { width: 1280, height: 2400 }, reducedMotion: 'reduce' });
+    await open(page, t, 'pages/17c887/');
+    const r = await page.evaluate(() => ({ max: document.documentElement.scrollHeight - innerHeight,
+      first: document.querySelector('.clogem-toc a').getAttribute('href'),
+      active: document.querySelector('.clogem-toc li.is-active a').getAttribute('href') }));
+    t.check(r.max <= 0 && r.active === r.first, `a page that fits (${r.max}): ${r.active} is active, want the first entry ${r.first}`);
+    await page.close();
+  }
   for (const rm of ['reduce', 'no-preference']) {
     // /zh-Hans/pages/643259/ fits 1280×1024 when toc.js first looks; then
     // 150 px join the page below the article, as giscus's iframe does
@@ -257,6 +284,10 @@ async function item1(t) {
     await open(page, t, 'zh-Hans/pages/643259/');
     const fits = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
     await page.evaluate(() => { const d = document.createElement('div'); d.style.height = '150px'; document.querySelector('main').appendChild(d); });
+    await settle(page);
+    const first = await page.evaluate(() => [document.querySelector('.clogem-toc li.is-active a').getAttribute('href'),
+                                             document.querySelector('.clogem-toc a').getAttribute('href'), scrollY]);
+    t.check(first[0] === first[1] && first[2] === 0, `${rm}: at the top of the grown page the first entry is active (${first})`);
     // the first entry: its heading cannot reach the top either, and the
     // last heading in view is another
     const href = '#' + encodeURIComponent('编号目录');
@@ -382,6 +413,26 @@ async function item1Load(t) {
       await scrollTop(page, 0); await settle(page); await clickAt(page, toc); await settle(page);
       await page.mouse.move(1270, 730); await frames(); await page.evaluate(() => history.back()); }],
   ];
+  // before load (giscus, a slow image): a click turns smooth scrolling on
+  {
+    const slow = await t.newPage({ viewport: { width: 1280, height: 740 }, reducedMotion: 'no-preference' });
+    await slow.route(url(t, article), async (route) => {
+      const res = await route.fetch();
+      await route.fulfill({ response: res, body: (await res.text()).replace('</main>', '<img alt="" src="/clogem-b2b-pending.png"></main>') });
+    });
+    await slow.route('**/clogem-b2b-pending.png', () => {});   // never answered
+    await slow.goto(url(t, article), { waitUntil: 'domcontentloaded' });
+    await slow.waitForFunction(() => document.documentElement.classList.contains('clogem-loading'), null, { timeout: 5000 }).catch(() => {});
+    await slow.waitForTimeout(300);
+    const before = await slow.evaluate(() => [document.readyState, document.documentElement.classList.contains('clogem-loading')]);
+    await slow.evaluate(() => { window.__y0 = scrollY; window.__s = []; const f = () => { window.__s.push(scrollY); if (window.__s.length < 240) requestAnimationFrame(f); }; requestAnimationFrame(f); });
+    await clickAt(slow, toc);
+    await settle(slow);
+    const s = await slow.evaluate(() => ({ samples: window.__s, from: window.__y0, fin: scrollY }));
+    t.check(before[0] !== 'complete' && before[1] && s.fin - s.from > 100 && s.samples.some((y) => y > s.from && y < s.fin),
+            `a TOC click before load (${before}): from ${s.from} to ${s.fin}, a frame strictly between (${s.samples.slice(0, 6).join(', ')}…)`);
+    await slow.close();
+  }
   for (const [what, act] of jumps) {
     await act();
     await settle(page);
@@ -1281,6 +1332,18 @@ async function item6Desktop(t) {
     t.check(await page.evaluate((s) => !document.querySelector(s).open, sel), `1280: then a click outside closes ${what}`);
   }
   if (crashed) { await page.close().catch(() => {}); return; }
+  // focus into a frame (giscus's iframe) blurs the window, with no
+  // relatedTarget and no click in this document: the dropdown closes
+  await page.evaluate(() => { const f = document.createElement('iframe'); f.id = 'clogem-b2b-frame'; f.style.cssText = 'width:300px;height:80px';
+    f.srcdoc = '<button style="width:100%;height:60px">in a frame</button>'; document.querySelector('main').prepend(f); });
+  await page.waitForTimeout(200);
+  await clickAt(page, '.clogem-langs__toggle > summary');
+  const wasOpen = await page.evaluate(() => document.querySelector('.clogem-langs__toggle').open);
+  await clickAt(page, '#clogem-b2b-frame');
+  await page.waitForTimeout(150);
+  t.check(wasOpen && await page.evaluate(() => !document.querySelector('.clogem-langs__toggle').open && document.activeElement.id === 'clogem-b2b-frame'),
+          '1280: a click into a frame closes the language dropdown');
+  await page.evaluate(() => document.getElementById('clogem-b2b-frame').remove());
 
   // both open, focus in the mode menu: one Escape closes the mode menu only
   await clickAt(page, '.clogem-mode__button');

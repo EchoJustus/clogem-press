@@ -301,7 +301,11 @@ navbar (a `scroll-margin-top` on every element outside the navbar, so an
 own controls never scroll the page), headings or not. Scrolling is smooth
 unless the reader's system asks for reduced motion, except the browser's
 own jump to a fresh load's `#id`, which `js/nav.js` keeps instant (without
-JavaScript it animates too); there is no key for it
+JavaScript it animates too); until the page has loaded, history back and
+forward are instant as well, while a click is smooth. Space and Page Down
+step by the browser's usual 87.5% of the window, so in a window under about
+460 px tall the line just above the old fold passes under the sticky
+navbar, as before B2b. There is no key for smooth scrolling
 (vdoing's `smoothScroll`, off by default there, is known and ignored: a
 site that sets it is told to remove it).
 

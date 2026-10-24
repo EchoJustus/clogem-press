@@ -50,7 +50,7 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   (dropdowns collapsed until opened) and every language. A site with no
   `:nav` and one language gets no toggle, except on a page with a
   sidebar, where it is rendered `hidden` and revealed by `js/nav.js`.
-- **`js/nav.js`** (same-origin, `defer`, after `mode.js`; 1,988 B
+- **`js/nav.js`** (same-origin, `defer`, after `mode.js`; 1,979 B
   gzipped with the sidebar collapse, back to top and B2b.1, budget 2,000 B): while the drawer layout is active — read from
   the CSS, at start-up and on every resize — it moves the page's sidebar
   into the drawer and puts it back on leaving it. On open, focus moves
@@ -62,8 +62,9 @@ buttons and a back-to-top button now appear by default, as in vdoing.
 - **A wider three-column shell** from 80rem: a page with a sidebar and a
   TOC is sidebar | main | TOC with a 1.5rem gap in `--maxWidth` + 18rem,
   so at 1280 px main is 680 px and the article 632 (615 beside a 17 px
-  scrollbar); it was 376 and 328. The TOC is at most the viewport less
-  `--navbarHeight` and 6.2rem tall and scrolls inside itself.
+  scrollbar); it was 376 and 328. The TOC is at most the viewport less the
+  navbar's height (as `nav.js` measures it; `--navbarHeight` without JS) and
+  6.2rem tall and scrolls inside itself.
 - **One check for the page chrome's `:theme` keys** (`:sidebar-collapsed`,
   `:right-menu-bar`, `:page-button`, `:content-bg-style`, `:back-to-top`):
   `nil` is the default, and a bad value (`"yes"` for a boolean, `7` for
@@ -264,21 +265,28 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   1's gradients cross, 0.05 twice took a link to 4.22:1 (4.40 measured).
 - **A fresh load of `…/#id` jumps at once** instead of animating from the
   top for ~600 ms: `nav.js` puts `clogem-loading` on `<html>` until two
-  frames after `load`, and smooth scrolling is `html:not(.clogem-loading)`.
-  Every jump after it — a click, a tap, Enter on a link, history back —
-  stays smooth, and none is under reduced motion. Without JS (or with
-  `nav.js` failing) the load's jump animates, as before.
+  frames after `load`, or until the first click (a tap and Enter on a link
+  are clicks; so is back to top), and smooth scrolling is
+  `html:not(.clogem-loading)`. Every jump after that is smooth, and none is
+  under reduced motion; only history traversal before `load` (which giscus
+  or a slow image can delay) stays instant. Without JS (or with `nav.js`
+  failing) the load's jump animates, as before.
 - **The TOC at the end of the page** marks the entry just followed: a
   heading that cannot reach the top left an earlier entry active, and
   B2b's wider article made that four entries of `/pages/17c887/` (it was
-  the last three). Scrolled to the end, `toc.js` marks the followed
-  fragment's entry while its heading is still where the jump left it (in
-  view, not under the navbar), else the last heading whose top is in view.
+  the last three). Scrolled to the end of a page that scrolls, `toc.js`
+  marks the section holding the followed fragment (its heading, or for an
+  h4 or a `<p id>` the TOC heading before it) while the target is still
+  where the jump left it (in view, not under the navbar), else the last
+  heading whose top is in view; a page that fits the viewport keeps its
+  first entry, and a page that grows under the reader (a
+  `ResizeObserver`) is looked at again.
 - **Desktop dropdowns close when focus leaves them** for another control,
   as vdoing's `DropdownLink` does: Tab past the language list's or a nav
   dropdown's last link used to leave it open over the page. A press on
   something unfocusable inside one (its padding, the current language)
-  leaves it open; outside, the click handler closes it.
+  leaves it open; outside, the click handler closes it, and a click into a
+  frame (giscus's iframe), which blurs the window, closes it too.
 
 ### Tests (B2b.1)
 
@@ -312,12 +320,15 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   a heading anchor's click, Enter on a focused TOC link and history back
   each have one; `theme_modes_test` pins the selector. An `<a name>` target
   and `scrollIntoView()` on a `<p>` without an id land below the navbar.
-  Item 1's TOC clicks cover every entry of `/pages/17c887/`, at 1280×740,
+  A TOC click before `load` (an image left pending) is smooth; a click into
+  an iframe closes the language dropdown. Item 1's TOC clicks cover every
+  entry of `/pages/17c887/`, at 1280×740,
   1440×740 and 1280×1024, each active once scrolling settles (13 failed
   before); the exclusion of the last entries is gone. `#nesting` followed,
   then the end of the page, marks the last heading in view; a page that
-  grows 150 px after load (as giscus's iframe does) still marks the entry
-  clicked.
+  grows 150 px after load (as giscus's iframe does) keeps its first entry
+  at the top and still marks the entry clicked; an h4 followed to the end
+  marks its section; a page that fits the viewport marks its first entry.
   The comment saying that opening the drawer scrolls the page up is
   corrected: since item 1 it keeps the page where it is.
 - `bb test`: the `"y <= 100"` text pin is gone, replaced by the browser
