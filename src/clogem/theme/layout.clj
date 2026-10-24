@@ -22,6 +22,7 @@
             [clogem.search :as search]
             [clogem.seo :as seo]
             [clogem.theme.icons :as icons]
+            [clogem.theme.identity :as identity]
             [clogem.util :as u]))
 
 ;; ---------------------------------------------------------------------------
@@ -118,9 +119,10 @@
   (i18n/resolve-author ctx (or (get-in variant [:front-matter :author]) (get-in cfg [:site :author]))))
 
 (defn title-tag
-  "vdoing's `titleTag:` badge beside a title (原创 / 转载 / …). The plain
-  badge lands in Phase 2; the animated title-badge is Phase 4. Chrome, not
-  content: Pagefind would otherwise glue it onto the title (`…before原创`)."
+  "vdoing's `titleTag:` badge beside a title (原创 / 转载 / …), a plain text
+  badge. vdoing's title badge — the icon before an article's title — is
+  `clogem.theme.identity/title-badge` (P4-E1a). Chrome, not content:
+  Pagefind would otherwise glue it onto the title (`…before原创`)."
   [ctx variant]
   (when-let [t (u/blank->nil (str (get-in variant [:front-matter :titleTag])))]
     [:span.clogem-title-tag (pagefind ctx :data-pagefind-ignore) t]))
@@ -482,7 +484,11 @@
      [:a.clogem-navbar__brand {:href (href ctx (model/home-url cfg lang))}
       (i18n/resolve-str ctx (get-in cfg [:site :title]))]
      (if (or shown? sidebar?)
-       [:div#clogem-drawer.clogem-navbar__drawer nav langs]
+       [:div#clogem-drawer.clogem-navbar__drawer
+        ;; P4-E1a: the blogger card, first — opening the drawer focuses
+        ;; its first link
+        (identity/drawer-card ctx)
+        nav langs]
        nav)
      (search-box ctx)
      (mode-toggle ctx)]))
@@ -649,9 +655,12 @@
        [:span.clogem-pagination__next.is-disabled (i18n/tr ctx :index/next-page)])]))
 
 (defn footer
-  [{:keys [cfg]}]
-  [:footer.clogem-footer
-   [:p (str "clogem-press " (:clogem/version cfg))]])
+  "P4-E1a: the social links, the copyright line and \"Powered by\"
+  (`clogem.theme.identity/footer`); nothing when there is none of them.
+  The version is in `<meta name=\"generator\">`."
+  [ctx]
+  (when-let [body (identity/footer ctx)]
+    (into [:footer.clogem-footer] body)))
 
 ;; ---------------------------------------------------------------------------
 ;; The stored language preference (§6.4 rules 3 and 4, D-P3-13, D-P3-14)
@@ -1053,6 +1062,9 @@
       ;; the stylesheets, which the inline redirect would otherwise wait for
       (lang-head ctx)
       [:link {:rel "stylesheet" :href (asset-href ctx "css/theme.css")}]
+      ;; P4-E1a: css/identity.css right after theme.css, and js/bodybg.js,
+      ;; each only while the site uses them
+      (identity/head ctx)
       ;; §11.3 item 10: the token colours, right after the palette they
       ;; sit on; only when the build highlights
       (when (assets/version cfg assets/highlight-css)
@@ -1094,6 +1106,8 @@
                              (when-let [k (:page-kind ctx)] (str " page-" (name k))))}
           (search-config ctx)]
          (into body)
+         ;; P4-E1a: the background image, fixed behind the page
+         (conj (identity/body-bg ctx))
          ;; every page built here has the navbar; outside it, which is the
          ;; containing block of anything fixed inside it
          (conj (back-to-top ctx)))]))

@@ -2,6 +2,7 @@
 (ns clogem.theme.page
   "Page templates: article, home, and the redirect stub."
   (:require [clogem.config :as config]
+            [clogem.theme.identity :as identity]
             [clogem.theme.layout :as layout]
             [clogem.util :as u]))
 
@@ -25,7 +26,9 @@
        ;; not, so homes, index and pagination pages drop out by themselves
        [:article.clogem-article
         (layout/pagefind ctx :data-pagefind-body)
-        [:h1 (layout/result-title ctx (:title variant)) (layout/title-tag ctx variant)]
+        ;; P4-E1a: the title badge, chosen by the identity permalink
+        [:h1 (identity/title-badge ctx (:permalink group))
+         (layout/result-title ctx (:title variant)) (layout/title-tag ctx variant)]
         (layout/article-info ctx group variant)
         (layout/variant-bar ctx)
         [:div.clogem-content (layout/search-terms ctx group) content-hiccup]]

@@ -90,4 +90,11 @@
 
  ;; Code blocks (Phase 4 C), the copy button. Awaiting native review (CHANGELOG, Unreleased).
  :code/copy                   "நகலெடு"
- :code/copied                 "நகலெடுக்கப்பட்டது"}
+ :code/copied                 "நகலெடுக்கப்பட்டது"
+
+ ;; Phase 4 Task E1a: the blogger card's name, the social links' list, and
+ ;; the footer's credit, {{name}} being the generator's linked name.
+ ;; Awaiting native review (CHANGELOG, Unreleased, "Needs native review (E1a)").
+ :blogger/label               "ஆசிரியர் பற்றி"
+ :social/label                "சமூக ஊடக இணைப்புகள்"
+ :footer/powered-by           "{{name}} மூலம் இயக்கப்படுகிறது"}

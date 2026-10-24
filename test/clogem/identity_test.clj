@@ -5,9 +5,12 @@
   and `:title-badge*` — from config to markup, css/identity.css and
   js/bodybg.js. What needs a browser is in test/browser/identity.test.mjs."
   (:require [babashka.fs :as fs]
+            [cheshire.core :as json]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [clogem.cli :as cli]
             [clogem.config :as config]
+            [clogem.css-palette :as cp]
             [clogem.diag :as diag]
             [clogem.sprite :as sprite]))
 
@@ -221,3 +224,389 @@
     (is (true? (config/identity-css? (first (load-site {:theme theme})))) (pr-str theme)))
   (testing "a dropped value does not count"
     (is (false? (config/identity-css? (first (load-site {:theme {:blogger "me" :social []}})))))))
+
+;; ---------------------------------------------------------------------------
+;; Temp sites
+
+(def ^:private one-lang {:langs {:locales {:zh-Hans nil :zh-Hant nil :ms nil :ta nil}}})
+(def ^:private two-langs {:langs {:priority [:en :zh-Hans] :locales {:zh-Hant nil :ms nil :ta nil}}})
+
+(defn- article
+  ([permalink date] (article permalink date "T"))
+  ([permalink date title]
+   (str "---\ntitle: " title "\n" (when date (str "date: \"" date "\"\n")) "permalink: " permalink "\n---\n\nbody\n")))
+
+(defn- build
+  "Build a temp site from `edn` and content `files` {rel text}; returns
+  {:pages {rel-path html} :dist #{rel-path} :sprite text :warnings [msg]}."
+  [edn files]
+  (let [dir (fs/create-temp-dir {:prefix "clogem-e1a"})]
+    (try
+      (spit (fs/file dir "site.edn") (pr-str (merge {:site {:title "S"} :search {:provider :none}} edn)))
+      (doseq [[rel content] files]
+        (fs/create-dirs (fs/parent (fs/path dir "content" rel)))
+        (spit (fs/file dir "content" rel) content))
+      (let [err  (java.io.StringWriter.)
+            [_ ds] (binding [*out* (java.io.StringWriter.) *err* err]
+                     (diag/collecting (cli/build {:site-dir (str dir) :no-write true})))
+            dist (fs/path dir "dist")]
+        (is (empty? (diag/errors ds)) (pr-str (diag/errors ds)))
+        (is (not (str/includes? (str err) "error:")) (str err))
+        {:pages (into (sorted-map)
+                      (for [p (fs/glob dist "**.html")]
+                        [(str (fs/relativize dist p)) (slurp (fs/file p))]))
+         :dist (set (map #(str (fs/relativize dist %)) (fs/glob dist "**")))
+         :sprite (slurp (fs/file dist "clogem" "icons.svg"))
+         :css (when (fs/exists? (fs/path dist "clogem" "css" "identity.css"))
+                (slurp (fs/file dist "clogem" "css" "identity.css")))
+         ;; what the build printed (it reports its own diagnostics)
+         :warnings (into (mapv :message (diag/warnings ds))
+                         (map second (re-seq #"(?m)^warning: (.*)$" (str err))))})
+      (finally (fs/delete-tree dir)))))
+
+(defn- gzip-size [^bytes bs]
+  (let [out (java.io.ByteArrayOutputStream.)]
+    (with-open [g (java.util.zip.GZIPOutputStream. out)] (.write g bs))
+    (.size out)))
+
+(def ^:private identity-css "src/clogem/theme/resources/css/identity.css")
+(def ^:private theme-css "src/clogem/theme/resources/css/theme.css")
+(def ^:private bodybg-js "src/clogem/theme/resources/js/bodybg.js")
+
+(def social
+  {:icons [{:icon :github :title "GitHub" :link "https://github.com/me"}
+           {:icon :x :title "X" :link "https://x.com/me"}
+           {:icon :mail :title "Mail" :link "mailto:me@example.com"}
+           {:icon :yuque :title "Yuque" :link "https://yuque.example/me"}]})
+
+(defn- section-order [html]
+  (map second (re-seq #"<section(?: aria-label=\"[^\"]*\")? class=\"(clogem-[a-z-]+)" html)))
+
+(defn- aside-of [html] (re-find #"(?s)<aside class=\"clogem-home-right\">.*?</aside>" html))
+(defn- footer-of [html] (re-find #"(?s)<footer class=\"clogem-footer\">.*?</footer>" html))
+
+;; ---------------------------------------------------------------------------
+;; Item 2: where the CSS goes
+
+(deftest identity-css-ships-and-is-linked-only-when-used
+  (let [plain (build one-lang {"index.md" "# Home\n" "01.Guide/01.t.md" (article "/pages/t00001/" "2025-01-01")})
+        used  (build (assoc one-lang :theme {:blogger {:name "J"}})
+                     {"index.md" "# Home\n" "01.Guide/01.t.md" (article "/pages/t00001/" "2025-01-01")})]
+    (testing "no opt-in feature: no link, no file"
+      (is (not-any? #(str/includes? (val %) "identity.css") (:pages plain)))
+      (is (not (contains? (:dist plain) "clogem/css/identity.css"))))
+    (testing "a blogger card: on every page, right after theme.css, before highlight.css"
+      (is (contains? (:dist used) "clogem/css/identity.css"))
+      (doseq [[rel html] (:pages used)
+              :when (str/includes? html "<header class=\"clogem-navbar\"")
+              :let [links (map second (re-seq #"<link href=\"([^\"]+)\" rel=\"stylesheet\"" html))]]
+        (is (re-find #"^/clogem/css/theme\.css\?v=" (first links)) rel)
+        (is (re-find #"^/clogem/css/identity\.css\?v=[0-9a-f]+$" (second links)) rel)))))
+
+(deftest the-css-budgets
+  (let [bs (fs/read-all-bytes identity-css)
+        gz (gzip-size bs)]
+    (is (<= gz 2048) (str "identity.css: " gz " bytes gzipped"))
+    (println (format "identity: css/identity.css is %d bytes, %d gzipped (budget 2048)" (count bs) gz)))
+  (let [bs (fs/read-all-bytes theme-css)
+        gz (gzip-size bs)]
+    (is (<= gz 12288))
+    (println (format "identity: theme.css is %d bytes, %d gzipped (budget 12288; 11354 before E1a)" (count bs) gz)))
+  (let [bs (fs/read-all-bytes bodybg-js)
+        gz (gzip-size bs)]
+    (is (<= gz 600) (str "bodybg.js: " gz " bytes gzipped"))
+    (println (format "identity: js/bodybg.js is %d bytes, %d gzipped (budget 600)" (count bs) gz))))
+
+(deftest identity-css-adds-no-fixed-rule-to-theme-css
+  (let [rules (cp/parse (slurp theme-css))
+        fixed (mapcat :selectors (filter #(some (fn [[p v]] (and (= "position" p) (= "fixed" v))) (:decls %)) rules))]
+    (is (every? #(re-find #"^\.clogem-(page-button|back-to-top)$" %) fixed) (pr-str fixed)))
+  (testing "identity.css draws from the palette only, and prints none of its chrome"
+    (let [css (slurp identity-css)]
+      (is (not (re-find #"#[0-9a-fA-F]{3,8}\b" (str/replace css #"(?s)/\*.*?\*/" ""))) "no colour literal")
+      (let [print-rules (filter #(= ["print"] (:media %)) (cp/parse css))
+            hidden (set (mapcat :selectors (filter #(some (fn [[p v]] (and (= "display" p) (str/starts-with? v "none"))) (:decls %)) print-rules)))]
+        (is (= #{".clogem-blogger" ".clogem-social" ".clogem-body-bg"} hidden))))))
+
+(deftest the-hero-colour-pairs
+  (let [css (slurp theme-css)
+        rules (cp/parse css)
+        hero (into {} (for [r rules :when (and (empty? (:media r)) (some #{".clogem-hero"} (:selectors r))) [p v] (:decls r)] [p v]))]
+    (is (= "#fff" (hero "color")))
+    (is (str/ends-with? (hero "background") "#28282d"))
+    (is (<= 4.5 (cp/contrast "#ffffff" "#28282d")) "white on vdoing's banner grey")
+    (doseq [[mode _] cp/modes
+            style cp/styles
+            :let [pal (cp/palette css mode style)
+                  c (cp/contrast (pal "--mainBg") (pal "--accent"))]]
+      (is (<= 4.5 c) (format "the action, --mainBg on --accent, %s %s: %.2f" mode style c)))
+    (testing "the action is never white text"
+      (let [a (into {} (for [r rules :when (some #{".clogem-hero__action"} (:selectors r)) [p v] (:decls r)] [p v]))]
+        (is (= "var(--mainBg)" (a "color")))
+        (is (= "var(--accent)" (a "background")))))
+    (testing "print hides the banner and the badge"
+      (is (re-find #"\.clogem-hero, \.clogem-title-badge \{ display: none !important; \}" css)))))
+
+;; ---------------------------------------------------------------------------
+;; Item 3: brands and the social links
+
+(deftest the-sprite-holds-exactly-the-brands-in-use
+  (let [{:keys [pages sprite]} (build (assoc one-lang :theme {:social social})
+                                      {"index.md" "# Home\n" "01.Guide/01.t.md" (article "/pages/t00001/" "2025-01-01")})
+        ids (set (map second (re-seq #"<symbol id=\"([^\"]+)\"" sprite)))]
+    (is (= (into (set (map name (sprite/ui-names))) ["brand-github" "brand-x"]) ids))
+    (is (str/includes? sprite "Simple Icons") "the brand notice travels with them")
+    (testing "every <use> on every page resolves"
+      (doseq [[rel html] pages
+              [_ frag] (re-seq #"<use href=\"[^\"#]*#([^\"]+)\"" html)]
+        (is (contains? ids frag) (str rel ": #" frag))))
+    (testing "rel=me, named, same tab; the unknown icon fell back to the link icon"
+      (let [ul (re-find #"(?s)<ul aria-label=\"Social links\" class=\"clogem-social\">.*?</ul>" (pages "index.html"))
+            as (re-seq #"<a [^>]*>" ul)]
+        (is (= 4 (count as)))
+        (doseq [a as]
+          (is (str/includes? a "rel=\"me\"") a)
+          (is (re-find #"aria-label=\"[^\"]+\"" a) a)
+          (is (not (str/includes? a "target")) a))
+        (is (re-find #"aria-label=\"Yuque\" href=\"https://yuque.example/me\" rel=\"me\" title=\"Yuque\"><svg[^>]*><use href=\"[^\"]*#link\"" ul))))))
+
+(deftest social-links-under-a-base
+  (let [{:keys [pages]} (build (assoc one-lang :site {:title "S" :base "/my docs/"}
+                                      :theme {:social {:icons [{:icon :rss :title "RSS" :link "/feed.xml"}
+                                                               {:svg "assets/s.svg" :title "S" :link "https://s.example/"}]}})
+                               {"index.md" "# Home\n"})
+        f (footer-of (pages "index.html"))]
+    (is (str/includes? f "href=\"/my%20docs/feed.xml\""))
+    (is (str/includes? f "<a aria-label=\"S\" href=\"https://s.example/\" rel=\"me\" title=\"S\"><img alt=\"\" class=\"clogem-icon\" src=\"/my%20docs/assets/s.svg\" /></a>")
+        "an :svg is an <img>, base-prefixed; a URL is never prefixed")))
+
+;; ---------------------------------------------------------------------------
+;; Item 4: the blogger card
+
+(def ^:private blogger {:name "Jane <b>&" :avatar "/assets/我.png" :slogan "Hi"})
+
+(deftest the-home-right-bar-order
+  (let [files {"index.md" "---\nhome: true\npostList: detailed\n---\n\n# Home\n"
+               "01.Guide/01.t.md" (str "---\ntitle: T\ndate: \"2025-01-01\"\npermalink: /pages/t00001/\ncategories: [Guide]\ntags: [x]\n---\n\nbody\n")}
+        detailed (build (assoc one-lang :theme {:blogger {:name "J"}}) files)
+        simple   (build (assoc one-lang :theme {:blogger {:name "J"}})
+                        (assoc files "index.md" "---\nhome: true\npostList: simple\n---\n\n# Home\n"))]
+    (is (= ["clogem-blogger" "clogem-updates" "clogem-home-cats" "clogem-home-tags"]
+           (section-order (aside-of ((:pages detailed) "index.html")))))
+    (is (= ["clogem-blogger" "clogem-home-cats" "clogem-home-tags"]
+           (section-order (aside-of ((:pages simple) "index.html"))))
+        "no update bar under postList: simple")))
+
+(deftest the-blogger-card-markup
+  (let [{:keys [pages]} (build (assoc one-lang :site {:title "S" :base "/my docs/"} :theme {:blogger blogger :social social})
+                               {"index.md" "# Home\n"})
+        aside (aside-of (pages "index.html"))]
+    (testing "a one-language site with no :nav: no drawer, so the card is not paired"
+      (is (str/includes? aside "<section aria-label=\"About the author\" class=\"clogem-blogger\"><img alt=\"\" class=\"clogem-blogger__avatar\" src=\"/my%20docs/assets/%E6%88%91.png\" /><ul aria-label=\"Social links\" class=\"clogem-social\">"))
+      (is (not (str/includes? (pages "index.html") "clogem-drawer"))))
+    (testing "the name and the slogan are escaped text, after the links"
+      (is (str/includes? aside "</ul><p class=\"clogem-blogger__name\">Jane &lt;b&gt;&amp;</p><p class=\"clogem-blogger__slogan\">Hi</p></section>")))))
+
+(deftest the-drawer-card
+  (let [{:keys [pages]} (build (assoc two-langs :theme {:blogger blogger :social social})
+                               {"index.md" "---\nhome: true\n---\n\n# Home\n"
+                                "01.Guide/01.t.md" (article "/pages/t00001/" "2025-01-01")})]
+    (doseq [[rel html] pages
+            :when (str/includes? html "id=\"clogem-drawer\"")]
+      (is (re-find #"id=\"clogem-drawer\"><div class=\"clogem-blogger clogem-blogger--drawer\" hidden=\"hidden\"><img alt=\"\" class=\"clogem-blogger__avatar\"" html)
+          (str rel ": first in the drawer, hidden")))
+    (is (< 3 (count (filter #(str/includes? (val %) "clogem-blogger--drawer") pages))))
+    (testing "on the home, the right bar's card is paired with it"
+      (is (str/includes? (pages "index.html") "<section aria-label=\"About the author\" class=\"clogem-blogger clogem-blogger--paired\">")))
+    (testing "identity.css shows it with scripting at 50rem and below only, and hides the paired card there"
+      (let [rules (cp/parse (slurp identity-css))
+            q ["(scripting: enabled) and (max-width: 50rem)"]
+            of (fn [sel] (into {} (for [r rules :when (and (= q (:media r)) (some #{sel} (:selectors r))) [p v] (:decls r)] [p v])))]
+        (is (= "block" ((of "#clogem-drawer > .clogem-blogger[hidden]") "display")))
+        (is (= "none" ((of ".clogem-blogger--paired") "display")))
+        (is (not-any? #(and (empty? (:media %)) (some (fn [s] (str/includes? s "[hidden]")) (:selectors %))) rules)
+            "nowhere else is the hidden card given a display")))))
+
+(deftest no-card-without-a-blogger
+  (let [{:keys [pages]} (build (assoc two-langs :theme {:social social}) {"index.md" "# Home\n"})]
+    (is (not-any? #(str/includes? (val %) "clogem-blogger") pages))
+    (is (str/includes? (footer-of (pages "index.html")) "clogem-social") "the links are still in the footer")))
+
+;; ---------------------------------------------------------------------------
+;; Item 5: the footer
+
+(deftest footer-years
+  (let [files {"index.md" "# Home\n"
+               "01.Guide/01.a.md" (article "/pages/a00001/" "2025-03-01")
+               "01.Guide/02.b.md" (article "/pages/b00001/" "2021-03-01")}
+        copy (fn [footer files]
+               (second (re-find #"<p class=\"clogem-footer__copyright\">(.*?)</p>"
+                                ((:pages (build (assoc one-lang :theme {:footer footer}) files)) "index.html"))))]
+    (is (= "© 2019–2025 Jane" (copy {:create-year 2019 :copyright-info "Jane"} files))
+        "the newest dated article's year, with an en dash")
+    (is (= "© 2025" (copy {:create-year 2025} files)) "equal years: one")
+    (is (= "© 2019–2030" (copy {:create-year 2019 :end-year 2030} files)) ":end-year wins")
+    (is (= "© 2019" (copy {:create-year 2019} {"index.md" "# Home\n" "01.Guide/01.a.md" (article "/pages/a00001/" nil)}))
+        "no dated article: only the create year")
+    (is (= "© 2025 Jane" (copy {:copyright-info "Jane"} files)) "the info alone still gets the year")
+    (is (nil? (copy {:powered-by true} files)) "no copyright line without a year or info key")))
+
+(deftest footer-copyright-info-per-language-and-base
+  (let [{:keys [pages]} (build (assoc two-langs :site {:title "S" :base "/my docs/"}
+                                      :theme {:footer {:create-year 2020
+                                                       :copyright-info {:en "<a href=\"{{base}}about/\">Jane</a> {{other}}"
+                                                                        :zh-Hans ""}}})
+                               {"index.md" "# Home\n"})]
+    (is (str/includes? (footer-of (pages "index.html"))
+                       "<p class=\"clogem-footer__copyright\">© 2020 <a href=\"/my%20docs/about/\">Jane</a> {{other}}</p>")
+        "trusted HTML, {{base}} replaced, other {{…}} left alone")
+    (is (str/includes? (footer-of (pages "zh-Hans/index.html")) "<p class=\"clogem-footer__copyright\">© 2020</p>")
+        "\"\" suppresses it in that language only")))
+
+(deftest footer-powered-by
+  (let [{:keys [pages]} (build {} {"index.md" "# Home\n"})]
+    (doseq [[rel want] [["index.html" "Powered by <a href=\"https://github.com/EchoJustus/clogem-press\">clogem-press</a>"]
+                        ["zh-Hans/index.html" "由 <a href=\"https://github.com/EchoJustus/clogem-press\">clogem-press</a> 驱动"]
+                        ["zh-Hant/index.html" "由 <a href=\"https://github.com/EchoJustus/clogem-press\">clogem-press</a> 驅動"]
+                        ["ms/index.html" "Dikuasakan oleh <a href=\"https://github.com/EchoJustus/clogem-press\">clogem-press</a>"]
+                        ["ta/index.html" "<a href=\"https://github.com/EchoJustus/clogem-press\">clogem-press</a> மூலம் இயக்கப்படுகிறது"]]]
+      (is (str/includes? (footer-of (pages rel)) (str "<p class=\"clogem-footer__powered\">" want "</p>")) rel)
+      (is (not (str/includes? (footer-of (pages rel)) "0.2.0")) "the version leaves the footer")
+      (is (str/includes? (pages rel) "<meta content=\"clogem-press 0.2.0\" name=\"generator\" />") "…and stays in the head")))
+  (testing ":powered-by false and nothing else: no footer at all"
+    (let [{:keys [pages]} (build (assoc one-lang :theme {:footer {:powered-by false}}) {"index.md" "# Home\n"})]
+      (is (not (str/includes? (pages "index.html") "clogem-footer")))
+      (is (re-find #"</div><button aria-label=\"Back to top\" class=\"clogem-back-to-top\"" (pages "index.html"))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 6: the home banner
+
+(defn- hero-of [html] (re-find #"(?s)<div class=\"clogem-hero[^\"]*\"[^>]*>.*?</div>" html))
+
+(deftest the-hero
+  (let [posts (into {} (for [i (range 1 5)]
+                         [(format "_posts/p%d.md" i) (article (format "/pages/p0000%d/" i) (format "2025-01-0%d" i))]))
+        fm (fn [& kvs] (str "---\nhome: true\npostList: detailed\n" (apply str kvs) "---\n"))
+        b (fn [edn index] (build (merge one-lang {:theme {:per-page 2}} edn) (assoc posts "index.md" index)))]
+    (testing "heroText is the h1 of a body-less home; one h1; only on page 1"
+      (let [{:keys [pages]} (b {} (fm "heroText: Hello\ntagline: Tag <i>\nactionText: Go\nactionLink: /pages/p00001/\nheroImage: assets/h.png\n"))
+            home (pages "index.html")]
+        (is (str/includes? home "<div class=\"clogem-hero clogem-hero--auto\"><img alt=\"\" class=\"clogem-hero__img\" src=\"/assets/h.png\" /><h1 class=\"clogem-hero__title\">Hello</h1><p class=\"clogem-hero__tagline\">Tag &lt;i&gt;</p><a class=\"clogem-hero__action\" href=\"/pages/p00001/\">Go</a></div><div class=\"clogem-shell"))
+        (is (= 1 (count (re-seq #"<h1[ >]" home))))
+        (is (not (str/includes? home "<div class=\"clogem-content\">")) "the fallback title and description are gone")
+        (is (contains? pages "page/2/index.html"))
+        (doseq [[rel html] pages :when (str/starts-with? rel "page/")]
+          (is (not (str/includes? html "clogem-hero")) rel))))
+    (testing "a body with its own h1 keeps it; the hero text is a <p>"
+      (let [home ((:pages (b {} (str (fm "heroText: Hello\n") "\n# Mine\n"))) "index.html")]
+        (is (str/includes? home "<p class=\"clogem-hero__title\">Hello</p>"))
+        (is (= 1 (count (re-seq #"<h1[ >]" home))))))
+    (testing "no hero keys, no hero"
+      (is (not (str/includes? ((:pages (b {} (fm "postList: detailed\n"))) "index.html") "clogem-hero"))))
+    (testing "base-prefixed image and action"
+      (let [home ((:pages (b {:site {:title "S" :base "/my docs/"}}
+                             (fm "heroImage: /assets/h.png\nactionText: Go\nactionLink: /pages/p00001/\n"))) "index.html")]
+        (is (str/includes? home "src=\"/my%20docs/assets/h.png\""))
+        (is (str/includes? home "<a class=\"clogem-hero__action\" href=\"/my%20docs/pages/p00001/\">Go</a>"))))
+    (testing "each bannerBg kind"
+      (doseq [[v want] [["auto" "<div class=\"clogem-hero clogem-hero--auto\"><p"]
+                        ["none" "<div class=\"clogem-hero clogem-hero--none\"><p"]
+                        ["/assets/b.jpg" "<div class=\"clogem-hero clogem-hero--image\"><img alt=\"\" class=\"clogem-hero__bg\" src=\"/assets/b.jpg\" /><p"]
+                        ["\"background: linear-gradient(red, blue)\"" "<div class=\"clogem-hero clogem-hero--custom\" style=\"background: linear-gradient(red, blue)\"><p"]]]
+        (is (str/includes? ((:pages (b {} (fm "tagline: T\nbannerBg: " v "\n"))) "index.html") want) v)))
+    (testing ":theme :banner-bg is the default; the front matter wins"
+      (is (str/includes? ((:pages (b {:theme {:per-page 2 :banner-bg "none"}} (fm "tagline: T\n"))) "index.html")
+                         "clogem-hero--none"))
+      (is (str/includes? ((:pages (b {:theme {:per-page 2 :banner-bg "none"}} (fm "tagline: T\nbannerBg: auto\n"))) "index.html")
+                         "clogem-hero--auto")))
+    (testing "a bad bannerBg is auto, with one warning naming the home file"
+      (let [{:keys [pages warnings]} (b {} (fm "tagline: T\nbannerBg: \"#ccc\"\n"))]
+        (is (str/includes? (pages "index.html") "clogem-hero--auto"))
+        (is (= 1 (count (filter #(str/includes? % "front matter bannerBg is \"#ccc\"") warnings))) (pr-str warnings))))
+    (testing "under a background image, auto and none are transparent"
+      (is (str/includes? ((:pages (b {:theme {:per-page 2 :body-bg-img "/a.png"}} (fm "tagline: T\n"))) "index.html")
+                         "clogem-hero--clear")))))
+
+;; ---------------------------------------------------------------------------
+;; Item 7: the title badge
+
+(defn- crc [s] (.getValue (doto (java.util.zip.CRC32.) (.update (.getBytes ^String s "UTF-8")))))
+
+(defn- badge-of [html]
+  (some->> (re-find #"<h1>(<svg[^>]*clogem-title-badge[^>]*><use href=\"[^\"#]*#([^\"]+)\"|<img[^>]*clogem-title-badge[^>]*>)" html)
+           ((fn [[_ whole id]] (or id whole)))))
+
+(deftest the-title-badge
+  (let [files {"index.md" "# Home\n"
+               "01.Guide/01.a.md" (article "/pages/a00001/" "2025-01-01" "Alpha")
+               "01.Guide/01.a.zh-Hans.md" (article "/pages/a00001/" "2025-01-01" "甲")
+               "01.Guide/02.b.md" (article "/pages/b00002/" "2025-01-02" "Beta")
+               "01.Guide/03.c.md" (article "/pages/c00003/" "2025-01-03" "Gamma")}
+        one (:pages (build two-langs files))
+        two (:pages (build two-langs files))]
+    (testing "chosen by the CRC32 of the identity permalink, among book-open, pencil and hash"
+      (doseq [pl ["/pages/a00001/" "/pages/b00002/" "/pages/c00003/"]
+              :let [rel (str (subs pl 1) "index.html")]]
+        (is (= (nth ["book-open" "pencil" "hash"] (mod (crc pl) 3)) (badge-of (one rel))) rel)
+        (is (= (badge-of (one rel)) (badge-of (two rel))) (str rel ": the same in every build"))))
+    (testing "every language variant shows the same one"
+      (is (= (badge-of (one "pages/a00001/index.html")) (badge-of (one "zh-Hans/pages/a00001/index.html")))))
+    (testing "the archives page: hashed on /archives/, in every language"
+      (is (= (nth ["book-open" "pencil" "hash"] (mod (crc "/archives/") 3)) (badge-of (one "archives/index.html"))))
+      (is (= (badge-of (one "archives/index.html")) (badge-of (one "zh-Hans/archives/index.html")))))
+    (testing "the h1's text is unchanged, and the badge is decoration"
+      (is (re-find #"<h1><svg aria-hidden=\"true\" class=\"clogem-icon clogem-title-badge\" focusable=\"false\" height=\"1em\" width=\"1em\"><use href=\"[^\"]+\"></use></svg>Alpha</h1>"
+                   (one "pages/a00001/index.html"))))
+    (testing "no badge on catalogues, categories, tags or the home"
+      (doseq [rel ["index.html" "categories/index.html" "tags/index.html"]]
+        (is (not (str/includes? (one rel) "clogem-title-badge")) rel))))
+  (testing ":title-badge false: exactly the old h1"
+    (let [pages (:pages (build (assoc one-lang :theme {:title-badge false})
+                               {"index.md" "# Home\n" "01.Guide/01.a.md" (article "/pages/a00001/" "2025-01-01" "Alpha")}))]
+      (is (str/includes? (pages "pages/a00001/index.html") "<h1>Alpha</h1>"))
+      (is (str/includes? (pages "archives/index.html") "<h1>Archive</h1>"))
+      (is (not-any? #(str/includes? (val %) "clogem-title-badge") pages))))
+  (testing "custom icons: an image and a sprite icon"
+    (let [pages (:pages (build (assoc one-lang :site {:title "S" :base "/b/"} :theme {:title-badge-icons ["assets/t.png"]})
+                               {"index.md" "# Home\n" "01.Guide/01.a.md" (article "/pages/a00001/" "2025-01-01" "Alpha")}))]
+      (is (str/includes? (pages "pages/a00001/index.html") "<h1><img alt=\"\" class=\"clogem-title-badge\" src=\"/b/assets/t.png\" />Alpha</h1>")))
+    (let [pages (:pages (build (assoc one-lang :theme {:title-badge-icons [:sun]})
+                               {"index.md" "# Home\n" "01.Guide/01.a.md" (article "/pages/a00001/" "2025-01-01" "Alpha")}))]
+      (is (= "sun" (badge-of (pages "pages/a00001/index.html")))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 8: the body background image
+
+(defn- inline-scripts [html]
+  (map second (re-seq #"(?s)<script>(.*?)</script>" html)))
+
+(deftest the-body-background
+  (let [files {"index.md" "# Home\n" "01.Guide/01.a.md" (article "/pages/a00001/" "2025-01-01")}
+        none (build one-lang files)
+        one  (build (assoc one-lang :theme {:body-bg-img "/assets/bg.png" :body-bg-img-opacity 0.3}) files)
+        two  (build (assoc one-lang :site {:title "S" :base "/my docs/"}
+                           :theme {:body-bg-img ["/assets/a.png" "https://img.example/b.png"] :body-bg-img-interval 2})
+                    files)]
+    (testing "one image: an <img> before back to top, no script, no bodybg.js"
+      (doseq [[rel html] (:pages one) :when (str/includes? html "clogem-navbar")]
+        (is (str/includes? html "<img alt=\"\" aria-hidden=\"true\" class=\"clogem-body-bg\" data-o=\"3\" decoding=\"async\" fetchpriority=\"low\" src=\"/assets/bg.png\" /><button aria-label=\"Back to top\" class=\"clogem-back-to-top\"")
+            rel)
+        (is (not (str/includes? html "bodybg.js")) rel))
+      (is (not (contains? (:dist one) "clogem/js/bodybg.js")))
+      (is (contains? (:dist one) "clogem/css/identity.css")))
+    (testing "two images: the URLs, base-prefixed, and the script on every page"
+      (is (contains? (:dist two) "clogem/js/bodybg.js"))
+      (doseq [[rel html] (:pages two) :when (str/includes? html "clogem-navbar")
+              :let [[_ attrs] (re-find #"<img ([^>]*class=\"clogem-body-bg\"[^>]*)>" html)]]
+        (is (re-find #"<script defer=\"defer\" src=\"/my%20docs/clogem/js/bodybg\.js\?v=[0-9a-f]+\"></script>" html) rel)
+        (is (= ["/my%20docs/assets/a.png" "https://img.example/b.png"]
+               (json/parse-string (str/replace (second (re-find #"data-clogem-bg=\"([^\"]+)\"" attrs)) "&quot;" "\"")))
+            rel)
+        (is (str/includes? attrs "data-interval=\"2\"") rel)
+        (is (str/includes? attrs "src=\"/my%20docs/assets/a.png\"") rel)))
+    (testing "no inline script is added"
+      (is (= (map inline-scripts (vals (:pages none))) (map inline-scripts (vals (:pages one))))))
+    (testing "bodybg.js honours reduced motion and a hidden page"
+      (let [js (slurp bodybg-js)]
+        (is (str/includes? js "matchMedia(\"(prefers-reduced-motion: reduce)\")"))
+        (is (str/includes? js "if (still.matches || document.hidden) return;"))))))

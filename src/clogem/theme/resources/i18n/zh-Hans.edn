@@ -84,4 +84,10 @@
 
  ;; 代码块（Phase 4 C）：js/code.js 添加的复制按钮。
  :code/copy                   "复制"
- :code/copied                 "已复制"}
+ :code/copied                 "已复制"
+
+ ;; Phase 4 Task E1a: the blogger card's name, the social links' list, and
+ ;; the footer's credit, {{name}} being the generator's linked name.
+ :blogger/label               "关于作者"
+ :social/label                "社交链接"
+ :footer/powered-by           "由 {{name}} 驱动"}

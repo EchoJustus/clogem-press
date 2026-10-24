@@ -85,4 +85,10 @@
 
  ;; Code blocks (Phase 4 C): the copy button js/code.js adds.
  :code/copy                   "Copy"
- :code/copied                 "Copied"}
+ :code/copied                 "Copied"
+
+ ;; Phase 4 Task E1a: the blogger card's name, the social links' list, and
+ ;; the footer's credit, {{name}} being the generator's linked name.
+ :blogger/label               "About the author"
+ :social/label                "Social links"
+ :footer/powered-by           "Powered by {{name}}"}

@@ -239,7 +239,8 @@
   (let [{f :path own? :own? :as sf} (site-file model "index" lang)]
     {:fm   (or (:front-matter sf) {})
      :body (when (and own? sf (not (str/blank? (:body sf)))) (:body sf))
-     :path (some-> f str)}))
+     :path (some-> f str)
+     :own? own?}))
 
 (defn- home-pages
   "Each language's home and its /page/N/ continuations (D-P2-5): the list is
@@ -252,17 +253,17 @@
         ids      (home/home-ids model)
         plan     (into {}
                        (for [lang (config/lang-keys cfg)
-                             :let [{:keys [fm body path]} (home-front-matter model lang)
+                             :let [{:keys [fm body path own?]} (home-front-matter model lang)
                                    mode (home/post-list-mode fm)
                                    pages (if (= mode :detailed) (paginate ids per-page) [[1 ids]])]]
-                         [lang {:fm fm :body body :path path :pages pages}]))
+                         [lang {:fm fm :body body :path path :own? own? :pages pages}]))
         page-uri (fn [l n]
                    ;; the same page under `l` when it has one, else `l`'s home
                    (if (<= n (count (get-in plan [l :pages])))
                      (model/paged-url cfg l "/" n)
                      (model/home-url cfg l)))]
     (for [lang (config/lang-keys cfg)
-          :let [{:keys [fm body path pages]} (get plan lang)
+          :let [{:keys [fm body path own? pages]} (get plan lang)
                 total (count pages)]
           [n page-ids] pages
           :let [seo (seo-info cfg lang (model/paged-url cfg lang "/" n)
@@ -275,6 +276,9 @@
                ctx (ctx-for lang {:page-kind :home
                                   :seo seo
                                   :home-fm fm
+                                  ;; P4-E1a: names the file in a front-matter
+                                  ;; warning, from its own language only
+                                  :home-path (when own? path)
                                   :body (when body (markdown/render body lc))
                                   :ids page-ids :page n :total total
                                   :page-url (fn [n] (model/paged-url cfg lang "/" n))
