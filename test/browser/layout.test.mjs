@@ -267,6 +267,27 @@ async function item1(t) {
             `an h4 followed to the end of the page: ${r.active} is active, want its section #inside-a-fenced-code-block (${JSON.stringify(r)})`);
     await page.close();
   }
+  // at the end of a page that then grows below the reader (giscus), the
+  // end-of-page choice is dropped for the line's (a ResizeObserver; no scroll)
+  {
+    const page = await t.newPage({ viewport: { width: 1280, height: 1024 }, reducedMotion: 'reduce' });
+    await open(page, t, 'pages/17c887/');
+    await page.evaluate(() => scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }));
+    await settle(page);
+    const atEnd = await page.evaluate(() => document.querySelector('.clogem-toc li.is-active a').getAttribute('href'));
+    await page.evaluate(() => { const d = document.createElement('div'); d.style.height = '600px'; document.querySelector('main').appendChild(d); });
+    await settle(page);
+    const r = await page.evaluate(() => {
+      const line = document.querySelector('.clogem-navbar').getBoundingClientRect().bottom + 16;
+      const ls = [...document.querySelectorAll('.clogem-toc a')];
+      const passed = ls.filter((a) => document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1))).getBoundingClientRect().top <= line);
+      return { want: (passed.pop() || ls[0]).getAttribute('href'), got: document.querySelector('.clogem-toc li.is-active a').getAttribute('href'),
+               end: scrollY >= document.documentElement.scrollHeight - innerHeight - 1 };
+    });
+    t.check(!r.end && r.got === r.want && r.got !== atEnd,
+            `the end of /pages/17c887/ (${atEnd} active), then 600 px more below: ${r.got} is active, want the line's ${r.want} (${JSON.stringify(r)})`);
+    await page.close();
+  }
   // a page that fits the viewport marks its first entry, not its last
   {
     const page = await t.newPage({ viewport: { width: 1280, height: 2400 }, reducedMotion: 'reduce' });

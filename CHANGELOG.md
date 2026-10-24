@@ -327,8 +327,10 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   before); the exclusion of the last entries is gone. `#nesting` followed,
   then the end of the page, marks the last heading in view; a page that
   grows 150 px after load (as giscus's iframe does) keeps its first entry
-  at the top and still marks the entry clicked; an h4 followed to the end
-  marks its section; a page that fits the viewport marks its first entry.
+  at the top and still marks the entry clicked; at the end of
+  `/pages/17c887/`, 600 px added below give the line's entry back with no
+  scroll; an h4 followed to the end marks its section; a page that fits
+  the viewport marks its first entry.
   The comment saying that opening the drawer scrolls the page up is
   corrected: since item 1 it keeps the page where it is.
 - `bb test`: the `"y <= 100"` text pin is gone, replaced by the browser
