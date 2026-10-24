@@ -512,6 +512,7 @@ img { max-width: 100%; height: auto; }
 .clogem-prev-next span { display: block; font-size: 0.75rem; color: var(--textColorSubtle); }
 /* P4-E2: vdoing's PageEdit */
 .clogem-page-edit { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin-top: 1.5rem; font-size: 0.85rem; color: var(--textColorSubtle); }
+.clogem-page-edit__updated { margin-inline-start: auto; }
 
 /* P4-B2b: vdoing's page buttons, fixed at the viewport's edges. The widest
  * shell is 80rem, so its gutter is (100vw - 80rem) / 2 + 1.25rem: 52px at

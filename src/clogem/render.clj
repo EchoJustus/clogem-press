@@ -19,6 +19,7 @@
             [clogem.assets :as assets]
             [clogem.config :as config]
             [clogem.diag :as diag]
+            [clogem.gitlog :as gitlog]
             [clogem.highlight :as highlight]
             [clogem.i18n :as i18n]
             [clogem.markdown :as markdown]
@@ -1505,6 +1506,10 @@
         parsed      (when (highlight/enabled? cfg) (pre-parse model n))
         hl          (highlight/session cfg (highlight/has-code? (map second (:sources parsed))))
         _           (highlight-pre-pass! hl parsed)
+        ;; Task E2: each file's last commit date, from one `git log` pass,
+        ;; only under :theme :last-updated true (`clogem.gitlog`)
+        git-dates   (gitlog/dates cfg)
+        cfg         (cond-> cfg git-dates (assoc :clogem/git-dates git-dates))
         cfg         (cond-> cfg hl (assoc :clogem/highlight hl))
         theme-files (assets/files cfg)
         ;; the fingerprints every page's asset URLs carry are those of the

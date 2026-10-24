@@ -6,11 +6,13 @@
   front matter `pageClass` and the 404 page. What needs a browser is in
   test/browser/parity.test.mjs."
   (:require [babashka.fs :as fs]
+            [babashka.process :as p]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [clogem.cli :as cli]
             [clogem.config :as config]
             [clogem.diag :as diag]
+            [clogem.gitlog :as gitlog]
             [clogem.render :as render]
             [clogem.theme.parity :as parity]))
 
@@ -333,3 +335,181 @@
       (let [{:keys [pages warnings]} (build-temp {} files)]
         (is (not-any? #(str/includes? % "clogem-page-edit") (vals pages)))
         (is (= 1 (count (filter #(str/includes? % "editLink") warnings))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 3: last updated, from git
+
+(defn- git!
+  "Run git in `dir` as CI can (no identity of its own, no signing), at
+  `date` when it commits, never finding a repository above `dir`'s parent
+  (GIT_CEILING_DIRECTORIES). Returns git's stdout."
+  [dir date & args]
+  (let [r @(p/process {:cmd (into ["git" "-c" "user.name=t" "-c" "user.email=t@example.invalid"
+                                   "-c" "commit.gpgsign=false" "-c" "init.defaultBranch=main"]
+                                  args)
+                       :dir (str dir) :out :string :err :string
+                       :extra-env {"GIT_AUTHOR_DATE" date "GIT_COMMITTER_DATE" date
+                                   "GIT_CEILING_DIRECTORIES" (str (fs/parent dir))}})]
+    (is (zero? (:exit r)) (str "git " (str/join " " args) ": " (:err r)))
+    (:out r)))
+
+(defn- ceiling-git
+  "`gitlog/run-git` that never finds a repository above `dir`'s parent."
+  [dir]
+  (fn [d args] (gitlog/run-git d args {"GIT_CEILING_DIRECTORIES" (str (fs/parent dir))})))
+
+(defn- dates-of
+  "[dates warnings] for the site in `site-dir` with :theme :last-updated
+  true, git confined below `ceiling`'s parent."
+  [site-dir ceiling]
+  (let [[cfg] (diag/collecting (config/load-config (str site-dir)))
+        [ds ws] (binding [gitlog/*git* (ceiling-git ceiling)]
+                  (diag/collecting (gitlog/dates cfg)))]
+    [ds (mapv :message (diag/warnings ws))]))
+
+(defn- temp-repo
+  "A temp directory holding a git repository whose site is `sub` (\"\" for
+  the root), with `:theme :last-updated true`. Returns [root site]."
+  [sub]
+  (let [root (fs/create-temp-dir {:prefix "clogem-e2-git"})
+        site (if (str/blank? sub) root (fs/path root sub))]
+    (fs/create-dirs (fs/path site "content"))
+    (write-site! site {:theme {:last-updated true}} {})
+    (git! root "2026-01-01T00:00:00+00:00" "init" "-q")
+    [root site]))
+
+(deftest git-dates-come-from-one-log-pass
+  (let [[root site] (temp-repo "")]
+    (try
+      (spit (fs/file site "content" "a.md") "one")
+      (fs/create-dirs (fs/path site "content" "04.中文"))
+      (spit (fs/file site "content" "04.中文" "x y\"z.md") "cjk")
+      (spit (fs/file site "content" "old.md") "to be renamed")
+      (git! root "2026-01-02T03:04:05+08:00" "add" "-A")
+      (git! root "2026-01-02T03:04:05+08:00" "commit" "-q" "-m" "one")
+      (spit (fs/file site "content" "a.md") "two")
+      (git! root "2026-03-04T23:30:00-05:00" "commit" "-q" "-a" "-m" "two")
+      (git! root "2026-05-06T07:08:09+00:00" "mv" "content/old.md" "content/new.md")
+      (git! root "2026-05-06T07:08:09+00:00" "commit" "-q" "-m" "rename")
+      (spit (fs/file site "content" "untracked.md") "never added")
+      (let [[ds ws] (dates-of site root)]
+        (is (= [] ws))
+        (testing "two commits: the newer date, as the author wrote it"
+          (is (= "2026-03-04T23:30:00-05:00" (ds "content/a.md"))))
+        (testing "a CJK name with a space and a double quote, raw (-z)"
+          (is (= "2026-01-02T03:04:05+08:00" (ds "content/04.中文/x y\"z.md"))))
+        (testing "a renamed file: the rename's date, under its new name only"
+          (is (= "2026-05-06T07:08:09+00:00" (ds "content/new.md")))
+          (is (= "2026-01-02T03:04:05+08:00" (ds "content/old.md"))
+              "the rename commit does not list the old name; only the commit that added it does"))
+        (testing "an untracked file has no date"
+          (is (not (contains? ds "content/untracked.md"))))
+        (is (= #{"content/a.md" "content/04.中文/x y\"z.md" "content/old.md" "content/new.md"} (set (keys ds)))
+            "site.edn is outside the content directory"))
+      (finally (fs/delete-tree root)))))
+
+(deftest git-dates-for-a-site-in-a-subdirectory
+  (let [[root site] (temp-repo "docs/site")]
+    (try
+      (spit (fs/file site "content" "a.md") "one")
+      (spit (fs/file root "README.md") "outside the site")
+      (git! root "2026-02-03T04:05:06+00:00" "add" "-A")
+      (git! root "2026-02-03T04:05:06+00:00" "commit" "-q" "-m" "one")
+      (let [[ds ws] (dates-of site root)]
+        (is (= [] ws))
+        (is (= {"content/a.md" "2026-02-03T04:05:06+00:00"} ds) "relative to the site, not the repository"))
+      (finally (fs/delete-tree root)))))
+
+(deftest outside-git-shallow-and-failing-git
+  (testing "not a repository: no dates, no warning"
+    (let [dir (fs/create-temp-dir {:prefix "clogem-e2-nogit"})]
+      (try
+        (write-site! dir {:theme {:last-updated true}} {"a.md" "x"})
+        (let [[ds ws] (dates-of dir dir)]
+          (is (nil? ds))
+          (is (= [] ws)))
+        (finally (fs/delete-tree dir)))))
+  (testing "git cannot be started: no dates, no warning"
+    (let [[cfg] (diag/collecting (config/load-config demo nil {:theme {:last-updated true}}))
+          [ds ws] (binding [gitlog/*git* (fn [_ _] nil)] (diag/collecting (gitlog/dates cfg)))]
+      (is (nil? ds))
+      (is (= [] ws))))
+  (testing "a shallow clone: one warning, no dates"
+    (let [[root site] (temp-repo "")
+          clone (fs/path (fs/parent root) (str (fs/file-name root) "-shallow"))]
+      (try
+        (spit (fs/file site "content" "a.md") "one")
+        (git! root "2026-01-02T00:00:00+00:00" "add" "-A")
+        (git! root "2026-01-02T00:00:00+00:00" "commit" "-q" "-m" "one")
+        (spit (fs/file site "content" "a.md") "two")
+        (git! root "2026-01-03T00:00:00+00:00" "commit" "-q" "-a" "-m" "two")
+        (git! (fs/parent root) "2026-01-03T00:00:00+00:00" "clone" "-q" "--depth" "1"
+              (str "file://" root) (str clone))
+        (let [[ds ws] (dates-of clone clone)]
+          (is (nil? ds))
+          (is (= [(str ":theme :last-updated: the site is in a shallow clone, which dates every file to its "
+                       "newest commit; no last-updated dates are shown.")] ws)))
+        (finally (fs/delete-tree root) (fs/delete-tree clone)))))
+  (testing "any other failure: one warning quoting git's first stderr line, no dates"
+    (let [[cfg] (diag/collecting (config/load-config demo nil {:theme {:last-updated true}}))
+          fake  (fn [_ args]
+                  (if (= "rev-parse" (first args))
+                    {:exit 0 :out "false\n" :err ""}
+                    {:exit 128 :out ""
+                     :err "fatal: detected dubious ownership in repository at '/x'\nTo add an exception …\n"}))
+          [ds ws] (binding [gitlog/*git* fake] (diag/collecting (gitlog/dates cfg)))]
+      (is (nil? ds))
+      (is (= [(str ":theme :last-updated: git failed (exit 128): fatal: detected dubious ownership in "
+                   "repository at '/x'; no last-updated dates are shown.")]
+             (mapv :message (diag/warnings ws)))))
+    (let [[cfg] (diag/collecting (config/load-config demo nil {:theme {:last-updated true}}))
+          [ds ws] (binding [gitlog/*git* (fn [_ _] {:exit 1 :out "" :err ""})] (diag/collecting (gitlog/dates cfg)))]
+      (is (nil? ds))
+      (is (= 1 (count (diag/warnings ws))))))
+  (testing "with the key off, git never runs — in a build or in doctor"
+    (let [calls (atom 0)]
+      (binding [gitlog/*git* (fn [& _] (swap! calls inc) nil)]
+        (let [[cfg] (diag/collecting (config/load-config demo))]
+          (is (nil? (gitlog/dates cfg))))
+        (build-temp {} {"01.A/01.a.md" (article "A" "/pages/aaaaaa/")}))
+      (is (= 0 @calls)))
+    (testing "doctor does not run git even with it on"
+      (let [calls (atom 0)
+            dir   (fs/create-temp-dir {:prefix "clogem-e2-doctor"})]
+        (try
+          (write-site! dir {:theme {:last-updated true}} {"01.A/01.a.md" (article "A" "/pages/aaaaaa/")})
+          (binding [gitlog/*git* (fn [& _] (swap! calls inc) nil)
+                    *out* (java.io.StringWriter.)]
+            (diag/collecting (try (cli/doctor {:site-dir (str dir)}) (catch Exception _ nil))))
+          (is (= 0 @calls))
+          (finally (fs/delete-tree dir)))))))
+
+(deftest the-date-renders-beside-the-edit-link
+  (let [[root site] (temp-repo "")]
+    (try
+      (write-site! site {:theme {:last-updated true} :content {:edit-link {:repo "o/n"}}}
+                   {"01.A/01.a.md" (article "A" "/pages/aaaaaa/")
+                    "01.A/02.b.md" (article "B" "/pages/bbbbbb/" {:editLink "false"})
+                    "01.A/03.c.md" (article "C" "/pages/cccccc/")})
+      (git! root "2026-07-08T23:59:59+08:00" "add" "content/01.A/01.a.md" "content/01.A/02.b.md")
+      (git! root "2026-07-08T23:59:59+08:00" "commit" "-q" "-m" "a")
+      (let [{:keys [pages warnings]} (binding [gitlog/*git* (ceiling-git root)] (build-dir site))]
+        (is (= [] (filterv #(str/includes? % "git") warnings)))
+        (testing "the author's calendar date, inside the localized sentence"
+          (is (= (str "<div class=\"clogem-page-edit\"><a class=\"clogem-page-edit__link\" "
+                      "href=\"https://github.com/o/n/edit/main/content/01.A/01.a.md\">"
+                      "<svg aria-hidden=\"true\" class=\"clogem-icon\" focusable=\"false\" height=\"1em\" width=\"1em\">"
+                      "<use href=\"/clogem/icons.svg?v=" (second (re-find #"icons\.svg\?v=([^#]+)#" (pages "pages/aaaaaa/index.html")))
+                      "#pencil\"></use></svg> Edit this page</a>"
+                      "<span class=\"clogem-page-edit__updated\">"
+                      "<svg aria-hidden=\"true\" class=\"clogem-icon\" focusable=\"false\" height=\"1em\" width=\"1em\">"
+                      "<use href=\"/clogem/icons.svg?v=" (second (re-find #"icons\.svg\?v=([^#]+)#" (pages "pages/aaaaaa/index.html")))
+                      "#clock\"></use></svg> <time datetime=\"2026-07-08T23:59:59+08:00\">Last updated 2026-07-08</time>"
+                      "</span></div>")
+                 (page-edit-of (pages "pages/aaaaaa/index.html")))))
+        (testing "the date alone when the link is hidden"
+          (is (re-find #"<div class=\"clogem-page-edit\"><span class=\"clogem-page-edit__updated\">.*Last updated 2026-07-08</time></span></div>"
+                       (str (page-edit-of (pages "pages/bbbbbb/index.html"))))))
+        (testing "an uncommitted file has no date"
+          (is (not (str/includes? (page-edit-of (pages "pages/cccccc/index.html")) "Last updated")))))
+      (finally (fs/delete-tree root)))))

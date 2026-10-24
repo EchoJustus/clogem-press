@@ -387,6 +387,20 @@ self-hosted forges get the GitHub form. Front matter `editLink: false`
 hides the link on that page. A bad value is a warning that turns the link
 off; print never shows it.
 
+**Last updated.** `:theme :last-updated true` (vdoing's `lastUpdated`; off
+by default) adds *Last updated 2026-10-04* (`:page/last-updated`, with a
+clock) beside the edit link: the date of the last commit that touched the
+page's own source file, the author's calendar date, `yyyy-mm-dd` in every
+language. The build runs **one** `git log` over the content directory;
+`doctor` never runs git. A file git has no commit for (new, untracked)
+shows no date, and a site outside git shows none, silently. **A shallow
+clone dates every file to its newest commit**, so it is refused with one
+warning and no dates: `actions/checkout` is shallow by default, so a
+workflow that builds with this on must check out with `fetch-depth: 0`
+(the live site's `publish.yml` already does). A commit the build itself
+makes before building (an `fm-fix` step, say) dates the files it touched.
+Print keeps the date.
+
 The mode and page-style classes are on `<html>`, unqualified:
 `.theme-mode-dark`, `.theme-style-card`. (0.2.0 put them on `<body>`; CSS
 written as `body.theme-mode-dark` must drop `body`.)

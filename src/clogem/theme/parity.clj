@@ -1,7 +1,8 @@
 ;; Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).
 (ns clogem.theme.parity
   "Phase 4 Task E2 — article-page parity with vdoing (DESIGN.md §11.3 item
-  16, D-P4-13, D-P4-16): the edit link under an article or catalogue page.
+  16, D-P4-13, D-P4-16): the edit link and the last-updated date under an
+  article or catalogue page.
 
   This namespace requires `clogem.theme.layout`; layout never requires it,
   so the page templates call in here and layout stays the shared chrome."
@@ -71,14 +72,29 @@
         (when-not (fs/absolute? rel)
           (edit-href e (str/join "/" (remove str/blank? [(:dir e) rel]))))))))
 
+(defn last-updated
+  "The variant file's last commit date, ISO 8601 (`clogem.gitlog`), or nil:
+  `:theme :last-updated` is off, the site is not in git, or git has no
+  commit for the file."
+  [{:keys [cfg variant]}]
+  (when-let [ds (:clogem/git-dates cfg)]
+    (some->> (:path variant) (config/site-rel cfg) (get ds))))
+
 (defn page-edit
   "vdoing's PageEdit, after the article (or the catalogue) and before the
   prev/next links: the edit link — the `pencil` icon and `:page/edit` —
-  in the same tab, like every `:nav` link. Outside `<article
-  data-pagefind-body>`, so search never indexes it. Nil when there is
-  nothing to show."
+  in the same tab, like every `:nav` link, then the last-updated date —
+  the `clock` icon and `:page/last-updated` with the author's calendar
+  date, `yyyy-mm-dd` in every language (the server has no other locales).
+  Outside `<article data-pagefind-body>`, so search never indexes either.
+  Nil when there is neither."
   [ctx]
-  (let [href (edit-url ctx)]
-    (when href
+  (let [href (edit-url ctx)
+        iso  (last-updated ctx)]
+    (when (or href iso)
       [:div.clogem-page-edit
-       [:a.clogem-page-edit__link {:href href} (icons/icon ctx :pencil) " " (i18n/tr ctx :page/edit)]])))
+       (when href
+         [:a.clogem-page-edit__link {:href href} (icons/icon ctx :pencil) " " (i18n/tr ctx :page/edit)])
+       (when iso
+         [:span.clogem-page-edit__updated (icons/icon ctx :clock) " "
+          [:time {:datetime iso} (i18n/tr ctx :page/last-updated {:date (subs iso 0 (min 10 (count iso)))})]])])))

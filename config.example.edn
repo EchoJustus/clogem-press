@@ -180,6 +180,13 @@
          :back-to-top true            ; a back-to-top button at the bottom right, shown
                                       ; once the page is scrolled 100 px down (needs
                                       ; JS; vdoing always shows it); false omits it
+         ;; Task E2 (§11.3 item 16) — what goes under an article
+         :last-updated false          ; vdoing's lastUpdated: true → "Last updated
+                                      ; 2026-10-04" (the file's last commit, from one
+                                      ; `git log` pass) beside the edit link. Needs the
+                                      ; full history: a shallow clone (actions/checkout's
+                                      ; default) warns and shows no dates — check out with
+                                      ; `fetch-depth: 0`. Outside git: no dates, silently
          :per-page 10                 ; a positive integer: articles per page on the
                                       ; homepage and on category / tag pages (/page/2/, …)
          :fonts {:tamil :system}      ; :system | :self-hosted  (§6.9, D-P3-12)

@@ -36,6 +36,22 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   warning naming the file, and is ignored. Never on a home or an index
   page. Print hides it. `render/site-rel` is now `config/site-rel`, shared.
   The demo turns it on, pointing at its own files in this repository.
+- **Last-updated dates from git** (D-P4-16; vdoing's `lastUpdated`): with
+  `:theme :last-updated true`, `render/render-site` runs one `git -C
+  <site> log --format=%x01%aI --name-only -z --relative -- <content>`
+  (new `clogem.gitlog`, after the highlight pre-pass) and keeps each file's
+  newest commit, carried on the config as `:clogem/git-dates`. The edit
+  line then ends with `<span class="clogem-page-edit__updated">` — the
+  `clock` icon and `<time datetime="<ISO>">` holding `:page/last-updated`
+  (unused until now) with the author's calendar date, `yyyy-mm-dd` in
+  every language (babashka has no zh, ms or ta locale). Outside git, or
+  with git missing, there are no dates, silently; a shallow clone (`git
+  rev-parse --is-shallow-repository`) is one warning naming `fetch-depth:
+  0`, and any other git failure one warning quoting git's first stderr
+  line ("dubious ownership", a repository with no commits) — no dates
+  either way. `doctor` never runs git, and a build with the key off never
+  does. Print keeps the date. The demo leaves it off: CI's checkout is
+  shallow.
 
 ### Changed (E2)
 
@@ -70,6 +86,14 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   and Gitee hrefs, the branch and path encoded per segment; `editLink:
   false`, `true` and `1` (one warning, ignored, also with the link off);
   the `:theme :repo` fallback; after `</article>`, no `target`.
+- Last updated, on temp repositories committed with fixed dates and no
+  identity of CI's own (`GIT_CEILING_DIRECTORIES` set): two commits give
+  the newer date; a CJK name with a space and a `"`; a rename dated by the
+  rename commit; an untracked file undated; a site in a subdirectory of
+  its repository; not a repository: no dates, 0 warnings; git missing: the
+  same; `git clone --depth 1 file://…`: 1 warning, no dates; a failing
+  git: 1 warning quoting it; the key off, or `doctor`: git never runs; the
+  rendered date beside the edit link, alone when `editLink: false`.
 
 ### Needs native review (E2)
 
