@@ -16,6 +16,7 @@
             [hiccup2.core :as h]
             [clogem.assets :as assets]
             [clogem.config :as config]
+            [clogem.diag :as diag]
             [clogem.highlight :as highlight]
             [clogem.i18n :as i18n]
             [clogem.model :as model]
@@ -1019,6 +1020,37 @@
                                  :title (i18n/tr ctx :page/back-to-top)}
      (icons/icon ctx :arrow-up)]))
 
+(def class-token-re
+  "A `pageClass` token: a CSS class name that needs no escaping."
+  #"[A-Za-z_][A-Za-z0-9_-]*")
+
+(defn page-classes
+  "Front matter `pageClass` (vdoing's, Layout.vue; Task E2) — a
+  whitespace-separated string or a list of strings — as the class tokens
+  `document` appends to `<body class>`. The front matter is the page's
+  variant's, or `:page-fm` in `ctx` (a home's `index.md`, an index page's
+  `@pages/` file). A token that is not `class-token-re`, or a value that is
+  neither, is warned about naming the file — `:page-file`, or the
+  variant's, so each file warns once, from one page — and dropped."
+  [{:keys [variant] :as ctx}]
+  (let [[fm file] (if (contains? ctx :page-fm)
+                    [(:page-fm ctx) (:page-file ctx)]
+                    [(:front-matter variant) (:rel-path variant)])
+        v     (get fm :pageClass)
+        warn! (fn [msg] (when file (diag/warn! file msg)) nil)
+        split #(remove str/blank? (str/split (str/trim %) #"\s+"))]
+    (when (some? v)
+      (if-let [toks (cond (string? v) (split v)
+                          (and (sequential? v) (every? string? v)) (mapcat split v))]
+        (distinct
+         (filter (fn [t]
+                   (or (re-matches class-token-re t)
+                       (warn! (str "front matter pageClass: " (pr-str t) " is not a class name "
+                                   "(a letter or _, then letters, digits, - or _); it is dropped."))))
+                 toks))
+        (warn! (str "front matter pageClass: " (pr-str v)
+                    " is not a string or a list of strings; it is ignored."))))))
+
 (defn document
   "Wrap body hiccup in a complete HTML document.
 
@@ -1094,7 +1126,10 @@
       ;; important resource
       (analytics-head ctx)]
      (-> [:body {:class (str "lang-" (name lang)
-                             (when-let [k (:page-kind ctx)] (str " page-" (name k))))}
+                             (when-let [k (:page-kind ctx)] (str " page-" (name k)))
+                             ;; Task E2: after page-<kind>, which check_search.clj
+                             ;; reads as the first page- token
+                             (apply str (map #(str " " %) (page-classes ctx))))}
           (search-config ctx)]
          (into body)
          ;; every page built here has the navbar; outside it, which is the

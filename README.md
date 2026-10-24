@@ -415,6 +415,15 @@ list, which now ends with one too; by default it is the archives in the
 page's language, and with the archives switched off there is none. Print
 never shows the bar.
 
+**Page classes.** Front matter `pageClass` (vdoing's) adds class names to
+that page's `<body>`, after `lang-<lang> page-<kind>`, for your own CSS:
+`pageClass: wide` or `pageClass: [wide, no-toc]`. An article or catalogue
+page reads its own file's; a home reads its `index.md` (or
+`index.<lang>.md`); an index page its `@pages/` file, on every page of
+that index. Each name must be a plain class name — a letter or `_`, then
+letters, digits, `-` or `_` — and any other is dropped with a warning:
+the names go into the page as they are, so treat them as trusted.
+
 The mode and page-style classes are on `<html>`, unqualified:
 `.theme-mode-dark`, `.theme-style-card`. (0.2.0 put them on `<body>`; CSS
 written as `body.theme-mode-dark` must drop `body`.)

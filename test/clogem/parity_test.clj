@@ -73,7 +73,8 @@
     {:pages    (into (sorted-map)
                      (for [p (fs/glob dist "**.html")]
                        [(str/replace (str (fs/relativize dist p)) "\\" "/") (slurp (fs/file p))]))
-     :warnings (mapv :message (diag/warnings ds))}))
+     :warnings (mapv :message (diag/warnings ds))
+     :diags    (diag/warnings ds)}))
 
 (defn- build-temp
   "`write-site!` and `build-dir` in a temp directory, deleted afterwards."
@@ -630,3 +631,66 @@
           "in the update bar too")))
   (testing "the date is pushed to the row's end, the badges kept by the title"
     (is (re-find #"\.clogem-row time \{[^}]*margin-inline-start: auto;" (slurp theme-css)))))
+
+;; ---------------------------------------------------------------------------
+;; Item 6: pageClass
+
+(defn- body-class [page] (second (re-find #"<body class=\"([^\"]*)\">" (str page))))
+
+(deftest page-class-goes-on-body-after-page-kind
+  (let [{:keys [pages warnings diags]}
+        (build-temp {:langs {:priority [:en :zh-Hans] :locales {:zh-Hant nil :ms nil :ta nil}}}
+                    {"index.md"            "---\npageClass: home-x\n---\n"
+                     "@pages/archivesPage.md" "---\ntitle: Archives\npageClass: arch-x\n---\n"
+                     "@pages/tagsPage.md"  "---\ntitle: Tags\npageClass: tags-x\n---\n"
+                     "01.A/01.one.md"      (article "One" "/pages/one001/" {:pageClass "wide  _my-page" :tags "[t]"})
+                     "01.A/01.one.zh-Hans.md" (article "一" "/pages/one001/" {:pageClass "[zh-a, zh-b]"})
+                     "01.A/02.two.md"      (article "Two" "/pages/two002/" {:pageClass "ok a{b 9bad"})
+                     "01.A/03.three.md"    (article "Three" "/pages/thr003/")
+                     "01.A/04.four.md"     (article "Four" "/pages/fou004/" {:pageClass "5"})
+                     "00.Cat/01.cat.md"    (str "---\ntitle: Cat\npermalink: /pages/cat001/\ndate: 2026-01-01\n"
+                                                "pageClass: cat-x\npageComponent:\n  name: Catalogue\n  data:\n"
+                                                "    path: 01.A\n---\n")})]
+    (testing "a token on each kind of page, after lang- and page-<kind>"
+      (is (= "lang-en page-article wide _my-page" (body-class (pages "pages/one001/index.html"))))
+      (is (= "lang-zh-Hans page-article zh-a zh-b" (body-class (pages "zh-Hans/pages/one001/index.html")))
+          "a list, from the variant's own front matter")
+      (is (= "lang-en page-catalogue cat-x" (body-class (pages "pages/cat001/index.html"))))
+      (is (= "lang-en page-home home-x" (body-class (pages "index.html"))))
+      (is (= "lang-zh-Hans page-home home-x" (body-class (pages "zh-Hans/index.html")))
+          "a language without its own index file reads the site default's, as the list options")
+      (is (= "lang-en page-archives arch-x" (body-class (pages "archives/index.html"))))
+      (is (= "lang-en page-tags tags-x" (body-class (pages "tags/index.html"))))
+      (is (= "lang-en page-tags tags-x" (body-class (pages "tags/t/index.html"))) "a tag's own page too"))
+    (testing "a bad token is dropped with one warning naming the file and the token"
+      (is (= "lang-en page-article ok" (body-class (pages "pages/two002/index.html"))))
+      (is (= #{["front matter pageClass: \"a{b\" is not a class name (a letter or _, then letters, digits, - or _); it is dropped."]
+               ["front matter pageClass: \"9bad\" is not a class name (a letter or _, then letters, digits, - or _); it is dropped."]}
+             (set (map vector (filter #(and (str/includes? % "pageClass") (str/includes? % "dropped")) warnings)))))
+      (is (= 2 (count (filter #(str/includes? % "dropped") warnings))) "once each, not once per page")
+      (is (= #{"01.A/02.two.md"} (set (keep #(when (str/includes? (:message %) "dropped") (:path %)) diags)))))
+    (testing "a value that is not a string: one warning, ignored"
+      (is (= "lang-en page-article" (body-class (pages "pages/fou004/index.html"))))
+      (is (= ["front matter pageClass: 5 is not a string or a list of strings; it is ignored."]
+             (filterv #(str/includes? % "ignored.") (filterv #(str/includes? % "pageClass") warnings)))))
+    (testing "no pageClass: the body is as before"
+      (is (= "lang-en page-article" (body-class (pages "pages/thr003/index.html"))))
+      (is (= "lang-en page-categories" (body-class (pages "categories/index.html"))))))
+  (testing "the demo, which sets none, is unchanged"
+    (is (= "lang-zh-Hans page-article" (body-class (html "pages" "cjk001" "index.html"))))
+    (is (= "lang-zh-Hans page-home" (body-class (html "zh-Hans" "index.html"))))))
+
+(deftest a-site-file-s-page-class-warns-once
+  (let [{:keys [pages diags]}
+        (build-temp {:theme {:per-page 1}}
+                    {"index.md"              "---\npageClass: \"h a{b\"\n---\n"
+                     "@pages/categoriesPage.md" "---\ntitle: C\npageClass: \"c x}y\"\n---\n"
+                     "01.A/01.one.md"        (article "One" "/pages/one001/")
+                     "01.A/02.two.md"        (article "Two" "/pages/two002/")})
+        bad (filter #(str/includes? (:message %) "pageClass") diags)]
+    (is (= "lang-en page-home h" (body-class (pages "page/2/index.html"))) "every page of a paginated home")
+    (is (= "lang-en page-categories c" (body-class (pages "categories/page/2/index.html"))))
+    (is (= #{["index.md" "front matter pageClass: \"a{b\" is not a class name (a letter or _, then letters, digits, - or _); it is dropped."]
+             ["@pages/categoriesPage.md" "front matter pageClass: \"x}y\" is not a class name (a letter or _, then letters, digits, - or _); it is dropped."]}
+           (set (map (juxt :path :message) bad))))
+    (is (= 2 (count bad)) "once per file, from its first page")))

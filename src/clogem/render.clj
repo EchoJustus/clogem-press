@@ -83,6 +83,12 @@
   [model rel lang]
   (get-in model [:site-files [rel lang]]))
 
+(defn- content-rel
+  "A site file's path as a diagnostic names it: relative to the content
+  directory, `/`-separated."
+  [cfg p]
+  (str/replace (str (fs/relativize (config/content-dir cfg) (fs/path (str p)))) "\\" "/"))
+
 (defn index-paths
   "{kind → site-relative root path} for every enabled index: the `@pages/`
   file's `permalink:` when it has one, else the default. An unsafe one
@@ -166,7 +172,12 @@
                                      (markdown/render b (link-context model model lang (str file*)))))))
                        base  {:kind kind :page-kind kind :title title
                               :root-uri (model/site-url cfg lang root)
-                              :href-for (fn [k] (model/site-url cfg lang (str root (u/slug k) "/")))}
+                              :href-for (fn [k] (model/site-url cfg lang (str root (u/slug k) "/")))
+                              ;; Task E2: the @pages file's `pageClass`, on every
+                              ;; page of this index; warned about from its first
+                              ;; page, in its own language (`own-file`)
+                              :page-fm (or (:front-matter sf) {})}
+                       own-file (when (and file* own?) (content-rel cfg file*))
                        index (get model kind)
                        ;; the file whose `permalink:` put this index where it is
                        src   (let [d (site-file model (pages/file-rel k) (config/default-lang cfg))]
@@ -186,6 +197,7 @@
                                               :seo seo
                                               :alt-url (fn [l] (model/site-url cfg l root))
                                               :page-body (body)
+                                              :page-file own-file
                                               :archives index))))
                       (m seo))]])
                 ;; the overview: the bar, then EVERY article paginated below
@@ -207,6 +219,7 @@
                                              :page n :total total
                                              :page-url (fn [n] (model/paged-url cfg lang root n))
                                              :alt-url (fn [l] (model/paged-url cfg l root n))
+                                             :page-file (when (= 1 n) own-file)
                                              :page-body (when (= 1 n) (body))))))
                      (m seo))])))
               ;; one filtered list per category/tag, paginated
@@ -240,7 +253,8 @@
   (let [{f :path own? :own? :as sf} (site-file model "index" lang)]
     {:fm   (or (:front-matter sf) {})
      :body (when (and own? sf (not (str/blank? (:body sf)))) (:body sf))
-     :path (some-> f str)}))
+     :path (some-> f str)
+     :own? (boolean (and f own?))}))
 
 (defn- home-pages
   "Each language's home and its /page/N/ continuations (D-P2-5): the list is
@@ -253,17 +267,17 @@
         ids      (home/home-ids model)
         plan     (into {}
                        (for [lang (config/lang-keys cfg)
-                             :let [{:keys [fm body path]} (home-front-matter model lang)
+                             :let [{:keys [fm body path own?]} (home-front-matter model lang)
                                    mode (home/post-list-mode fm)
                                    pages (if (= mode :detailed) (paginate ids per-page) [[1 ids]])]]
-                         [lang {:fm fm :body body :path path :pages pages}]))
+                         [lang {:fm fm :body body :path path :own? own? :pages pages}]))
         page-uri (fn [l n]
                    ;; the same page under `l` when it has one, else `l`'s home
                    (if (<= n (count (get-in plan [l :pages])))
                      (model/paged-url cfg l "/" n)
                      (model/home-url cfg l)))]
     (for [lang (config/lang-keys cfg)
-          :let [{:keys [fm body path pages]} (get plan lang)
+          :let [{:keys [fm body path own? pages]} (get plan lang)
                 total (count pages)]
           [n page-ids] pages
           :let [seo (seo-info cfg lang (model/paged-url cfg lang "/" n)
@@ -276,6 +290,10 @@
                ctx (ctx-for lang {:page-kind :home
                                   :seo seo
                                   :home-fm fm
+                                  ;; Task E2: `pageClass`, warned about from the
+                                  ;; first page of the file's own language
+                                  :page-fm fm
+                                  :page-file (when (and own? (= 1 n)) (content-rel cfg path))
                                   :body (when body (markdown/render body lc))
                                   :ids page-ids :page n :total total
                                   :page-url (fn [n] (model/paged-url cfg lang "/" n))

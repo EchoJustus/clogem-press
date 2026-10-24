@@ -78,6 +78,16 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   catalogue rows (vdoing shows it in `UpdateArticle`'s rows, not in its
   catalogue). `.clogem-row time` gets `margin-inline-start: auto`, so the
   badges stay by the title and the date at the row's end.
+- **Front matter `pageClass`** (vdoing's, `Layout.vue`): a
+  whitespace-separated string or a list of strings, appended to `<body
+  class>` after `page-<kind>` (`check_search.clj` reads the first `page-`
+  token) by `layout/page-classes`. Articles and catalogues read their
+  variant's front matter, homes their `index.md` (the list options' file),
+  index pages their `@pages/` file — on every page of that index. A token
+  that is not `[A-Za-z_][A-Za-z0-9_-]*`, or a value that is not a string
+  or a list of strings, is a warning naming the file (once per file, from
+  its first page in its own language) and is dropped. A page without
+  `pageClass` renders byte-identical.
 
 ### Changed (E2)
 
@@ -131,6 +141,12 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   right after the `/pages/y2025a/` link on `/archives/` and `/tags/meta/`,
   and before the fallback badge in the zh-Hans simple list, in every row
   of the demo that links it; no attribute under `:search :none`.
+- `pageClass`: a token on an article (string), its zh-Hans variant (list),
+  a catalogue, both homes, the archives, the tags overview and a tag's
+  page, each after `page-<kind>`; `a{b` and `9bad` dropped with one warning
+  each, naming the file; `5` ignored with one warning; a paginated home's
+  and a category overview's bad token warn once per file; the demo and a
+  page without it unchanged.
 
 ### Needs native review (E2)
 
