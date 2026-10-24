@@ -1,12 +1,10 @@
 /* clogem-press — the drawer and the navbar's dropdowns (P4-B2b, D-P4-9).
- * The open state is the <details>' own; this adds: the sidebar moved (never
- * cloned) into #clogem-drawer while the CSS renders the menu summary, and
- * back at a placeholder when it does not; focus into the drawer on open;
- * Escape, a click outside, a followed link or a bfcache pageshow close it;
- * outside the drawer layout, Escape or a click outside closes a dropdown.
- * A toggle rendered hidden (no :nav, one language) is revealed here, and
- * so is the sidebar's collapse button: is-sidebar-collapsed on the shell,
- * from data-clogem-collapsed. Back to top shows past 100 px, hides once used. */
+ * The <details> own their open state. This moves the sidebar (never a copy)
+ * into #clogem-drawer while the CSS renders the menu summary, focuses into
+ * the drawer, and closes it or a dropdown on Escape, a click (or, for a
+ * dropdown, focus) outside, a followed link or a bfcache pageshow. It also
+ * reveals a hidden toggle and the collapse button, measures the navbar and
+ * shows back to top past 100 px. Its focus calls never scroll (B2b.1). */
 (function () {
   "use strict";
   window.clogem = window.clogem || {};
@@ -14,14 +12,23 @@
   var drawer = document.getElementById("clogem-drawer");
   var summary = toggle && toggle.querySelector("summary");
   var aside = document.querySelector("aside.clogem-sidebar");
-  var mark = null, active = false;
+  var mark = null, active = false, still = { preventScroll: true };
 
-  function rendered(e) { return !!e && e.getClientRects().length > 0; }
+  // theme.css's jump offset follows a wrapped navbar
+  var nb = document.querySelector(".clogem-navbar"), sheet;
+  if (nb && window.ResizeObserver && document.adoptedStyleSheets) {
+    sheet = new CSSStyleSheet();
+    document.adoptedStyleSheets = document.adoptedStyleSheets.concat(sheet);
+    new ResizeObserver(function () {
+      sheet.replaceSync(":root{--navbarMeasured:" + nb.getBoundingClientRect().height + "px}");
+    }).observe(nb);
+  }
+
+  function rendered(e) { return e.getClientRects().length > 0; }
 
   function close(refocus) {
-    if (!toggle.open) return;
     toggle.open = false;
-    if (refocus) summary.focus();
+    if (refocus) summary.focus(still);
   }
 
   function sync() {
@@ -48,7 +55,7 @@
   if (sbt && shell) {
     var collapse = function (c) {
       shell.classList.toggle("is-sidebar-collapsed", c);
-      sbt.setAttribute("aria-expanded", c ? "false" : "true");
+      sbt.setAttribute("aria-expanded", !c + "");
     };
     collapse(shell.hasAttribute("data-clogem-collapsed"));
     sbt.hidden = false;
@@ -69,7 +76,7 @@
       up.hidden = going || y <= 100;
     };
     window.addEventListener("scroll", function () {
-      if (!queued) { queued = true; window.requestAnimationFrame(place); }
+      if (!queued) { queued = true; requestAnimationFrame(place); }
     }, { passive: true });
     place();
     up.addEventListener("click", function () {
@@ -77,15 +84,14 @@
       going = true;
       up.hidden = true;
       // focus stays on <body>, the next Tab starting at the top
-      if (had) { b.tabIndex = -1; b.focus({ preventScroll: true }); b.removeAttribute("tabindex"); }
+      if (had) { b.tabIndex = -1; b.focus(still); b.removeAttribute("tabindex"); }
       window.scrollTo({ top: 0 });
     });
   }
 
   // the nav and language dropdowns outside the drawer layout
   function dropdowns() {
-    return Array.prototype.slice.call(
-      document.querySelectorAll(".clogem-navbar__item details[open], .clogem-langs__toggle[open]"));
+    return [].slice.call(document.querySelectorAll(".clogem-navbar__item details[open], .clogem-langs__toggle[open]"));
   }
   function box(d) { return d.classList.contains("clogem-langs__toggle") ? d.parentNode : d; }
 
@@ -105,14 +111,11 @@
     window.addEventListener("resize", function () {
       if (ticking) return;
       ticking = true;
-      window.requestAnimationFrame(function () { ticking = false; sync(); });
+      requestAnimationFrame(function () { ticking = false; sync(); });
     });
     // a hint only: what the CSS renders decides
-    if (window.matchMedia) {
-      var mq = window.matchMedia("(max-width: 50rem)");
-      if (mq.addEventListener) mq.addEventListener("change", sync);
-      else if (mq.addListener) mq.addListener(sync);
-    }
+    var mq = window.matchMedia && window.matchMedia("(max-width: 50rem)");
+    if (mq && mq.addEventListener) mq.addEventListener("change", sync);
     window.addEventListener("pageshow", function (e) { if (e.persisted) close(false); });
   }
 
@@ -122,17 +125,22 @@
     dropdowns().forEach(function (d) {
       var focused = box(d).contains(document.activeElement);
       d.open = false;
-      if (focused || document.activeElement === document.body) d.querySelector("summary").focus();
+      if (focused || document.activeElement === document.body) d.querySelector("summary").focus(still);
     });
   });
+
+  function shut(t, from) {
+    dropdowns().forEach(function (d) { var b = box(d); if (b.contains(from || b) && !b.contains(t)) d.open = false; });
+  }
+  document.addEventListener("focusout", function (e) { if (!active) shut(e.relatedTarget, e.target); });
 
   document.addEventListener("click", function (e) {
     var t = e.target;
     if (active && toggle.open) {
       if (toggle.contains(t)) return;   // the summary toggles it itself
-      if (!drawer.contains(t) || (t.closest && t.closest("a[href]"))) close(false);
+      if (!drawer.contains(t) || t.closest("a[href]")) close(false);
       return;
     }
-    dropdowns().forEach(function (d) { if (!box(d).contains(t)) d.open = false; });
+    shut(t);
   });
 })();

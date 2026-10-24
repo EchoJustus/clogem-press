@@ -590,12 +590,19 @@
 
 (defn shell
   "The page body between navbar and footer: the sidebar tree when the page
-  has one, the main column, and the TOC bar when the page has headings."
+  has one, the main column, and the TOC bar when the page has headings.
+  `clogem-shell--wide`: a sidebar page whose TOC `:right-menu-bar false`
+  dropped."
   [{:keys [cfg] :as ctx} main]
   (let [sb (sidebar ctx)
         tc (toc ctx)]
     [:div.clogem-shell (cond-> {:class (str/join " " (remove nil? [(when-not sb "clogem-shell--single")
-                                                                   (when tc "clogem-shell--toc")]))}
+                                                                   (when tc "clogem-shell--toc")
+                                                                   ;; P4-B2b.1: the TOC dropped by
+                                                                   ;; `:right-menu-bar false`, its
+                                                                   ;; room goes to the article from 80rem
+                                                                   (when (and sb (seq (:toc ctx)) (not tc))
+                                                                     "clogem-shell--wide")]))}
                          ;; P4-B2b: `:theme :sidebar-collapsed true`, read by
                          ;; js/nav.js alone (no CSS rule reads it)
                          (and sb (true? (get-in cfg [:theme :sidebar-collapsed])))

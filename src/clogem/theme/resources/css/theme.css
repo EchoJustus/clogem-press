@@ -74,7 +74,7 @@
   --errorBorder: #e8c4b4;
   --errorText: #9f1d1d;
   --shadowColor: rgba(0, 0, 0, 0.1);
-  --linesColor: rgba(50, 0, 0, 0.05);
+  --linesColor: rgba(50, 0, 0, 0.03);   /* lighter: the accent on pattern 1's crossings (B2b.1) */
   color-scheme: light;
 }
 
@@ -135,14 +135,21 @@
 * { box-sizing: border-box; }
 
 /* the background is the root's, so the very first frame (and any overscroll)
- * is in the mode. P4-B2b: every jump and focus scroll lands below the navbar */
+ * is in the mode */
 html {
   background: var(--bodyBg);
   color: var(--textColor);
-  scroll-padding-top: calc(var(--navbarHeight) + 0.75rem);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
                "Helvetica Neue", Arial, sans-serif;
 }
+
+/* P4-B2b: every jump and focus scroll lands below the navbar. A margin on
+ * the targets, not a scroll-padding on the root, which covered the navbar's own
+ * controls too, and Chromium centred one on focus, moving the page (B2b.1).
+ * --navbarMeasured is the navbar's height, set by js/nav.js: a long nav wraps */
+:root { --jumpOffset: calc(var(--navbarMeasured, var(--navbarHeight)) + 0.75rem); }
+:where([id], :focus) { scroll-margin-top: var(--jumpOffset); }
+.clogem-navbar * { scroll-margin-top: 0; }
 
 body {
   margin: 0;
@@ -272,6 +279,7 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
 .clogem-langs__toggle > summary::-webkit-details-marker { display: none; }
 .clogem-langs__toggle[open] .clogem-navbar__caret { transform: rotate(180deg); }
 @media not all and (max-width: 50rem) {
+  .clogem-langs { flex: none; }   /* shrunk, its summary overlapped the search trigger (B2b.1) */
   .clogem-langs__toggle { display: block; }
   .clogem-langs__label, .clogem-langs__toggle:not([open]) + ul { display: none; }
   .clogem-langs ul { position: absolute; top: calc(100% + 0.6rem); inset-inline-end: 0; z-index: 20;
@@ -302,7 +310,7 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
  * without the feature gets them: the navbar of old, static, wrapping, every
  * link shown; jumps need no navbar offset */
 @media (max-width: 50rem) {
-  html { scroll-padding-top: 0.75rem; }
+  :root { --jumpOffset: 0.75rem; }
   .clogem-navbar { position: static; flex-wrap: wrap; gap: 0.25rem 1rem; padding: 0.5rem 1.25rem; }
   .clogem-navbar__brand { max-width: 100%; }
   .clogem-navbar__menu { position: static; }
@@ -312,7 +320,7 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
  * navbar's backdrop-filter would size a fixed drawer to the navbar. A
  * failed js/nav.js leaves the toggle working, and the sidebar in place */
 @media (scripting: enabled) and (max-width: 50rem) {
-  html { scroll-padding-top: calc(var(--navbarHeight) + 0.75rem); }
+  :root { --jumpOffset: calc(var(--navbarMeasured, var(--navbarHeight)) + 0.75rem); }
   .clogem-navbar { position: sticky; flex-wrap: nowrap; gap: 0.5rem; padding: 0 0.75rem; }
   .clogem-navbar__toggle:not([hidden]) { display: block; margin-inline-start: -0.5rem; }
   .clogem-navbar__brand { flex: 1 1 auto; min-width: 0; }
@@ -557,6 +565,9 @@ img { max-width: 100%; height: auto; }
     gap: 1.5rem; max-width: calc(var(--maxWidth) + 18rem);
   }
   .clogem-shell--toc:not(.clogem-shell--single) > .clogem-toc { padding-right: 0.5rem; }
+  /* P4-B2b.1: :right-menu-bar false dropped the TOC; the article takes its
+   * room (584 px at 1280 in the 62rem shell), as vdoing's does */
+  .clogem-shell--wide { max-width: calc(var(--maxWidth) + 18rem); }
 }
 /* P4-B2b: the sidebar's collapse button, first in the main column. Only
  * js/nav.js reveals it and sets `is-sidebar-collapsed`, and only above
@@ -572,6 +583,11 @@ img { max-width: 100%; height: auto; }
 @media not all and (max-width: 50rem) {
   .clogem-shell.is-sidebar-collapsed { grid-template-columns: minmax(0, 1fr); }
   .clogem-shell.is-sidebar-collapsed > .clogem-sidebar { display: none; }
+  /* widened past 50rem, the aside is in the drawer until js/nav.js moves it
+   * back: never laid out in the navbar, main keeps its column, and the
+   * reading position stays put (B2b.1) */
+  .clogem-navbar__drawer > .clogem-sidebar { display: none; }
+  .clogem-shell:not(.clogem-shell--single, .clogem-shell--home, .is-sidebar-collapsed):not(:has(> .clogem-sidebar)) > .clogem-main { grid-column: 2; }
 }
 @media (min-width: 80rem) {
   .clogem-shell--toc.is-sidebar-collapsed:not(.clogem-shell--single) { grid-template-columns: minmax(0, 1fr) minmax(11rem, 14rem); }

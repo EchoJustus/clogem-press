@@ -128,14 +128,14 @@
     menu.hidden = false;
     button.setAttribute("aria-expanded", "true");
     var current = menu.querySelector('button[aria-pressed="true"]') || items[0];
-    if (current) current.focus();
+    if (current) current.focus({ preventScroll: true });
   }
 
   function close(refocus) {
     if (!isOpen()) return;
     menu.hidden = true;
     button.setAttribute("aria-expanded", "false");
-    if (refocus) button.focus();
+    if (refocus) button.focus({ preventScroll: true });
   }
 
   button.addEventListener("click", function () {

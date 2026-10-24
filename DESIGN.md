@@ -3017,9 +3017,12 @@ their own findings. Item 19 onward are corrections.
    surface and the code ring on `--codeBg`, in every mode (`page_style_test`); 40 Tab stops at 1280
    and 360 px, light and dark, all draw it (`modes.test.mjs`).
    *B2b.* `:root { --navbarHeight: 3.6rem }` (vdoing's); the navbar is exactly that tall, one row,
-   and the root's `scroll-padding-top: calc(var(--navbarHeight) + 0.75rem)` replaces the h2–h6
+   and `:where([id], :focus) { scroll-margin-top: var(--jumpOffset) }` (`--navbarHeight` + 0.75rem;
+   the navbar's measured height, `--navbarMeasured`, when `nav.js` has set it) replaces the h2–h6
    `scroll-margin-top`, so the home's `h1`, any `id`, `scrollIntoView()` and focus scrolling land
-   below it too; `toc.js` measures the navbar's bottom. Smooth scrolling is always on, under
+   below it too; `toc.js` measures the navbar's bottom. B2b.1: not a root `scroll-padding-top`, which
+   covered the sticky navbar's own controls, so Chromium centred one on focus and moved the page;
+   inside `.clogem-navbar` the margin is 0. Smooth scrolling is always on, under
    `prefers-reduced-motion: no-preference` only (vdoing's `smoothScroll` is off by default; here it
    is *implicit*, a known key that warns and is ignored). Above 50rem the language switcher is a `<details>` dropdown whose list is its next
    sibling (CSS cannot show a closed `<details>`' content where `::details-content` is missing), and
@@ -3034,9 +3037,14 @@ their own findings. Item 19 onward are corrections.
    brand, search, mode) and `#clogem-drawer` below it, `position: absolute` (the navbar's
    `backdrop-filter` makes it the containing block of anything `fixed`), shown only while the toggle
    is open; `js/nav.js` moves the sidebar in while the menu summary is rendered (read from the CSS,
-   so no `(scripting)` support means no move). The no-JS rules sit outside any scripting query: the
-   old wrapping navbar, `static`, every link shown, `scroll-padding-top: 0.75rem`. A failed `nav.js`
-   leaves the native `<details>` toggle working.
+   so no `(scripting)` support means no move). B2b.1: Chromium lays out a widened page before any
+   script runs, `matchMedia`'s change event included, so above 50rem the drawer's aside is
+   `display: none` and main keeps column 2 until the move back — laid out in the navbar
+   (`display: contents`) it had shifted the reading position by ~400 px. A long nav wraps the
+   navbar; `nav.js` measures it (a `ResizeObserver` writing `--navbarMeasured` into an adopted
+   stylesheet: no `style` attribute) and the jump offset follows. The no-JS rules sit outside any
+   scripting query: the old wrapping navbar, `static`, every link shown, `--jumpOffset: 0.75rem`.
+   A failed `nav.js` leaves the native `<details>` toggle working.
 10. **Highlighting on by default (C) — done.** `:highlight {:provider :chroma}`; `:none` or `--no-highlight`
     turns it off. A fetch failure is an error in `build` and a warning in `dev`. Line numbers are CSS
     counters, never text — Chroma's own numbers pollute the Pagefind index. One Chroma process per
@@ -3464,7 +3472,9 @@ their own findings. Item 19 onward are corrections.
     smooth scrolling is always on unless the reader asks for reduced motion, and there is no key.
     An `:implicit` entry of `vdoing-keys` carries its own note and hint.
     `:right-menu-bar false` (vdoing's `rightMenuBar`) drops the TOC aside, its shell class and
-    `js/toc.js` (`layout/toc?`); headings keep their ids and anchors. vdoing nests the headings under
+    `js/toc.js` (`layout/toc?`); headings keep their ids and anchors. B2b.1: a sidebar page whose
+    TOC it dropped gets `clogem-shell--wide`, the TOC shell's `max-width` from 80rem, so the article
+    takes the TOC's room (584 px in the 62rem shell at 1280). vdoing nests the headings under
     the sidebar's link when the right menu is off; clogem-press does not (the sidebar lists articles
     only). The home's right bar follows `hideRightBar`.
     `:sidebar-collapsed true` puts `data-clogem-collapsed` on a sidebar page's shell; only
@@ -3494,8 +3504,9 @@ their own findings. Item 19 onward are corrections.
     column of articles and catalogues, where vdoing's `Page.vue` draws it, and nowhere else: its six
     patterns in `background-image`/`background-size`/`background-position` only (`0deg` for vdoing's
     unitless `0`), never the shorthand, over the card's own `background`. `--linesColor` is in every
-    mode block, vdoing's `rgba(50, 0, 0, 0.05)` in light and read and `rgba(125, 125, 125, 0.05)` in
-    dark and auto; the palette check composites it over the card as one more surface. Print draws
+    mode block, vdoing's `rgba(50, 0, 0, 0.05)` in light and `rgba(125, 125, 125, 0.05)` in dark and
+    auto, and `rgba(50, 0, 0, 0.03)` in read (B2b.1); the palette check composites it over the card
+    once and twice (pattern 1's crossings, where read's 0.05 took the accent to 4.22:1). Print draws
     none.
     *Unknown-key warnings — done in A (part of D-P4-16).* `config/known-keys` is the one table of
     every section's keys ({path → {key :ok|:planned}}, `:*` for any key); `check-keys!` walks the

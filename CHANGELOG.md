@@ -22,8 +22,9 @@ buttons and a back-to-top button now appear by default, as in vdoing.
 ### Added (B2b)
 
 - **`--navbarHeight`** (3.6rem, vdoing's value) on `:root`. The navbar is
-  exactly that tall, on one row, and the root's `scroll-padding-top`
-  (`--navbarHeight` + 0.75rem) puts every jump below it: a link to a
+  exactly that tall, on one row, and a `scroll-margin-top` on every `[id]`
+  and focused element outside the navbar (`--jumpOffset`: the navbar's
+  height + 0.75rem) puts every jump below it: a link to a
   fragment, a TOC click, a fresh load of `…/#id`, `scrollIntoView()` and a
   focus move by Tab — headings or not (the home's `h1` and any `id`
   included). The TOC sticks 1rem below the navbar, and `js/toc.js` takes
@@ -120,8 +121,8 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   the brand sits at the start and everything else at the end; the gap is
   1rem.
 - **A nav too long for one row** wraps its own items inside the navbar,
-  which grows taller rather than spilling over the page; about two lines
-  fit in `--navbarHeight`.
+  which grows taller rather than spilling over the page; with JS the jump
+  offset follows its height (B2b.1).
 - **The navbar without JS at 50rem and below is static**: it still
   wraps, with every top-level link, dropdown summary and language shown,
   but no longer sticks over the page (it was 190–268 px tall at 320 px).
@@ -227,6 +228,64 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   prev/next link at 360, and the open drawer covers it.
   `overflow.test.mjs` checks every page scrolled 200 px too, and
   `modes.test.mjs` its print at 360.
+
+### Fixed (B2b.1)
+
+- **Focusing a navbar control no longer throws the page up.** The root's
+  `scroll-padding-top` covered the whole sticky navbar, so Chromium took
+  every control in it for obscured and centred it on focus: scrolled to
+  1000 px at 360×740, the first Tab landed at 624, Escape on the drawer or
+  the mode menu at 607–824, and a page scrolled less than ~376 px went to
+  the top (`main` moved 0 px). The offset is now a `scroll-margin-top` on
+  `:where([id], :focus)`, zero inside `.clogem-navbar`; the scripted focus
+  calls of `nav.js` and `mode.js` pass `preventScroll` too.
+- **Widening past 50rem while scrolled** no longer moves the reading
+  position by ~400 px: the aside, still in the drawer until `nav.js` moves
+  it back, was laid out inside the navbar (`display: contents`), 306 px
+  tall. Above 50rem the drawer's aside is not displayed and main keeps its
+  column, so the move back shifts nothing.
+- **A long nav above 50rem**: the language summary no longer overlaps the
+  search trigger (by up to 36 px; `.clogem-langs` shrank below it), the
+  page no longer overflows without JS (by up to 15 px), and a jump lands
+  below a wrapped navbar: `nav.js` measures the navbar (a
+  `ResizeObserver`, into an adopted stylesheet's `--navbarMeasured`).
+- **`:right-menu-bar false`** left the article 584 px wide at 1280, the
+  TOC-less 62rem shell: a sidebar page whose TOC the key dropped now gets
+  `clogem-shell--wide`, and from 80rem the TOC's room (872 px at 1280).
+  Pages without headings, and every page below 80rem, are unchanged.
+- **Read mode's `--linesColor`** is `rgba(50, 0, 0, 0.03)`: where pattern
+  1's gradients cross, 0.05 twice took a link to 4.22:1 (4.40 measured).
+- **Desktop dropdowns close when focus leaves them**, as vdoing's
+  `DropdownLink` does: Tab past the language list's or a nav dropdown's
+  last link used to leave it open over the page.
+
+### Tests (B2b.1)
+
+- `layout.test.mjs`: at 360×740, 768×1024 and 1280×800, under both motion
+  settings and scrolled to 1000, the first Tab, the drawer, the mode menu
+  and the language dropdown (each opened and closed with Escape) leave
+  `scrollY` unchanged; widening 700 → 900 and 768 → 1024 and narrowing
+  back move a heading 200 px down by ≤ 24 px, and 360 → 1280 lands within
+  24 px of where it lands with `nav.js` aborted (the browser's own scroll
+  anchoring moves it 116 px either way); a 13-item nav scanned at 801–1600
+  in 10 px steps on three pages, with JS and without, has no overlapping
+  controls, no overflow and no control outside the navbar, and `#nesting`
+  lands below it at 801, 850, 1024 and 1280; a `:right-menu-bar false`
+  temp build gives the article ≥ 600 px at 1280 and 1440 and changes
+  nothing at 900 and 1024. Each item now runs in its own `try`, so a throw
+  fails that item and the rest still run (`CLOGEM_LAYOUT_ITEMS` picks
+  items). At 1280, Tab through the language dropdown's and Browse's links
+  keeps each open and Tab past the last closes it; with the mode menu
+  focused and the language dropdown open, one Escape closes only the mode
+  menu (`e.defaultPrevented`, which only a text pin covered); back to top
+  is hidden at 50 px and shown at 101 (`y <= 100 * 0` survived every test).
+  The comment saying that opening the drawer scrolls the page up is
+  corrected: Playwright's `locator.click()` does that, a reader does not.
+- `bb test`: the `"y <= 100"` text pin is gone, replaced by the browser
+  check; no `scroll-padding` declaration, the `--jumpOffset` per media
+  query, the wide shell on the `:right-menu-bar false` tree article and on
+  no default page; the contrast check gains the surface "--linesColor twice
+  over --mainBg", where read's old 0.05 fails at 4.22:1.
 
 ### Needs native review (B2b)
 

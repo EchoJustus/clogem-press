@@ -313,7 +313,8 @@
   composited over what lies under it: the page (over the canvas), the
   card and the sidebar over the page, a custom block over the card, the
   navbar's translucent --blurBg over the page and over a card scrolling
-  beneath it, and a background pattern's --linesColor over the card."
+  beneath it, and a background pattern's --linesColor over the card, once
+  and (P4-B2b.1: where pattern 1's two gradients cross) twice."
   [p]
   (let [body (over (p "--bodyBg") white)
         main (over (p "--mainBg") body)]
@@ -324,7 +325,8 @@
      ["--blurBg over --bodyBg" (over (p "--blurBg") body)]
      ["--blurBg over --mainBg" (over (p "--blurBg") main)]
      ;; P4-B2b: a background pattern's lines on the card
-     ["--linesColor over --mainBg" (over (p "--linesColor") main)]]))
+     ["--linesColor over --mainBg" (over (p "--linesColor") main)]
+     ["--linesColor twice over --mainBg" (over (p "--linesColor") (over (p "--linesColor") main))]]))
 
 (def foregrounds
   "Text, its hover/link-lighten colour, muted text and the accent (links)."

@@ -23,6 +23,13 @@
 // positions are read under `reducedMotion: 'reduce'`, or once scrollY has
 // been still for 10 frames; scrolls are `behavior: 'instant'`.
 
+import { spawn } from 'node:child_process';
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const homes = ['', 'zh-Hans/', 'zh-Hant/', 'ms/', 'ta/'];
 const article = 'pages/c0nta1/';
 
@@ -59,6 +66,14 @@ async function scrollTop(page, top) {
   return y;
 }
 
+// a click at the centre of `sel`'s box: locator.click() scrolls the page
+// first (scrollIntoViewIfNeeded), which a test of scroll positions must not
+async function clickAt(page, sel) {
+  const c = await page.evaluate((sel) => { const r = document.querySelector(sel).getBoundingClientRect();
+    return [r.left + r.width / 2, r.top + r.height / 2]; }, sel);
+  await page.mouse.click(c[0], c[1]);
+}
+
 // runs in the page: the navbar's box, --navbarHeight in px, and the
 // controls of the row that are rendered, each with its box
 function navbarState() {
@@ -87,9 +102,9 @@ function navbarState() {
 
 // item 1's height check: the navbar is --navbarHeight (±1) and ≤ 64 px,
 // and its rendered controls lie inside it, on one row
-function checkRow(t, s, what, { oneRow = true } = {}) {
-  t.check(Math.abs(s.height - s.nh) <= 1 && s.height <= 64,
-          `${what}: the navbar is ${s.height.toFixed(1)} px, want --navbarHeight ${s.nh.toFixed(1)} (≤ 64)`);
+function checkRow(t, s, what, { oneRow = true, height = true } = {}) {
+  if (height) t.check(Math.abs(s.height - s.nh) <= 1 && s.height <= 64,
+                      `${what}: the navbar is ${s.height.toFixed(1)} px, want --navbarHeight ${s.nh.toFixed(1)} (≤ 64)`);
   for (const b of s.boxes) {
     t.check(b.top >= s.top - 0.5 && b.bottom <= s.bottom + 0.5 && b.left >= s.left - 0.5 && b.right <= s.right + 0.5,
             `${what}: ${b.n} (${b.left.toFixed(0)}–${b.right.toFixed(0)} × ${b.top.toFixed(1)}–${b.bottom.toFixed(1)}) is outside the navbar`);
@@ -268,6 +283,61 @@ async function item1(t) {
   }
 }
 
+// P4-B2b.1 item 1: focusing a navbar control never moves the page. Part 1's
+// root scroll-padding covered the whole sticky navbar, so Chromium took every
+// control in it for obscured and centred it on focus — the page jumped up
+async function item1Focus(t) {
+  for (const [width, height] of [[360, 740], [768, 1024], [1280, 800]]) {
+    for (const rm of ['no-preference', 'reduce']) {
+      const page = await t.newPage({ viewport: { width, height }, reducedMotion: rm });
+      await open(page, t, article);
+      const what = `${width}×${height} ${rm}`;
+      const start = async () => {
+        await page.evaluate(() => { document.activeElement && document.activeElement.blur();
+          scrollTo({ top: Math.min(1000, document.documentElement.scrollHeight - innerHeight), behavior: 'instant' }); });
+        await settle(page);
+        return page.evaluate(() => scrollY);
+      };
+      const still = async (y0, step) => {
+        await settle(page);
+        const y = await page.evaluate(() => scrollY);
+        t.check(Math.abs(y - y0) <= 2, `${what}: ${step} moved the page from ${y0} to ${y}`);
+      };
+      let y0 = await start();
+      t.check(y0 >= 900, `${what}: scrolled to ${y0}`);
+      await page.keyboard.press('Tab');
+      t.check(await focusIn(page, '.clogem-navbar'), `${what}: the first Tab lands in the navbar`);
+      await still(y0, 'the first Tab');
+      if (width <= 800) {
+        y0 = await start();
+        await clickAt(page, '.clogem-navbar__toggle > summary');
+        t.check(await isOpen(page), `${what}: a click opens the drawer`);
+        await still(y0, 'opening the drawer');
+        await page.keyboard.press('Escape');
+        t.check(!await isOpen(page), `${what}: Escape closes the drawer`);
+        await still(y0, 'Escape on the drawer');
+      }
+      y0 = await start();
+      await clickAt(page, '.clogem-mode__button');
+      t.check(await page.evaluate(() => !document.getElementById('clogem-mode-menu').hidden), `${what}: a click opens the mode menu`);
+      await still(y0, 'opening the mode menu');
+      await page.keyboard.press('Escape');
+      t.check(await page.evaluate(() => document.getElementById('clogem-mode-menu').hidden), `${what}: Escape closes the mode menu`);
+      await still(y0, 'Escape on the mode menu');
+      if (width > 800) {
+        y0 = await start();
+        await clickAt(page, '.clogem-langs__toggle > summary');
+        t.check(await page.evaluate(() => document.querySelector('.clogem-langs__toggle').open), `${what}: a click opens the language dropdown`);
+        await still(y0, 'opening the language dropdown');
+        await page.keyboard.press('Escape');
+        t.check(await page.evaluate(() => !document.querySelector('.clogem-langs__toggle').open), `${what}: Escape closes the language dropdown`);
+        await still(y0, 'Escape on the language dropdown');
+      }
+      await page.close();
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 2. One row above 50rem: the language dropdown, the trigger, long navs
 
@@ -367,30 +437,113 @@ async function item2(t) {
     await page.close();
   }
 
-  // a nav too long for one row stays inside the navbar
-  {
-    const page = await t.newPage({ viewport: { width: 1024, height: 740 }, reducedMotion: 'reduce' });
-    await page.route(url(t, article), async (route) => {
-      const res = await route.fetch();
-      const extra = Array.from({ length: 10 }, (_, i) => `<li class="clogem-navbar__item"><a href="/">Item ${i + 1}</a></li>`).join('');
-      const body = (await res.text()).replace('<nav class="clogem-navbar__nav"><ul>', '<nav class="clogem-navbar__nav"><ul>' + extra);
-      await route.fulfill({ response: res, body });
-    });
-    await open(page, t, article, 'nesting');
-    const s = await page.evaluate(navbarState);
-    t.check(s.boxes.filter((b) => b.n.startsWith('item')).length >= 13, `a long nav: ${s.boxes.length} controls rendered`);
-    checkRow(t, s, '1024px, a long nav', { oneRow: false });
-    t.check(s.overflow <= 0, `a long nav: the page overflows by ${s.overflow}`);
-    const children = await page.evaluate(() => {
-      const nb = document.querySelector('.clogem-navbar'), r = nb.getBoundingClientRect();
-      return [...nb.querySelectorAll('.clogem-navbar__nav li, .clogem-navbar > *, #clogem-drawer > *')]
-        .filter((e) => e.checkVisibility())
-        .map((e) => { const b = e.getBoundingClientRect(); return [e.tagName + '.' + e.className, b.top >= r.top - 0.5 && b.bottom <= r.bottom + 0.5 && b.left >= r.left - 0.5 && b.right <= r.right + 0.5]; })
-        .filter(([, ok]) => !ok).map(([n]) => n);
-    });
-    t.check(children.length === 0, `a long nav: every navbar child is inside the navbar (${children.join(', ')})`);
-    checkAnchor(t, await page.evaluate(anchorState, 'nesting'), 'a long nav, a fresh load of #nesting');
+}
+
+// P4-B2b.1 item 2: widening across 50rem while scrolled keeps the reading
+// position. The aside was still in the drawer when the media query flipped,
+// laid out in the navbar (display: contents) until nav.js moved it back,
+// and scroll anchoring shifted the page by ~400 px
+async function item2Resize(t) {
+  const at = async (from, to, abort) => {
+    const page = await t.newPage({ viewport: { width: from, height: 740 }, reducedMotion: 'reduce' });
+    if (abort) await page.route('**/clogem/js/nav.js*', (route) => route.abort());
+    await open(page, t, article);
+    await page.evaluate(() => { const h = document.getElementById('in-a-list-item');
+      scrollBy({ top: h.getBoundingClientRect().top - 200, behavior: 'instant' }); });
+    await settle(page);
+    const before = await page.evaluate(() => document.getElementById('in-a-list-item').getBoundingClientRect().top);
+    await page.setViewportSize({ width: to, height: 740 });
+    await page.waitForTimeout(300);
+    await settle(page);
+    const r = await page.evaluate(() => ({ top: document.getElementById('in-a-list-item').getBoundingClientRect().top,
+      inShell: !!document.querySelector('aside.clogem-sidebar').closest('.clogem-shell') }));
     await page.close();
+    return { before, ...r };
+  };
+  for (const [from, to] of [[700, 900], [768, 1024], [900, 700], [1024, 768]]) {
+    const r = await at(from, to, false);
+    t.check(Math.abs(r.top - r.before) <= 24, `resize ${from} → ${to}: #in-a-list-item moved from ${r.before.toFixed(1)} to ${r.top.toFixed(1)}`);
+    if (to > 800) t.check(r.inShell, `resize ${from} → ${to}: the sidebar is back in the shell`);
+  }
+  // 360 → 1280 reflows main from one column into three: the browser's own
+  // scroll anchoring (main is its anchor) moves the heading ~116 px with
+  // nav.js aborted too, so here the measure is that page
+  const base = await at(360, 1280, true);
+  const r = await at(360, 1280, false);
+  t.check(Math.abs(r.top - base.top) <= 24 && r.inShell,
+          `resize 360 → 1280: #in-a-list-item lands at ${r.top.toFixed(1)}, ${base.top.toFixed(1)} with nav.js aborted (from ${r.before.toFixed(1)})`);
+}
+
+// a nav too long for one row (10 items added, 13 in all): above 50rem no
+// two controls overlap, nothing overflows, every control is inside the
+// navbar, and a jump lands below it however tall it wraps (P4-B2b.1 item 3)
+async function longNav(page, t, rel) {
+  await page.route(url(t, rel), async (route) => {
+    const res = await route.fetch();
+    const extra = Array.from({ length: 10 }, (_, i) => `<li class="clogem-navbar__item"><a href="/">Item ${i + 1}</a></li>`).join('');
+    const body = (await res.text()).replace('<nav class="clogem-navbar__nav"><ul>', '<nav class="clogem-navbar__nav"><ul>' + extra);
+    await route.fulfill({ response: res, body });
+  });
+}
+
+function overlaps(boxes) {
+  const out = [];
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i], b = boxes[j];
+      const x = Math.min(a.right, b.right) - Math.max(a.left, b.left), y = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      if (x > 0.5 && y > 0.5) out.push(`${a.n} × ${b.n} by ${x.toFixed(1)}`);
+    }
+  }
+  return out;
+}
+
+async function item2LongNav(t) {
+  for (const js of [true, false]) {
+    for (const rel of [article, 'ms/', 'zh-Hans/pages/c0nta1/']) {
+      const page = await t.newPage({ viewport: { width: 1600, height: 740 }, reducedMotion: 'reduce', javaScriptEnabled: js });
+      await longNav(page, t, rel);
+      await page.goto(url(t, rel), { waitUntil: 'load' });
+      if (js) await page.waitForSelector('button.pf-trigger-btn', { state: 'attached', timeout: 5000 }).catch(() => {});
+      await page.evaluate(() => document.fonts.ready);
+      const what = `a long nav, ${js ? 'JS' : 'no JS'}, /${rel}`;
+      let bad = 0, n = 0;
+      for (let width = 801; width <= 1600; width += 10) {
+        await page.setViewportSize({ width, height: 740 });
+        const s = await page.evaluate(navbarState);
+        n = Math.max(n, s.boxes.filter((b) => b.n.startsWith('item')).length);
+        const ov = overlaps(s.boxes);
+        const out = s.boxes.filter((b) => !(b.top >= s.top - 0.5 && b.bottom <= s.bottom + 0.5 && b.left >= s.left - 0.5 && b.right <= s.right + 0.5)).map((b) => b.n);
+        const ok = ov.length === 0 && out.length === 0 && s.overflow <= 0;
+        if (!ok && bad++ < 4) t.check(false, `${what} at ${width}: overlaps ${ov.join(', ') || 'none'}; outside the navbar ${out.join(', ') || 'none'}; overflow ${s.overflow}`);
+      }
+      t.check(n >= 13 && bad === 0, `${what}: ${n} items; ${bad} of 80 widths failed`);
+      await page.close();
+    }
+  }
+  // the old check at 1024, and a fresh load of #nesting at four widths
+  for (const js of [true, false]) {
+    for (const width of [801, 850, 1024, 1280]) {
+      const page = await t.newPage({ viewport: { width, height: 740 }, reducedMotion: 'reduce', javaScriptEnabled: js });
+      await longNav(page, t, article);
+      const what = `a long nav, ${js ? 'JS' : 'no JS'}, ${width}px`;
+      if (js) await open(page, t, article, 'nesting');
+      else { await page.goto(url(t, article, 'nesting'), { waitUntil: 'load' }); await page.waitForTimeout(200); }
+      const s = await page.evaluate(navbarState);
+      t.check(s.boxes.filter((b) => b.n.startsWith('item')).length >= 13, `${what}: ${s.boxes.length} controls rendered`);
+      checkRow(t, s, what, { oneRow: false, height: width >= 1024 });
+      t.check(s.overflow <= 0, `${what}: the page overflows by ${s.overflow}`);
+      const children = await page.evaluate(() => {
+        const nb = document.querySelector('.clogem-navbar'), r = nb.getBoundingClientRect();
+        return [...nb.querySelectorAll('.clogem-navbar__nav li, .clogem-navbar > *, #clogem-drawer > *')]
+          .filter((e) => e.checkVisibility())
+          .map((e) => { const b = e.getBoundingClientRect(); return [e.tagName + '.' + e.className, b.top >= r.top - 0.5 && b.bottom <= r.bottom + 0.5 && b.left >= r.left - 0.5 && b.right <= r.right + 0.5]; })
+          .filter(([, ok]) => !ok).map(([n]) => n);
+      });
+      t.check(children.length === 0, `${what}: every navbar child is inside the navbar (${children.join(', ')})`);
+      checkAnchor(t, await page.evaluate(anchorState, 'nesting'), `${what} (navbar ${s.height.toFixed(1)} px), a fresh load of #nesting`);
+      await page.close();
+    }
   }
 }
 
@@ -513,6 +666,70 @@ async function item3(t) {
     });
     t.check(vis, 'a long TOC: its last link can be reached by scrolling the TOC');
     await page.close();
+  }
+}
+
+// P4-B2b.1 item 4: `:theme :right-menu-bar false` drops the TOC; from 80rem
+// the article takes its room (584 px in the 62rem shell). A temp copy of the
+// demo, built with bb (skipped, saying so, without it) and served in place
+// of the demo through page.route
+const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml',
+               '.json': 'application/json', '.woff2': 'font/woff2', '.png': 'image/png' };
+
+async function item3RightMenuBar(t) {
+  const site = await mkdtemp(path.join(os.tmpdir(), 'clogem-rmb-'));
+  try {
+    await cp(path.join(repo, 'examples', 'demo-site'), site, { recursive: true, filter: (src) => !src.split(path.sep).includes('dist') });
+    const edn = await readFile(path.join(site, 'site.edn'), 'utf8');
+    t.check(edn.includes(':theme {'), ':right-menu-bar false: the demo has a :theme map');
+    await writeFile(path.join(site, 'site.edn'), edn.replace(':theme {', ':theme {:right-menu-bar false '));
+    const r = await new Promise((resolve) => {
+      let out = '';
+      const child = spawn('bb', ['--config', path.join(repo, 'bb.edn'), 'build', '--no-search', '--no-highlight', '--no-write'], { cwd: site });
+      child.stdout.on('data', (d) => { out += d; });
+      child.stderr.on('data', (d) => { out += d; });
+      child.on('error', (e) => resolve({ code: -1, out: e.message, missing: e.code === 'ENOENT' }));
+      child.on('close', (code) => resolve({ code, out }));
+    });
+    if (r.missing) { console.log('  skip: :right-menu-bar false — bb is not on PATH'); return; }
+    t.check(r.code === 0, `:right-menu-bar false: the build exits ${r.code}: ${r.out.slice(-400)}`);
+    const dist = path.join(site, 'dist');
+    for (const width of [1280, 1440, 1024, 900]) {
+      const page = await t.newPage({ viewport: { width, height: 740 } });
+      await page.route(new URL('/**', t.baseURL).href, async (route) => {
+        let rel = decodeURIComponent(new URL(route.request().url()).pathname);
+        if (rel.endsWith('/')) rel += 'index.html';
+        try {
+          await route.fulfill({ status: 200, body: await readFile(path.join(dist, rel)), contentType: mime[path.extname(rel)] || 'application/octet-stream' });
+        } catch { await route.fulfill({ status: 404, body: 'not found' }); }
+      });
+      // the default demo, for the widths that must not change
+      const plain = await t.newPage({ viewport: { width, height: 740 } });
+      for (const rel of [article, 'pages/cjk001/']) {
+        await page.goto(url(t, rel), { waitUntil: 'load' });
+        await plain.goto(url(t, rel), { waitUntil: 'load' });
+        const what = `:right-menu-bar false, ${width}px /${rel}`;
+        const get = (p) => p.evaluate(([box]) => {
+          const f = new Function('return ' + box)();
+          return { sb: f('aside.clogem-sidebar'), main: f('main'), art: f('article.clogem-article'), toc: !!document.querySelector('.clogem-toc'),
+                   cls: document.querySelector('.clogem-shell').className, overflow: document.documentElement.scrollWidth - innerWidth };
+        }, [box.toString()]);
+        const s = await get(page), d = await get(plain);
+        t.check(!s.toc && s.overflow <= 0, `${what}: no TOC (${s.toc}), overflow ${s.overflow}`);
+        t.check(s.sb && s.sb.right <= s.main.left, `${what}: the sidebar (${s.sb && s.sb.right}) is left of main (${s.main.left})`);
+        if (rel === article) t.check(s.cls.includes('clogem-shell--wide'), `${what}: the shell is ${s.cls}`);
+        if (width >= 1280 && rel === article) t.check(s.art.width >= 600, `${what}: article.clogem-article is ${s.art.width} px, want ≥ 600`);
+        if (width < 1280) t.check(Math.abs(s.art.width - d.art.width) <= 0.5 && Math.abs(s.main.left - d.main.left) <= 0.5,
+                                  `${what}: the article is ${s.art.width} px at ${s.main.left}, as the default's ${d.art.width} at ${d.main.left}`);
+        // a page without a TOC for another reason keeps the default's width
+        if (rel === 'pages/cjk001/') t.check(!s.cls.includes('clogem-shell--wide') && Math.abs(s.main.width - d.main.width) <= 0.5,
+                                            `${what}: no headings, so the default's shell (${s.cls}; main ${s.main.width}, default ${d.main.width})`);
+      }
+      await plain.close();
+      await page.close();
+    }
+  } finally {
+    await rm(site, { recursive: true, force: true });
   }
 }
 
@@ -883,6 +1100,43 @@ async function item6(t) {
   }
 }
 
+// P4-B2b.1 items 7 and 8: at 1280 a dropdown closes when focus leaves it
+// (vdoing's DropdownLink closes on focusout), not while it moves inside;
+// and mode.js's own Escape wins over nav.js's (e.defaultPrevented)
+async function item6Desktop(t) {
+  const page = await t.newPage({ viewport: { width: 1280, height: 740 }, reducedMotion: 'reduce' });
+  await open(page, t, article);
+  const cases = [['the language dropdown', '.clogem-langs__toggle', '.clogem-langs ul a'],
+                 ['Browse', '.clogem-navbar__item > details:has(> summary > span)', '.clogem-navbar__item > details:has(> summary > span) .clogem-navbar__menu a']];
+  for (const [what, sel, links] of cases) {
+    await page.focus(`${sel} > summary`);
+    await page.keyboard.press('Enter');
+    const isOpenNow = () => page.evaluate((s) => document.querySelector(s).open, sel);
+    t.check(await isOpenNow(), `1280: Enter opens ${what}`);
+    const n = await page.evaluate((l) => document.querySelectorAll(l).length, links);
+    let inside = true;
+    for (let i = 0; i < n; i++) {
+      await page.keyboard.press('Tab');
+      const onLink = await page.evaluate((l) => [...document.querySelectorAll(l)].includes(document.activeElement), links);
+      if (!onLink || !await isOpenNow()) inside = false;
+    }
+    t.check(n >= 2 && inside, `1280: Tab through the ${n} links of ${what} keeps it open`);
+    await page.keyboard.press('Tab');
+    t.check(!await isOpenNow(), `1280: Tab past the last link of ${what} closes it`);
+    await page.keyboard.press('Escape');
+  }
+  // both open, focus in the mode menu: one Escape closes the mode menu only
+  await clickAt(page, '.clogem-mode__button');
+  await page.evaluate(() => { document.querySelector('.clogem-langs__toggle').open = true; });
+  const before = await page.evaluate(() => [!document.getElementById('clogem-mode-menu').hidden, document.querySelector('.clogem-langs__toggle').open,
+                                            !!document.activeElement.closest('#clogem-mode-menu')]);
+  t.check(before.every(Boolean), `1280: the mode menu (focused) and the language dropdown are both open (${before})`);
+  await page.keyboard.press('Escape');
+  const after = await page.evaluate(() => [document.getElementById('clogem-mode-menu').hidden, document.querySelector('.clogem-langs__toggle').open]);
+  t.check(after[0] && after[1], `1280: one Escape closes the mode menu (${after[0]}) and leaves the language dropdown open (${after[1]})`);
+  await page.close();
+}
+
 // ---------------------------------------------------------------------------
 // 7. The home's text card pads like every other main at 50rem and below
 
@@ -1183,6 +1437,14 @@ async function item13(t) {
       await open(page, t, rel);
       const s0 = await page.evaluate(upState);
       t.check(!s0.shown && s0.hidden, `${what}: hidden at scrollY 0 (${JSON.stringify(s0)})`);
+      // the threshold is 100 px (P4-B2b.1 item 8): hidden at 50, shown at 101
+      const frames = () => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      for (const [y, want] of [[50, false], [101, true], [50, false]]) {
+        await scrollTop(page, y);
+        await frames();
+        const s = await page.evaluate(upState);
+        t.check(s.y === y && s.shown === want, `${what}: at scrollY ${s.y} back to top is ${s.shown ? 'shown' : 'hidden'}, want ${want ? 'shown' : 'hidden'}`);
+      }
       t.check(await scrollTop(page, 200) === 200, `${what}: scrollY reached 200`);
       const shown = await page.waitForFunction(() => document.querySelector('.clogem-back-to-top').checkVisibility(), null, { timeout: 1000 })
         .then(() => true, () => false);
@@ -1282,9 +1544,10 @@ async function item13(t) {
     // 480 px tall, so the open drawer reaches the bottom of the viewport
     const page = await t.newPage({ viewport: { width: 360, height: 480 }, reducedMotion: 'reduce' });
     await open(page, t, article);
-    // the drawer, open after 200 px, covers it. (Opening it focuses its
-    // first link, which scrolls the page to the top — part 1's behaviour —
-    // so the page is put back at 200, and the drawer scrolled in steps.)
+    // the drawer, open after 200 px, covers it. (A reader who opens it by
+    // mouse, tap or Enter keeps the position; Playwright's locator.click()
+    // scrolls the page first, so the page is put back at 200, and the
+    // drawer is scrolled in steps.)
     await scrollTop(page, 200);
     await page.waitForFunction(() => document.querySelector('.clogem-back-to-top').checkVisibility(), null, { timeout: 1000 });
     await page.locator('.clogem-navbar__toggle > summary').click();
@@ -1322,16 +1585,18 @@ async function item13(t) {
   }
 }
 
+// each item on its own (P4-B2b.1 item 8): a throw is that item's failure,
+// and the later items still run. CLOGEM_LAYOUT_ITEMS=item1,item13 runs only
+// those
 export default async function layout(t) {
-  await item1(t);
-  await item2(t);
-  await item3(t);
-  await item4(t);
-  await item5(t);
-  await item6(t);
-  await item7(t);
-  await item10(t);
-  await item11(t);
-  await item12(t);
-  await item13(t);
+  const only = (process.env.CLOGEM_LAYOUT_ITEMS || '').split(',').filter(Boolean);
+  for (const item of [item1, item1Focus, item2, item2Resize, item2LongNav, item3, item3RightMenuBar, item4, item5, item6, item6Desktop, item7,
+                      item10, item11, item12, item13]) {
+    if (only.length && !only.includes(item.name)) continue;
+    try {
+      await item(t);
+    } catch (e) {
+      t.check(false, `${item.name} threw: ${e && e.stack || e}`);
+    }
+  }
 }

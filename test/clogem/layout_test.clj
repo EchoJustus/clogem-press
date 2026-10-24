@@ -102,10 +102,15 @@
   (let [css (slurp theme-css)
         rules (cp/parse css)]
     (is (= "3.6rem" ((cp/computed rules {:classes #{}} {}) "--navbarHeight")) "vdoing's value")
-    (testing "the root's scroll padding covers every target, headings or not"
-      (is (= "calc(var(--navbarHeight) + 0.75rem)" ((cp/rule rules "html") "scroll-padding-top"))))
-    (testing "no scroll-margin-top left to add up with it"
-      (is (not (str/includes? css "scroll-margin-top"))))
+    (testing "P4-B2b.1 item 1: a scroll margin on every target and focus outside the navbar, not the root's padding"
+      (is (not (re-find #"scroll-padding[-a-z]*\s*:" css)) "the root's padding covered the navbar's own controls")
+      (is (= "var(--jumpOffset)" ((cp/rule rules ":where([id], :focus)") "scroll-margin-top")))
+      (is (= "0" ((cp/rule rules ".clogem-navbar *") "scroll-margin-top")))
+      (let [off #(get (cp/computed rules {:classes #{}} %) "--jumpOffset")
+            sticky "calc(3.6rem + 0.75rem)"]
+        (is (= sticky (off {:width 1280})) "the navbar's measured height (js/nav.js), --navbarHeight without it")
+        (is (= sticky (off {:width 360})) "the sticky one-row navbar")
+        (is (= "0.75rem" (off {:width 360 :scripting? false})) "the static no-JS navbar needs no offset")))
     (testing "the navbar is --navbarHeight tall, the TOC sticks below it"
       (is (= "var(--navbarHeight)" ((cp/rule rules ".clogem-navbar") "min-height")))
       (is (= "0 1.25rem" ((cp/rule rules ".clogem-navbar") "padding")))
@@ -240,10 +245,10 @@
       (let [d (decls "(max-width: 50rem)" ".clogem-navbar")]
         (is (= "static" (d "position")))
         (is (= "wrap" (d "flex-wrap"))))
-      (is (= "0.75rem" ((decls "(max-width: 50rem)" "html") "scroll-padding-top")))
+      (is (= "0.75rem" ((decls "(max-width: 50rem)" ":root") "--jumpOffset")))
       (is (= "static" ((decls "(max-width: 50rem)" ".clogem-navbar__menu") "position")))
       (is (= "sticky" ((decls js-q ".clogem-navbar") "position")))
-      (is (= "calc(var(--navbarHeight) + 0.75rem)" ((decls js-q "html") "scroll-padding-top"))))
+      (is (= "calc(var(--navbarMeasured, var(--navbarHeight)) + 0.75rem)" ((decls js-q ":root") "--jumpOffset"))))
     (testing "the drawer's own background is the card's, and the palette passes with it"
       (is (= "var(--mainBg)" ((decls js-q ".clogem-navbar__toggle[open] ~ .clogem-navbar__drawer") "background")))
       (is (= [] (cp/failures css))))))
@@ -362,7 +367,14 @@
       (is (str/includes? (off "index.html") "clogem-home-right"))
       (is (str/includes? (off "index.html") "clogem-shell--home")))
     (testing "the sidebar is untouched"
-      (is (str/includes? (off "pages/t00001/index.html") "<aside class=\"clogem-sidebar\"")))))
+      (is (str/includes? (off "pages/t00001/index.html") "<aside class=\"clogem-sidebar\"")))
+    (testing "P4-B2b.1 item 4: a sidebar page whose TOC false dropped gets the wide shell; nothing else does"
+      (is (str/includes? (off "pages/t00001/index.html") "<div class=\"clogem-shell clogem-shell--wide\""))
+      (doseq [[rel page] on]
+        (is (not (str/includes? page "clogem-shell--wide")) rel))
+      (doseq [[rel page] off
+              :when (str/includes? page "clogem-shell--wide")]
+        (is (str/includes? page "<aside class=\"clogem-sidebar\"") rel)))))
 
 (deftest right-menu-bar-is-a-known-key
   (is (= :ok (get-in config/known-keys [[:theme] :right-menu-bar])))
@@ -558,8 +570,9 @@
       (is (str/starts-with? (decl ".clogem-main.clogem-bg-style-6" "background-image") "radial-gradient(var(--linesColor) 1px"))
       (doseq [r rules :when (some #(str/includes? % "clogem-bg-style") (:selectors r))]
         (is (not-any? #(= "background" (first %)) (:decls r)) (pr-str (:selectors r)))))
-    (testing "--linesColor in every mode: vdoing's light value in light and read, its dark one in dark and auto"
-      (is (= "rgba(50, 0, 0, 0.05)" ((cp/palette rules :light) "--linesColor") ((cp/palette rules :read) "--linesColor")))
+    (testing "--linesColor in every mode: vdoing's light value in light, its dark one in dark and auto, read's lighter"
+      (is (= "rgba(50, 0, 0, 0.05)" ((cp/palette rules :light) "--linesColor")))
+      (is (= "rgba(50, 0, 0, 0.03)" ((cp/palette rules :read) "--linesColor")) "P4-B2b.1 item 5: 0.05 twice took the accent to 4.22:1")
       (is (= "rgba(125, 125, 125, 0.05)" ((cp/palette rules :dark) "--linesColor") ((cp/palette rules :auto) "--linesColor"))))
     (testing "print draws no pattern"
       (is (= "none" ((into {} (for [r rules :when (= ["print"] (:media r)) :when (some #{"html[class] .clogem-main"} (:selectors r))
@@ -570,7 +583,13 @@
       (let [strong (str/replace-first css "  --linesColor: rgba(50, 0, 0, 0.05);" "  --linesColor: rgba(50, 0, 0, 0.05);\n  --linesColor: rgba(0,0,0,0.6);")]
         (is (not= css strong))
         (is (seq (cp/failures strong)))
-        (is (some #(str/includes? % "--linesColor over --mainBg") (cp/failures strong)))))))
+        (is (some #(str/includes? % "--linesColor over --mainBg") (cp/failures strong)))))
+    (testing "P4-B2b.1 item 5: pattern 1's crossings, --linesColor twice over the card; read's 0.05 fails there"
+      (is (some #(= "--linesColor twice over --mainBg" (first %)) (cp/surfaces (cp/palette rules :read))))
+      (let [old (str/replace-first css "  --linesColor: rgba(50, 0, 0, 0.03);" "  --linesColor: rgba(50, 0, 0, 0.05);")]
+        (is (not= css old))
+        (is (= ["read/card: --accent on --linesColor twice over --mainBg is 4.22:1"
+                "read/line: --accent on --linesColor twice over --mainBg is 4.22:1"] (cp/failures old)))))))
 
 ;; ---------------------------------------------------------------------------
 ;; 13. Back to top: :theme :back-to-top
@@ -614,7 +633,6 @@
            (map d ["position" "right" "bottom" "width" "height" "background" "z-index"])))
     (is (= "none" ((of [] ".clogem-back-to-top[hidden]") "display")))
     (is (= ["1rem" "1.5rem"] (map (of ["(max-width: 50rem)"] ".clogem-back-to-top") ["right" "bottom"])))
-    (testing "nav.js shows it past 100 px and hides it on activation"
+    (testing "nav.js scrolls to the top (its 100 px threshold is checked in the browser, layout.test.mjs item 13)"
       (let [js (slurp "src/clogem/theme/resources/js/nav.js")]
-        (is (str/includes? js "y <= 100"))
         (is (str/includes? js "window.scrollTo({ top: 0 })"))))))

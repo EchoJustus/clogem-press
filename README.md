@@ -285,16 +285,20 @@ code colour inside a code block), at 3:1 or better on what is behind it.
 
 **The navbar** is one row, `--navbarHeight` (3.6rem) tall: the brand at
 the start; the nav, the languages, search and the mode button at the end.
-Above 50rem the languages are a dropdown, as vdoing's; at 64rem and below
-the search trigger is its icon alone, still named in the page's language.
+Above 50rem the languages are a dropdown, as vdoing's; it and the nav's
+dropdowns close on Escape, a click outside or when focus leaves them. At
+64rem and below the search trigger is its icon alone, still named in the
+page's language.
 A nav too long for the row wraps its own items onto a second line inside
-the navbar, which grows taller rather than spill over the page; two lines
-fit in `--navbarHeight`, and with more the navbar is taller than the
-offset below, so keep the top level short and put the rest in a dropdown
-(`:items`). Every jump to a fragment — a link, the TOC, a fresh load of
-`…/#id` — and every focus move by Tab lands 0.75rem below the navbar (the
-root's `scroll-padding-top`), headings or not. Scrolling is smooth unless
-the reader's system asks for reduced motion; there is no key for it
+the navbar, which grows taller rather than spill over the page, and keeps
+the languages, search and mode on the row's end. With JavaScript the jump
+offset below follows the navbar's real height (`js/nav.js` measures it);
+without, it assumes one row, so keep the top level short and put the rest
+in a dropdown (`:items`). Every jump to a fragment — a link, the TOC, a
+fresh load of `…/#id` — and every focus move by Tab lands 0.75rem below the
+navbar (a `scroll-margin-top` on every `id` and focused element outside the
+navbar; the navbar's own controls never scroll the page), headings or not.
+Scrolling is smooth unless the reader's system asks for reduced motion; there is no key for it
 (vdoing's `smoothScroll`, off by default there, is known and ignored: a
 site that sets it is told to remove it).
 
@@ -317,7 +321,8 @@ from 80rem (1280 px) its TOC joins them on the right, in a shell 18rem
 wider than `--maxWidth`, as vdoing's TOC shows only from 1280 px. A page
 with a TOC and no sidebar shows it above 64rem.
 `:theme :right-menu-bar false` (vdoing's `rightMenuBar`) drops that TOC
-from every page; headings keep their ids and `#` anchors. vdoing nests the
+from every page; headings keep their ids and `#` anchors, and from 80rem
+the article takes the TOC's room, as vdoing's does. vdoing nests the
 headings under the sidebar's link instead; clogem-press does not. The home
 page's right bar is not the TOC: its front matter's `hideRightBar` decides.
 
@@ -343,7 +348,8 @@ omits them.
 `contentBgStyle`) draws a faint pattern on the column of articles and
 catalogue pages: `1` a grid, `2` horizontal lines, `3` vertical lines, `4`
 and `5` the two diagonals, `6` dots; the default, `nil`, draws none. The
-lines are `--linesColor` (5% opaque, lighter in dark mode), which you can
+lines are `--linesColor` (5% opaque, lighter in dark mode, 3% in read
+mode, where pattern 1's crossings draw it twice), which you can
 set in `overrides/custom.css`; `bb test` checks that text keeps 4.5:1 on
 them. Print draws no pattern.
 
