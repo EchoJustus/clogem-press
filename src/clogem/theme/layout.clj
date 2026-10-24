@@ -254,11 +254,14 @@
        (icons/icon ctx ic)])))
 
 (defn article-row
-  "One index row: title (linked per §6.8), fallback marker, ISO date."
+  "One index row: title (linked per §6.8), the `titleTag` badge of the
+  variant shown (Task E2; vdoing's UpdateArticle rows), fallback marker,
+  ISO date — the order of a home card's title."
   [{:keys [cfg] :as ctx} group]
   (let [{:keys [href title lang fallback?]} (article-link ctx group)]
     [:li.clogem-row
      [:a {:href href :lang (config/html-lang cfg lang)} title]
+     (title-tag ctx (get-in group [:variants lang]))
      (when fallback? (fallback-badge ctx lang))
      (when-let [d (u/iso-date (:date group))]
        ;; chrome on the indexed catalogue page too (D-P3-9)

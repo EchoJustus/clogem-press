@@ -166,7 +166,8 @@ content/
 - **Every index holds article identities**, so an article with three language
   versions is one sidebar leaf, one category row, one archive entry — in every
   language, in the same order. A row shows the reader's own version when it
-  exists, else the primary with a fallback marker.
+  exists, else the primary with a fallback marker, and the `titleTag:`
+  badge (原创, 转载, …) of the version it shows.
 - **Hyphenated words are titles, not language tags.** `02.api-design.md` is an
   article titled `api-design`; only confusables (`zh-CN`), one-edit misspellings
   (`zh-Hanz`) and configured-primary-plus-region shapes (`en-us`) are errors.

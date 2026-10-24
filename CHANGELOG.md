@@ -12,7 +12,8 @@ B2, §11.3 item 1), then Task F — analytics, verification and a static root
 page chrome (the second half of B2, §11.3 item 9, D-P4-9), then Task E2 —
 article-page parity (§11.3 item 16, D-P4-13). The version stays 0.2.0.
 Every article page now ends with an update bar by default, as in vdoing
-(`:theme :update-bar {:show-to-article false}` drops it). A site that already set `:theme :page-style :line` now gets
+(`:theme :update-bar {:show-to-article false}` drops it), and an
+article's `titleTag` badge now shows in every list row. A site that already set `:theme :page-style :line` now gets
 that look: 0.2.0 and B1 accepted the value but drew card and line the same.
 Likewise a site that set any of the five keys 0.2.0 listed as planned —
 `:theme :sidebar-collapsed`, `:right-menu-bar`, `:page-button`,
@@ -70,6 +71,13 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   no link. The home's right-bar list uses it (it went to the archives
   root), and the `postList: simple` list now ends with one too, as
   vdoing's simple list (an `UpdateArticle`) does. The home still lists 10.
+- **`titleTag` in list rows**: `layout/article-row` shows the badge of the
+  variant it links (`layout/title-tag`, `data-pagefind-ignore` under
+  Pagefind) right after the title and before the fallback badge, as a
+  home card does — in index pages, the home's lists, the update bar and
+  catalogue rows (vdoing shows it in `UpdateArticle`'s rows, not in its
+  catalogue). `.clogem-row time` gets `margin-inline-start: auto`, so the
+  badges stay by the title and the date at the row's end.
 
 ### Changed (E2)
 
@@ -119,6 +127,10 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   an `https://` URL; the archives off gives no *More*; a one-article site
   has no bar; the zh-Hans home's simple list ends with *More*, its right
   bar still lists 10.
+- `titleTag` rows: `<span class="clogem-title-tag" data-pagefind-ignore="">原创</span>`
+  right after the `/pages/y2025a/` link on `/archives/` and `/tags/meta/`,
+  and before the fallback badge in the zh-Hans simple list, in every row
+  of the demo that links it; no attribute under `:search :none`.
 
 ### Needs native review (E2)
 

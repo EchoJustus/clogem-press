@@ -601,3 +601,32 @@
   (testing "a one-article site has no bar"
     (let [{:keys [pages]} (build-temp {} {"01.A/01.one.md" (article "One" "/pages/one001/")})]
       (is (nil? (update-bar-of (pages "pages/one001/index.html")))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 5: titleTag in list rows
+
+(deftest title-tags-show-in-every-row
+  (let [tagged (str "<a href=\"/pages/y2025a/\" lang=\"en\">A post from the year before</a>"
+                    "<span class=\"clogem-title-tag\" data-pagefind-ignore=\"\">原创</span>")]
+    (testing "right after the link, on index pages"
+      (doseq [p [["archives" "index.html"] ["tags" "meta" "index.html"]]]
+        (is (str/includes? (apply html p) (str "<li class=\"clogem-row\">" tagged "<time ")) (str/join "/" p))))
+    (testing "and before the fallback badge, in the zh-Hans simple list"
+      (let [simple (second (re-find #"(?s)clogem-list--simple\">(.*?)</ul>" (html "zh-Hans" "index.html")))]
+        (is (str/includes? simple (str "<li class=\"clogem-row\">" tagged "<span class=\"clogem-fallback\"")))))
+    (testing "every row of the demo with a tag carries it exactly so"
+      (doseq [p (fs/glob *out* "**.html")
+              :let [page (slurp (fs/file p))]
+              row (re-seq #"<li class=\"clogem-row\">.*?</li>" page)
+              :when (str/includes? row "/pages/y2025a/\"")]
+        (is (str/includes? row tagged) (str p)))))
+  (testing "under :search :none the badge has no attribute"
+    (let [{:keys [pages]} (build-temp {} {"01.A/01.one.md" (article "One" "/pages/one001/" {:titleTag "转载"})
+                                          "01.A/02.two.md" (article "Two" "/pages/two002/")})]
+      (is (str/includes? (pages "archives/index.html")
+                         "<a href=\"/pages/one001/\" lang=\"en\">One</a><span class=\"clogem-title-tag\">转载</span><time "))
+      (is (str/includes? (update-bar-of (pages "pages/two002/index.html"))
+                         "One</a><span class=\"clogem-title-tag\">转载</span>")
+          "in the update bar too")))
+  (testing "the date is pushed to the row's end, the badges kept by the title"
+    (is (re-find #"\.clogem-row time \{[^}]*margin-inline-start: auto;" (slurp theme-css)))))
