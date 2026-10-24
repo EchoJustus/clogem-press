@@ -236,9 +236,17 @@ export default async function (t) {
     {
       const page = await serve(t, b.dist, { viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
       await page.goto(article, { waitUntil: 'load' });
+      // every src it takes, not one sample: two images at 1 s are back to
+      // the first after 2 s
+      await page.evaluate(() => {
+        window.__srcs = [];
+        new MutationObserver(() => window.__srcs.push(document.querySelector('img.clogem-body-bg').getAttribute('src')))
+          .observe(document.querySelector('img.clogem-body-bg'), { attributes: true, attributeFilter: ['src'] });
+      });
       await page.waitForTimeout(2600);
-      const src = await page.evaluate(() => document.querySelector('img.clogem-body-bg').getAttribute('src'));
-      t.check(src === '/assets/bg-red.png', `under reduced motion it does not rotate: ${src}`);
+      const r = await page.evaluate(() => ({ src: document.querySelector('img.clogem-body-bg').getAttribute('src'), seen: window.__srcs }));
+      t.check(r.src === '/assets/bg-red.png' && r.seen.length === 0,
+              `under reduced motion it does not rotate: ${r.src}, changed ${r.seen.length} times (${r.seen.join(' ')})`);
       await page.close();
     }
   } finally {
