@@ -347,7 +347,9 @@
 (defn- git!
   "Run git in `dir` as CI can (no identity of its own, no signing), at
   `date` when it commits, never finding a repository above `dir`'s parent
-  (GIT_CEILING_DIRECTORIES). Returns git's stdout."
+  (GIT_CEILING_DIRECTORIES). Returns git's stdout. Dates the tests compare
+  carry a non-zero offset: CI's git 2.55 printed `%aI` at +00:00 as `Z`
+  where 2.43 prints `+00:00`."
   [dir date & args]
   (let [r @(p/process {:cmd (into ["git" "-c" "user.name=t" "-c" "user.email=t@example.invalid"
                                    "-c" "commit.gpgsign=false" "-c" "init.defaultBranch=main"]
@@ -394,8 +396,8 @@
       (git! root "2026-01-02T03:04:05+08:00" "commit" "-q" "-m" "one")
       (spit (fs/file site "content" "a.md") "two")
       (git! root "2026-03-04T23:30:00-05:00" "commit" "-q" "-a" "-m" "two")
-      (git! root "2026-05-06T07:08:09+00:00" "mv" "content/old.md" "content/new.md")
-      (git! root "2026-05-06T07:08:09+00:00" "commit" "-q" "-m" "rename")
+      (git! root "2026-05-06T07:08:09+01:00" "mv" "content/old.md" "content/new.md")
+      (git! root "2026-05-06T07:08:09+01:00" "commit" "-q" "-m" "rename")
       (spit (fs/file site "content" "untracked.md") "never added")
       (let [[ds ws] (dates-of site root)]
         (is (= [] ws))
@@ -404,7 +406,7 @@
         (testing "a CJK name with a space and a double quote, raw (-z)"
           (is (= "2026-01-02T03:04:05+08:00" (ds "content/04.中文/x y\"z.md"))))
         (testing "a renamed file: the rename's date, under its new name only"
-          (is (= "2026-05-06T07:08:09+00:00" (ds "content/new.md")))
+          (is (= "2026-05-06T07:08:09+01:00" (ds "content/new.md")))
           (is (= "2026-01-02T03:04:05+08:00" (ds "content/old.md"))
               "the rename commit does not list the old name; only the commit that added it does"))
         (testing "an untracked file has no date"
@@ -418,11 +420,11 @@
     (try
       (spit (fs/file site "content" "a.md") "one")
       (spit (fs/file root "README.md") "outside the site")
-      (git! root "2026-02-03T04:05:06+00:00" "add" "-A")
-      (git! root "2026-02-03T04:05:06+00:00" "commit" "-q" "-m" "one")
+      (git! root "2026-02-03T04:05:06+01:00" "add" "-A")
+      (git! root "2026-02-03T04:05:06+01:00" "commit" "-q" "-m" "one")
       (let [[ds ws] (dates-of site root)]
         (is (= [] ws))
-        (is (= {"content/a.md" "2026-02-03T04:05:06+00:00"} ds) "relative to the site, not the repository"))
+        (is (= {"content/a.md" "2026-02-03T04:05:06+01:00"} ds) "relative to the site, not the repository"))
       (finally (fs/delete-tree root)))))
 
 (deftest outside-git-shallow-and-failing-git
