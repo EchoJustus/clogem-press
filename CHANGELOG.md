@@ -9,13 +9,129 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
 and line page styles, focus rings and B1's follow-ups (the first half of
 B2, §11.3 item 1), then Task F — analytics, verification and a static root
 (§11.3 items 14, 15), then Task B2b — the navbar, the mobile drawer and the
-page chrome (the second half of B2, §11.3 item 9, D-P4-9). The version
-stays 0.2.0. A site that already set `:theme :page-style :line` now gets
+page chrome (the second half of B2, §11.3 item 9, D-P4-9), then Task E1a —
+the blog identity and the home banner (the first half of §11.3 item 13,
+D-P4-13). The version stays 0.2.0. A site that already set `:theme :page-style :line` now gets
 that look: 0.2.0 and B1 accepted the value but drew card and line the same.
 Likewise a site that set any of the five keys 0.2.0 listed as planned —
 `:theme :sidebar-collapsed`, `:right-menu-bar`, `:page-button`,
 `:content-bg-style` or `:back-to-top` — now gets that behaviour, and page
 buttons and a back-to-top button now appear by default, as in vdoing.
+Likewise for E1a's keys (`:theme :blogger`, `:social`, `:footer`,
+`:banner-bg`, `:body-bg-img*`, `:title-badge*`): a site that set one now
+gets it, and title badges appear by default, as in vdoing.
+
+**Task E1a — blog identity and banner** (§11.3 item 13, first half; D-P4-13):
+
+### Added (E1a)
+
+- **Config** (`clogem.config/check-identity!`): `:theme :blogger`,
+  `:social`, `:footer`, `:banner-bg`, `:body-bg-img`,
+  `:body-bg-img-opacity`, `:body-bg-img-interval`, `:title-badge` and
+  `:title-badge-icons` are read. Every problem is a warning that drops the
+  value or sets its default (`:title-badge true`, opacity 0.5, interval
+  15). Images (`:avatar`, `:body-bg-img`, a string badge icon, a social
+  `:svg`, `heroImage`) are an `https:` URL, a `data:image/…` URI or a site
+  path, given a leading `/`; `http:` warns (mixed content), `//…` and other
+  schemes are dropped. The keys inside `:blogger`, `:footer` and each social
+  link are known keys, and `check-keys!` walks `:theme :social :icons` as it
+  walks `:nav`; vdoing's `createYear`, `copyrightInfo` and `iconClass` name
+  the kebab key, `iconfontCssFile` is not needed.
+- **Social links**: in the blogger card and the footer, `rel="me"`, named
+  by their `:title` (else the host or mail address, with a warning), in the
+  same tab. One resolver, `clogem.sprite/social-icon`: a vendored brand
+  (brands win, so `:x` is X) or a UI icon; an unknown icon warns and shows
+  the link icon. `sprite/brands-in-use` is the brands the links name, so the
+  sprite holds exactly those, and the icon helper renders no other brand.
+- **The blogger card** (vdoing's BloggerBar: avatar, links, name, slogan)
+  first in the home's right bar, and a hidden copy first in the mobile
+  drawer, shown only with scripting at 50rem and below — where the right
+  bar's copy (`clogem-blogger--paired`) hides. Opening the drawer focuses
+  its first link (nav.js unchanged: it focuses the drawer's first link).
+- **The footer**: the social links, `© {years} {copyright-info}` and
+  *Powered by clogem-press* (`:footer/powered-by`, linked). The years are
+  `:create-year`–`:end-year`, the end year defaulting to the newest dated
+  article's. `:copyright-info` is trusted HTML (D-P4-13), per language along
+  the fallback chain with `""` suppressing it, and `{{base}}` interpolated.
+  `:powered-by false` drops the credit; an empty footer is omitted.
+- **The home banner** (vdoing's hero) between the navbar and the shell, on
+  the home's first page, when its front matter has `heroImage`, `heroText`,
+  `tagline`, `actionText` with `actionLink`, or `bannerBg`. `heroText` is
+  the `<h1>` of a home without one (the fallback title then goes: one h1
+  per page). `bannerBg` beats `:theme :banner-bg`: auto (a grid on
+  #28282d, white, 14.67:1), none, an image behind the text, or a trusted
+  `background: …` style attribute; a bad one is auto, with a warning naming
+  the home file. The action is `--mainBg` on `--accent` (≥ 5.19:1 in every
+  mode; never white, which is 2.75:1 in dark).
+- **The title badge**, first in article and archive `<h1>`s: book-open,
+  pencil or hash (or `:title-badge-icons`), chosen by the CRC32 of the
+  identity permalink (of the archive's root path), so every language and
+  build shows the same one. `aria-hidden`; the Pagefind result title is
+  unchanged. Not on catalogues, categories or tags, as in vdoing.
+- **The body background image**, `img.clogem-body-bg` fixed behind the page
+  before back to top, its opacity a `data-o` in tenths (no style
+  attribute). Two or more images rotate with `js/bodybg.js` (deferred,
+  same-origin, 445 B gzipped, budget 600), which does nothing under reduced
+  motion or while the page is hidden, and ships only then.
+- **`css/identity.css`** (1,222 B gzipped, budget 2,048): the card, the
+  links and the background image, linked right after theme.css and shipped
+  only while a site uses one of them (`config/identity-css?`). theme.css
+  gains only the badge, the banner and the footer lines: 11,354 → 11,717 B
+  gzipped (+363) of 12,288.
+- Strings `:blogger/label`, `:social/label`, `:footer/powered-by` in all
+  five languages.
+
+### Changed (E1a)
+
+- **The footer text**: `clogem-press 0.2.0` gives way to the copyright
+  line and *Powered by clogem-press*; the version stays in `<meta
+  name="generator">`.
+- **Title badges are on by default**, as in vdoing; `:theme :title-badge
+  false` gives exactly the old `<h1>`.
+- **A home with `postList: simple` loses *Recently updated***: its list is
+  the recent articles already (vdoing shows UpdateArticle there).
+- **The "planned" warnings are gone** for the E1a keys (and their vdoing
+  spellings say only which key to write).
+- **A social `:svg` is an `<img>`**, not a sprite symbol, so it is not
+  recoloured.
+- `:theme :body-bg-img` forces `:page-style :card`, with a warning, as
+  vdoing does.
+- The demo shows the identity: a blogger card, four social links (its
+  sprite: the UI icons plus github and mastodon, 11,648 B), a footer from
+  2024, and a banner on its English home. Its `assets/demo.png` was the
+  PNG signature written out as text; it is a real 64×64 PNG now.
+
+### Tests (E1a)
+
+- New `clogem.identity-test`: every config rule (0 errors each; the
+  0.2.0-era `:footer "x"`, `:social []` and `:blogger "me"` one warning
+  each), the sprite of a temp site with github, x, `:mail` and an unknown
+  `:yuque` (exactly the UI icons plus brand-github and brand-x, every `<use>`
+  resolving), the right bar's order under detailed and simple, the drawer
+  card, the footer's years, per-language info and `{{base}}`, "Powered by"
+  in five languages, the banner (h1, page 2, base, each `bannerBg` kind,
+  `:theme :banner-bg`, the warning), the badge (CRC32, stable across builds
+  and variants, off, custom), the background image (one, two, base, no
+  inline script), the budgets and the colour pairs in every mode, and the
+  demo, whose new links all resolve under `--base /clogem-demo/`.
+- New `test/browser/identity.test.mjs`.
+- Pins changed deliberately: `config_test`'s pre-flight warnings (6 → 4),
+  `a-new-key-is-registered-in-one-place` (now Task G's
+  `:search :cross-language`) and the `bodyBgImgInterval` messages;
+  `theme_modes_test`'s icon helper (a brand not in use throws) and the
+  demo's sprite (two brands and their notice); `build_test`'s simple home
+  (no update bar) and the indexed-page `<h1>` (a badge may come first);
+  `layout_test`'s drawer (the hidden card may come first);
+  `layout.test.mjs`'s `:nav []` drawer case drops the card, as its subject
+  is the sidebar, and its "a page that fits, then grows" case runs at
+  1280×1100 instead of ×1024: the demo's new footer made
+  `/zh-Hans/pages/643259/` 7 px taller than 1024.
+
+### Needs native review (E1a)
+
+- `:blogger/label`: ms "Tentang penulis", ta "ஆசிரியர் பற்றி".
+- `:social/label`: ms "Pautan sosial", ta "சமூக ஊடக இணைப்புகள்".
+- `:footer/powered-by`: ms "Dikuasakan oleh {{name}}", ta "{{name}} மூலம் இயக்கப்படுகிறது".
 
 **Task B2b — navbar, mobile drawer and page chrome** (§11.3 item 9, D-P4-9):
 

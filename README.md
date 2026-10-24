@@ -368,6 +368,54 @@ motion — and hides at once; the next Tab starts again at the navbar. It
 sits below the navbar, so the open mobile drawer covers it. It needs
 JavaScript; print never shows it. `:theme :back-to-top false` omits it.
 
+**Blog identity** (vdoing's `blogger`, `social`, `footer`, `bannerBg`,
+`bodyBgImg` and `titleBadge`; every key is in `config.example.edn`). A bad
+value warns and is dropped or set to its default; none fails a build. An
+image is an `https:` URL, a `data:image/…` URI or a site path
+(`"assets/me.png"` is `/assets/me.png`; the base is prefixed); an `http:`
+image warns (mixed content) and is dropped. Names, slogans and link titles
+are text — a string or a per-language map — and are escaped.
+
+- **The blogger card** (`:theme :blogger {:avatar :name :slogan}`, a
+  `:name` or an `:avatar` at least) heads the home's right bar, before
+  *Recently updated*, categories and tags. At 50rem and below, with
+  JavaScript, a copy opens the mobile drawer instead, and opening the drawer
+  focuses its first link. The avatar is decorative (`alt=""`).
+- **Social links** (`:theme :social {:icons [{:icon :title :link}]}`) are in
+  the card and the footer, `rel="me"`, in the same tab. `:icon` is a
+  vendored brand (`:github`, `:mastodon`, `:x` — X, not the close icon —
+  and the rest listed in `config.example.edn`) or a UI icon (`:mail`,
+  `:rss`, …); only the brands a site uses are built into its sprite. An
+  unknown icon warns and shows the link icon. `:svg "assets/me.svg"`
+  shows your own image instead (an `<img>`, so not recoloured). vdoing's
+  iconfont (`iconfontCssFile`, `at.alicdn.com`) is not used.
+- **The footer** is the social links, `© 2019–2026 …` and *Powered by
+  clogem-press*. `:theme :footer {:create-year 2019 :copyright-info "…"}`;
+  the end year is `:end-year`, else the year of the newest dated article.
+  `:copyright-info` is trusted HTML, per language too (`""` hides it in that
+  language), and `{{base}}` in it is the site's base. `:powered-by false`
+  drops the credit. The version is no longer in the footer; it is in
+  `<meta name="generator">`.
+- **The home banner** shows on the home's first page when its front matter
+  has `heroImage` (with `heroAlt`), `heroText`, `tagline`, `actionText` with
+  `actionLink`, or `bannerBg`. `heroText` is the page's `<h1>` when the home
+  has no `# heading` of its own. `bannerBg` (else `:theme :banner-bg`) is
+  `auto` (a grid on dark grey, white text), `none` (the card's colours), an
+  image, or `background: …` — your own CSS, used as is. With a background
+  image, auto and none are transparent.
+- **The background image** (`:theme :body-bg-img`, one or several) is fixed
+  behind the page at `:body-bg-img-opacity` (0.5, in tenths). Several
+  rotate every `:body-bg-img-interval` seconds (15) — not under reduced
+  motion, nor while the tab is hidden. It forces `:page-style :card`.
+- **The title badge** — a small icon before an article's and the archive's
+  title — is on by default (`:theme :title-badge false` turns it off). It is
+  one of book-open, pencil and hash, or of `:title-badge-icons` (images or UI
+  icons), chosen from the article's permalink, so each article shows the
+  same one in every language and every build.
+
+The opt-in parts — the card, the links and the background image — are in
+`css/identity.css`, which ships and is linked only while a site uses them.
+
 The mode and page-style classes are on `<html>`, unqualified:
 `.theme-mode-dark`, `.theme-style-card`. (0.2.0 put them on `<body>`; CSS
 written as `body.theme-mode-dark` must drop `body`.)
@@ -492,6 +540,11 @@ Pagefind needs `worker-src 'self'` and `'wasm-unsafe-eval'` (DESIGN.md §6.8,
 `<script type="application/json">` data block, which CSP does not govern;
 `js/code.js` and `js/nav.js` (the drawer) are same-origin files. A policy without the hash still gets the
 reader's mode: `js/mode.js` (same-origin) applies it, one frame late.
+The blog identity adds no inline script: `js/bodybg.js`, which rotates
+several background images, is same-origin. A `bannerBg: "background: …"`
+banner is a `style` attribute, which a policy that restricts styles must
+allow (`style-src-attr 'unsafe-inline'`), and a `data:` image needs
+`img-src data:`; an `https:` image elsewhere needs its host in `img-src`.
 
 Analytics adds no inline script: `'self'` covers `js/analytics.js`, and the
 provider's own hosts are needed:

@@ -301,9 +301,11 @@ async function item1(t) {
     await page.close();
   }
   for (const rm of ['reduce', 'no-preference']) {
-    // /zh-Hans/pages/643259/ fits 1280×1024 when toc.js first looks; then
-    // 150 px join the page below the article, as giscus's iframe does
-    const page = await t.newPage({ viewport: { width: 1280, height: 1024 }, reducedMotion: rm });
+    // /zh-Hans/pages/643259/ fits 1280×1100 when toc.js first looks; then
+    // 150 px join the page below the article, as giscus's iframe does.
+    // P4-E1a: 1100, not 1024 — the demo's footer (links, © line, credit)
+    // made the page 7 px taller than 1024
+    const page = await t.newPage({ viewport: { width: 1280, height: 1100 }, reducedMotion: rm });
     await open(page, t, 'zh-Hans/pages/643259/');
     const fits = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
     await page.evaluate(() => { const d = document.createElement('div'); d.style.height = '150px'; document.querySelector('main').appendChild(d); });
@@ -1318,6 +1320,9 @@ async function item6(t) {
     await page.route(url(t, article), async (route) => {
       const res = await route.fetch();
       const body = (await res.text()).replace('<details class="clogem-navbar__toggle">', '<details class="clogem-navbar__toggle" hidden="hidden">')
+        // P4-E1a: this case's subject is the sidebar, so the demo's blogger
+        // card (identity.test.mjs) goes too
+        .replace(/<div class="clogem-blogger clogem-blogger--drawer"[\s\S]*?(?=<nav class="clogem-navbar__nav">)/, '')
         .replace(/<nav class="clogem-navbar__nav"><ul>[\s\S]*?<\/ul><\/nav>/, '<nav class="clogem-navbar__nav"><ul></ul></nav>')
         .replace(/<nav aria-label="[^"]*" class="clogem-langs">[\s\S]*?<\/ul><\/nav>/, '');
       await route.fulfill({ response: res, body });
