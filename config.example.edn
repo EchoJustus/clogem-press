@@ -187,6 +187,14 @@
                                       ; full history: a shallow clone (actions/checkout's
                                       ; default) warns and shows no dates — check out with
                                       ; `fetch-depth: 0`. Outside git: no dates, silently
+         :update-bar {:show-to-article true} ; vdoing's updateBar: under every article, the 3
+                                      ; newest other articles ("Recently updated") and
+                                      ; "More →". :show-to-article false drops it.
+                                      ; :more-article "/tags/" (a site path, given the
+                                      ; page's language prefix, or an https:// URL) is
+                                      ; where every "More →" goes — this one, the home's
+                                      ; right bar and its simple list; default: the
+                                      ; archives, and none when they are off
          :per-page 10                 ; a positive integer: articles per page on the
                                       ; homepage and on category / tag pages (/page/2/, …)
          :fonts {:tamil :system}      ; :system | :self-hosted  (§6.9, D-P3-12)

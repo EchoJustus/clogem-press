@@ -401,6 +401,19 @@ workflow that builds with this on must check out with `fetch-depth: 0`
 makes before building (an `fm-fix` step, say) dates the files it touched.
 Print keeps the date.
 
+**Update bar.** On by default, as in vdoing (`updateBar`): every article
+ends — after the comments — with *Recently updated*, the three newest
+other articles by front-matter `date` (an untranslated one in its
+primary language, flagged like any index row), and *More →*. A catalogue
+or `article: false` page has none, and neither does a site with only one
+article. `:theme :update-bar {:show-to-article false}` drops it.
+`:more-article` (a site path such as `"/tags/"`, which gets the page's
+language prefix, or an `https://` URL) is where *More →* goes, here and
+on the home page — its right bar's recent list, and the `postList: simple`
+list, which now ends with one too; by default it is the archives in the
+page's language, and with the archives switched off there is none. Print
+never shows the bar.
+
 The mode and page-style classes are on `<html>`, unqualified:
 `.theme-mode-dark`, `.theme-style-card`. (0.2.0 put them on `<body>`; CSS
 written as `body.theme-mode-dark` must drop `body`.)

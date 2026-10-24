@@ -10,7 +10,9 @@ and line page styles, focus rings and B1's follow-ups (the first half of
 B2, §11.3 item 1), then Task F — analytics, verification and a static root
 (§11.3 items 14, 15), then Task B2b — the navbar, the mobile drawer and the
 page chrome (the second half of B2, §11.3 item 9, D-P4-9), then Task E2 —
-article-page parity (§11.3 item 16, D-P4-13). The version stays 0.2.0. A site that already set `:theme :page-style :line` now gets
+article-page parity (§11.3 item 16, D-P4-13). The version stays 0.2.0.
+Every article page now ends with an update bar by default, as in vdoing
+(`:theme :update-bar {:show-to-article false}` drops it). A site that already set `:theme :page-style :line` now gets
 that look: 0.2.0 and B1 accepted the value but drew card and line the same.
 Likewise a site that set any of the five keys 0.2.0 listed as planned —
 `:theme :sidebar-collapsed`, `:right-menu-bar`, `:page-button`,
@@ -52,6 +54,22 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   either way. `doctor` never runs git, and a build with the key off never
   does. Print keeps the date. The demo leaves it off: CI's checkout is
   shallow.
+- **The update bar under articles** (D-P4-13; vdoing's `UpdateArticle`,
+  on by default): every article page (`:article?` — never a catalogue or
+  an `article: false` page) ends, after the comments and inside `<main>`,
+  with `<section class="clogem-update-bar">`: `:index/updates`, the 3
+  newest articles of `(:posts model)` (newest first by front-matter date,
+  as vdoing's `$sortPostsByDate`) other than the page itself, as index
+  rows (`layout/article-row`, fallback badge included), then *More →*. No
+  other article, no section. `:theme :update-bar :show-to-article false`
+  drops it; print hides it.
+- **`:theme :update-bar :more-article`** (`parity/more-article-href`):
+  where every *More →* goes — through `layout/nav-href`, so `"/tags/"` is
+  `/zh-Hans/tags/` on a zh-Hans page and a URL is left alone; unset, the
+  archives in the page's language; with the archives off and nothing set,
+  no link. The home's right-bar list uses it (it went to the archives
+  root), and the `postList: simple` list now ends with one too, as
+  vdoing's simple list (an `UpdateArticle`) does. The home still lists 10.
 
 ### Changed (E2)
 
@@ -94,6 +112,13 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   same; `git clone --depth 1 file://…`: 1 warning, no dates; a failing
   git: 1 warning quoting it; the key off, or `doctor`: git never runs; the
   rendered date beside the edit link, alone when `editLink: false`.
+- The update bar: 3 rows, never the current page, on every article page
+  of the demo; after the comments; the fallback badge on an untranslated
+  row; none on catalogues, `article: false` pages, homes or index pages;
+  `:show-to-article false`; `:more-article "/tags/"` on a zh-Hans page and
+  an `https://` URL; the archives off gives no *More*; a one-article site
+  has no bar; the zh-Hans home's simple list ends with *More*, its right
+  bar still lists 10.
 
 ### Needs native review (E2)
 

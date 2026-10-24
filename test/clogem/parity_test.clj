@@ -86,8 +86,8 @@
 (defn- article
   "A minimal article's text with `fm` (a map of front-matter lines)."
   [title permalink & [fm body]]
-  (str "---\ntitle: " title "\ndate: 2026-01-01 00:00:00\npermalink: " permalink "\n"
-       (apply str (for [[k v] fm] (str (name k) ": " v "\n")))
+  (str "---\ntitle: " title "\npermalink: " permalink "\n"
+       (apply str (for [[k v] (merge {:date "2026-01-01 00:00:00"} fm)] (str (name k) ": " v "\n")))
        "---\n\n" (or body "Body text.") "\n"))
 
 (defn- page-edit-of
@@ -513,3 +513,91 @@
         (testing "an uncommitted file has no date"
           (is (not (str/includes? (page-edit-of (pages "pages/cccccc/index.html")) "Last updated")))))
       (finally (fs/delete-tree root)))))
+
+;; ---------------------------------------------------------------------------
+;; Item 4: the update bar and moreArticle
+
+(defn- update-bar-of
+  "The `<section class=\"clogem-update-bar\">` of `page`, or nil."
+  [page]
+  (re-find #"(?s)<section class=\"clogem-update-bar\">.*?</section>" (str page)))
+
+(defn- row-hrefs [s] (mapv second (re-seq #"<li class=\"clogem-row\"><a href=\"([^\"]+)\"" (str s))))
+
+(deftest the-update-bar-lists-three-other-articles
+  (testing "the 3 newest articles but this one, newest first, then More → this language's archives"
+    (let [bar (update-bar-of (html "zh-Hans" "pages" "643259" "index.html"))]
+      (is (= ["/pages/cjk001/" "/pages/ca4d51/" "/zh-Hans/pages/c0nta1/"] (row-hrefs bar)))
+      (is (str/starts-with? bar "<section class=\"clogem-update-bar\"><h2>最近更新</h2><ul class=\"clogem-list\">"))
+      (is (str/ends-with? bar "</ul><p><a href=\"/zh-Hans/archives/\">更多 →</a></p></section>"))
+      (testing "an untranslated row carries the fallback badge"
+        (is (re-find #"<a href=\"/pages/ca4d51/\" lang=\"en\">Card lists</a><span class=\"clogem-fallback\"" bar)))
+      (testing "after the comments, inside <main>"
+        (let [page (html "zh-Hans" "pages" "643259" "index.html")]
+          (is (< (str/index-of page "<section class=\"clogem-comments\">")
+                 (str/index-of page "<section class=\"clogem-update-bar\">")
+                 (str/index-of page "</main>")))))))
+  (testing "never the current page: the newest article's own bar starts at the second"
+    (let [bar (update-bar-of (html "pages" "cjk001" "index.html"))]
+      (is (= 3 (count (row-hrefs bar))))
+      (is (not (some #{"/pages/cjk001/"} (row-hrefs bar))))
+      (is (= "/pages/ca4d51/" (first (row-hrefs bar))))))
+  (testing "every article page has exactly one, of 3 rows, none its own"
+    (doseq [p (fs/glob *out* "**/pages/*/index.html")
+            :let [page (slurp (fs/file p))
+                  rel  (str/replace (str (fs/relativize *out* p)) "\\" "/")]
+            :when (str/includes? page "<article class=\"clogem-article\"")]
+      (is (= 1 (count (re-seq #"<section class=\"clogem-update-bar\">" page))) rel)
+      (is (= 3 (count (row-hrefs (update-bar-of page)))) rel)
+      (is (not (some #(= (str "/" (str/replace rel #"index\.html$" "")) %) (row-hrefs (update-bar-of page)))) rel)))
+  (testing "none on a catalogue, a home or an index page"
+    (doseq [p [["pages" "559f0f" "index.html"] ["pages" "c4d33p" "index.html"] ["index.html"]
+               ["zh-Hans" "index.html"] ["archives" "index.html"] ["tags" "meta" "index.html"]]]
+      (is (not (str/includes? (apply html p) "clogem-update-bar")) (str/join "/" p)))))
+
+(deftest the-home-s-more-follows-more-article
+  (testing "the simple list gets vdoing's More; the right bar's goes to the archives as before"
+    (let [zh (html "zh-Hans" "index.html")
+          simple (second (re-find #"(?s)clogem-list--simple\">(.*?</ul>(?:<p>.*?</p>)?)" zh))]
+      (is (str/ends-with? simple "</ul><p><a href=\"/zh-Hans/archives/\">更多 →</a></p>"))
+      (is (= 3 (count (row-hrefs (first (str/split simple #"</ul>" 2))))) "simplePostListLength: 3 still")
+      (is (str/includes? (re-find #"(?s)<section class=\"clogem-updates\">.*?</section>" zh)
+                         "<p><a href=\"/zh-Hans/archives/\">更多 →</a></p>"))
+      (is (= 10 (count (row-hrefs (re-find #"(?s)<section class=\"clogem-updates\">.*?</section>" zh))))
+          "the home's 10 stays"))))
+
+(def ^:private three-articles
+  {"01.A/01.one.md"   (article "One" "/pages/one001/" {:date "2026-01-01"})
+   "01.A/01.one.zh-Hans.md" (article "一" "/pages/one001/" {:date "2026-01-01"})
+   "01.A/02.two.md"   (article "Two" "/pages/two002/" {:date "2026-01-02"})
+   "01.A/03.off.md"   (article "Off" "/pages/off003/" {:article "false"})
+   "01.A/04.four.md"  (article "Four" "/pages/fou004/" {:date "2026-01-04"})})
+
+(deftest update-bar-options
+  (testing ":more-article \"/tags/\" goes to the page language's tags; an article: false page has no bar"
+    (let [{:keys [pages warnings]} (build-temp {:langs {:priority [:en :zh-Hans]
+                                                        :locales {:zh-Hant nil :ms nil :ta nil}}
+                                                :theme {:update-bar {:more-article "/tags/"}}}
+                                               three-articles)]
+      (is (= [] (filterv #(re-find #"update-bar|more-article" %) warnings)))
+      (is (str/ends-with? (update-bar-of (pages "zh-Hans/pages/one001/index.html"))
+                          "<p><a href=\"/zh-Hans/tags/\">更多 →</a></p></section>"))
+      (is (str/ends-with? (update-bar-of (pages "pages/one001/index.html"))
+                          "<p><a href=\"/tags/\">More →</a></p></section>"))
+      (is (= ["/pages/fou004/" "/pages/two002/"] (row-hrefs (update-bar-of (pages "pages/one001/index.html"))))
+          "an article: false page is never a row either")
+      (is (nil? (update-bar-of (pages "pages/off003/index.html"))))))
+  (testing "an https:// :more-article is left alone"
+    (let [{:keys [pages]} (build-temp {:theme {:update-bar {:more-article "https://example.org/all"}}} three-articles)]
+      (is (str/includes? (update-bar-of (pages "pages/one001/index.html")) "<a href=\"https://example.org/all\">"))))
+  (testing ":show-to-article false: no bar"
+    (let [{:keys [pages]} (build-temp {:theme {:update-bar {:show-to-article false}}} three-articles)]
+      (is (not-any? #(str/includes? % "clogem-update-bar") (vals pages)))))
+  (testing "archives off and no :more-article: no More, on the bar or the home"
+    (let [{:keys [pages]} (build-temp {:content {:archive false}} (assoc three-articles "index.md" "---\npostList: simple\n---\n"))]
+      (is (= 2 (count (row-hrefs (update-bar-of (pages "pages/one001/index.html"))))))
+      (is (not (str/includes? (update-bar-of (pages "pages/one001/index.html")) "<p>")))
+      (is (not (str/includes? (pages "index.html") "More →")))))
+  (testing "a one-article site has no bar"
+    (let [{:keys [pages]} (build-temp {} {"01.A/01.one.md" (article "One" "/pages/one001/")})]
+      (is (nil? (update-bar-of (pages "pages/one001/index.html")))))))

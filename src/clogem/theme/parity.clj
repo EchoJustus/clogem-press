@@ -2,7 +2,7 @@
 (ns clogem.theme.parity
   "Phase 4 Task E2 — article-page parity with vdoing (DESIGN.md §11.3 item
   16, D-P4-13, D-P4-16): the edit link and the last-updated date under an
-  article or catalogue page.
+  article or catalogue page, and the update bar under an article.
 
   This namespace requires `clogem.theme.layout`; layout never requires it,
   so the page templates call in here and layout stays the shared chrome."
@@ -11,7 +11,9 @@
             [clogem.config :as config]
             [clogem.diag :as diag]
             [clogem.i18n :as i18n]
+            [clogem.model :as model]
             [clogem.theme.icons :as icons]
+            [clogem.theme.layout :as layout]
             [clogem.util :as u]))
 
 ;; ---------------------------------------------------------------------------
@@ -98,3 +100,45 @@
        (when iso
          [:span.clogem-page-edit__updated (icons/icon ctx :clock) " "
           [:time {:datetime iso} (i18n/tr ctx :page/last-updated {:date (subs iso 0 (min 10 (count iso)))})]])])))
+
+;; ---------------------------------------------------------------------------
+;; The update bar (D-P4-13)
+
+(def update-bar-length
+  "How many articles the update bar under an article lists: vdoing's
+  `<UpdateArticle :length=\"3\">` (Page.vue), hard-coded there too."
+  3)
+
+(defn more-article-href
+  "Where an update bar's \"More\" goes on a page in the page's language:
+  `:theme :update-bar :more-article` through `layout/nav-href` (a site path
+  gets the language's prefix, `/archives/` → `/zh-Hans/archives/`; a URL
+  is left alone), else the archives in the page's language, else — the
+  archives switched off — nowhere (nil)."
+  [{:keys [cfg lang index-paths] :as ctx}]
+  (if-let [m (:more-article (config/update-bar cfg))]
+    (layout/nav-href ctx m)
+    (when-let [root (:archives index-paths)]
+      (layout/href ctx (model/site-url cfg lang root)))))
+
+(defn more-article
+  "The \"More →\" paragraph after a list of recent articles, or nil."
+  [ctx]
+  (when-let [h (more-article-href ctx)]
+    [:p [:a {:href h} (i18n/tr ctx :index/more) " →"]]))
+
+(defn update-bar
+  "vdoing's UpdateArticle under an article (Page.vue): the
+  `update-bar-length` newest articles — `(:posts model)`, newest first by
+  front-matter date, as vdoing's `$sortPostsByDate` — other than this one,
+  as index rows, then \"More →\". Only on an article page (`:article?`:
+  never a catalogue or an `article: false` page), unless `:theme
+  :update-bar :show-to-article` is false; nil when no other article exists."
+  [{:keys [cfg model group] :as ctx}]
+  (when (and (:article? group) (:show-to-article (config/update-bar cfg)))
+    (let [ids (take update-bar-length (remove #{(:permalink group)} (:posts model)))]
+      (when (seq ids)
+        [:section.clogem-update-bar
+         [:h2 (i18n/tr ctx :index/updates)]
+         (into [:ul.clogem-list] (map #(layout/article-row ctx (get-in model [:articles %])) ids))
+         (more-article ctx)]))))

@@ -34,7 +34,9 @@
        (parity/page-edit ctx)
        (layout/prev-next ctx)
        (layout/page-buttons ctx)
-       (layout/comments ctx)])
+       (layout/comments ctx)
+       ;; Task E2: vdoing's UpdateArticle, the 3 newest other articles
+       (parity/update-bar ctx)])
      (layout/footer ctx)))
 
 (defn redirect-stub
