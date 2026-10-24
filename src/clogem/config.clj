@@ -476,8 +476,8 @@
                            :title-badge-icons :planned :blogger :planned :footer :planned
                            :update-bar :ok :right-menu-bar :ok :page-button :ok
                            :content-bg-style :ok :last-updated :ok
-                           :sidebar-collapsed :ok :back-to-top :ok :logo :planned
-                           :repo :ok}
+                           :sidebar-collapsed :ok :back-to-top :ok :logo :ok
+                           :repo :ok :repo-label :ok}
    [:theme :fonts]        {:tamil :ok}
    ;; Phase 4 Task E2 (§11.3 item 16, D-P4-13): `check-article-parity!`
    [:content :edit-link]  {:repo :ok :branch :ok :dir :ok}
@@ -578,7 +578,8 @@
    "pageButton"              [[:theme :page-button] :ok]
    "contentBgStyle"          [[:theme :content-bg-style] :ok]
    "lastUpdated"             [[:theme :last-updated] :ok]
-   "logo"                    [[:theme :logo] :planned]
+   "logo"                    [[:theme :logo] :ok]
+   "repoLabel"               [[:theme :repo-label] :ok]
    "repo"                    [[:theme :repo] :ok]
    "editLinks"               [[:content :edit-link] :ok "a map {:repo :branch :dir}; absent is off"]
    "editLinkText"            [nil :implicit "labels the edit link with the i18n string :page/edit"
@@ -929,10 +930,22 @@
                                   "updateBar.moreArticle"))))]
         (assoc-in cfg path (cond-> {:show-to-article s} m (assoc :more-article m)))))))
 
+(defn logo-ok?
+  "`:theme :logo`: a site path (`/…`, not `//…`) or an `https://` URL."
+  [v]
+  (boolean (and (string? v) (re-find #"^(?:/(?!/)|(?i:https://)\S)" v) (not (re-find #"\s" v)))))
+
+(defn- label-ok?
+  "`:theme :repo-label`: a non-blank string, or a per-language map of them
+  (read by `i18n/resolve-str`)."
+  [v]
+  (or (and (string? v) (not (str/blank? v)))
+      (and (map? v) (seq v) (every? #(and (string? %) (not (str/blank? %))) (vals v)))))
+
 (defn- check-article-parity!
   "Phase 4 Task E2: `:theme :repo` first (the edit link falls back to it),
-  then `:content :edit-link`, `:theme :last-updated` and `:theme
-  :update-bar`."
+  then `:content :edit-link`, `:theme :last-updated`, `:theme :update-bar`,
+  `:theme :logo` and `:theme :repo-label`."
   [cfg]
   (let [repo (get-in cfg [:theme :repo])
         cfg  (if (or (nil? repo) (repo->url repo))
@@ -940,6 +953,18 @@
                (do (parity-warn! [:theme :repo] repo "\"owner/name\" or an https:// URL"
                                  "there is no repository link" "repo")
                    (assoc-in cfg [:theme :repo] nil)))
+        logo (get-in cfg [:theme :logo])
+        cfg  (if (or (nil? logo) (logo-ok? logo))
+               cfg
+               (do (parity-warn! [:theme :logo] logo "a site path starting with / (such as \"/assets/logo.svg\") or an https:// URL"
+                                 "there is no logo" "logo")
+                   (assoc-in cfg [:theme :logo] nil)))
+        lbl  (get-in cfg [:theme :repo-label])
+        cfg  (if (or (nil? lbl) (label-ok? lbl))
+               cfg
+               (do (parity-warn! [:theme :repo-label] lbl "a non-blank string or a map of them by language"
+                                 "the label follows the host" "repoLabel")
+                   (assoc-in cfg [:theme :repo-label] nil)))
         lu   (get-in cfg [:theme :last-updated])
         cfg  (cond
                (nil? lu)     (assoc-in cfg [:theme :last-updated] false)

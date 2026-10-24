@@ -19,6 +19,7 @@
             [clogem.diag :as diag]
             [clogem.highlight :as highlight]
             [clogem.i18n :as i18n]
+            [clogem.markdown :as markdown]
             [clogem.model :as model]
             [clogem.search :as search]
             [clogem.seo :as seo]
@@ -469,22 +470,59 @@
     (icons/icon ctx :menu {:class "is-menu"}) (icons/icon ctx :x {:class "is-close"})
     [:span.clogem-visually-hidden (i18n/tr ctx :nav/menu)]]])
 
+(defn repo-label
+  "The repository link's text (Task E2; vdoing's NavLinks `repoLabel`):
+  `:theme :repo-label` in the page's language, else GitHub, GitLab or
+  Bitbucket by the URL's host, else the page language's `:nav/source`."
+  [{:keys [cfg] :as ctx} url]
+  (or (u/blank->nil (i18n/resolve-str ctx (get-in cfg [:theme :repo-label])))
+      (let [host (u/lower (or (second (re-find #"(?i)^https://(?:www\.)?([^/?#]+)" (str url))) ""))]
+        (some (fn [[re label]] (when (re-find re host) label))
+              [[#"(^|\.)github\.com$" "GitHub"] [#"(^|\.)gitlab\.com$" "GitLab"]
+               [#"(^|\.)bitbucket\.org$" "Bitbucket"]]))
+      (i18n/tr ctx :nav/source)))
+
+(defn- repo-item
+  "Task E2: `:theme :repo` as the nav's last item — the label and the
+  `external-link` icon, in the same tab like every `:nav` link. Above 50rem
+  and up to 64rem the label is visually hidden (it stays the link's name);
+  in the drawer it is a text link like the others."
+  [ctx]
+  (when-let [url (config/repo-url (:cfg ctx))]
+    [:li.clogem-navbar__item
+     [:a.clogem-navbar__repo {:href url}
+      [:span.clogem-navbar__repo-label (repo-label ctx url)] " " (icons/icon ctx :external-link)]]))
+
+(defn- brand
+  "The site title linking home; with `:theme :logo` (Task E2), the logo
+  before it — decorative (`alt=\"\"`), the title still the link's name,
+  visually hidden at 64rem and below as vdoing hides it (≤ 959px)."
+  [{:keys [cfg lang] :as ctx}]
+  (let [h     (href ctx (model/home-url cfg lang))
+        title (i18n/resolve-str ctx (get-in cfg [:site :title]))]
+    (if-let [logo (get-in cfg [:theme :logo])]
+      [:a.clogem-navbar__brand.has-logo {:href h}
+       [:img.clogem-navbar__logo {:src (if (str/starts-with? logo "/") (markdown/with-base cfg logo) logo) :alt ""}]
+       [:span.clogem-navbar__title title]]
+      [:a.clogem-navbar__brand {:href h} title])))
+
 (defn navbar
   "One row (P4-B2b), in visual order: the brand, the nav, the languages,
   search and the mode toggle. At 50rem and below, with JS, the nav and the
   languages are in `#clogem-drawer`, behind the menu toggle, first; above
-  it the drawer is `display: contents`. A one-language site with no `:nav`
-  has nothing to put there, except the sidebar js/nav.js moves in: it gets
-  the drawer, with the toggle `hidden`, on a page with a sidebar
-  (`:sidebar?`) only."
-  [{:keys [cfg lang sidebar?] :as ctx}]
-  (let [nav    [:nav.clogem-navbar__nav (into [:ul] (map #(nav-item ctx %) (:nav cfg)))]
+  it the drawer is `display: contents`. The nav ends with the repository
+  link (`:theme :repo`, Task E2). A one-language site with no `:nav` and
+  no `:repo` has nothing to put there, except the sidebar js/nav.js moves
+  in: it gets the drawer, with the toggle `hidden`, on a page with a
+  sidebar (`:sidebar?`) only."
+  [{:keys [cfg sidebar?] :as ctx}]
+  (let [repo   (repo-item ctx)
+        nav    [:nav.clogem-navbar__nav (-> [:ul] (into (map #(nav-item ctx %) (:nav cfg))) (cond-> repo (conj repo)))]
         langs  (lang-switcher ctx)
-        shown? (boolean (or (seq (:nav cfg)) langs))]
+        shown? (boolean (or (seq (:nav cfg)) langs repo))]
     [:header.clogem-navbar
      (when (or shown? sidebar?) (menu-toggle ctx (not shown?)))
-     [:a.clogem-navbar__brand {:href (href ctx (model/home-url cfg lang))}
-      (i18n/resolve-str ctx (get-in cfg [:site :title]))]
+     (brand ctx)
      (if (or shown? sidebar?)
        [:div#clogem-drawer.clogem-navbar__drawer nav langs]
        nav)

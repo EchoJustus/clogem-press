@@ -195,6 +195,19 @@
                                       ; where every "More →" goes — this one, the home's
                                       ; right bar and its simple list; default: the
                                       ; archives, and none when they are off
+         :logo nil                    ; vdoing's logo: a site path ("/assets/logo.svg" —
+                                      ; your assets/ or static directory; a path the build
+                                      ; does not write warns) or an https:// URL, shown
+                                      ; 2.2rem tall before the site title, which is then
+                                      ; visually hidden at 64rem and below
+         :repo nil                    ; vdoing's repo: "owner/name" (GitHub) or an
+                                      ; https:// URL — a link at the end of the nav (in
+                                      ; the mobile drawer at 50rem and below; just its
+                                      ; icon between 50 and 64rem), in the same tab.
+                                      ; Also the edit link's default :repo
+         :repo-label nil              ; vdoing's repoLabel: a string, or a map by language;
+                                      ; nil → GitHub, GitLab or Bitbucket by the host,
+                                      ; else the page language's "Source" (:nav/source)
          :per-page 10                 ; a positive integer: articles per page on the
                                       ; homepage and on category / tag pages (/page/2/, …)
          :fonts {:tamil :system}      ; :system | :self-hosted  (§6.9, D-P3-12)

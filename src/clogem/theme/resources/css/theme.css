@@ -515,6 +515,14 @@ img { max-width: 100%; height: auto; }
 .clogem-page-edit__updated { margin-inline-start: auto; }
 .clogem-update-bar { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--borderColor); }
 .clogem-update-bar h2 { font-size: 1rem; }
+.clogem-navbar__logo { height: 2.2rem; width: auto; max-width: 8rem; vertical-align: middle; margin-inline-end: 0.5rem; }
+@media (max-width: 64rem) {
+  .has-logo .clogem-navbar__title, .clogem-navbar__repo-label { position: absolute; width: 1px; height: 1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); }
+}
+@media (max-width: 50rem) {
+  .clogem-navbar__repo-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
+}
 
 /* P4-B2b: vdoing's page buttons, fixed at the viewport's edges. The widest
  * shell is 80rem, so its gutter is (100vw - 80rem) / 2 + 1.25rem: 52px at

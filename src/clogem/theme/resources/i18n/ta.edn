@@ -43,6 +43,9 @@
  ;; P4-B2b: the back-to-top button. Awaiting native review (CHANGELOG,
  ;; Unreleased, "Needs native review (B2b)").
  :page/back-to-top     "மேலே செல்"
+ ;; Task E2: the navbar's repository link. Awaiting native review
+ ;; (CHANGELOG, Unreleased, "Needs native review (E2)").
+ :nav/source           "மூலக் குறியீடு"
  :container/theorem    "தேற்றம்"
  ;; Search UI (D-P3-10): Pagefind 1.5.2 translations/ta.json.
  ;; [SEARCH_TERM], [COUNT] and [DIFFERENT_TERM] are Pagefind's placeholders; keep them.

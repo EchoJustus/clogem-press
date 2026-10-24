@@ -310,6 +310,22 @@ navbar, as before B2b. There is no key for smooth scrolling
 (vdoing's `smoothScroll`, off by default there, is known and ignored: a
 site that sets it is told to remove it).
 
+**Logo and repository link.** `:theme :logo` (vdoing's `logo`) puts an
+image, 2.2rem tall, before the site title in the navbar: a site path —
+`"/assets/logo.svg"` for `assets/logo.svg` (a path the build does not
+write is a warning; the image is linked all the same) — or an `https://`
+URL. It is decorative (`alt=""`): the title stays the link's name, and at
+64rem and below, where vdoing hides it too, the title is visually hidden
+and only the logo shows. `:theme :repo` (vdoing's `repo`: `"owner/name"`
+for GitHub, or an `https://` URL) adds a link at the end of the nav,
+labelled `:theme :repo-label` (a string or a map by language), else
+*GitHub*, *GitLab* or *Bitbucket* by its host, else *Source*
+(`:nav/source`), with an external-link icon. It opens in the same tab, like
+every nav link (vdoing opens a new one). Between 50 and 64rem the label is
+visually hidden, leaving the icon; at 50rem and below the link is in the
+drawer with the rest of the nav, so a one-language site with no `:nav`
+gets the drawer when it has `:repo`.
+
 **Mobile layout.** At 50rem (800 px) and below the navbar is one sticky
 row: a menu button, the brand (cut short with an ellipsis), the search
 icon and the mode button. The menu button opens a drawer below the

@@ -67,8 +67,11 @@
   `dir`/dist: {:pages {rel-path html} :warnings [message …]}."
   [dir]
   (let [[_ ds] (diag/collecting
-                (let [cfg (config/load-config (str dir) nil {:content {:write-front-matter false}})]
-                  (render/build! cfg (cli/analyse cfg))))
+                (let [cfg (config/load-config (str dir) nil {:content {:write-front-matter false}})
+                      m   (cli/analyse cfg)]
+                  ;; as `cli/build` analyses
+                  (render/check-output-collisions! m)
+                  (render/build! cfg m)))
         dist (fs/path dir "dist")]
     {:pages    (into (sorted-map)
                      (for [p (fs/glob dist "**.html")]
@@ -694,3 +697,105 @@
              ["@pages/categoriesPage.md" "front matter pageClass: \"x}y\" is not a class name (a letter or _, then letters, digits, - or _); it is dropped."]}
            (set (map (juxt :path :message) bad))))
     (is (= 2 (count bad)) "once per file, from its first page")))
+
+;; ---------------------------------------------------------------------------
+;; Item 7: the navbar logo and the repository link
+
+(defn- navbar-of [page] (re-find #"(?s)<header class=\"clogem-navbar\">.*?</header>" (str page)))
+
+(deftest logo-and-repo-label-are-checked
+  (doseq [ok ["/assets/logo.svg" "https://cdn.example/logo.png"]]
+    (let [[cfg ws] (cfg-warnings {:theme {:logo ok}})]
+      (is (= [] ws))
+      (is (= ok (get-in cfg [:theme :logo])))))
+  (doseq [bad ["assets/logo.svg" "//cdn.example/x.png" "http://x/y.png" "/a b.png" 3]]
+    (let [[cfg ws] (cfg-warnings {:theme {:logo bad}})]
+      (is (= [(str ":theme :logo is " (pr-str bad) ", but it must be a site path starting with / (such as "
+                   "\"/assets/logo.svg\") or an https:// URL; there is no logo.")] ws))
+      (is (nil? (get-in cfg [:theme :logo])))))
+  (doseq [ok ["Code" {:en "Code" :zh-Hans "代码"}]]
+    (let [[cfg ws] (cfg-warnings {:theme {:repo-label ok}})]
+      (is (= [] ws) "a per-language map is user data, not walked for keys")
+      (is (= ok (get-in cfg [:theme :repo-label])))))
+  (doseq [bad ["  " {} {:en ""} :code]]
+    (let [[cfg ws] (cfg-warnings {:theme {:repo-label bad}})]
+      (is (= [(str ":theme :repo-label is " (pr-str bad) ", but it must be a non-blank string or a map of them "
+                   "by language; the label follows the host.")] ws))
+      (is (nil? (get-in cfg [:theme :repo-label])))))
+  (let [[_ ws] (cfg-warnings {:theme {:repoLabel "x"}})]
+    (is (= [":theme :repoLabel is vdoing's spelling; clogem-press reads :theme :repo-label. It is ignored."] ws))))
+
+(deftest the-demo-navbar-has-a-logo-and-a-repo-link
+  (let [nb (navbar-of (html "zh-Hans" "index.html"))]
+    (is (str/includes? nb (str "<a class=\"clogem-navbar__brand has-logo\" href=\"/zh-Hans/\">"
+                               "<img alt=\"\" class=\"clogem-navbar__logo\" src=\"/assets/logo.svg\" />"
+                               "<span class=\"clogem-navbar__title\">clogem-press 演示</span></a>")))
+    (testing "the repo link is the nav's last item, labelled by its host"
+      (is (re-find #"<li class=\"clogem-navbar__item\"><a class=\"clogem-navbar__repo\" href=\"https://github.com/EchoJustus/clogem-press\"><span class=\"clogem-navbar__repo-label\">GitHub</span> <svg [^>]*><use href=\"[^\"]*#external-link\"></use></svg></a></li></ul></nav><nav aria-label=\"[^\"]+\" class=\"clogem-langs\">"
+                   nb))
+      (is (not (re-find #"clogem-navbar__repo\"[^>]*target" nb)) "the same tab")))
+  (testing "on every page with a navbar"
+    (doseq [p (fs/glob *out* "**.html")
+            :let [page (slurp (fs/file p))]
+            :when (str/includes? page "<header class=\"clogem-navbar\">")]
+      (is (= 1 (count (re-seq #"class=\"clogem-navbar__repo\"" page))) (str p))
+      (is (= 1 (count (re-seq #"class=\"clogem-navbar__logo\"" page))) (str p))))
+  (testing "the logo is a real image the build writes"
+    (is (fs/regular-file? (fs/path *out* "assets" "logo.svg")))
+    (is (str/starts-with? (slurp (fs/file *out* "assets" "logo.svg")) "<svg"))))
+
+(deftest navbar-variants
+  (let [one-lang {:langs {:priority [:en] :locales {:zh-Hans nil :zh-Hant nil :ms nil :ta nil}}}
+        files    {"01.A/01.one.md" (article "One" "/pages/one001/")}
+        brand-re #"<a class=\"clogem-navbar__brand[^\"]*\" href=\"[^\"]*\">.*?</a>"]
+    (testing "no :logo: the brand is as before"
+      (let [{:keys [pages]} (build-temp one-lang files)]
+        (is (= "<a class=\"clogem-navbar__brand\" href=\"/\">S</a>" (re-find brand-re (pages "index.html"))))
+        (testing "and a one-language site with no :nav and no :repo has no menu toggle off a sidebar page"
+          (is (not (str/includes? (pages "index.html") "clogem-navbar__toggle"))))))
+    (testing "only :repo: the drawer and a shown toggle on a one-language site with no :nav"
+      (let [{:keys [pages]} (build-temp (assoc one-lang :theme {:repo "https://gitlab.com/g/s"}) files)
+            nb (navbar-of (pages "index.html"))]
+        (is (str/includes? nb "<details class=\"clogem-navbar__toggle\"><summary"))
+        (is (not (str/includes? nb "clogem-navbar__toggle\" hidden")))
+        (is (str/includes? nb (str "<div class=\"clogem-navbar__drawer\" id=\"clogem-drawer\"><nav class=\"clogem-navbar__nav\">"
+                                   "<ul><li class=\"clogem-navbar__item\"><a class=\"clogem-navbar__repo\" href=\"https://gitlab.com/g/s\">"
+                                   "<span class=\"clogem-navbar__repo-label\">GitLab</span> ")))))
+    (testing "labels: Bitbucket by host, Source otherwise (in the page's language), :repo-label first"
+      (let [label #(second (re-find #"clogem-navbar__repo-label\">([^<]*)<" (str %)))]
+        (is (= "Bitbucket" (label ((:pages (build-temp (assoc one-lang :theme {:repo "https://bitbucket.org/b/s"}) files)) "index.html"))))
+        (let [{:keys [pages]} (build-temp {:langs {:priority [:en :zh-Hans] :locales {:zh-Hant nil :ms nil :ta nil}}
+                                           :theme {:repo "https://git.example/o/n"}} files)]
+          (is (= "Source" (label (pages "index.html"))))
+          (is (= "源代码" (label (pages "zh-Hans/index.html")))))
+        (let [{:keys [pages]} (build-temp {:langs {:priority [:en :zh-Hans] :locales {:zh-Hant nil :ms nil :ta nil}}
+                                           :theme {:repo "o/n" :repo-label {:en "Code" :zh-Hans "代码"}}} files)]
+          (is (= "Code" (label (pages "index.html"))))
+          (is (= "代码" (label (pages "zh-Hans/index.html")))))))
+    (testing "a logo under --base gets the base; an https:// logo is left alone and not checked"
+      (let [dir (fs/create-temp-dir {:prefix "clogem-e2"})]
+        (try
+          (write-site! dir (assoc one-lang :site {:title "S" :base "/proj/"} :theme {:logo "/assets/l.svg"})
+                       files)
+          (fs/create-dirs (fs/path dir "assets"))
+          (spit (fs/file dir "assets" "l.svg") "<svg xmlns=\"http://www.w3.org/2000/svg\"/>")
+          (let [{:keys [pages warnings]} (build-dir dir)]
+            (is (str/includes? (pages "index.html") "<img alt=\"\" class=\"clogem-navbar__logo\" src=\"/proj/assets/l.svg\" />"))
+            (is (not-any? #(str/includes? % ":logo") warnings)))
+          (finally (fs/delete-tree dir))))
+      (let [{:keys [pages warnings]} (build-temp (assoc one-lang :theme {:logo "https://cdn.example/l.png"}) files)]
+        (is (str/includes? (pages "index.html") "src=\"https://cdn.example/l.png\""))
+        (is (not-any? #(str/includes? % ":logo") warnings))))
+    (testing "a site-path logo the build does not write: one warning, still linked — in build and doctor"
+      (let [dir (fs/create-temp-dir {:prefix "clogem-e2"})]
+        (try
+          (write-site! dir (assoc one-lang :theme {:logo "/assets/missing.svg"}) files)
+          (let [{:keys [pages warnings]} (build-dir dir)]
+            (is (str/includes? (pages "index.html") "src=\"/assets/missing.svg\""))
+            (is (= [(str ":theme :logo \"/assets/missing.svg\" names no file the build writes; "
+                         "the navbar links it all the same.")]
+                   (filterv #(str/includes? % ":logo") warnings))))
+          (let [r (binding [*out* (java.io.StringWriter.) *err* (java.io.StringWriter.)]
+                    (cli/doctor {:site-dir (str dir)}))]
+            (is (= 1 (count (filter #(str/includes? (:message %) ":logo") (:warnings r))))))
+          (finally (fs/delete-tree dir)))))))

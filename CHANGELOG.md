@@ -88,6 +88,31 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   or a list of strings, is a warning naming the file (once per file, from
   its first page in its own language) and is dropped. A page without
   `pageClass` renders byte-identical.
+- **The navbar logo** (`:theme :logo`, vdoing's `logo`; read since this
+  task, it warned as planned): a site path (`/…`, not `//…`, with the
+  base added) or an `https://` URL, else a warning and no logo. The brand
+  becomes `<a class="clogem-navbar__brand has-logo">` holding
+  `<img class="clogem-navbar__logo" alt="">` (2.2rem tall, at most 8rem
+  wide; vdoing's `$navbarHeight - 1.4rem`) and `<span
+  class="clogem-navbar__title">`; without a logo it is byte-identical. At
+  64rem and below the title is visually hidden — still the link's name —
+  as vdoing hides the site name at ≤ 959 px. A site-path logo that no
+  output of the build (the site's `assets/`, the static directory, a
+  theme file) writes is one warning, in `build` and `doctor`
+  (`render/warn-missing-logo!`, beside `warn-skipped-links!`), and is
+  linked all the same.
+- **The repository link** (`:theme :repo`, vdoing's `repo`, and
+  `:theme :repo-label`, vdoing's `repoLabel`): the nav's last `<li>`, `<a
+  class="clogem-navbar__repo">` with `<span
+  class="clogem-navbar__repo-label">` and the `external-link` icon, in
+  the same tab. The label is `:repo-label` (a non-blank string or a map by
+  language, else a warning and the default), else GitHub, GitLab or
+  Bitbucket by host, else `:nav/source` (new, in all five languages). It
+  is visually hidden above 50rem up to 64rem (a `max-width: 64rem` rule
+  reset at `max-width: 50rem`), and a text link in the drawer, so it counts
+  in the navbar's `shown?`: a one-language site with no `:nav` but a
+  `:repo` gets the drawer. The demo sets both, with its own
+  `assets/logo.svg`.
 
 ### Changed (E2)
 
@@ -147,8 +172,27 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   each, naming the file; `5` ignored with one warning; a paginated home's
   and a category overview's bad token warn once per file; the demo and a
   page without it unchanged.
+- The navbar: `:logo` and `:repo-label` rules (`//…`, `http:`, a blank
+  label, an empty map warn); vdoing's `repoLabel`; the demo's brand, logo
+  and repo link on every navbar page, the link last in the nav, before
+  the languages, with no `target`; no `:logo`, the brand unchanged; only
+  `:repo` on a one-language site with no `:nav` gets the toggle and the
+  drawer; GitLab, Bitbucket, `Source` / `源代码` and a per-language
+  `:repo-label`; a logo under `--base /proj/`; an `https://` logo
+  unchecked; a missing logo file is one warning in `build` and `doctor`.
+- `test/browser/parity.test.mjs` (new): the repo link is the nav's last
+  item, focusable and reached by Tab in the open drawer at 320 and 360 on
+  every home and an article, its label shown; at 801–1024 the label is
+  hidden and one link is named "GitHub", at 1025 and 1280 it shows; the
+  logo loads, 2.2rem tall, `alt=""`, the title hidden at 1024 and below
+  and shown from 1025, the brand still named by it; print hides the edit
+  link and the update bar.
 
 ### Needs native review (E2)
+
+- `ms`: `:nav/source` "Kod sumber" (the navbar's repository link, when
+  its host is not GitHub, GitLab or Bitbucket).
+- `ta`: `:nav/source` "மூலக் குறியீடு".
 
 **Task B2b — navbar, mobile drawer and page chrome** (§11.3 item 9, D-P4-9):
 

@@ -40,6 +40,9 @@
  :page/tags            "Tags"
  :page/sidebar         "Sidebar"
  :page/back-to-top     "Back to top"
+ ;; Task E2: the navbar's repository link, when its host is not GitHub,
+ ;; GitLab or Bitbucket and :theme :repo-label is not set
+ :nav/source           "Source"
  :container/theorem    "Theorem"
  ;; Search UI (D-P3-10): Pagefind 1.5.2 translations/en.json.
  ;; [SEARCH_TERM], [COUNT] and [DIFFERENT_TERM] are Pagefind's placeholders; keep them.

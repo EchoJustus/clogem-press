@@ -1485,6 +1485,26 @@
             {:file (fs/path out rel) :what (static-what cfg p) :static? true})
           (reserved-outputs cfg)))))
 
+(defn warn-missing-logo!
+  "Task E2: warn when a site-path `:theme :logo` names no file this build
+  writes (`plan`, `planned-outputs`) — the site's `assets/`, the static
+  directory, a theme file. The image is still linked. An `https://` logo
+  is not checked."
+  [cfg out plan]
+  (let [logo (get-in cfg [:theme :logo])]
+    (when (and (string? logo) (str/starts-with? logo "/"))
+      (let [base  (config/base-path cfg)
+            path  (u/percent-decode (str/replace logo #"[?#].*$" ""))
+            path  (if (and (not= "/" base) (str/starts-with? path base)) (subs path (count base)) path)
+            file  (str (normal-abs (fs/path out (str/replace path #"^/+" ""))))
+            files (into #{} (comp (remove :reserved?) (map #(str (normal-abs (:file %))))) plan)]
+        (when-not (contains? files file)
+          (diag/warn! nil (str ":theme :logo " (pr-str logo) " names no file the build writes; "
+                               "the navbar links it all the same.")
+                      (str "Put the image in the assets directory (its " (get-in cfg [:content :assets-dir])
+                           "/logo.svg is :logo \"/assets/logo.svg\") or the static directory, "
+                           "or use an https:// URL.")))))))
+
 (defn check-output-collisions!
   "Report, as errors, the outputs of `model` that would collide
   (`output-collisions`) — what `doctor` and the build's analysis run, so a
@@ -1497,6 +1517,7 @@
         [plan] (diag/collecting (planned-outputs model))
         cs     (output-collisions out plan)]
     (warn-skipped-links! (:cfg model))
+    (warn-missing-logo! (:cfg model) out plan)
     (doseq [{:keys [inner outer] :as c} cs]
       (diag/error! (or (get-in inner [:what :source]) (get-in outer [:what :source]))
                    (collision-message out c)))
