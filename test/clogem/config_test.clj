@@ -518,12 +518,13 @@
       (is (some #(= (str ":analytics :provider :ga4 needs :site :url: the loader runs only on the "
                          "site's own host. Analytics is off.") %) ms))
       (is (some #(= ":theme :html-modules has no effect in 0.2.0; nothing is injected." %) ms))
-      (is (some #(= ":theme :blogger is planned, not implemented in 0.2.0; it has no effect." %) ms))
-      (is (some #(= ":theme :footer is planned, not implemented in 0.2.0; it has no effect." %) ms))
-      (is (some #(= (str ":theme :bodyBgImg is vdoing's spelling; clogem-press reads :theme :body-bg-img"
-                         " — planned, not implemented in 0.2.0. It is ignored.") %) ms))
+      ;; P4-E1a (deliberate): :blogger and :footer are implemented, so
+      ;; their "planned" warnings are gone, and :bodyBgImg's loses "planned"
+      (is (not-any? #(str/includes? % ":theme :blogger") ms))
+      (is (not-any? #(str/includes? % ":theme :footer") ms))
+      (is (some #(= ":theme :bodyBgImg is vdoing's spelling; clogem-press reads :theme :body-bg-img. It is ignored." %) ms))
       (is (some #(= ":seo :indexnow :enabled true has no effect in 0.2.0; nothing is pushed to IndexNow." %) ms))
-      (is (= 6 (count ms)) (pr-str ms)))))
+      (is (= 4 (count ms)) (pr-str ms)))))
 
 (deftest unknown-keys-name-the-path-and-the-nearest-known-key
   (let [[_ ds] (with-site {:footr 1
@@ -584,9 +585,10 @@
   (testing "known-keys is data: a later task adds a key there and the
             warning goes away"
     (is (= :ok (get-in config/known-keys [[:theme] :page-style])))
-    (is (= :planned (get-in config/known-keys [[:theme] :blogger])))
-    (with-redefs [config/known-keys (assoc-in config/known-keys [[:theme] :blogger] :ok)]
-      (is (= [] (warning-messages {:theme {:blogger {:name "me"}}}))))))
+    ;; P4-E1a (deliberate): :blogger is :ok now; Task G's key stays planned
+    (is (= :planned (get-in config/known-keys [[:search] :cross-language])))
+    (with-redefs [config/known-keys (assoc-in config/known-keys [[:search] :cross-language] :ok)]
+      (is (= [] (warning-messages {:search {:provider :none :cross-language true}}))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Fix round P4-A.1: config checks
@@ -632,11 +634,11 @@
              (by m))))
     (is (contains? by (str ":algolia is a vdoing option clogem-press defers past v1 (DESIGN.md §8); "
                            "search is Pagefind's (:search :provider :pagefind).")))
+    ;; P4-E1a (deliberate): implemented, so no "planned"
     (is (contains? by (str ":theme :bodyBgImgInterval is vdoing's spelling; clogem-press reads "
-                           ":theme :body-bg-img-interval — planned, not implemented in 0.2.0. It is ignored.")))
+                           ":theme :body-bg-img-interval. It is ignored.")))
     (is (= 4 (count by)) (pr-str (keys by))))
-  (is (= [":theme :body-bg-img-interval is planned, not implemented in 0.2.0; it has no effect."]
-         (warning-messages {:theme {:body-bg-img-interval 15}}))))
+  (is (= [] (warning-messages {:theme {:body-bg-img-interval 15}}))))
 
 (deftest a-retired-key-says-why
   (let [[_ ds] (with-site {:generator {:ref "v0.2.0"}})

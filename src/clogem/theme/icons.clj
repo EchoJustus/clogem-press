@@ -17,7 +17,8 @@
   error: rendering throws, naming the template (namespace and line, taken
   where `icon` is expanded) and the icon, and the build fails naming the
   page. The names are `clogem.sprite/ui-names`, and `:brand/<name>` for
-  `clogem.sprite/brand-names`."
+  the brands of `clogem.sprite/brands-in-use` (P4-E1a): the sprite holds
+  no other, so another vendored brand throws too."
   (:require [clojure.string :as str]
             [clogem.assets :as assets]
             [clogem.sprite :as sprite]))
@@ -36,6 +37,15 @@
   "`icon`, with the caller's location (`clogem.theme.layout:123`) for the
   error message. Prefer the `icon` macro, which supplies it."
   [ctx k {:keys [title class]} where]
+  ;; P4-E1a: the sprite holds only the brands in use, so a brand outside
+  ;; them would point at a symbol that is not there
+  (when (and (keyword? k) (= "brand" (namespace k)) (sprite/symbol-id k)
+             (not (contains? (sprite/brands-in-use (:cfg ctx)) (keyword (name k)))))
+    (let [in-use (sprite/brands-in-use (:cfg ctx))]
+      (throw (ex-info (str "icon " (pr-str k) " in template " where " is not in this site's sprite, "
+                           "which holds the brands its :theme :social names: "
+                           (if (seq in-use) (str/join " " (map name in-use)) "none"))
+                      {:clogem/icon k :clogem/template where}))))
   (let [url (or (href ctx k)
                 (throw (ex-info (str "unknown icon " (pr-str k) " in template " where
                                      " — the icons are " (str/join " " (map name (sprite/ui-names)))

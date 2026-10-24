@@ -43,12 +43,37 @@
       "brand" (when (contains? (:brands @manifest) (keyword (name k))) (str "brand-" (name k)))
       nil)))
 
+(defn social-icon
+  "The icon a `:theme :social :icons` entry's `:icon` names (P4-E1a, D-P4-6):
+  a keyword or a string — `:github`, `\"github\"`, vdoing's `\"icon-github\"`,
+  `:brand/github` — as `:brand/<name>` for a vendored brand, else the UI
+  icon's keyword (`:mail`, `:rss`), else nil. Brands win: `:x` is X, not
+  the close icon. The one resolver: `clogem.config`'s check, the renderer
+  and `brands-in-use` all go through it."
+  [v]
+  (when-let [n (some-> (cond (keyword? v) (name v) (string? v) v) str/trim str/lower-case
+                       (str/replace #"^icon-" "") not-empty)]
+    (let [k (keyword n)]
+      (cond
+        (and (keyword? v) (= "brand" (namespace v)))
+        (when (contains? (:brands @manifest) k) (keyword "brand" n))
+        (contains? (:brands @manifest) k) (keyword "brand" n)
+        (contains? (:ui @manifest) k)     k))))
+
 (defn brands-in-use
   "The brands this site's pages render, as a set of brand keywords
-  (`#{:github}`). None yet: `:theme :social` arrives in Phase 4 Task E1,
-  which extends this function; until then the sprite carries UI icons only."
-  [_cfg]
-  #{})
+  (`#{:github}`): those its `:theme :social :icons` name (P4-E1a). An
+  entry drawn from its own `:svg` uses none. The sprite carries exactly
+  these, and `clogem.theme.icons` renders no other."
+  [cfg]
+  (let [icons (get-in cfg [:theme :social :icons])]
+    (into (sorted-set)
+          (comp (filter map?)
+                (remove :svg)
+                (keep #(social-icon (:icon %)))
+                (filter #(= "brand" (namespace %)))
+                (map #(keyword (name %))))
+          (when (sequential? icons) icons))))
 
 ;; ---------------------------------------------------------------------------
 ;; Licence notices — the text of each source's licence that must travel with

@@ -344,7 +344,7 @@ console.log(JSON.stringify([
       (is (not (fs/exists? (out-file "clogem" "icons" "ui")))))))
 
 (deftest only-the-brands-in-use-are-built
-  (testing "the mechanism, with a fixture until :theme :social (Task E1)"
+  (testing "the mechanism"
     (let [svg (sprite/sprite #{:github :linkedin})
           ids (sprite-ids svg)]
       (is (contains? ids "brand-github"))
@@ -363,7 +363,7 @@ console.log(JSON.stringify([
     (is (= 22 (count (sprite/brand-names))))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown brand icon :myspace"
                           (sprite/sprite #{:myspace}))))
-  (testing "no site uses a brand yet"
+  (testing "a site without :theme :social uses none (P4-E1a: identity_test covers the rest)"
     (is (= #{} (sprite/brands-in-use config/defaults)))))
 
 (deftest the-icon-helper
@@ -375,7 +375,15 @@ console.log(JSON.stringify([
             [:use {:href "/clogem/icons.svg?v=abcd1234#sun"}]]
            (icons/icon ctx :sun {:title "Light" :class "is-x"}))
         "a :title makes it an image with that name")
-    (is (= "/clogem/icons.svg?v=abcd1234#brand-github" (get-in (icons/icon ctx :brand/github) [2 1 :href])))
+    ;; P4-E1a (deliberate): one source of truth — a brand renders only
+    ;; when the site's sprite holds it, so under the defaults it throws
+    (let [e (try (icons/icon ctx :brand/github) nil (catch clojure.lang.ExceptionInfo e e))]
+      (is e)
+      (is (re-find #"icon :brand/github in template clogem\.theme-modes-test:\d+ is not in this site's sprite, which holds the brands its :theme :social names: none"
+                   (str (ex-message e)))))
+    (let [ctx (assoc-in ctx [:cfg :theme :social] {:icons [{:icon :brand/github :title "G" :link "https://g.example"}]})]
+      (is (= "/clogem/icons.svg?v=abcd1234#brand-github" (get-in (icons/icon ctx :brand/github) [2 1 :href])))
+      (is (thrown? clojure.lang.ExceptionInfo (icons/icon ctx :brand/x)) "a vendored brand not in use"))
     (testing "an unknown icon is a build error naming the template and the icon"
       (let [e (try (icons/icon ctx (keyword "nope")) nil (catch clojure.lang.ExceptionInfo e e))]
         (is e)

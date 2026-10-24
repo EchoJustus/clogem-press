@@ -12,6 +12,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clogem.diag :as diag]
+            [clogem.sprite :as sprite]
             [clogem.util :as u]))
 
 ;; ---------------------------------------------------------------------------
@@ -104,7 +105,10 @@
              :fonts {:tamil :system}     ; :system | :self-hosted (§6.9, D-P3-12)
              ;; P4-B2b: the page chrome (`check-page-chrome!`)
              :sidebar-collapsed false :right-menu-bar true :page-button true
-             :content-bg-style nil :back-to-top true}
+             :content-bg-style nil :back-to-top true
+             ;; P4-E1a (`check-identity!`): scalars only — a map default
+             ;; would make 0.2.0's `:footer "x"` a check-shapes! error
+             :title-badge true :body-bg-img-opacity 0.5 :body-bg-img-interval 15}
    :nav     []
    :search   {:provider :none}           ; :none | :pagefind (§6.7, D-P3-8)
    :highlight highlight-defaults          ; :provider :chroma | :none (§11.3 item 10)
@@ -469,16 +473,23 @@
                            :per-page :ok :fonts :ok
                            ;; read, but a non-empty value has no effect yet (check-no-effect!)
                            :html-modules :ok
-                           ;; Phase 4 Tasks B1, E1, E2 (DESIGN.md §5.6 sketches several)
-                           :social :planned :banner-bg :planned :body-bg-img :planned
-                           :body-bg-img-opacity :planned :body-bg-img-interval :planned
-                           :title-badge :planned
-                           :title-badge-icons :planned :blogger :planned :footer :planned
+                           ;; Phase 4 Task E1 (`check-identity!`)
+                           :blogger :ok :social :ok :footer :ok :banner-bg :ok
+                           :body-bg-img :ok :body-bg-img-opacity :ok :body-bg-img-interval :ok
+                           :title-badge :ok :title-badge-icons :ok
+                           ;; Phase 4 Tasks B1, E2 (DESIGN.md §5.6 sketches several)
                            :update-bar :planned :right-menu-bar :ok :page-button :ok
                            :content-bg-style :ok :last-updated :planned
                            :sidebar-collapsed :ok :back-to-top :ok :logo :planned
                            :repo :planned}
    [:theme :fonts]        {:tamil :ok}
+   ;; Phase 4 Task E1: `:name`, `:slogan`, `:title` and `:copyright-info`
+   ;; may be per-language user maps, and are not walked; `:icons` is a
+   ;; vector, walked item by item (`check-items!`)
+   [:theme :blogger]      {:avatar :ok :name :ok :slogan :ok}
+   [:theme :social]       {:icons :ok}
+   [:theme :social :icons :*] {:icon :ok :title :ok :link :ok :svg :ok}
+   [:theme :footer]       {:create-year :ok :end-year :ok :copyright-info :ok :powered-by :ok}
    [:highlight]           {:provider :ok :line-numbers :ok :copy-button :ok :style :ok :dark-style :ok}
    [:search]              {:provider :ok
                            ;; Phase 4 Task G
@@ -561,15 +572,23 @@
    "nav"                     [[:nav] :ok]
    "search"                  [[:search :provider] :ok]
    "htmlModules"             [[:theme :html-modules] :planned]
-   "bodyBgImg"               [[:theme :body-bg-img] :planned]
-   "bodyBgImgOpacity"        [[:theme :body-bg-img-opacity] :planned]
-   "bodyBgImgInterval"       [[:theme :body-bg-img-interval] :planned]
-   "bannerBg"                [[:theme :banner-bg] :planned]
-   "titleBadge"              [[:theme :title-badge] :planned]
-   "titleBadgeIcons"         [[:theme :title-badge-icons] :planned]
-   "blogger"                 [[:theme :blogger] :planned]
-   "social"                  [[:theme :social] :planned]
-   "footer"                  [[:theme :footer] :planned]
+   "bodyBgImg"               [[:theme :body-bg-img] :ok]
+   "bodyBgImgOpacity"        [[:theme :body-bg-img-opacity] :ok]
+   "bodyBgImgInterval"       [[:theme :body-bg-img-interval] :ok]
+   "bannerBg"                [[:theme :banner-bg] :ok
+                              "or the home page's front matter `bannerBg:`, as in vdoing"]
+   "titleBadge"              [[:theme :title-badge] :ok]
+   "titleBadgeIcons"         [[:theme :title-badge-icons] :ok]
+   "blogger"                 [[:theme :blogger] :ok]
+   "social"                  [[:theme :social] :ok]
+   "footer"                  [[:theme :footer] :ok]
+   ;; P4-E1a: inside those maps; the lookup is by name, at any path
+   "createYear"              [[:theme :footer :create-year] :ok]
+   "copyrightInfo"           [[:theme :footer :copyright-info] :ok]
+   "iconClass"               [[:icon] :ok "a :theme :social :icons entry's icon, e.g. :github"]
+   "iconfontCssFile"         [nil :implicit "draws social icons from its own sprite"
+                              (str "Remove it, and name each link's icon with :icon — a vendored brand "
+                                   "such as :github, or a UI icon such as :mail (config.example.edn).")]
    "updateBar"               [[:theme :update-bar] :planned]
    "rightMenuBar"            [[:theme :right-menu-bar] :ok]
    "pageButton"              [[:theme :page-button] :ok]
@@ -620,6 +639,7 @@
   (cond
     (empty? path)                 "top-level"
     (= :nav (first path))         "nav item"
+    (= [:theme :social :icons] (vec (take 3 path))) "social link"
     (= [:langs :locales] (vec (take 2 path))) "locale"
     :else (str/join " " (map #(if (keyword? %) (name %) (str %)) path))))
 
@@ -678,19 +698,23 @@
             :when (not (contains? author-keys k))]
       (warn-unknown! path k {:name :ok :link :ok}))))
 
-(defn- check-nav!
-  "Walk `:nav` items (`known-keys` `[:nav :*]`) at `:nav 0`, `:nav 1 :items
-  0`, …, recursing into `:items` — never into `:text`, a per-language map."
-  [items path]
+(defn- check-items!
+  "Walk a vector of option maps against the `known-keys` entry `entry` at
+  `path 0`, `path 1`, …, recursing into the key `recurse` when there is
+  one — `:nav` items (`[:nav :*]`, at `:nav 1 :items 0` too) and P4-E1a's
+  social links (`[:theme :social :icons :*]`). Never into a per-language
+  map such as `:text` or `:title`."
+  [items path entry recurse]
   (when (sequential? items)
     (doseq [[i item] (map-indexed vector items)
             :let [p (conj path i)]
             :when (map? item)]
-      (let [known (get known-keys [:nav :*])]
+      (let [known (get known-keys entry)]
         (doseq [k (sort-by str (keys item))
                 :when (not (contains? known k))]
           (warn-unknown! p k known)))
-      (check-nav! (:items item) (conj p :items)))))
+      (when recurse
+        (check-items! (get item recurse) (conj p recurse) entry recurse)))))
 
 (defn check-keys!
   "Warn about every key of `m` (a site.edn as read, before defaults are
@@ -700,7 +724,8 @@
   ([m] (check-keys! m []))
   ([m path]
    (cond
-     (= [:nav] path)          (check-nav! m path)
+     (= [:nav] path)          (check-items! m path [:nav :*] :items)
+     (= [:theme :social :icons] path) (check-items! m path [:theme :social :icons :*] nil)
      (= [:site :author] path) (check-author! m path)
      (map? m)
      (if-let [known (entry-for path)]
@@ -801,6 +826,270 @@
                                 (str "See config.example.edn" (when vdoing (str " (vdoing's " vdoing ")")) "."))
                     (assoc-in cfg [:theme k] default)))))
           cfg page-chrome-keys))
+
+;; ---------------------------------------------------------------------------
+;; Phase 4 Task E1: the blog identity (DESIGN.md §11.3 item 13, D-P4-13)
+
+(defn image-value
+  "An image the owner configures — `:blogger :avatar`, `:body-bg-img`, a
+  string `:title-badge-icons` entry, a social link's `:svg`, a `heroImage`
+  — as the build emits it, or nil: an `https:` URL or a `data:image/…`
+  URI as written, or a site path, given a leading `/` when it has none
+  (D-P4-6's `\"assets/x.svg\"`). The renderer prefixes a site path with
+  the base. `http:` (mixed content), `//host/…`, `javascript:` and every
+  other scheme are nil, as is a path holding whitespace, `#`, quotes,
+  brackets or `;` (CSS such as `#ccc` is no file name; write `%20`).
+  Whether the file exists is not checked."
+  [v]
+  (when (string? v)
+    (let [s (str/trim v)]
+      (cond
+        (str/blank? s)                                       nil
+        (re-matches #"(?i)https://[^/?#\s]+(?:[/?#]\S*)?" s) s
+        (re-find #"(?i)^data:image/" s)                      s
+        (str/starts-with? s "//")                            nil
+        (re-find #"^[A-Za-z][A-Za-z0-9+.-]*:" s)             nil
+        ;; a path, not CSS or markup: `#ccc` or `url(x)` is no file name
+        (not (re-matches #"[^\s()<>\"';\\#]+" s))          nil
+        (str/starts-with? s "/")                             s
+        :else                                                (str "/" s)))))
+
+(defn site-path?
+  "Is `v` (an `image-value` or a social `:link`) a site path, which the
+  renderer base-prefixes, rather than a URL?"
+  [v]
+  (and (string? v) (str/starts-with? v "/") (not (str/starts-with? v "//"))))
+
+(defn- image-why
+  "Why `v` is not an `image-value`, completing \"… is <v>, …\"."
+  [v]
+  (if (and (string? v) (re-find #"(?i)^\s*http:" v))
+    "an http: URL — on an https page that is mixed content, which the browser blocks"
+    "which is not an https: URL, a data:image/… URI or a site path such as /assets/me.png"))
+
+(defn link-value
+  "A social link's `:link` as the build emits it, or nil: an http(s) URL or
+  a `mailto:` address as written, or a site path, given a leading `/`."
+  [v]
+  (when (string? v)
+    (let [s (str/trim v)]
+      (cond
+        (str/blank? s)                                        nil
+        (re-matches #"(?i)https?://[^/?#\s]+(?:[/?#]\S*)?" s) s
+        (re-matches #"(?i)mailto:\S+" s)                      s
+        (str/starts-with? s "//")                             nil
+        (re-find #"^[A-Za-z][A-Za-z0-9+.-]*:" s)              nil
+        (str/starts-with? s "/")                              s
+        :else                                                 (str "/" s)))))
+
+(defn- per-lang-str?
+  "A config string: a non-blank string, or a per-language map of strings (§5.6)."
+  [v]
+  (or (and (string? v) (not (str/blank? v)))
+      (and (map? v) (seq v) (every? string? (vals v)))))
+
+(defn banner-bg
+  "A banner background — `:theme :banner-bg`, or the home's front matter
+  `bannerBg:` — as [kind value], or nil when it is none of these:
+  [:auto] (`\"auto\"`, `:auto`), [:none], [:image src] for an
+  `image-value`, [:custom css] for a string starting `background:`,
+  the owner's CSS (trusted, D-P4-13)."
+  [v]
+  (let [s (cond (keyword? v) (name v) (string? v) (str/trim v))]
+    (cond
+      (nil? s)                                  nil
+      (= "auto" (u/lower s))                    [:auto]
+      (= "none" (u/lower s))                    [:none]
+      (re-find #"(?i)^background\s*:" s)        [:custom s]
+      (and (string? v) (image-value v))         [:image (image-value v)]
+      :else                                     nil)))
+
+(def default-badge-icons
+  "The title badge's built-in icons (P4-E1a): UI icons already in the sprite."
+  [:book-open :pencil :hash])
+
+(defn- check-identity!
+  "P4-E1a: `:theme :blogger`, `:social`, `:footer`, `:banner-bg`,
+  `:body-bg-img*` and `:title-badge*`. Every problem is a WARNING, and the
+  check repairs `cfg` — drops what is bad, or sets the default — so the
+  renderers and `clogem.sprite/brands-in-use` read valid values only: 0.2.0
+  accepted (and ignored) any of these, so none may start failing a build."
+  [cfg]
+  (let [hint "See config.example.edn (DESIGN.md §11.3 item 13)."
+        warn! (fn [msg] (diag/warn! nil msg hint) nil)
+        th    (:theme cfg)
+        image (fn [path v]
+                (or (image-value v)
+                    (do (warn! (str (path-str path) " is " (pr-str v) ", " (image-why v) "; it is ignored."))
+                        nil)))
+        ;; :blogger — a map with a :name or an :avatar
+        blogger (let [b (:blogger th)]
+                  (cond
+                    (nil? b) nil
+                    (not (map? b))
+                    (warn! (str ":theme :blogger is " (pr-str b) ", but it must be a map such as "
+                                "{:name \"Jane\" :avatar \"/assets/me.png\"}; there is no blogger card."))
+                    :else
+                    (let [av  (when (contains? b :avatar) (image [:theme :blogger :avatar] (:avatar b)))
+                          nm  (when (contains? b :name)
+                                (if (per-lang-str? (:name b))
+                                  (:name b)
+                                  (warn! (str ":theme :blogger :name is " (pr-str (:name b))
+                                              ", but it must be a string or a per-language map of strings; it is ignored."))))
+                          sl  (when (contains? b :slogan)
+                                (if (per-lang-str? (:slogan b))
+                                  (:slogan b)
+                                  (warn! (str ":theme :blogger :slogan is " (pr-str (:slogan b))
+                                              ", but it must be a string or a per-language map of strings; it is ignored."))))]
+                      (if (or nm av)
+                        (cond-> {} nm (assoc :name nm) av (assoc :avatar av) sl (assoc :slogan sl))
+                        (warn! (str ":theme :blogger has neither a :name nor an :avatar; there is no blogger card."))))))
+        ;; :social {:icons [{:icon :title :link :svg} …]}
+        social (let [so (:social th)]
+                 (cond
+                   (nil? so) nil
+                   (not (and (map? so) (sequential? (:icons so))))
+                   (warn! (str ":theme :social is " (pr-str so) ", but it must be a map such as "
+                               "{:icons [{:icon :github :title \"GitHub\" :link \"https://github.com/me\"}]}; "
+                               "there are no social links."))
+                   :else
+                   (let [icons (vec (keep-indexed
+                                     (fn [i e]
+                                       (let [p [:theme :social :icons i]]
+                                         (if-not (map? e)
+                                           (warn! (str (path-str p) " is " (pr-str e) ", but it must be a map "
+                                                       "with :icon, :title and :link; it is ignored."))
+                                           (let [link (link-value (:link e))]
+                                             (if-not link
+                                               (warn! (str (path-str (conj p :link)) " is " (pr-str (:link e))
+                                                           ", which is not an http(s) URL, a mailto: address or "
+                                                           "a site path; the link is ignored."))
+                                               (let [svg  (when (contains? e :svg) (image (conj p :svg) (:svg e)))
+                                                     ic   (sprite/social-icon (:icon e))
+                                                     ic   (cond
+                                                            (or ic svg) ic
+                                                            :else
+                                                            (do (warn! (str (path-str p)
+                                                                            (if (contains? e :icon)
+                                                                              (str " :icon is " (pr-str (:icon e)) ", which names no icon")
+                                                                              " has no :icon")
+                                                                            "; using :link. The icons are "
+                                                                            "the brands " (str/join " " (map name (sprite/brand-names)))
+                                                                            " and the UI icons " (str/join " " (map name (sprite/ui-names))) "."))
+                                                                :link))
+                                                     title (if (per-lang-str? (:title e))
+                                                             (:title e)
+                                                             (let [t (if (re-find #"(?i)^mailto:" link)
+                                                                       (str/replace link #"(?i)^mailto:([^?]*).*$" "$1")
+                                                                       (or (second (re-find #"(?i)^https?://([^/?#:]+)" link)) link))]
+                                                               (warn! (str (path-str p)
+                                                                           (if (contains? e :title)
+                                                                             (str " :title is " (pr-str (:title e)) ", but it must be a string or a per-language map of strings")
+                                                                             " has no :title")
+                                                                           "; the link is named " (pr-str t) "."))
+                                                               t))]
+                                                 (cond-> {:link link :title title}
+                                                   ic  (assoc :icon ic)
+                                                   svg (assoc :svg svg))))))))
+                                     (:icons so)))]
+                     (when (seq icons) {:icons icons}))))
+        ;; :footer {:create-year :end-year :copyright-info :powered-by}
+        footer (let [f (:footer th)]
+                 (cond
+                   (nil? f) nil
+                   (not (map? f))
+                   (warn! (str ":theme :footer is " (pr-str f) ", but it must be a map such as "
+                               "{:create-year 2019 :copyright-info \"Jane Doe\"}; it is ignored."))
+                   :else
+                   (reduce (fn [acc [k ok? what]]
+                             (let [v (get f k)]
+                               (cond
+                                 (not (contains? f k)) acc
+                                 (ok? v) (assoc acc k v)
+                                 :else (do (warn! (str ":theme :footer " k " is " (pr-str v) ", but it must be "
+                                                       what "; it is ignored."))
+                                           acc))))
+                           {}
+                           [[:create-year #(and (integer? %) (<= 1000 % 9999)) "a year from 1000 to 9999"]
+                            [:end-year #(and (integer? %) (<= 1000 % 9999)) "a year from 1000 to 9999"]
+                            [:copyright-info #(or (string? %) (and (map? %) (every? string? (vals %))))
+                             "a string or a per-language map of strings"]
+                            [:powered-by boolean? "true or false"]])))
+        ;; :banner-bg — nil is auto
+        banner (let [v (:banner-bg th)]
+                 (cond
+                   (nil? v) nil
+                   (banner-bg v) v
+                   :else (warn! (str ":theme :banner-bg is " (pr-str v) ", but it must be \"auto\", \"none\", "
+                                     "an image (an https: URL, a data:image/… URI or a site path) or CSS "
+                                     "starting `background:`; using \"auto\"."))))
+        ;; :body-bg-img — one image or a non-empty vector of them
+        body-imgs (let [v (:body-bg-img th)]
+                    (cond
+                      (nil? v) nil
+                      (string? v) (some-> (image [:theme :body-bg-img] v) vector)
+                      (and (sequential? v) (seq v))
+                      (not-empty (vec (keep-indexed (fn [i x] (image [:theme :body-bg-img i] x)) v)))
+                      :else (warn! (str ":theme :body-bg-img is " (pr-str v) ", but it must be an image or a "
+                                        "non-empty vector of images; there is no background image."))))
+        ;; an explicit nil (deep-merge lets it win) is the default, silently
+        opacity (let [v (:body-bg-img-opacity th)]
+                  (cond
+                    (nil? v) 0.5
+                    (and (number? v) (< 0 v) (<= v 1)) (max 0.1 (/ (Math/round (* 10.0 v)) 10.0))
+                    :else
+                    (do (warn! (str ":theme :body-bg-img-opacity is " (pr-str v)
+                                    ", but it must be a number above 0 and at most 1; using 0.5."))
+                        0.5)))
+        interval (let [v (:body-bg-img-interval th)]
+                   (cond
+                     (nil? v) 15
+                     (and (number? v) (>= v 1)) v
+                     :else
+                     (do (warn! (str ":theme :body-bg-img-interval is " (pr-str v)
+                                     ", but it must be a number of seconds, at least 1; using 15."))
+                         15)))
+        style (if (and body-imgs (= :line (:page-style th)))
+                (do (warn! (str ":theme :page-style :line has no effect with :theme :body-bg-img: the image "
+                                "shows through the page, so the content stays on cards; using :card."))
+                    :card)
+                (:page-style th))
+        badge (let [v (:title-badge th)]
+                (cond
+                  (nil? v) true
+                  (boolean? v) v
+                  :else
+                  (do (warn! (str ":theme :title-badge is " (pr-str v) ", but it must be true or false; using true."))
+                      true)))
+        badge-icons (let [v (:title-badge-icons th)]
+                      (cond
+                        (nil? v) nil
+                        (not (sequential? v))
+                        (warn! (str ":theme :title-badge-icons is " (pr-str v) ", but it must be a vector of "
+                                    "images and icon keywords; using the built-in icons."))
+                        :else
+                        (not-empty
+                         (vec (keep-indexed
+                               (fn [i x]
+                                 (let [p [:theme :title-badge-icons i]]
+                                   (cond
+                                     (string? x) (image p x)
+                                     (and (keyword? x) (nil? (namespace x)) (contains? (sprite/ui-names) x)) x
+                                     :else (warn! (str (path-str p) " is " (pr-str x) ", but it must be an image "
+                                                       "or one of the UI icons " (str/join " " (map name (sprite/ui-names)))
+                                                       "; it is ignored.")))))
+                               v)))))
+        put (fn [m k v] (if (some? v) (assoc m k v) (dissoc m k)))]
+    (update cfg :theme
+            #(-> %
+                 (put :blogger blogger)
+                 (put :social social)
+                 (put :footer footer)
+                 (put :banner-bg banner)
+                 (put :body-bg-img body-imgs)
+                 (assoc :body-bg-img-opacity opacity :body-bg-img-interval interval
+                        :page-style style :title-badge badge)
+                 (put :title-badge-icons badge-icons)))))
 
 (defn- check-i18n-comments!
   "D-P3-14 / D-P3-15: the stored-preference behaviour, the comments
@@ -1175,6 +1464,8 @@
       (diag/warn! nil ":langs :priority does not cover every locale; missing ones were appended.")))
   (-> cfg check-theme! check-floor! check-fallback! check-site-url! check-x-default! check-search!
       check-i18n-comments! check-out-dir! check-no-effect! check-highlight! check-page-chrome!
+      ;; Phase 4 Task E1 (P4-E1a)
+      check-identity!
       ;; Task F; the static directory after the output directory it must avoid
       check-analytics! check-verification! check-static-dir!))
 
@@ -1330,6 +1621,23 @@
     (when (and (map? a) (contains? (disj analytics-providers :none) (:provider a))
                (not (:clogem/dev? cfg)))
       a)))
+
+(defn body-bg-images
+  "P4-E1a: the `:theme :body-bg-img` images, a non-empty vector of
+  `image-value`s, or nil when there is no background image."
+  [cfg]
+  (let [v (get-in cfg [:theme :body-bg-img])]
+    (when (and (vector? v) (seq v)) v)))
+
+(defn identity-css?
+  "P4-E1a: does this site ship and link css/identity.css — the opt-in
+  identity rules? Only while something on its pages needs them: a blogger
+  card, social links or a background image (and, in E1b, an htmlModules
+  slot other than :head-extra)."
+  [cfg]
+  (boolean (or (map? (get-in cfg [:theme :blogger]))
+               (seq (get-in cfg [:theme :social :icons]))
+               (body-bg-images cfg))))
 
 (defn absolute-url
   "The absolute URL of a base-inclusive site path, percent-encoded per
