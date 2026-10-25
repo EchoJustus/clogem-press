@@ -191,6 +191,16 @@ gets it, and title badges appear by default, as in vdoing.
   (`the-blogger-card-needs-a-name-or-an-avatar`).
 - **A raw-HTML `<h1>` in the home's body is its `<h1>`** (item 8c), so a
   `heroText` beside it is a `<p>`, not a second `<h1>` (`the-hero`).
+- **Tests (item 7)**: the stylesheet order theme, identity, highlight is
+  pinned on a highlighted build with the fake Chroma
+  (`highlight_test`'s `identity-css-sits-between-theme-and-highlight`;
+  `bb test` otherwise builds with highlighting off, so moving
+  `identity/head` below highlight.css changed no test); `actionText`
+  without `actionLink`, or the reverse, gives no banner
+  (`action-text-alone-is-no-banner`); the badge test's three articles each
+  have a zh-Hans variant, and it asserts that hashing the language URL
+  would pick another icon for at least one of them (it does for all
+  three), so the fixture discriminates (`the-title-badge`).
 
 ### Needs native review (E1a)
 

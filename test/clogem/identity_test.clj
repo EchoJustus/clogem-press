@@ -688,7 +688,9 @@
                "01.Guide/01.a.md" (article "/pages/a00001/" "2025-01-01" "Alpha")
                "01.Guide/01.a.zh-Hans.md" (article "/pages/a00001/" "2025-01-01" "甲")
                "01.Guide/02.b.md" (article "/pages/b00002/" "2025-01-02" "Beta")
-               "01.Guide/03.c.md" (article "/pages/c00003/" "2025-01-03" "Gamma")}
+               "01.Guide/02.b.zh-Hans.md" (article "/pages/b00002/" "2025-01-02" "乙")
+               "01.Guide/03.c.md" (article "/pages/c00003/" "2025-01-03" "Gamma")
+               "01.Guide/03.c.zh-Hans.md" (article "/pages/c00003/" "2025-01-03" "丙")}
         one (:pages (build two-langs files))
         two (:pages (build two-langs files))]
     (testing "chosen by the CRC32 of the identity permalink, among book-open, pencil and hash"
@@ -697,7 +699,12 @@
         (is (= (nth ["book-open" "pencil" "hash"] (mod (crc pl) 3)) (badge-of (one rel))) rel)
         (is (= (badge-of (one rel)) (badge-of (two rel))) (str rel ": the same in every build"))))
     (testing "every language variant shows the same one"
-      (is (= (badge-of (one "pages/a00001/index.html")) (badge-of (one "zh-Hans/pages/a00001/index.html")))))
+      (doseq [pl ["/pages/a00001/" "/pages/b00002/" "/pages/c00003/"]
+              :let [rel (str (subs pl 1) "index.html")]]
+        (is (= (badge-of (one rel)) (badge-of (one (str "zh-Hans/" rel)))) pl))
+      (testing "P4-E1a.1 item 7: the fixture discriminates — hashing the language URL would pick another icon"
+        (is (some #(not= (mod (crc %) 3) (mod (crc (str "/zh-Hans" %)) 3))
+                  ["/pages/a00001/" "/pages/b00002/" "/pages/c00003/"]))))
     (testing "the archives page: hashed on /archives/, in every language"
       (is (= (nth ["book-open" "pencil" "hash"] (mod (crc "/archives/") 3)) (badge-of (one "archives/index.html"))))
       (is (= (badge-of (one "archives/index.html")) (badge-of (one "zh-Hans/archives/index.html")))))
