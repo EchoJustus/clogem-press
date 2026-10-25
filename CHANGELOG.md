@@ -83,6 +83,8 @@ gets it, and title badges appear by default, as in vdoing.
   only while a site uses one of them (`config/identity-css?`). theme.css
   gains only the badge, the banner and the footer lines: 11,354 → 11,717 B
   gzipped (+363) of 12,288.
+  Merged with Task E2 (+259, 11,354 → 11,613 on its own): 11,970 B
+  gzipped of 12,288.
 - Strings `:blogger/label`, `:social/label`, `:footer/powered-by` in all
   five languages.
 
@@ -257,6 +259,15 @@ gets it, and title badges appear by default, as in vdoing.
 - **Docs** (E1a.2, item 5): `css/identity.css` is 1,410 B gzipped after
   E1a.1 (the Task E1a block said 1,222); README's `bb test` count is
   775 tests / ~50,100 assertions.
+
+### Merged with Task E2 (E1a)
+
+- **Tests**: `parity_test.clj`'s `the-home-s-more-follows-more-article`
+  asserted a 10-row *Recently updated* box in the zh-Hans home's right bar,
+  which E1a drops under `postList: simple`. It now asserts the box is absent
+  there, and checks the right bar's *More →* (the archives, else
+  `:more-article`) on a temp build with a `postList: detailed` home.
+  README's `bb test` count is 800 tests / ~52,100 assertions.
 
 ### Needs native review (E1a)
 
