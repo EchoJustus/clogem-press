@@ -470,8 +470,9 @@ img { max-width: 100%; height: auto; }
 .clogem-bar li.is-active { border-color: var(--accent); }
 .clogem-bar__count { color: var(--textColorSubtle); margin-left: 0.35rem; font-size: 0.8rem; }
 .clogem-row time { color: var(--textColorSubtle); font-size: 0.85rem; white-space: nowrap; margin-inline-start: auto; }
-/* P4-E2.1/2: a row's title wraps, long words too; its badges (spans) keep one line */
-.clogem-row > span { white-space: nowrap; align-self: center; }
+/* P4-E2.1/2: a row's title wraps, long words too; its badges (spans) keep one line, on its first */
+.clogem-row { align-items: baseline; }
+.clogem-row > span { white-space: nowrap; }
 .clogem-row > a { min-width: 0; overflow-wrap: anywhere; }
 .clogem-pagination { display: flex; gap: 1rem; justify-content: center; align-items: center; margin: 1.5rem 0; }
 .clogem-pagination .is-disabled { color: var(--textColorSubtle); }

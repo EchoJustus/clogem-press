@@ -14,10 +14,12 @@
 //      on an index, a tag page, a home and a catalogue at 320, 360 and
 //      414: each on one line, no taller than its single-line box plus
 //      2 px, within its row, the date at the row's end; at 1280 the badge
-//      follows the title on its line. (P4-E2.2 item 1) at 320 the
+//      follows the title on its line. (P4-E2.2 items 1 and 2) at 320 the
 //      /zh-Hans/ y2025a row (a `titleTag` and a fallback marker), its title
 //      set to "Configuration" and to a 40-character word, does not
-//      overflow the page and its date ends at the row's end.
+//      overflow the page and its date ends at the row's end; in a wrapped
+//      row at 320 and 360 each badge's text baseline is within 2 px of the
+//      title's first-line baseline.
 //
 // The navbar's one-row scan (801–1600 px, every home) is layout.test.mjs
 // item 2's, which runs on the same demo.
@@ -229,8 +231,49 @@ async function item4LongWord(t) {
   await page.close();
 }
 
+// runs in the page: for every row whose title wraps, the title's
+// first-line baseline and each badge's text baseline (the bottom of a
+// zero-size inline-block put first in each)
+function wrappedBaselines() {
+  const mark = (el) => {
+    const m = document.createElement('span');
+    m.style.cssText = 'display: inline-block; width: 0; height: 0; vertical-align: baseline;';
+    el.insertBefore(m, el.firstChild);
+    const y = m.getBoundingClientRect().bottom;
+    m.remove();
+    return y;
+  };
+  return [...document.querySelectorAll('.clogem-row')].flatMap((row) => {
+    const a = row.querySelector('a');
+    const range = document.createRange();
+    range.selectNodeContents(a);
+    const tops = new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top)));
+    if (tops.size < 2) return [];
+    const title = mark(a);
+    return [...row.querySelectorAll('.clogem-title-tag, .clogem-fallback')].map((b) =>
+      ({ text: b.textContent, link: a.textContent, title, badge: mark(b) }));
+  });
+}
+
+async function item4Baseline(t) {
+  for (const width of [320, 360]) {
+    const page = await t.newPage({ viewport: { width, height: 740 } });
+    let n = 0;
+    for (const rel of ['archives/', 'tags/meta/', 'zh-Hans/', 'pages/559f0f/']) {
+      await open(page, t, rel);
+      for (const b of await page.evaluate(wrappedBaselines)) {
+        n++;
+        t.check(Math.abs(b.badge - b.title) <= 2,
+                `${width}px /${rel}: badge "${b.text}" in "${b.link}" sits on the title's first line (baseline ${b.badge.toFixed(1)}, title ${b.title.toFixed(1)})`);
+      }
+    }
+    t.check(n > 0, `${width}px: a wrapped row with a badge was found`);
+    await page.close();
+  }
+}
+
 export default async function (t) {
-  for (const item of [item1, item2, item3, item4, item4LongWord]) {
+  for (const item of [item1, item2, item3, item4, item4LongWord, item4Baseline]) {
     try {
       await item(t);
     } catch (e) {

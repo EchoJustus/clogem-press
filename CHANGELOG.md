@@ -280,6 +280,15 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   320 that row titled "Configuration" and a 40-character word does not
   overflow the page, and its date ends at the row's end.
 
+- **(E2.2) A wrapped row's badges sit on the title's first line.** They
+  were `align-self: center`, at the row's middle, while the title's first
+  line and the date sat at the top. A `.clogem-row` is now `align-items:
+  baseline` (a lone `align-self: baseline` on the badges only lines them
+  up with each other). `theme.css` is 11,613 B gzipped, 259 B over
+  `main`. `parity.test.mjs` item 4 (`item4Baseline`): in every wrapped
+  row at 320 and 360, each badge's text baseline is within 2 px of the
+  title's first-line baseline.
+
 - **(E2.2) No case warning beside an exact `404.html`.** With both
   `public/404.html` and `public/404.HTML`, the build warned that the site
   had no 404 page (it took the first case-folded match) beside the
