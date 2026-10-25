@@ -553,7 +553,7 @@
     (doseq [[k target planned?] [[":pageStyle" ":theme :page-style" false]
                                  [":defaultMode" ":theme :default-mode" false]
                                  [":htmlModules" ":theme :html-modules" true]
-                                 [":updateBar" ":theme :update-bar" true]
+                                 [":updateBar" ":theme :update-bar" false]
                                  [":categoryText" ":content :category-text" false]
                                  [":extendFrontmatter" ":content :extend-frontmatter" false]]]
       (is (some #(= (str ":theme " k " is vdoing's spelling; clogem-press reads " target

@@ -40,6 +40,14 @@
  :page/tags            "Tags"
  :page/sidebar         "Sidebar"
  :page/back-to-top     "Back to top"
+ ;; Task E2: the navbar's repository link, when its host is not GitHub,
+ ;; GitLab or Bitbucket and :theme :repo-label is not set
+ :nav/source           "Source"
+ ;; Task E2: the 404 page (dist/404.html), in the site default language;
+ ;; :not-found/home is shown once per language, in that language
+ :not-found/title      "Page not found"
+ :not-found/message    "There is no page at this address. It may have moved, or the link may be wrong."
+ :not-found/home       "Go to the home page"
  :container/theorem    "Theorem"
  ;; Search UI (D-P3-10): Pagefind 1.5.2 translations/en.json.
  ;; [SEARCH_TERM], [COUNT] and [DIFFERENT_TERM] are Pagefind's placeholders; keep them.

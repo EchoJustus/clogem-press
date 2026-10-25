@@ -469,7 +469,11 @@ img { max-width: 100%; height: auto; }
 .clogem-bar li { border: 1px solid var(--borderColor); border-radius: 999px; padding: 0.15rem 0.7rem; font-size: 0.9rem; }
 .clogem-bar li.is-active { border-color: var(--accent); }
 .clogem-bar__count { color: var(--textColorSubtle); margin-left: 0.35rem; font-size: 0.8rem; }
-.clogem-row time { color: var(--textColorSubtle); font-size: 0.85rem; white-space: nowrap; }
+.clogem-row time { color: var(--textColorSubtle); font-size: 0.85rem; white-space: nowrap; margin-inline-start: auto; }
+/* P4-E2.1/2: a row's title wraps, long words too; its badges (spans) keep one line, on its first */
+.clogem-row { align-items: baseline; }
+.clogem-row > span { white-space: nowrap; }
+.clogem-row > a { min-width: 0; overflow-wrap: anywhere; }
 .clogem-pagination { display: flex; gap: 1rem; justify-content: center; align-items: center; margin: 1.5rem 0; }
 .clogem-pagination .is-disabled { color: var(--textColorSubtle); }
 .clogem-empty { color: var(--textColorSubtle); font-style: italic; }
@@ -510,6 +514,19 @@ img { max-width: 100%; height: auto; }
 .clogem-prev-next { display: flex; justify-content: space-between; gap: 1rem; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--borderColor); }
 .clogem-prev-next__next { margin-left: auto; text-align: right; }
 .clogem-prev-next span { display: block; font-size: 0.75rem; color: var(--textColorSubtle); }
+/* P4-E2: vdoing's PageEdit */
+.clogem-page-edit { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin-top: 1.5rem; font-size: 0.85rem; color: var(--textColorSubtle); }
+.clogem-page-edit__updated { margin-inline-start: auto; }
+.clogem-update-bar { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--borderColor); }
+.clogem-update-bar h2 { font-size: 1rem; }
+.clogem-navbar__logo { height: 2.2rem; width: auto; max-width: 8rem; vertical-align: middle; margin-inline-end: 0.5rem; }
+@media (max-width: 64rem) {
+  .has-logo .clogem-navbar__title, .clogem-navbar__repo-label { position: absolute; width: 1px; height: 1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); }
+}
+@media (max-width: 50rem) {
+  .clogem-navbar__repo-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
+}
 
 /* P4-B2b: vdoing's page buttons, fixed at the viewport's edges. The widest
  * shell is 80rem, so its gutter is (100vw - 80rem) / 2 + 1.25rem: 52px at
@@ -781,4 +798,5 @@ html.theme-mode-dark {
   pre.clogem-code, pre.clogem-code > code { white-space: pre-wrap; overflow: visible; }
   pre.clogem-code > code { display: block; }
   .clogem-copy { display: none !important; }
+  .clogem-page-edit__link, .clogem-update-bar { display: none !important; }
 }

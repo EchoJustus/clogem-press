@@ -115,8 +115,23 @@
            ;; not content/, assets/, i18n/, overrides/, .git or the output
            ;; directory (anything else warns, and nothing is copied). A file
            ;; that would land where the build writes — a page, feed.xml,
-           ;; robots.txt, under clogem/, assets/ or pagefind/ — is an error.
-           :static-dir nil}
+           ;; robots.txt, under clogem/, assets/ or pagefind/ — is an error,
+           ;; except a root 404.html, which replaces the generated 404 page.
+           :static-dir nil
+           ;; Task E2: vdoing's editLinks / docsRepo / docsBranch / docsDir.
+           ;; "Edit this page" under every article and catalogue page, opening
+           ;; the page's own source file (a translation its own .<lang>.md) in
+           ;; the same tab. nil (the default) is off; so is a page whose front
+           ;; matter says `editLink: false`.
+           ;;   :repo   "owner/name" (GitHub) or an https:// URL; absent, :theme
+           ;;           :repo is used. github.com and any other host: <repo>/edit/
+           ;;           <branch>/<path>; gitlab.com: <repo>/-/edit/…;
+           ;;           bitbucket.org: <repo>/src/…?mode=edit. (Gitee and other
+           ;;           hosts get the GitHub form.)
+           ;;   :branch default "main"
+           ;;   :dir    where the site sits in the repository, default ""
+           ;; e.g. {:repo "EchoJustus/EchoJustus.github.io"}
+           :edit-link nil}
 
  ;; --------------------------------------------------------------- theme ----
  ;; Colour modes (§11.3 items 2–4): the mode a FIRST visit sees. The navbar's
@@ -166,6 +181,34 @@
          :back-to-top true            ; a back-to-top button at the bottom right, shown
                                       ; once the page is scrolled 100 px down (needs
                                       ; JS; vdoing always shows it); false omits it
+         ;; Task E2 (§11.3 item 16) — what goes under an article
+         :last-updated false          ; vdoing's lastUpdated: true → "Last updated
+                                      ; 2026-10-04" (the file's last commit, from one
+                                      ; `git log` pass) beside the edit link. Needs the
+                                      ; full history: a shallow clone (actions/checkout's
+                                      ; default) warns and shows no dates — check out with
+                                      ; `fetch-depth: 0`. Outside git: no dates, silently
+         :update-bar {:show-to-article true} ; vdoing's updateBar: under every article, the 3
+                                      ; newest other articles ("Recently updated") and
+                                      ; "More →". :show-to-article false drops it.
+                                      ; :more-article "/tags/" (a site path, given the
+                                      ; page's language prefix, or an https:// URL) is
+                                      ; where every "More →" goes — this one, the home's
+                                      ; right bar and its simple list; default: the
+                                      ; archives, and none when they are off
+         :logo nil                    ; vdoing's logo: a site path ("/assets/logo.svg" —
+                                      ; your assets/ or static directory; a path the build
+                                      ; does not write warns) or an https:// URL, shown
+                                      ; 2.2rem tall before the site title, which is then
+                                      ; visually hidden at 64rem and below
+         :repo nil                    ; vdoing's repo: "owner/name" (GitHub) or an
+                                      ; https:// URL — a link at the end of the nav (in
+                                      ; the mobile drawer at 50rem and below; just its
+                                      ; icon between 50 and 64rem), in the same tab.
+                                      ; Also the edit link's default :repo
+         :repo-label nil              ; vdoing's repoLabel: a string, or a map by language;
+                                      ; nil → GitHub, GitLab or Bitbucket by the host,
+                                      ; else the page language's "Source" (:nav/source)
          :per-page 10                 ; a positive integer: articles per page on the
                                       ; homepage and on category / tag pages (/page/2/, …)
          :fonts {:tamil :system}      ; :system | :self-hosted  (§6.9, D-P3-12)

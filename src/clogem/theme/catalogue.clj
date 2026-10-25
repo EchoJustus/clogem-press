@@ -13,7 +13,8 @@
   (:require [clogem.config :as config]
             [clogem.i18n :as i18n]
             [clogem.model :as model]
-            [clogem.theme.layout :as layout]))
+            [clogem.theme.layout :as layout]
+            [clogem.theme.parity :as parity]))
 
 (defn- rows
   "The article rows of a directory's own leaves, in sidebar order."
@@ -72,6 +73,7 @@
                (map #(card ctx %) dirs)))]
        ;; a catalogue page is a leaf of its directory's tree like any other,
        ;; so it has neighbours (D-P2-7: not skipped for being a non-article)
+       (parity/page-edit ctx)                          ; Task E2
        (layout/prev-next ctx)
        (layout/page-buttons ctx)]]
      (layout/footer ctx))))

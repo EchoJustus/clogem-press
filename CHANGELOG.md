@@ -9,13 +9,307 @@ icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
 and line page styles, focus rings and B1's follow-ups (the first half of
 B2, §11.3 item 1), then Task F — analytics, verification and a static root
 (§11.3 items 14, 15), then Task B2b — the navbar, the mobile drawer and the
-page chrome (the second half of B2, §11.3 item 9, D-P4-9). The version
-stays 0.2.0. A site that already set `:theme :page-style :line` now gets
+page chrome (the second half of B2, §11.3 item 9, D-P4-9), then Task E2 —
+article-page parity (§11.3 item 16, D-P4-13). The version stays 0.2.0.
+Every article page now ends with an update bar by default, as in vdoing
+(`:theme :update-bar {:show-to-article false}` drops it), an
+article's `titleTag` badge now shows in every list row, and every build
+now writes `dist/404.html` (a root `404.html` in the static directory
+replaces it). A site that already set `:theme :page-style :line` now gets
 that look: 0.2.0 and B1 accepted the value but drew card and line the same.
 Likewise a site that set any of the five keys 0.2.0 listed as planned —
 `:theme :sidebar-collapsed`, `:right-menu-bar`, `:page-button`,
 `:content-bg-style` or `:back-to-top` — now gets that behaviour, and page
 buttons and a back-to-top button now appear by default, as in vdoing.
+
+**Task E2 — article-page parity** (§11.3 item 16, D-P4-13):
+
+### Added (E2)
+
+- **The edit link** (D-P4-16; vdoing's `PageEdit`): with `:content
+  :edit-link`, every article and catalogue page (`article: false` ones
+  included) gets `<div class="clogem-page-edit">` right after
+  `</article>` — before prev/next, outside `data-pagefind-body` — holding
+  *Edit this page* (`:page/edit`, unused until now, with the `pencil`
+  icon). It opens the variant's own file (`:dir`, then the file relative
+  to the site, percent-encoded per segment; the host never) in the same
+  tab, as clogem's `:nav` links do (vdoing opens a new tab): `<repo>/edit/
+  <branch>/<path>` on github.com and any other host, Gitee included;
+  `/-/edit/` on gitlab.com; `/src/…?mode=edit&spa=0&at=<branch>&fileviewer=
+  file-view-default` on bitbucket.org, as vdoing's `createEditLink`. Front
+  matter `editLink: false` hides it; any value but `true`/`false` is a
+  warning naming the file, and is ignored. Never on a home or an index
+  page. Print hides it. `render/site-rel` is now `config/site-rel`, shared.
+  The demo turns it on, pointing at its own files in this repository.
+- **Last-updated dates from git** (D-P4-16; vdoing's `lastUpdated`): with
+  `:theme :last-updated true`, `render/render-site` runs one `git -C
+  <site> log --format=%x01%aI --name-only -z --relative -- <content>`
+  (new `clogem.gitlog`, after the highlight pre-pass) and keeps each file's
+  newest commit, carried on the config as `:clogem/git-dates`. The edit
+  line then ends with `<span class="clogem-page-edit__updated">` — the
+  `clock` icon and `<time datetime="<ISO>">` holding `:page/last-updated`
+  (unused until now) with the author's calendar date, `yyyy-mm-dd` in
+  every language (babashka has no zh, ms or ta locale). git runs under
+  `LC_ALL=C`, so a translated git's "not a git repository" is still
+  recognized. Outside git, or with git missing, there are no dates,
+  silently; a shallow clone (`git
+  rev-parse --is-shallow-repository`) is one warning naming `fetch-depth:
+  0`, and any other git failure one warning quoting git's first stderr
+  line ("dubious ownership", a repository with no commits) — no dates
+  either way. `doctor` never runs git, and a build with the key off never
+  does. Print keeps the date. The demo leaves it off: CI's checkout is
+  shallow.
+- **The update bar under articles** (D-P4-13; vdoing's `UpdateArticle`,
+  on by default): every article page (`:article?` — never a catalogue or
+  an `article: false` page) ends, after the comments and inside `<main>`,
+  with `<section class="clogem-update-bar">`: `:index/updates`, the 3
+  newest articles of `(:posts model)` (newest first by front-matter date,
+  as vdoing's `$sortPostsByDate`) other than the page itself, as index
+  rows (`layout/article-row`, fallback badge included), then *More →*. No
+  other article, no section. `:theme :update-bar :show-to-article false`
+  drops it; print hides it.
+- **`:theme :update-bar :more-article`** (`parity/more-article-href`):
+  where every *More →* goes — through `layout/nav-href`, so `"/tags/"` is
+  `/zh-Hans/tags/` on a zh-Hans page and a URL is left alone; unset, the
+  archives in the page's language; with the archives off and nothing set,
+  no link. The home's right-bar list uses it (it went to the archives
+  root), and the `postList: simple` list now ends with one too, as
+  vdoing's simple list (an `UpdateArticle`) does. The home still lists 10.
+- **`titleTag` in list rows**: `layout/article-row` shows the badge of the
+  variant it links (`layout/title-tag`, `data-pagefind-ignore` under
+  Pagefind) right after the title and before the fallback badge, as a
+  home card does — in index pages, the home's lists, the update bar and
+  catalogue rows (vdoing shows it in `UpdateArticle`'s rows, not in its
+  catalogue). `.clogem-row time` gets `margin-inline-start: auto`, so the
+  badges stay by the title and the date at the row's end.
+- **Front matter `pageClass`** (vdoing's, `Layout.vue`): a
+  whitespace-separated string or a list of strings, appended to `<body
+  class>` after `page-<kind>` (`check_search.clj` reads the first `page-`
+  token) by `layout/page-classes`. Articles and catalogues read their
+  variant's front matter, homes their `index.md` (the list options' file),
+  index pages their `@pages/` file — on every page of that index. A token
+  that is not `[A-Za-z_][A-Za-z0-9_-]*`, or a value that is not a string
+  or a list of strings, is a warning naming the file (once per file, from
+  its first page in its own language) and is dropped. A page without
+  `pageClass` renders byte-identical.
+- **The navbar logo** (`:theme :logo`, vdoing's `logo`; read since this
+  task, it warned as planned): a site path (`/…`, not `//…`, with the
+  base added) or an `https://` URL, else a warning and no logo. The brand
+  becomes `<a class="clogem-navbar__brand has-logo">` holding
+  `<img class="clogem-navbar__logo" alt="">` (2.2rem tall, at most 8rem
+  wide; vdoing's `$navbarHeight - 1.4rem`) and `<span
+  class="clogem-navbar__title">`; without a logo it is byte-identical. At
+  64rem and below the title is visually hidden — still the link's name —
+  as vdoing hides the site name at ≤ 959 px. A site-path logo that no
+  output of the build (the site's `assets/`, the static directory, a
+  theme file) writes is one warning, in `build` and `doctor`
+  (`render/warn-missing-logo!`, beside `warn-skipped-links!`), and is
+  linked all the same.
+- **The repository link** (`:theme :repo`, vdoing's `repo`, and
+  `:theme :repo-label`, vdoing's `repoLabel`): the nav's last `<li>`, `<a
+  class="clogem-navbar__repo">` with `<span
+  class="clogem-navbar__repo-label">` and the `external-link` icon, in
+  the same tab. The label is `:repo-label` (a non-blank string or a map by
+  language, else a warning and the default), else GitHub, GitLab or
+  Bitbucket by host, else `:nav/source` (new, in all five languages). It
+  is visually hidden above 50rem up to 64rem (a `max-width: 64rem` rule
+  reset at `max-width: 50rem`), and a text link in the drawer, so it counts
+  in the navbar's `shown?`: a one-language site with no `:nav` but a
+  `:repo` gets the drawer. The demo sets both, with its own
+  `assets/logo.svg`.
+- **A 404 page** (D-P4-16; vdoing's `404.vue`, without its random Chinese
+  messages): one `dist/404.html` per build, at the output root whatever
+  the base (`render/page-file` honours the page-map thunk's
+  `:clogem/file`, at both `uri->file` call sites), rendered through
+  `layout/page` — navbar, `main.clogem-main`, footer — by
+  `parity/not-found` as `page-not-found` (`<body class="lang-en
+  page-not-found">`), in the default language: `:not-found/title`, `<h1>
+  404`, `:not-found/message` and one link per language to its home, in
+  `:priority` order and in that language's own `:not-found/home`
+  (`:not-found/*`, new in all five languages; a site-added language
+  without the string is marked with the language its fallback words are
+  in, as the language banner is). Every link is
+  root-relative with the base. It carries `<meta name="robots"
+  content="noindex">` (after the verification tags) and no `:seo`, so no
+  canonical, hreflang, `og:locale`, sitemap entry or language banner; no
+  `data-pagefind-body`, and no JS of its own. A root `404.html` in the
+  static directory replaces it, with no collision error. `bb dev` and `bb
+  serve` answer a miss under the base with it, status 404 (dev injects
+  its reload script); outside the base, or with no `404.html`, the stub
+  as before. The demo's build is now 243 pages.
+
+### Changed (E2)
+
+- **`:content :edit-link`, `:theme :update-bar`, `:theme :last-updated`
+  and `:theme :repo` are read** (`config/check-article-parity!`, after
+  `check-page-chrome!`): 0.2.0 warned that each was planned and had no
+  effect. Every bad value is a warning that repairs it to its default or
+  turns the feature off, never an error, with the hint "See
+  config.example.edn (vdoing's …)". `:edit-link {:repo :branch :dir}` is
+  stored as `{:url :branch :dir}`: `:repo` is `"owner/name"` (GitHub's) or
+  an `https://` URL, else the valid `:theme :repo`; `:branch` defaults to
+  `"main"`, `:dir` to `""` (no `..` segment, no `\`). `:update-bar` holds
+  `:show-to-article` (default `true`) and `:more-article` (a site path or an
+  `https://` URL). `:theme :update-bar` and `:content :edit-link` are now
+  walked for unknown keys, so vdoing's `updateBar.showToArticle` and
+  `.moreArticle` name their kebab spellings. vdoing's `editLinks`,
+  `docsRepo`, `docsDir`, `docsBranch`, `updateBar`, `lastUpdated` and
+  `repo` name the keys that replace them; `editLinkText` says the label is
+  the i18n string `:page/edit`. Accessors: `config/edit-link`,
+  `last-updated?`, `update-bar`, `repo-url`.
+
+### Tests (E2)
+
+- `clogem.parity-test` (new): every rule of `check-article-parity!`, each
+  with 0 errors; `:content {:edit-link true}` is one warning; no E2 key's
+  warning says "planned"; vdoing's spellings, `updateBar`'s own included.
+  `config_test`'s `:updateBar` row is no longer planned.
+- The edit link: the exact href of `/pages/cjk001/` (a CJK path); each
+  variant's own file (`/zh-Hans/pages/643259/` → `.zh-Hans.md`); the
+  catalogue `/pages/559f0f/`; none on homes, `/archives/`, tag and
+  category pages; one per article page; GitLab, Bitbucket, `git.example`
+  and Gitee hrefs, the branch and path encoded per segment; `editLink:
+  false`, `true` and `1` (one warning, ignored, also with the link off);
+  the `:theme :repo` fallback; after `</article>`, no `target`.
+- Last updated, on temp repositories committed with fixed dates and no
+  identity of CI's own (`GIT_CEILING_DIRECTORIES` set): two commits give
+  the newer date; a CJK name with a space and a `"`; a rename dated by the
+  rename commit; an untracked file undated; a site in a subdirectory of
+  its repository; not a repository: no dates, 0 warnings; git missing: the
+  same; `git clone --depth 1 file://…`: 1 warning, no dates; a failing
+  git: 1 warning quoting it; git runs under `LC_ALL=C`; the key off, or
+  `doctor`: git never runs; the rendered date beside the edit link, alone
+  when `editLink: false`.
+- The update bar: 3 rows, never the current page, on every article page
+  of the demo; after the comments; the fallback badge on an untranslated
+  row; none on catalogues, `article: false` pages, homes or index pages;
+  `:show-to-article false`; `:more-article "/tags/"` on a zh-Hans page and
+  an `https://` URL; the archives off gives no *More*; a one-article site
+  has no bar; the zh-Hans home's simple list ends with *More*, its right
+  bar still lists 10.
+- `titleTag` rows: `<span class="clogem-title-tag" data-pagefind-ignore="">原创</span>`
+  right after the `/pages/y2025a/` link on `/archives/` and `/tags/meta/`,
+  and before the fallback badge in the zh-Hans simple list, in every row
+  of the demo that links it; no attribute under `:search :none`.
+- `pageClass`: a token on an article (string), its zh-Hans variant (list),
+  a catalogue, both homes, the archives, the tags overview and a tag's
+  page, each after `page-<kind>`; `a{b` and `9bad` dropped with one warning
+  each, naming the file; `5` ignored with one warning; a paginated home's
+  and a category overview's bad token warn once per file; the demo and a
+  page without it unchanged.
+- The navbar: `:logo` and `:repo-label` rules (a path with a space is
+  fine; `//…`, `http:`, a blank label, an empty map warn); vdoing's
+  `repoLabel`; the demo's brand, logo
+  and repo link on every navbar page, the link last in the nav, before
+  the languages, with no `target`; no `:logo`, the brand unchanged; only
+  `:repo` on a one-language site with no `:nav` gets the toggle and the
+  drawer; GitLab, Bitbucket, `Source` / `源代码` and a per-language
+  `:repo-label`; a logo under `--base /proj/`; an `https://` logo
+  unchecked; a missing logo file is one warning in `build` and `doctor`.
+- `test/browser/parity.test.mjs` (new): the repo link is the nav's last
+  item, focusable and reached by Tab in the open drawer at 320 and 360 on
+  every home and an article, its label shown; at 801–1024 the label is
+  hidden and one link is named "GitHub", at 1025 and 1280 it shows; the
+  logo loads, 2.2rem tall, `alt=""`, the title hidden at 1024 and below
+  and shown from 1025, the brand still named by it; print hides the edit
+  link and the update bar.
+- The 404 page: on the demo, at the root, in English, the shell, every
+  home in its own words, `noindex` before the stylesheets, no canonical,
+  hreflang, `og:locale`, language data or `data-pagefind-body`, one inline
+  script, not in `sitemap.xml`; `<body class="lang-en page-not-found">`
+  opening with `<pagefind-config>`; under `--base /clogem-demo/` still
+  `dist/404.html`, every link under the base; a static `public/404.html`
+  wins with no error or warning, a rebuild keeps it, and once deleted the
+  generated page comes back and is not swept; `doctor` sees no collision;
+  `make-handler` answers `/nope/` with 404 and the page (dev with the
+  reload script), a real file 200, outside the base the stub, a `dist/`
+  with no `404.html` the stub; a site-added `ja` without
+  `:not-found/home` gets its link marked `lang="en"`.
+  `overflow.test.mjs` visits `/404.html` at 320 and 360.
+- `layout.test.mjs` (B2b) keeps its scenarios on the demo's new pages:
+  the h4-at-the-end and the page-that-fits-then-grows checks strip the
+  edit line and the update bar from their routed page (`withoutE2`), so
+  the page still ends where its article does; the long nav loaded at 1280
+  and narrowed to 801 and 850 adds 13 items, not 10 (`longNav`'s new
+  `count`), since the brand is the logo alone at 64rem and below and 10
+  no longer wrap there. Item 2's 801–1600 scan, the closed drawer's
+  `menu brand search mode` and the drawer-link checks are unchanged and
+  pass with the logo and the repo link.
+
+### Fixed (E2.1)
+
+- **A row's badges keep one line.** In a list or catalogue row (a flex
+  row), the `titleTag` badge shrank to its min-content width and
+  stretched to the row's height: at 320 px on `/zh-Hans/` the y2025a
+  row's 原创 was 26.0×108.8, one character per line; the fallback marker
+  had stretched the same way since before E2. Both are now `flex: none;
+  white-space: nowrap; align-self: center` in a `.clogem-row`, so the
+  title wraps instead and the date stays at the row's end. `theme.css`
+  is 11,594 B gzipped, 240 B over `main`. `parity.test.mjs` item 4, at
+  320, 360 and 414 on `/archives/`, `/tags/meta/`, `/zh-Hans/` and a
+  catalogue: each badge in a row has one line box, is no taller than its
+  single-line box plus 2 px and lies within its row, and the date ends at
+  the row's end; at 1280 the badge follows the title on its line.
+
+- **A backslash in a POSIX file name is kept.** `config/site-rel` turned
+  every `\` into `/`, so on Linux `content/01.G/02.back\slash.md` got the
+  edit link `…/content/01.G/02.back/slash.md` and no last-updated date
+  (its git key did not match). Only where `java.io.File/separator` is `\`
+  is it replaced now. `parity_test.clj`
+  `a-backslash-in-a-posix-file-name-is-kept`: the href ends in
+  `02.back%5Cslash.md` and the page has the file's commit date.
+
+- **A static `404.HTML` warns.** A static 404 page in another case still
+  replaces the generated one (the collision rule folds case too, so this
+  stays no error), but GitHub Pages and other hosts look for `404.html`,
+  so the site had no 404 page and nothing said so. The build (and
+  `doctor`) now warns once, naming the file and saying to rename it to
+  `404.html`; an exact `404.html` gives no warning. `parity_test.clj`
+  `the-404-page-under-a-base-a-static-override-and-the-sweep`: a
+  `404.HTML` gives one warning and no error, and the static-override case
+  now asserts the build's result (`build-or-error`) instead of relying on
+  an exception.
+
+- **(E2.2) A long word in a row's title wraps.** At 320 px on `/zh-Hans/`
+  the y2025a row (a `titleTag` and a fallback marker) titled
+  "Configuration" pushed its date out of the row and the page 7 px wide
+  (`scrollWidth` 327). The row's link is now `min-width: 0;
+  overflow-wrap: anywhere`; the badges' `flex: none` changed nothing
+  beside `white-space: nowrap` and is gone, and the badges are selected
+  as `.clogem-row > span`. `parity.test.mjs` item 4 (`item4LongWord`): at
+  320 that row titled "Configuration" and a 40-character word does not
+  overflow the page, and its date ends at the row's end.
+
+- **(E2.2) A wrapped row's badges sit on the title's first line.** They
+  were `align-self: center`, at the row's middle, while the title's first
+  line and the date sat at the top. A `.clogem-row` is now `align-items:
+  baseline` (a lone `align-self: baseline` on the badges only lines them
+  up with each other). `theme.css` is 11,613 B gzipped, 259 B over
+  `main`. `parity.test.mjs` item 4 (`item4Baseline`): in every wrapped
+  row at 320 and 360, each badge's text baseline is within 2 px of the
+  title's first-line baseline.
+
+- **(E2.2) No case warning beside an exact `404.html`.** With both
+  `public/404.html` and `public/404.HTML`, the build warned that the site
+  had no 404 page (it took the first case-folded match) beside the
+  collision error. An exact `404.html` is now taken first, so only the
+  collision error is reported. `parity_test.clj`
+  `the-404-page-under-a-base-a-static-override-and-the-sweep`: both files
+  give the collision error and no warning.
+
+### Needs native review (E2)
+
+- `ms`: `:nav/source` "Kod sumber" (the navbar's repository link, when
+  its host is not GitHub, GitLab or Bitbucket).
+- `ta`: `:nav/source` "மூலக் குறியீடு".
+- `ms`: the 404 page's `:not-found/title` "Halaman tidak ditemui",
+  `:not-found/message` "Tiada halaman di alamat ini. Halaman itu mungkin
+  telah dipindahkan, atau pautannya salah." and `:not-found/home` "Pergi
+  ke laman utama".
+- `ta`: `:not-found/title` "பக்கம் கிடைக்கவில்லை", `:not-found/message`
+  "இந்த முகவரியில் பக்கம் இல்லை. அது நகர்த்தப்பட்டிருக்கலாம், அல்லது
+  இணைப்பு தவறாக இருக்கலாம்." and `:not-found/home` "முகப்புப்
+  பக்கத்துக்குச் செல்".
 
 **Task B2b — navbar, mobile drawer and page chrome** (§11.3 item 9, D-P4-9):
 

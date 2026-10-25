@@ -20,6 +20,7 @@
             [clogem.i18n :as i18n]
             [clogem.model :as model]
             [clogem.theme.layout :as layout]
+            [clogem.theme.parity :as parity]
             [clogem.util :as u]))
 
 (defn post-list-mode
@@ -72,15 +73,21 @@
   (case mode
     :none nil
     :simple (let [n (or (some-> (:simplePostListLength home-fm) str parse-long) 10)]
-              (into [:ul.clogem-list.clogem-list--simple]
-                    (map #(layout/article-row ctx (get-in model [:articles %])) (take n ids))))
+              (list
+               (into [:ul.clogem-list.clogem-list--simple]
+                     (map #(layout/article-row ctx (get-in model [:articles %])) (take n ids)))
+               ;; Task E2: vdoing's simple list is an UpdateArticle, with
+               ;; its "more" (Home.vue)
+               (when (seq ids) (parity/more-article ctx))))
     (list
      (into [:div.clogem-post-list] (map #(detailed-row ctx %) ids))
      (layout/pagination ctx page total page-url))))
 
 (defn- right-bar
-  "vdoing's homepage sidebar: the update bar (date-desc — \"recently updated\"
-  is the date until git dates arrive), categories and tags with counts."
+  "The homepage's right bar: the 10 most recent articles by front-matter
+  date (clogem's own box — vdoing's right bar has none; \"More\" goes where
+  `:theme :update-bar :more-article` says, Task E2), then categories and
+  tags with counts."
   [{:keys [cfg lang model index-paths] :as ctx}]
   [:aside.clogem-home-right
    (let [recent (take 10 (:posts model))]
@@ -88,8 +95,7 @@
        [:section.clogem-updates
         [:h2 (i18n/tr ctx :index/updates)]
         (into [:ul.clogem-list] (map #(layout/article-row ctx (get-in model [:articles %])) recent))
-        (when-let [root (:archives index-paths)]
-          [:p [:a {:href (layout/href ctx (model/site-url cfg lang root))} (i18n/tr ctx :index/more) " →"]])]))
+        (parity/more-article ctx)]))
    ;; a card only when there is something to list: a site whose articles
    ;; all carry `tags: []` gets no empty Tags box
    (when-let [root (and (seq (:categories model)) (:categories index-paths))]

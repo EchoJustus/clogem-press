@@ -16,8 +16,10 @@
             [hiccup2.core :as h]
             [clogem.assets :as assets]
             [clogem.config :as config]
+            [clogem.diag :as diag]
             [clogem.highlight :as highlight]
             [clogem.i18n :as i18n]
+            [clogem.markdown :as markdown]
             [clogem.model :as model]
             [clogem.search :as search]
             [clogem.seo :as seo]
@@ -254,11 +256,14 @@
        (icons/icon ctx ic)])))
 
 (defn article-row
-  "One index row: title (linked per §6.8), fallback marker, ISO date."
+  "One index row: title (linked per §6.8), the `titleTag` badge of the
+  variant shown (Task E2; vdoing's UpdateArticle rows), fallback marker,
+  ISO date — the order of a home card's title."
   [{:keys [cfg] :as ctx} group]
   (let [{:keys [href title lang fallback?]} (article-link ctx group)]
     [:li.clogem-row
      [:a {:href href :lang (config/html-lang cfg lang)} title]
+     (title-tag ctx (get-in group [:variants lang]))
      (when fallback? (fallback-badge ctx lang))
      (when-let [d (u/iso-date (:date group))]
        ;; chrome on the indexed catalogue page too (D-P3-9)
@@ -465,22 +470,59 @@
     (icons/icon ctx :menu {:class "is-menu"}) (icons/icon ctx :x {:class "is-close"})
     [:span.clogem-visually-hidden (i18n/tr ctx :nav/menu)]]])
 
+(defn repo-label
+  "The repository link's text (Task E2; vdoing's NavLinks `repoLabel`):
+  `:theme :repo-label` in the page's language, else GitHub, GitLab or
+  Bitbucket by the URL's host, else the page language's `:nav/source`."
+  [{:keys [cfg] :as ctx} url]
+  (or (u/blank->nil (i18n/resolve-str ctx (get-in cfg [:theme :repo-label])))
+      (let [host (u/lower (or (second (re-find #"(?i)^https://(?:www\.)?([^/?#]+)" (str url))) ""))]
+        (some (fn [[re label]] (when (re-find re host) label))
+              [[#"(^|\.)github\.com$" "GitHub"] [#"(^|\.)gitlab\.com$" "GitLab"]
+               [#"(^|\.)bitbucket\.org$" "Bitbucket"]]))
+      (i18n/tr ctx :nav/source)))
+
+(defn- repo-item
+  "Task E2: `:theme :repo` as the nav's last item — the label and the
+  `external-link` icon, in the same tab like every `:nav` link. Above 50rem
+  and up to 64rem the label is visually hidden (it stays the link's name);
+  in the drawer it is a text link like the others."
+  [ctx]
+  (when-let [url (config/repo-url (:cfg ctx))]
+    [:li.clogem-navbar__item
+     [:a.clogem-navbar__repo {:href url}
+      [:span.clogem-navbar__repo-label (repo-label ctx url)] " " (icons/icon ctx :external-link)]]))
+
+(defn- brand
+  "The site title linking home; with `:theme :logo` (Task E2), the logo
+  before it — decorative (`alt=\"\"`), the title still the link's name,
+  visually hidden at 64rem and below as vdoing hides it (≤ 959px)."
+  [{:keys [cfg lang] :as ctx}]
+  (let [h     (href ctx (model/home-url cfg lang))
+        title (i18n/resolve-str ctx (get-in cfg [:site :title]))]
+    (if-let [logo (get-in cfg [:theme :logo])]
+      [:a.clogem-navbar__brand.has-logo {:href h}
+       [:img.clogem-navbar__logo {:src (if (str/starts-with? logo "/") (markdown/with-base cfg logo) logo) :alt ""}]
+       [:span.clogem-navbar__title title]]
+      [:a.clogem-navbar__brand {:href h} title])))
+
 (defn navbar
   "One row (P4-B2b), in visual order: the brand, the nav, the languages,
   search and the mode toggle. At 50rem and below, with JS, the nav and the
   languages are in `#clogem-drawer`, behind the menu toggle, first; above
-  it the drawer is `display: contents`. A one-language site with no `:nav`
-  has nothing to put there, except the sidebar js/nav.js moves in: it gets
-  the drawer, with the toggle `hidden`, on a page with a sidebar
-  (`:sidebar?`) only."
-  [{:keys [cfg lang sidebar?] :as ctx}]
-  (let [nav    [:nav.clogem-navbar__nav (into [:ul] (map #(nav-item ctx %) (:nav cfg)))]
+  it the drawer is `display: contents`. The nav ends with the repository
+  link (`:theme :repo`, Task E2). A one-language site with no `:nav` and
+  no `:repo` has nothing to put there, except the sidebar js/nav.js moves
+  in: it gets the drawer, with the toggle `hidden`, on a page with a
+  sidebar (`:sidebar?`) only."
+  [{:keys [cfg sidebar?] :as ctx}]
+  (let [repo   (repo-item ctx)
+        nav    [:nav.clogem-navbar__nav (-> [:ul] (into (map #(nav-item ctx %) (:nav cfg))) (cond-> repo (conj repo)))]
         langs  (lang-switcher ctx)
-        shown? (boolean (or (seq (:nav cfg)) langs))]
+        shown? (boolean (or (seq (:nav cfg)) langs repo))]
     [:header.clogem-navbar
      (when (or shown? sidebar?) (menu-toggle ctx (not shown?)))
-     [:a.clogem-navbar__brand {:href (href ctx (model/home-url cfg lang))}
-      (i18n/resolve-str ctx (get-in cfg [:site :title]))]
+     (brand ctx)
      (if (or shown? sidebar?)
        [:div#clogem-drawer.clogem-navbar__drawer nav langs]
        nav)
@@ -1016,6 +1058,37 @@
                                  :title (i18n/tr ctx :page/back-to-top)}
      (icons/icon ctx :arrow-up)]))
 
+(def class-token-re
+  "A `pageClass` token: a CSS class name that needs no escaping."
+  #"[A-Za-z_][A-Za-z0-9_-]*")
+
+(defn page-classes
+  "Front matter `pageClass` (vdoing's, Layout.vue; Task E2) — a
+  whitespace-separated string or a list of strings — as the class tokens
+  `document` appends to `<body class>`. The front matter is the page's
+  variant's, or `:page-fm` in `ctx` (a home's `index.md`, an index page's
+  `@pages/` file). A token that is not `class-token-re`, or a value that is
+  neither, is warned about naming the file — `:page-file`, or the
+  variant's, so each file warns once, from one page — and dropped."
+  [{:keys [variant] :as ctx}]
+  (let [[fm file] (if (contains? ctx :page-fm)
+                    [(:page-fm ctx) (:page-file ctx)]
+                    [(:front-matter variant) (:rel-path variant)])
+        v     (get fm :pageClass)
+        warn! (fn [msg] (when file (diag/warn! file msg)) nil)
+        split #(remove str/blank? (str/split (str/trim %) #"\s+"))]
+    (when (some? v)
+      (if-let [toks (cond (string? v) (split v)
+                          (and (sequential? v) (every? string? v)) (mapcat split v))]
+        (distinct
+         (filter (fn [t]
+                   (or (re-matches class-token-re t)
+                       (warn! (str "front matter pageClass: " (pr-str t) " is not a class name "
+                                   "(a letter or _, then letters, digits, - or _); it is dropped."))))
+                 toks))
+        (warn! (str "front matter pageClass: " (pr-str v)
+                    " is not a string or a list of strings; it is ignored."))))))
+
 (defn document
   "Wrap body hiccup in a complete HTML document.
 
@@ -1048,6 +1121,8 @@
       ;; §11.3 item 15: the search consoles' ownership tokens, on every
       ;; page (a redirect stub, noindex, never comes through here)
       (verification-head cfg)
+      ;; Task E2: the 404 page
+      (when (:noindex? ctx) [:meta {:name "robots" :content "noindex"}])
       (seo-head ctx)
       ;; D-P3-13/14: the preference, the banner data and :redirect — before
       ;; the stylesheets, which the inline redirect would otherwise wait for
@@ -1091,7 +1166,10 @@
       ;; important resource
       (analytics-head ctx)]
      (-> [:body {:class (str "lang-" (name lang)
-                             (when-let [k (:page-kind ctx)] (str " page-" (name k))))}
+                             (when-let [k (:page-kind ctx)] (str " page-" (name k)))
+                             ;; Task E2: after page-<kind>, which check_search.clj
+                             ;; reads as the first page- token
+                             (apply str (map #(str " " %) (page-classes ctx))))}
           (search-config ctx)]
          (into body)
          ;; every page built here has the navbar; outside it, which is the

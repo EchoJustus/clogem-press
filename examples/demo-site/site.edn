@@ -42,7 +42,10 @@
            :permalink-prefix "/pages/"
            :write-front-matter true
            :permalinks-file "permalinks.edn"
-           :assets-dir "assets"}
+           :assets-dir "assets"
+           ;; Task E2: "Edit this page" under every article and catalogue
+           ;; page, pointing at this file in the generator's own repository
+           :edit-link {:repo "EchoJustus/clogem-press" :dir "examples/demo-site"}}
 
  ;; D-P2-11: site pages are prefixed per language (`/` → `/zh-Hans/`), a
  ;; permalink resolves to the reader's variant, and :items makes a dropdown.
@@ -57,7 +60,11 @@
                 {:text {:en "Archives" :zh-Hans "归档" :zh-Hant "歸檔" :ms "Arkib" :ta "காப்பகம்"} :link "/archives/"}]}]
 
  :theme {:default-mode :auto :page-style :card
-         :per-page 3}                    ; small, so the demo has a /page/2/
+         :per-page 3                     ; small, so the demo has a /page/2/
+         ;; Task E2: the navbar's logo (the title is visually hidden at 64rem
+         ;; and below) and its repository link, the nav's last item
+         :logo "/assets/logo.svg"
+         :repo "EchoJustus/clogem-press"}
  :search   {:provider :pagefind}   ; D-P3-8: CI indexes the demo in all five languages
  ;; D-P3-15: giscus on every article, one thread per identity. The ids are
  ;; well-formed placeholders for a repository that does not exist, so the

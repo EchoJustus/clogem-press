@@ -37,7 +37,9 @@
     clogem.analytics-test
     clogem.static-test
     ;; Phase 4 Task B2b
-    clogem.layout-test])
+    clogem.layout-test
+    ;; Phase 4 Task E2
+    clogem.parity-test])
 
 (defn- highlighting-off-by-default!
   "§11.3 item 10 turns highlighting on by default, which would make every
