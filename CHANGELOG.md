@@ -33,9 +33,9 @@ nothing in `src/clogem/` changes, and a built site is unaffected.
 Languages (SP.2): English (the default) at `clogem-press/`; Simplified
 Chinese at `zh-Hans/`; Traditional Chinese, with Taiwan wording, at
 `zh-Hant/`; Brazilian Portuguese at `pt-BR/` (also for `pt`); European
-Spanish at `es-ES/` (also for `es`). Five pages, **168,057 bytes** in all:
-`index.html` 32,481, `zh-Hans/index.html` 33,545, `zh-Hant/index.html`
-33,647, `pt-BR/index.html` 34,159, `es-ES/index.html` 34,225 (each within
+Spanish at `es-ES/` (also for `es`). Five pages, **171,535 bytes** in all:
+`index.html` 33,172, `zh-Hans/index.html` 34,237, `zh-Hant/index.html`
+34,348, `pt-BR/index.html` 34,827, `es-ES/index.html` 34,951 (each within
 the 64 KB budget).
 
 ### Added (support page)
@@ -102,7 +102,7 @@ the 64 KB budget).
 
 ### Tests (support page)
 
-- `test/clogem/support_page_test.clj` (28 tests), every rule on each of
+- `test/clogem/support_page_test.clj` (34 tests after SP.4), every rule on each of
   the five pages: no script, handlers or style attributes; the CSP's hash is the style's; the head tags; every
   image a `data:` URI with alt, width and height; nothing loaded from
   elsewhere; the icon passes the hub's plain-drawing checks; the switcher;
@@ -128,6 +128,45 @@ the 64 KB budget).
   Spanish and *tú*); the generator's five content languages named on every
   page and no claim of Portuguese or Spanish content; CJK fonts and
   spacing; the stand-in publishes all five files and nothing else.
+
+### Fixed (SP.4, support page)
+
+- **The header fits a 320 px screen in every language.** The pt-BR and
+  es-ES theme switchers were wider than the content box at 360 px, and the
+  hero's `auto` grid column grew with them (at 320 the page scrolled
+  sideways). The column is `minmax(0,1fr)`; under 30rem the theme switcher
+  drops its icons and tightens; the switchers never outgrow the content
+  box. The language dropdown hangs from the switchers' end edge, so it no
+  longer runs off the left of a 360 px screen when the summary sits on the
+  left; when the switchers wrap, the language's line is the lower one.
+- **At 1280 px the switchers sit beside the brand** in every language, as
+  on the hub: the brand's words wrap within a flexible basis.
+- **Short inline code keeps one line** (`bb dev` broke into `bb` / `dev`):
+  code of up to 24 characters gets `class="nw"`; a longer path may break.
+- **Shorter pill labels**: pt-BR's chip "Em andamento", and the Q&A and
+  idea buttons in pt-BR and es-ES, which wrapped.
+- **The privacy draft** names all three keys a built site keeps in the
+  reader's browser (the colour mode, the language choice and the
+  dismissed "also available in …" banners), and says that tool downloads
+  come from the tool's releases and are checked against a pinned hash *by
+  default*: a site's `:tools` config can name its own source and hash, or
+  a binary already installed. In all five languages.
+- **The in-progress card** says what Phase 4 added to `bb dev` (one
+  rebuild per burst, the build-error overlay, theme hot reload, `:base`
+  in dev); live reload itself shipped in 0.1.0.
+- **zh-Hans / zh-Hant: "marks" is 商标 / 商標**, the word for trademarks.
+- **The live-page wait is about 10 minutes** (it could run 23): no try
+  after 570 s, `--max-time 15`, a `timeout-minutes: 12` backstop with
+  `continue-on-error`, so it still only warns.
+- **MIT notice** on `support_page_test.clj` (its `git!`, `stand-in!` and
+  refusing hook follow the hub's `portal_test.clj`) and on the workflow
+  (its `publish` and 3-attempt loop follow `portal.yml`).
+- Tests: the hero's column, the switchers' bounds, the panel's anchor;
+  short code on one line; every `localStorage` key in the theme's code
+  covered by the privacy note in each language; "by default" for
+  downloads; 商标 / 商標; pill label lengths; the Phase 4 wording; the
+  live-page wait's bound; the MIT notice in all three files. Each failed
+  first on `f8de9e4`.
 
 ### Needs native review (support page)
 

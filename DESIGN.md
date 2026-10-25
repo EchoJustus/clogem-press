@@ -1800,7 +1800,8 @@ Decisions:
    with `:has()`). The theme in `src/clogem/theme/` runs scripts the hub forbids (the mode script,
    `nav.js`, Pagefind) and would bring a site's whole asset tree for one page, so it is not used. The
    generator stays out of `src/clogem/` and shares no code with the site generator; the parts adapted
-   from the hub's `scripts/portal.clj` keep its MIT notice beside the file's EPL-2.0 line. The look is
+   from the hub (its `scripts/portal.clj`, `test/portal_test.clj` and `portal.yml`) keep its MIT
+   notice beside the EPL-2.0 line, in `support_page.clj`, `support_page_test.clj` and the workflow. The look is
    the hub's family (its backgrounds, cards and type) with clogem-press's jade (`#23A982`) as the accent:
    a darker jade for text in light mode, a lighter one in dark, every pair tested at WCAG AA.
 2. **A deploy key, as Wmark Pro's page is published** (owner). `.github/workflows/support-page.yml`
@@ -1843,8 +1844,9 @@ Decisions:
      flat crowded the header; `<details>` folds them away with no script and no CSP change, since
      the browser itself opens and closes it (click, Enter or Space). The cost of no script: it does
      not close on Escape or on a click outside (a second click on the summary closes it). It is
-     closed on load and hidden in print; the panel opens below the summary at its end edge, never
-     wider than the screen. Nothing sends a reader to a version by the browser's
+     closed on load and hidden in print; the panel hangs from the switchers' end edge, which is
+     the content box's, so it never runs off a narrow screen's other side (when the switchers
+     wrap, the language's line is the lower one, just above the panel). Nothing sends a reader to a version by the browser's
      language: that would need a script, which the hub's pages don't run (and an HTTP redirect is not
      something GitHub Pages offers).
    - **Words in step.** One EDN file per language (`support/i18n/<tag>.edn`, English's the reference);
@@ -1866,6 +1868,19 @@ Decisions:
    descriptors in `clogem.tools`, the config defaults, the theme's storage keys) and is marked in
    each `support/i18n/*.edn` as awaiting the owner's approval, which comes before the first
    publication. The translations mirror the English text fact for fact, and change when it changes.
+   It names every key a built site keeps in its reader's browser (`clogem-mode`, `clogem-lang`,
+   `clogem-banner-dismissed`); `support_page_test` reads the theme's code for `localStorage` keys
+   and fails on one the note doesn't cover.
+6. **The controls' borders are solid, `#6B8A80` light and `#64847A` dark** (`--control`), heavier
+   than the hub's faint card borders, on purpose: WCAG 1.4.11 asks 3:1 for a control's boundary
+   against what is around it; these measure at least 3.48:1 in light (on the page's ground) and
+   4.26:1 in dark (on a card's surface), and `support_page_test` holds them at 3:1. The hub's faint
+   borders would not reach it. Cards and code blocks, which are not controls, keep the faint border.
+7. **The header fits a 320 px screen in every language.** Its grid column may shrink
+   (`minmax(0,1fr)`); the brand's words wrap beside the switchers, so at 1280 px the two share a
+   row as on the hub; under 30rem the theme switcher drops its icons and tightens, so Portuguese's
+   and Spanish's labels keep one line. Inline code of up to 24 characters keeps one line
+   (`bb dev`); longer code, a path, may break.
 
 ---
 
