@@ -82,7 +82,20 @@
     (is (= [":theme :blogger has neither a :name nor an :avatar; there is no blogger card."] ms)))
   (let [[th ms] (theme-of {:blogger {:name "  " :avatar "javascript:alert(1)"}})]
     (is (nil? (:blogger th)))
-    (is (= 3 (count ms)) (pr-str ms))))
+    (is (= 2 (count ms)) (str (pr-str ms) ": one per bad value, and no third about the card")))
+  (testing "P4-E1a.1 item 8a: one bad value, one warning"
+    (let [[th ms] (theme-of {:blogger {:name ""}})]
+      (is (nil? (:blogger th)))
+      (is (= 1 (count ms)) (pr-str ms))))
+  (testing "P4-E1a.1 item 8a: a nil inside an identity map is absent, silently"
+    (doseq [[theme k want] [[{:footer {:powered-by nil}} :footer {}]
+                            [{:blogger {:name "J" :avatar nil}} :blogger {:name "J"}]
+                            [{:blogger {:name "J" :slogan nil}} :blogger {:name "J"}]
+                            [{:social {:icons [{:icon :rss :title "R" :link "/feed.xml" :svg nil}]}} :social
+                             {:icons [{:icon :rss :title "R" :link "/feed.xml"}]}]]]
+      (let [[th ms] (theme-of theme)]
+        (is (= want (k th)) (pr-str theme))
+        (is (= [] ms) (pr-str theme))))))
 
 (deftest image-values
   (doseq [[v want] [["https://img.example/a.png" "https://img.example/a.png"]
@@ -203,9 +216,15 @@
       (let [[th ms] (theme-of {:body-bg-img-opacity v})]
         (is (= 0.5 (:body-bg-img-opacity th)) (pr-str v))
         (is (= (if (nil? v) 0 1) (count ms)) (pr-str v ms)))))
-  (testing "interval: at least 1 s, else 15"
+  (testing "interval: 1 s to a day, else 15"
     (is (= 3 (:body-bg-img-interval (first (theme-of {:body-bg-img-interval 3})))))
-    (doseq [v [0 0.5 "10" :x]]
+    (is (= [86400 []] (update (theme-of {:body-bg-img-interval 86400}) 0 :body-bg-img-interval)))
+    (testing "P4-E1a.1 item 4: above a day, setInterval overflows; a day it is"
+      (let [[th ms] (theme-of {:body-bg-img-interval 3000000})]
+        (is (= 86400 (:body-bg-img-interval th)))
+        (is (= 1 (count ms)) (pr-str ms))
+        (is (str/includes? (first ms) "using 86400"))))
+    (doseq [v [0 0.5 "10" :x ##Inf ##-Inf ##NaN]]
       (let [[th ms] (theme-of {:body-bg-img-interval v})]
         (is (= 15 (:body-bg-img-interval th)) (pr-str v))
         (is (= 1 (count ms)) (pr-str v)))))
@@ -391,6 +410,18 @@
           (is (not (str/includes? a "target")) a))
         (is (re-find #"aria-label=\"Yuque\" href=\"https://yuque.example/me\" rel=\"me\" title=\"Yuque\"><svg[^>]*><use href=\"[^\"]*#link\"" ul))))))
 
+(deftest a-blank-language-in-a-link-title-falls-back
+  (testing "P4-E1a.1 item 3: one warning, and the zh-Hans link is named by the chain"
+    (let [link {:icon :mail :title {:en "Mail" :zh-Hans ""} :link "mailto:a@b.example"}
+          [th ms] (theme-of {:social {:icons [link]}})
+          {:keys [pages warnings]} (build (assoc two-langs :theme {:social {:icons [link]}}) {"index.md" "# Home\n"})]
+      (is (= {:en "Mail"} (get-in th [:social :icons 0 :title])))
+      (is (= [":theme :social :icons 0 :title :zh-Hans is \"\", but a link's name must not be blank; it is ignored, so that language falls back."] ms))
+      (is (= 1 (count (filter #(str/includes? % ":title :zh-Hans") warnings))) (pr-str warnings))
+      (doseq [rel ["index.html" "zh-Hans/index.html"]]
+        (is (str/includes? (footer-of (pages rel)) "<a aria-label=\"Mail\" href=\"mailto:a@b.example\" rel=\"me\" title=\"Mail\">") rel)
+        (is (not (str/includes? (pages rel) "aria-label=\"\"")) rel)))))
+
 (deftest social-links-under-a-base
   (let [{:keys [pages]} (build (assoc one-lang :site {:title "S" :base "/my docs/"}
                                       :theme {:social {:icons [{:icon :rss :title "RSS" :link "/feed.xml"}
@@ -559,6 +590,11 @@
       (let [home ((:pages (b {} (str (fm "heroText: Hello\n") "\n# Mine\n"))) "index.html")]
         (is (str/includes? home "<p class=\"clogem-hero__title\">Hello</p>"))
         (is (= 1 (count (re-seq #"<h1[ >]" home))))))
+    (testing "P4-E1a.1 item 8c: a raw-HTML <h1> in the body counts as its h1"
+      (doseq [body ["<h1>Mine</h1>\n" "<H1 class=\"x\">Mine</H1>\n" "<div>\n<h1>Mine</h1>\n</div>\n"]]
+        (let [home ((:pages (b {} (str (fm "heroText: Hello\n") "\n" body))) "index.html")]
+          (is (str/includes? home "<p class=\"clogem-hero__title\">Hello</p>") body)
+          (is (= 1 (count (re-seq #"(?i)<h1[ >]" home))) body))))
     (testing "no hero keys, no hero"
       (is (not (str/includes? ((:pages (b {} (fm "postList: detailed\n"))) "index.html") "clogem-hero"))))
     (testing "base-prefixed image and action"
@@ -705,6 +741,11 @@
         (is (not (str/includes? html "bodybg.js")) rel))
       (is (not (contains? (:dist one) "clogem/js/bodybg.js")))
       (is (contains? (:dist one) "clogem/css/identity.css")))
+    (testing "P4-E1a.1 item 4: an interval above a day is a day, in the markup"
+      (let [{:keys [pages warnings]} (build (assoc one-lang :theme {:body-bg-img ["/a.png" "/b.png"] :body-bg-img-interval 3000000})
+                                            files)]
+        (is (str/includes? (pages "index.html") "data-interval=\"86400\""))
+        (is (= 1 (count (filter #(str/includes? % ":body-bg-img-interval") warnings))) (pr-str warnings))))
     (testing "two images: the URLs, base-prefixed, and the script on every page"
       (is (contains? (:dist two) "clogem/js/bodybg.js"))
       (doseq [[rel html] (:pages two) :when (str/includes? html "clogem-navbar")

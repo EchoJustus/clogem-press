@@ -168,11 +168,29 @@ gets it, and title badges appear by default, as in vdoing.
   map is resolved as before (`an-inherited-hero-names-its-language`, and
   `the-demo-shows-the-identity`: `/ms/` marked `lang="en"`, `/zh-Hans/`,
   whose own `index.zh-Hans.md` sets no hero key, has no banner).
+- **A blank language in a social link's per-language `:title` falls back**
+  (item 3): `{:en "Mail" :zh-Hans ""}` gave every zh-Hans page a link with
+  `aria-label=""`, silently. The blank entry now warns and is dropped, so
+  the fallback chain names the link (`a-blank-language-in-a-link-title-falls-back`).
+- **`:body-bg-img-interval` is at most a day** (item 4). Above 2³¹−1 ms
+  Chromium's `setInterval` fires at once, so `3000000` swapped the image
+  nonstop (529 requests in 2 s). A finite number from 1 to 86,400 is kept;
+  above that it warns and is 86,400; anything else (`##Inf` and `##NaN`
+  included) warns and is 15, as before (`body-bg-img-values`,
+  `the-body-background`: `data-interval="86400"`).
 - **A bare word is no image** (item 8b): `:banner-bg "dark-blue"`,
   `:body-bg-img "transparent"` and `:title-badge-icons ["star"]` became
   `/dark-blue` and so on, and dangling `<img>`s. A value with neither `/`
   nor `.` now warns and is dropped (`:banner-bg` is auto); for a badge
   icon the warning says to write a keyword (`a-bare-word-is-no-image`).
+- **One bad blogger value, one warning** (item 8a): `{:blogger {:name ""}}`
+  also said the card had "neither a :name nor an :avatar". And an explicit
+  `nil` inside an identity map (`{:footer {:powered-by nil}}`, `{:blogger
+  {:name "J" :avatar nil}}`, a social link's `:svg nil`) is absent, as a
+  top-level `nil` is, instead of a warning
+  (`the-blogger-card-needs-a-name-or-an-avatar`).
+- **A raw-HTML `<h1>` in the home's body is its `<h1>`** (item 8c), so a
+  `heroText` beside it is a `<p>`, not a second `<h1>` (`the-hero`).
 
 ### Needs native review (E1a)
 

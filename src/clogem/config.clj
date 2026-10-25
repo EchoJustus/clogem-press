@@ -925,12 +925,15 @@
   (let [hint "See config.example.edn (DESIGN.md §11.3 item 13)."
         warn! (fn [msg] (diag/warn! nil msg hint) nil)
         th    (:theme cfg)
+        ;; an explicit nil inside an identity map is absent, as a top-level
+        ;; nil is (P4-E1a.1 item 8a)
+        no-nils (fn [m] (if (map? m) (into {} (remove (comp nil? val)) m) m))
         image (fn [path v]
                 (or (image-value v)
                     (do (warn! (str (path-str path) " is " (pr-str v) ", " (image-why v) "; it is ignored."))
                         nil)))
         ;; :blogger — a map with a :name or an :avatar
-        blogger (let [b (:blogger th)]
+        blogger (let [b (no-nils (:blogger th))]
                   (cond
                     (nil? b) nil
                     (not (map? b))
@@ -948,8 +951,12 @@
                                   (:slogan b)
                                   (warn! (str ":theme :blogger :slogan is " (pr-str (:slogan b))
                                               ", but it must be a string or a per-language map of strings; it is ignored."))))]
-                      (if (or nm av)
+                      (cond
+                        (or nm av)
                         (cond-> {} nm (assoc :name nm) av (assoc :avatar av) sl (assoc :slogan sl))
+                        ;; a bad :name or :avatar has said so already: one warning
+                        (some #(contains? b %) [:name :avatar]) nil
+                        :else
                         (warn! (str ":theme :blogger has neither a :name nor an :avatar; there is no blogger card."))))))
         ;; :social {:icons [{:icon :title :link :svg} …]}
         social (let [so (:social th)]
@@ -966,7 +973,8 @@
                                          (if-not (map? e)
                                            (warn! (str (path-str p) " is " (pr-str e) ", but it must be a map "
                                                        "with :icon, :title and :link; it is ignored."))
-                                           (let [link (link-value (:link e))]
+                                           (let [e    (no-nils e)
+                                                 link (link-value (:link e))]
                                              (if-not link
                                                (warn! (str (path-str (conj p :link)) " is " (pr-str (:link e))
                                                            ", which is not an http(s) URL, a mailto: address or "
@@ -984,13 +992,27 @@
                                                                             "the brands " (str/join " " (map name (sprite/brand-names)))
                                                                             " and the UI icons " (str/join " " (map name (sprite/ui-names))) "."))
                                                                 :link))
-                                                     title (if (per-lang-str? (:title e))
-                                                             (:title e)
+                                                     ;; a blank language in a per-language title
+                                                     ;; would name the link "" there: dropped, so
+                                                     ;; the fallback chain names it (P4-E1a.1 item 3)
+                                                     tv    (let [t (:title e)]
+                                                             (if (and (map? t) (every? string? (vals t)))
+                                                               (into {} (remove (fn [[l x]]
+                                                                                  (when (str/blank? x)
+                                                                                    (warn! (str (path-str (conj p :title l)) " is "
+                                                                                                (pr-str x) ", but a link's name must not be "
+                                                                                                "blank; it is ignored, so that language "
+                                                                                                "falls back."))
+                                                                                    true)))
+                                                                     t)
+                                                               t))
+                                                     title (if (per-lang-str? tv)
+                                                             tv
                                                              (let [t (if (re-find #"(?i)^mailto:" link)
                                                                        (str/replace link #"(?i)^mailto:([^?]*).*$" "$1")
                                                                        (or (second (re-find #"(?i)^https?://([^/?#:]+)" link)) link))]
                                                                (warn! (str (path-str p)
-                                                                           (if (contains? e :title)
+                                                                           (if (and (contains? e :title) (not (and (map? tv) (empty? tv) (seq (:title e)))))
                                                                              (str " :title is " (pr-str (:title e)) ", but it must be a string or a per-language map of strings")
                                                                              " has no :title")
                                                                            "; the link is named " (pr-str t) "."))
@@ -1001,7 +1023,7 @@
                                      (:icons so)))]
                      (when (seq icons) {:icons icons}))))
         ;; :footer {:create-year :end-year :copyright-info :powered-by}
-        footer (let [f (:footer th)]
+        footer (let [f (no-nils (:footer th))]
                  (cond
                    (nil? f) nil
                    (not (map? f))
@@ -1048,13 +1070,20 @@
                     (do (warn! (str ":theme :body-bg-img-opacity is " (pr-str v)
                                     ", but it must be a number above 0 and at most 1; using 0.5."))
                         0.5)))
-        interval (let [v (:body-bg-img-interval th)]
+        ;; at most a day: setInterval overflows above 2^31-1 ms and then
+        ;; fires at once, nonstop (P4-E1a.1 item 4)
+        interval (let [v (:body-bg-img-interval th)
+                       finite? (and (number? v) (not (and (float? v) (or (Double/isNaN v) (Double/isInfinite v)))))]
                    (cond
                      (nil? v) 15
-                     (and (number? v) (>= v 1)) v
+                     (and finite? (<= 1 v 86400)) v
+                     (and finite? (> v 86400))
+                     (do (warn! (str ":theme :body-bg-img-interval is " (pr-str v)
+                                     ", but it must be at most 86400 seconds (a day); using 86400."))
+                         86400)
                      :else
                      (do (warn! (str ":theme :body-bg-img-interval is " (pr-str v)
-                                     ", but it must be a number of seconds, at least 1; using 15."))
+                                     ", but it must be a number of seconds, from 1 to 86400; using 15."))
                          15)))
         style (if (and body-imgs (= :line (:page-style th)))
                 (do (warn! (str ":theme :page-style :line has no effect with :theme :body-bg-img: the image "

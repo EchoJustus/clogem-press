@@ -121,8 +121,11 @@
         hide-right? (true? (:hideRightBar home-fm))
         ;; P4-E1a: one h1 per page — the banner's heroText is the h1 when
         ;; the main column has none, and then the fallback title goes
-        body-h1? (some #(and (vector? %) (keyword? (first %))
-                             (re-matches #"h1(?:[.#].*)?" (name (first %))))
+        ;; a raw-HTML `<h1` in the body counts too (P4-E1a.1 item 8c)
+        body-h1? (some #(or (and (vector? %) (keyword? (first %))
+                                 (re-matches #"h1(?:[.#].*)?" (name (first %))))
+                            (and (= "hiccup.util.RawString" (some-> % class .getName))
+                                 (re-find #"(?i)<h1[\s>/]" (str %))))
                        (tree-seq sequential? seq body))
         hero-h1? (boolean (and (identity/hero-text ctx) (not body-h1?)))
         content  (or body
