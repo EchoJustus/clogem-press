@@ -1,0 +1,129 @@
+# Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).
+#
+# clogem-press's page on the Clogem support site,
+# https://echojustus.github.io/clogem-support/clogem-press/ (DESIGN.md §7.5).
+#
+# The site is the gh-pages branch of EchoJustus/clogem-support. Each product
+# publishes its own folder there from its own repository; this workflow
+# owns clogem-press/ alone. It tests and builds the page (`bb support-page`,
+# from support/page.edn), clones gh-pages over SSH with a deploy key of its
+# own, replaces clogem-press/, stages that path and nothing else, and pushes
+# without force. If someone else published at the same moment, it starts
+# again from a fresh clone, 3 attempts at most, as the hub's portal.yml does.
+#
+# A push made with a deploy key starts a Pages build by itself, and the
+# hub's portal.yml runs after every Pages build (it adds the front page's
+# link once the hub's own session lists clogem-press).
+#
+# Without the CLOGEM_SUPPORT_DEPLOY_KEY secret it builds the page and stops,
+# successfully, with a notice (README, "Support page", for the owner's
+# one-time steps). It never runs on pull requests: it holds a secret, and
+# this repository is public. test/clogem/support_page_test.clj checks this
+# file's text and runs the publishing step against a local stand-in.
+name: support-page
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - support/**
+      - test/clogem/support_page_test.clj
+      - .github/workflows/support-page.yml
+      - bb.edn
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One publication at a time; never cancel one in flight.
+concurrency:
+  group: support-page
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    env:
+      URL: https://echojustus.github.io/clogem-support/clogem-press/
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: DeLaGuardo/setup-clojure@6d46099eae24853c33c0482f2bb54edf4f1a4c74 # 13.7.0
+        with: { bb: latest }
+
+      # The page's own tests; the full `bb test` runs in ci.yml.
+      - run: bb test --pattern support-page
+      - run: bb support-page
+
+      - name: Publish clogem-press/ to clogem-support's gh-pages
+        id: publish
+        env:
+          DEPLOY_KEY: ${{ secrets.CLOGEM_SUPPORT_DEPLOY_KEY }}
+          REMOTE: git@github.com:EchoJustus/clogem-support.git
+          # GitHub's published SSH host keys ("GitHub's SSH key fingerprints",
+          # GitHub Docs; the test checks their fingerprints), never scanned on the fly.
+          KNOWN_HOSTS: |
+            github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+            github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
+            github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=
+        run: |
+          set -euo pipefail
+          if [ -z "${DEPLOY_KEY:-}" ]; then
+            echo "::notice::The support page was built but not published: the CLOGEM_SUPPORT_DEPLOY_KEY secret isn't set (README, Support page)."
+            exit 0
+          fi
+
+          # The key and the host keys, in files only this job can read.
+          key="$RUNNER_TEMP/clogem-support-deploy-key"
+          hosts="$RUNNER_TEMP/clogem-support-known-hosts"
+          trap 'rm -f "$key"' EXIT
+          (umask 077; printf '%s\n' "$DEPLOY_KEY" > "$key")
+          chmod 600 "$key"
+          printf '%s' "$KNOWN_HOSTS" > "$hosts"
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts"
+
+          # One attempt: a fresh clone of the branch as it is now, clogem-press/
+          # replaced by the page just built, everything else as it was.
+          # 0 = published or unchanged, 1 = refused.
+          publish() {
+            rm -rf pages
+            git clone --quiet --depth 1 --branch gh-pages "$REMOTE" pages || return 1
+            git -C pages config user.name "github-actions[bot]"
+            git -C pages config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            rm -rf pages/clogem-press
+            mkdir -p pages/clogem-press
+            cp dist-support/clogem-press/index.html pages/clogem-press/index.html || exit 1
+            git -C pages add -- clogem-press || return 1
+            if git -C pages diff --cached --name-only | grep -v '^clogem-press/'; then
+              echo "::error::Something outside clogem-press/ was staged; nothing was pushed."; exit 1
+            fi
+            if git -C pages diff --cached --quiet; then
+              echo "::notice::The support page is unchanged: nothing to publish."; return 0
+            fi
+            git -C pages commit --quiet -m "Publish clogem-press's support page" || return 1
+            git -C pages push --quiet origin HEAD:gh-pages || return 1
+            echo "published=true" >> "${GITHUB_OUTPUT:-/dev/null}"
+            echo "::notice::Published clogem-press/ to clogem-support's gh-pages."
+          }
+
+          for attempt in 1 2 3; do
+            if publish; then exit 0; fi
+            echo "::warning::Publishing was refused (someone may have published at the same moment); attempt $attempt of 3."
+            sleep $((attempt * 5))
+          done
+          echo "::error::Could not publish the support page after 3 attempts."
+          exit 1
+
+      - name: Wait for the live page
+        if: steps.publish.outputs.published == 'true'
+        run: |
+          set -uo pipefail
+          # The live page, past any cache, against the one just built; a
+          # warning, not a failure, if Pages is slow.
+          for i in $(seq 1 40); do
+            if curl -fsS --max-time 20 -o live.html "${URL}?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$i" 2> /dev/null &&
+               cmp -s live.html dist-support/clogem-press/index.html; then
+              echo "::notice::Live: $URL"; exit 0
+            fi
+            sleep 15
+          done
+          echo "::warning::$URL isn't the page built here after 10 minutes; the Pages build may still be running."

@@ -4,8 +4,11 @@
   (support/support_page.clj) from support/page.edn, held to the hub's rules
   for its pages (clogem-support's test/portal_test.clj): no script, nothing
   loaded from elsewhere, its CSP, the switcher, contrast, its sections and
-  words, its size."
+  words, its size; and .github/workflows/support-page.yml, whose publishing
+  step is run here against a local stand-in for clogem-support's gh-pages."
   (:require [babashka.fs :as fs]
+            [babashka.process :as p]
+            [clj-yaml.core :as yaml]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [clogem.css-palette :as cp]
@@ -327,3 +330,161 @@
       (is (str/includes? src "Permission is hereby granted, free of charge"))
       (is (str/includes? src "The above copyright notice and this permission notice shall be included"))
       (is (str/includes? src "OTHER DEALINGS IN THE SOFTWARE.")))))
+
+;; ---------------------------------------------------------------------------
+;; The workflow (.github/workflows/support-page.yml): its text, and its
+;; publishing step run against a local stand-in for clogem-support's
+;; gh-pages (portal_test.clj's `stand-in!` and `publish!`)
+
+(def ^:private workflow-file ".github/workflows/support-page.yml")
+(defn- workflow-text [] (slurp workflow-file))
+(defn- workflow [] (yaml/parse-string (workflow-text)))
+(defn- step [id] (some #(when (= id (:id %)) %) (get-in (workflow) [:jobs :publish :steps])))
+
+(deftest the-workflow-text
+  (let [text (workflow-text)
+        wf   (workflow)
+        on   (get wf (keyword "on") (get wf true))
+        run  (:run (step "publish"))]
+    (testing "on its sources on main, and by hand; never on a pull request (it holds a secret)"
+      (is (not (re-find #"pull_request" text)))
+      (is (= #{:push :workflow_dispatch} (set (keys on))))
+      (is (= ["main"] (get-in on [:push :branches])))
+      (is (= #{"support/**" "test/clogem/support_page_test.clj" ".github/workflows/support-page.yml" "bb.edn"}
+             (set (get-in on [:push :paths])))))
+    (testing "reads only; the push goes over SSH with the deploy key"
+      (is (= {:contents "read"} (:permissions wf)))
+      (is (every? nil? (map :permissions (vals (:jobs wf))))))
+    (testing "one publication at a time, never cancelled"
+      (is (= {:group "support-page" :cancel-in-progress false} (:concurrency wf))))
+    (testing "every action pinned by commit"
+      (let [uses (map second (re-seq #"uses:\s*(\S+)" text))]
+        (is (= #{"actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+                 "DeLaGuardo/setup-clojure@6d46099eae24853c33c0482f2bb54edf4f1a4c74"}
+               (set uses)))))
+    (testing "tests the page, then builds it"
+      (is (some #(= "bb test --pattern support-page" (:run %)) (get-in wf [:jobs :publish :steps])))
+      (is (some #(= "bb support-page" (:run %)) (get-in wf [:jobs :publish :steps]))))
+    (testing "stages clogem-press/ alone and never forces"
+      (is (str/includes? run "git -C pages add -- clogem-press"))
+      (is (not (re-find #"add\s+(?:[^\n]*\s)?(?:--all|-A|\.)(?:\s|$)" run)))
+      (is (not (re-find #"git[^\n]*(?:--force|\s-f\b|\s\+[A-Za-z]|:\+|push[^\n]*\+)" run)))
+      (is (str/includes? run "for attempt in 1 2 3")))
+    (testing "commits as github-actions[bot]"
+      (is (str/includes? run "user.name \"github-actions[bot]\""))
+      (is (str/includes? run "user.email \"41898282+github-actions[bot]@users.noreply.github.com\"")))
+    (testing "the key: from env only, never echoed, pinned host keys"
+      (is (not (re-find #"set -x|set -[a-wyz]*x|xtrace" text)))
+      (is (= ["${{ secrets.CLOGEM_SUPPORT_DEPLOY_KEY }}"] (re-seq #"\$\{\{\s*secrets\.[^}]*\}\}" text)))
+      (is (= "${{ secrets.CLOGEM_SUPPORT_DEPLOY_KEY }}" (get-in (step "publish") [:env :DEPLOY_KEY])))
+      (is (not (re-find #"(?:echo|printf)[^\n]*\$\{?DEPLOY_KEY" (str/replace run #"printf '%s\\n' \"\$DEPLOY_KEY\" > \"\$key\"" ""))))
+      (is (str/includes? run "printf '%s\\n' \"$DEPLOY_KEY\" > \"$key\"") "written to the key file only")
+      (is (str/includes? run "chmod 600"))
+      (is (not (str/includes? text "ssh-keyscan")))
+      (doseq [o ["-o IdentitiesOnly=yes" "-o StrictHostKeyChecking=yes" "-o UserKnownHostsFile="]]
+        (is (str/includes? run o) o))
+      (is (= "git@github.com:EchoJustus/clogem-support.git" (get-in (step "publish") [:env :REMOTE])))
+      (testing "GitHub's published host keys (docs: GitHub's SSH key fingerprints)"
+        (let [lines (str/split-lines (str/trim (get-in (step "publish") [:env :KNOWN_HOSTS])))
+              fp    (fn [l] (let [k (.decode (Base64/getDecoder) ^String (nth (str/split l #" ") 2))]
+                              (str/replace (str "SHA256:" (.encodeToString (Base64/getEncoder) (.digest (MessageDigest/getInstance "SHA-256") k))) #"=+$" "")))]
+          (is (= {"ssh-ed25519"         "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU"
+                  "ecdsa-sha2-nistp256" "SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM"
+                  "ssh-rsa"             "SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s"}
+                 (into {} (for [l lines] [(second (str/split l #" ")) (fp l)]))))
+          (is (every? #(str/starts-with? % "github.com ") lines)))))))
+
+(defn- git! [dir & args]
+  (let [r (apply p/shell {:dir (str dir) :out :string :err :string :continue true}
+                 "git" "-c" "user.name=Test" "-c" "user.email=test@example.invalid" args)]
+    (when-not (zero? (:exit r)) (throw (ex-info (str "git " (str/join " " args) ": " (:err r)) r)))
+    (str/trim (:out r))))
+
+(defn- temp-dir [] (str (fs/create-temp-dir {:prefix "support-page"})))
+
+(defn- stand-in!
+  "A bare repository standing in for clogem-support's gh-pages, holding the
+  front page's root files and Wmark Pro's folder; and the workflow's
+  working folder, with the page built in dist-support/."
+  []
+  (let [root   (temp-dir)
+        remote (str (fs/path root "remote.git"))
+        seed   (str (fs/path root "seed"))
+        work   (str (fs/path root "work"))]
+    (git! root "init" "--quiet" "--bare" "--initial-branch" "gh-pages" remote)
+    (git! root "init" "--quiet" "--initial-branch" "gh-pages" seed)
+    (spit (fs/file seed "index.html") "<!doctype html>\n<title>Clogem Support</title>\n")
+    (spit (fs/file seed "404.html") "<!doctype html>\n<title>Page not found</title>\n")
+    (spit (fs/file seed ".nojekyll") "")
+    (fs/create-dirs (fs/file seed "wmark-pro"))
+    (spit (fs/file seed "wmark-pro" "index.html") "<!doctype html>\n<title>Wmark Pro</title>\n")
+    (git! seed "add" "--all")
+    (git! seed "commit" "--quiet" "-m" "The front page and Wmark Pro")
+    (git! seed "push" "--quiet" remote "gh-pages")
+    (sp/build! (str (fs/path work "dist-support")))
+    {:root root :remote remote :seed seed :work work}))
+
+(defn- publish!
+  "The publishing step's script, run in `work` as the runner would, with the
+  remote pointed at the stand-in. `key` stands in for the secret: no SSH is
+  used for a local path, and no real key is ever made."
+  [{:keys [root remote work]} & {:keys [key] :or {key "a stand-in, not a key"}}]
+  (let [{:keys [env run]} (step "publish")
+        tmp (str (fs/create-dirs (fs/path root "runner-temp")))]
+    (p/shell {:dir work :out :string :err :string :continue true
+              :extra-env (merge (into {} (for [[k v] env] [(name k) (str v)]))
+                                {"REMOTE" remote "DEPLOY_KEY" key "RUNNER_TEMP" tmp "GITHUB_OUTPUT" (str (fs/path tmp "output"))
+                                 "GIT_CONFIG_GLOBAL" "/dev/null" "GIT_CONFIG_NOSYSTEM" "1"})}
+             "bash" "-e" "-c" run)))
+
+(defn- tree [remote] (set (str/split-lines (git! remote "ls-tree" "-r" "--name-only" "gh-pages"))))
+(defn- show [remote path] (git! remote "show" (str "gh-pages:" path)))
+
+(deftest the-workflow-publishes-its-folder-alone
+  (let [{:keys [remote seed work] :as s} (stand-in!)
+        before (git! remote "rev-parse" "gh-pages")
+        others (fn [] (into {} (for [f ["index.html" "404.html" ".nojekyll" "wmark-pro/index.html"]] [f (show remote f)])))
+        theirs (others)]
+    (testing "the first publication adds clogem-press/index.html, and nothing else changes"
+      (let [r (publish! s)]
+        (is (zero? (:exit r)) (str (:out r) (:err r)))
+        (is (= #{"index.html" "404.html" ".nojekyll" "wmark-pro/index.html" "clogem-press/index.html"} (tree remote)))
+        (is (= theirs (others)) "the root files and wmark-pro/ byte for byte")
+        (is (= before (git! remote "rev-parse" "gh-pages~1")) "one commit, on top of the branch")
+        (is (= (slurp (fs/file work "dist-support" "clogem-press" "index.html")) (str (show remote "clogem-press/index.html") "")))
+        (is (= "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+               (git! remote "log" "-1" "--format=%an <%ae>" "gh-pages")))))
+    (testing "a rerun with nothing new pushes nothing"
+      (let [tip (git! remote "rev-parse" "gh-pages")
+            r   (publish! s)]
+        (is (zero? (:exit r)) (str (:out r) (:err r)))
+        (is (str/includes? (:out r) "unchanged"))
+        (is (= tip (git! remote "rev-parse" "gh-pages")))))
+    (testing "another writer's commit in between is kept, and a refused push is tried again, never by force"
+      (git! seed "pull" "--quiet" remote "gh-pages")
+      (spit (fs/file seed "wmark-pro" "index.html") "<!doctype html>\n<title>Wmark Pro, newer</title>\n")
+      (git! seed "commit" "--quiet" "-am" "Publish the wmark-pro support page")
+      (git! seed "push" "--quiet" remote "gh-pages")
+      (spit (fs/file work "dist-support" "clogem-press" "index.html") "<!doctype html>\n<title>newer</title>\n")
+      (let [hook  (fs/file remote "hooks" "pre-receive")
+            newer (git! remote "rev-parse" "gh-pages")
+            wmark (show remote "wmark-pro/index.html")]
+        (spit hook "#!/bin/sh\nif [ ! -f refused-once ]; then touch refused-once; echo 'refused for the test' >&2; exit 1; fi\n")
+        (fs/set-posix-file-permissions hook "rwxr-xr-x")
+        (let [r (publish! s)]
+          (is (zero? (:exit r)) (str (:out r) (:err r)))
+          (is (str/includes? (:out r) "attempt 1 of 3"))
+          (is (fs/exists? (fs/file remote "refused-once")))
+          (is (= newer (git! remote "rev-parse" "gh-pages~1")) "on top of the other writer's commit")
+          (is (= wmark (show remote "wmark-pro/index.html")))
+          (is (str/includes? (show remote "clogem-press/index.html") "newer")))))
+    (testing "the key file is gone afterwards"
+      (is (empty? (fs/glob (fs/path (:root s) "runner-temp") "*key*"))))))
+
+(deftest without-the-secret-the-page-is-built-but-not-published
+  (let [{:keys [remote] :as s} (stand-in!)
+        before (git! remote "rev-parse" "gh-pages")
+        r      (publish! s :key "")]
+    (is (zero? (:exit r)) (str (:out r) (:err r)))
+    (is (re-find #"::notice::[^\n]*built[^\n]*not published" (:out r)) (:out r))
+    (is (= before (git! remote "rev-parse" "gh-pages")))))
