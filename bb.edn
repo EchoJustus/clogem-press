@@ -13,7 +13,12 @@
 ;; site's — which is what lets the content repo's publish.yml run a pinned
 ;; generator checkout against local content (DESIGN.md §7.3).
 
-{:paths ["src" "test"]
+{;; "support" holds the support page's generator (support/support_page.clj),
+ ;; kept out of src/clogem/; it is on the classpath so `bb support-page` and
+ ;; `bb test` (test/clogem/support_page_test.clj) can require it. It defines
+ ;; one namespace, `support-page`, which nothing in the site generator loads,
+ ;; so a content repository running this file with --config is unaffected.
+ :paths ["src" "test" "support"]
 
  ;; Zero resolved dependencies: nextjournal/markdown, clj-yaml, hiccup2,
  ;; http-kit, cheshire and clojure.data.xml are all built into babashka.
@@ -32,4 +37,7 @@
   doctor  {:doc "Report content problems without building."    :task (exec 'clogem.cli/doctor)}
   fm-fix  {:doc "Write missing front matter into source files."  :task (exec 'clogem.cli/fm-fix)}
   fetch-tool {:doc "Fetch, verify and cache Pagefind (or --tool chroma|fswatcher); print its path." :task (exec 'clogem.cli/fetch-tool)}
+  support-page {:doc "Build the support page to dist-support/clogem-press/index.html (support/page.edn; README, Support page)."
+                :requires ([support-page])
+                :task (apply support-page/-main *command-line-args*)}
   test    {:doc "Run the test suite."                          :task (exec 'clogem.cli/test-cmd)}}}
