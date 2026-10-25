@@ -659,11 +659,11 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
 
 | Language | Address | Built file | Size |
 | --- | --- | --- | --- |
-| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 31,086 bytes |
-| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 32,145 bytes |
-| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 32,247 bytes |
-| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 32,754 bytes |
-| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 32,821 bytes |
+| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 32,481 bytes |
+| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 33,545 bytes |
+| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 33,647 bytes |
+| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 34,159 bytes |
+| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 34,225 bytes |
 
 - **The words** are `support/i18n/<tag>.edn`, one file per language:
   `en.edn` (English, which was `support/page.edn`), `zh-Hans.edn`,
@@ -671,8 +671,13 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
   header describes it). The generator, `support/support_page.clj`, adds
   markup only. The icon is `support/clogem-press.svg`, the v3 48-unit
   master, embedded as a `data:` URI in the header and as the favicon.
-- **The languages** are offered by a switcher of plain links in each
-  page's header, and by `hreflang` alternates in each `<head>` (the
+- **The languages** are offered by a dropdown in each page's header, beside
+  the theme switcher: a `<details>` whose summary shows a globe, the current
+  language's name and a chevron, and whose panel lists the five as plain
+  links. Five links laid out flat crowded the header; a `<details>` folds
+  them away with no script, since the browser opens and closes it (click,
+  Enter or Space). Without a script it does not close on Escape or on a
+  click outside; a second click on the summary closes it. They are also offered and by `hreflang` alternates in each `<head>` (the
   Portuguese page also for `pt`, the Spanish for `es`; English is
   `x-default`). Nothing redirects by the browser's language. Links to pages
   in English only (the README, the CHANGELOG, DESIGN.md, the demo site,
@@ -687,10 +692,10 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
 - **To add a language**, add its tag to `support-page/languages` (its
   folder is the tag, with its case), copy `en.edn` to `<tag>.edn` and
   translate it (`:url` is its own page's address, `:lang-name` its name in
-  itself, `:en-note` the note after an English-only link), add its tag to
+  itself, `:lang-label` its word for "Language", `:en-note` the note after an English-only link), add its tag to
   `langs` in `test/clogem/support_page_test.clj`, and add its row above.
 - **The built pages** go to `dist-support/` (ignored): built HTML is never
-  committed. They are **161,053 bytes** in all; each page is within the
+  committed. They are **168,057 bytes** in all; each page is within the
   64 KB budget `bb test` holds it to.
 - **Publishing:** `.github/workflows/support-page.yml`, on pushes to `main`
   that touch `support/`, its test, the workflow or `bb.edn`, and by hand

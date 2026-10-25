@@ -33,9 +33,9 @@ nothing in `src/clogem/` changes, and a built site is unaffected.
 Languages (SP.2): English (the default) at `clogem-press/`; Simplified
 Chinese at `zh-Hans/`; Traditional Chinese, with Taiwan wording, at
 `zh-Hant/`; Brazilian Portuguese at `pt-BR/` (also for `pt`); European
-Spanish at `es-ES/` (also for `es`). Five pages, **161,053 bytes** in all:
-`index.html` 31,086, `zh-Hans/index.html` 32,145, `zh-Hant/index.html`
-32,247, `pt-BR/index.html` 32,754, `es-ES/index.html` 32,821 (each within
+Spanish at `es-ES/` (also for `es`). Five pages, **168,057 bytes** in all:
+`index.html` 32,481, `zh-Hans/index.html` 33,545, `zh-Hant/index.html`
+33,647, `pt-BR/index.html` 34,159, `es-ES/index.html` 34,225 (each within
 the 64 KB budget).
 
 ### Added (support page)
@@ -60,9 +60,15 @@ the 64 KB budget).
   `support/page.edn`; `zh-Hans.edn`, `zh-Hant.edn`, `pt-BR.edn`,
   `es-ES.edn`), each page in its own folder, `<html lang>` set, its own
   canonical link and the reciprocal `hreflang` alternates of all five
-  (`pt`, `es` and `x-default` too); a language switcher of plain relative
-  links in the header, each label in its own language, the current one
-  marked `aria-current="page"`; no automatic redirect. The build refuses a
+  (`pt`, `es` and `x-default` too); a language switcher in the header, each
+  label in its own language, the current one marked `aria-current="page"`;
+  no automatic redirect. The switcher (SP.3) is a no-script `<details>`
+  dropdown beside the theme switcher, not a flat row of five links: its
+  summary shows a globe, the current language and a chevron (the word for
+  "Language" hidden for screen readers, `:lang-label`), and its panel lists
+  the five as plain relative links; the browser opens and closes it (click,
+  Enter or Space), and without a script it does not close on Escape or a
+  click outside. Hidden in print. The build refuses a
   translation whose sections, blocks, link targets, code or commands differ
   from English's. On the translations, links to pages in English only carry
   `hreflang="en"` and a note, （英文）, *(em inglês)* or *(en inglés)*. The

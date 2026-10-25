@@ -20,6 +20,7 @@
  :lead        "一套開放原始碼的靜態網站產生器，透過 babashka 命令列使用。它把一個存放 Markdown 檔案的資料夾變成網站，具備側邊欄、索引、搜尋，並支援最多五種語言。"
  :jump-label  "本頁內容"
  :lang-name   "繁體中文"
+ :lang-label  "語言："
  :langs-label "語言"
  :en-note     "（英文）"
  :theme       {:legend "色彩主題"

@@ -19,6 +19,7 @@
  :lead        "一个开源的静态网站生成器，通过 babashka 命令行使用。它把一个存放 Markdown 文件的文件夹变成网站，带有侧边栏、索引、搜索，并支持最多五种语言。"
  :jump-label  "本页内容"
  :lang-name   "简体中文"
+ :lang-label  "语言："
  :langs-label "语言"
  :en-note     "（英文）"
  :theme       {:legend "配色主题"

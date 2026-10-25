@@ -1835,8 +1835,16 @@ Decisions:
      `es-ES/`, each an `index.html`. Everything stays inside `clogem-press/`, so the workflow still
      owns one folder and copies the whole built one. Each page has its `lang`, its own canonical link
      and the reciprocal `hreflang` set of all five, with `pt`, `es` and `x-default` (English).
-   - **A switcher, no redirect.** A `<nav>` in the header lists the five, each named in its own
-     language, as plain relative links. Nothing sends a reader to a version by the browser's
+   - **A switcher, no redirect.** A `<nav>` in the header's top row, beside the theme switcher,
+     holds a `<details>` dropdown (SP.3): its `<summary>` shows a globe, the current language's
+     name in itself and a chevron, with the word for "Language" visually hidden (`:lang-label`) so
+     its accessible name says what it is; its panel lists the five, each named in its own
+     language, as plain relative links, the current one `aria-current="page"`. Five links laid out
+     flat crowded the header; `<details>` folds them away with no script and no CSP change, since
+     the browser itself opens and closes it (click, Enter or Space). The cost of no script: it does
+     not close on Escape or on a click outside (a second click on the summary closes it). It is
+     closed on load and hidden in print; the panel opens below the summary at its end edge, never
+     wider than the screen. Nothing sends a reader to a version by the browser's
      language: that would need a script, which the hub's pages don't run (and an HTTP redirect is not
      something GitHub Pages offers).
    - **Words in step.** One EDN file per language (`support/i18n/<tag>.edn`, English's the reference);

@@ -70,9 +70,9 @@
 (defn- esc [s] (-> s (str/replace "&" "&amp;") (str/replace "<" "&lt;") (str/replace ">" "&gt;") (str/replace "\"" "&quot;") (str/replace "'" "&apos;")))
 
 (defn- switcher
-  "The language switcher's markup, or nil."
+  "The language switcher's markup, its <nav>, or nil."
   [html]
-  (re-find #"(?s)<nav aria-label=\"[^\"]*\" class=\"langs\">.*?</nav>" html))
+  (re-find #"(?s)<nav aria-label=\"[^\"]*\"><details class=\"langs\">.*?</details></nav>" html))
 
 (defn- body-text
   "What a reader sees: the body without its tags."
@@ -265,12 +265,27 @@
 (defn- attrs [s] (into {} (for [[_ k v] (re-seq #"([a-z-]+)=\"([^\"]*)\"" s)] [k v])))
 
 (deftest the-language-switcher
-  (doseq [l langs :let [h (html l) nav (switcher h)]]
+  (doseq [l langs :let [h (html l) nav (switcher h) {:keys [lang-name lang-label langs-label]} (words l)]]
     (testing l
-      (is (some? nav) "a <nav class=\"langs\">")
-      (is (some->> nav (re-find #"aria-label=\"([^\"]*)\"") second (= (esc (:langs-label (words l)))))
-          "named in the page's language")
-      (is (re-find #"(?s)<header class=\"hero\">(?:(?!</header>).)*<nav aria-label=\"[^\"]*\" class=\"langs\">" h) "in the header")
+      (is (some? nav) "a <nav> holding a <details class=\"langs\">")
+      (is (= 1 (count (re-seq #"<details[^>]*class=\"langs\"" h))) "exactly one language dropdown")
+      (is (some->> nav (re-find #"aria-label=\"([^\"]*)\"") second (= (esc langs-label)))
+          "the <nav> named in the page's language")
+      (is (some->> nav (re-find #"<details([^>]*)>") second attrs (#(contains? % "open")) not)
+          "closed when the page loads")
+      (is (re-find #"(?s)<header class=\"hero\">(?:(?!</header>).)*<div class=\"top\">(?:(?!</header>).)*<nav aria-label=\"[^\"]*\"><details class=\"langs\">" h)
+          "in the header's top row, beside the theme switcher")
+      (is (not (re-find #"(?s)<header class=\"hero\">(?:(?!</header>).)*<nav aria-label=\"[^\"]*\" class=\"langs\">" h))
+          "no flat row of language links left")
+      (let [summary (second (re-find #"(?s)<summary>(.*?)</summary>" (str nav)))]
+        (testing "the summary: a hidden word for Language, the current language in itself, a globe and a chevron"
+          (is (some? summary))
+          (is (str/includes? (str summary) (str "<span class=\"vh\">" (esc lang-label) " </span>")))
+          (is (str/includes? (str summary) (str "<span>" (esc lang-name) "</span>")))
+          (let [svgs (re-seq #"<svg[^>]*>" (str summary))]
+            (is (= 2 (count svgs)) "a globe and a chevron")
+            (is (every? #(and (str/includes? % "aria-hidden=\"true\"") (str/includes? % "focusable=\"false\"")) svgs)))
+          (is (not (re-find #"<a[ >]" (str summary))))))
       (let [links (for [[_ a text] (re-seq #"<a ([^>]*)>([^<]*)</a>" (str nav))] (assoc (attrs a) :text (unescape text)))]
         (testing "all five, in order, each named in its own language and marked as such"
           (is (= langs (map #(get % "hreflang") links)))
@@ -286,10 +301,24 @@
               (is ((:files built) (str (subs resolved (count base)) "index.html"))))))))
     (testing "plain links: no script and no redirect"
       (is (not (re-find #"(?i)http-equiv=\"refresh\"" (html l))))))
-  (testing "the current one is styled as current; focus is visible; it wraps"
+  (testing "the browser's own marker hidden"
+    (is (re-find #"\.langs summary\{[^}]*list-style:none" style))
+    (is (str/includes? style ".langs summary::-webkit-details-marker{display:none}")))
+  (testing "the summary looks like the theme switcher: its border, radius, surface and shadow"
+    (doseq [d ["border:1px solid var(--control)" "border-radius:999px" "background:var(--surface)" "box-shadow:var(--shadow)"]]
+      (is (re-find (re-pattern (str "\\.langs summary\\{[^}]*" (java.util.regex.Pattern/quote d))) style) d)))
+  (testing "the panel: below, at the end edge, above the content, never wider than the screen"
+    (is (re-find #"\.langs ul\{[^}]*position:absolute;[^}]*inset-inline-end:0;[^}]*max-width:calc\(100vw - 2rem\)" style))
+    (is (re-find #"\.langs ul\{[^}]*z-index:" style)))
+  (testing "the chevron turns when open, unless the reader asked for less motion"
+    (is (re-find #"\.langs\[open\] \.chev\{transform:rotate\(180deg\)\}" style))
+    (is (re-find #"prefers-reduced-motion:reduce\)\{[^}]*\.chev[^}]*\{transition:none" style)))
+  (testing "the current one is styled as current; focus is visible"
     (is (re-find #"\.langs a\[aria-current=page\]\{[^}]*background:var\(--chip\)" style))
-    (is (re-find #"\.langs ul\{[^}]*flex-wrap:wrap" style))
-    (is (str/includes? style "a:focus-visible{outline:3px solid var(--focus)"))))
+    (is (str/includes? style ".langs summary:focus-visible{outline:3px solid var(--focus)"))
+    (is (str/includes? style "a:focus-visible{outline:3px solid var(--focus)")))
+  (testing "print hides the dropdown"
+    (is (re-find #"@media print\{.*\.langs[,{][^}]*display:none" style))))
 
 ;; ---------------------------------------------------------------------------
 ;; Type: system CJK fonts, and no letter-spacing on CJK
@@ -428,7 +457,7 @@
 (deftest every-translation-is-translated
   (doseq [l translations :let [page (words l)]]
     (testing l
-      (doseq [k [:title :description :lead :subtitle :eyebrow :icon-alt :jump-label :langs-label :lang-name]]
+      (doseq [k [:title :description :lead :subtitle :eyebrow :icon-alt :jump-label :langs-label :lang-label :lang-name]]
         (is (not= (en k) (page k)) (str k)))
       (doseq [[{a :title} {b :title}] (map vector (:sections en) (:sections page))]
         (is (not= a b) a))

@@ -21,6 +21,7 @@
  :lead        "Un generador de sitios estáticos de código abierto, con una línea de comandos en babashka. Convierte una carpeta de archivos Markdown en un sitio web con barra lateral, índices, búsqueda y hasta cinco idiomas."
  :jump-label  "En esta página"
  :lang-name   "Español (España)"
+ :lang-label  "Idioma:"
  :langs-label "Idiomas"
  :en-note     " (en inglés)"
  :theme       {:legend "Tema de color"

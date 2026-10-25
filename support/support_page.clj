@@ -152,7 +152,7 @@
   ([{:keys [url hub sections theme footer] :as page} tag]
   (concat
    (for [k (cond-> [:url :hub :title :description :eyebrow :name :subtitle :icon-alt :lead :jump-label
-                    :lang-name :langs-label]
+                    :lang-name :lang-label :langs-label]
              (not= tag "en") (conj :en-note))
          :when (not (text? (get page k)))]
      (str k " must be text"))
@@ -394,16 +394,28 @@
        ".sub{margin:.35rem 0 0;font-size:1.08rem;color:var(--muted)}"
        (str ".rule{width:min(11rem,40%);height:3px;border-radius:3px;background:" rule "}")
        ".lead{margin:0;max-width:42rem;font-size:1.15rem;color:var(--muted)}"
-       ;; the language switcher: plain links, the current one marked
-       ".langs ul{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.4rem;margin:0;padding:0;list-style:none}"
-       (str ".langs a{display:inline-block;padding:.3rem .75rem;border-radius:999px;border:1px solid var(--border);"
-            "font-family:var(--text-font);font-size:.84rem;font-weight:600;color:var(--muted);text-decoration:none}")
-       ".langs a:hover{border-color:var(--focus);color:var(--link)}"
-       ".langs a[aria-current=page]{background:var(--chip);border-color:var(--control);color:var(--chip-ink)}"
+       ;; the switchers, at the end of the top row (and of the screen, when it wraps)
+       ".tools{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:.6rem;margin-inline-start:auto}"
+       ;; the language switcher: a <details> dropdown of plain links, the current one marked
+       ".langs{position:relative}"
+       (str ".langs summary{display:inline-flex;align-items:center;gap:.4rem;padding:calc(.42rem + 3px) .95rem;border:1px solid var(--control);"
+            "border-radius:999px;background:var(--surface);box-shadow:var(--shadow);font-size:.86rem;font-weight:650;cursor:pointer;list-style:none}")
+       ".langs summary::-webkit-details-marker{display:none}"
+       ".langs summary:hover{border-color:var(--focus)}"
+       ".langs summary:focus-visible{outline:3px solid var(--focus);outline-offset:2px}"
+       ".langs svg{flex:none;width:1rem;height:1rem}"
+       ".chev{transition:transform .2s ease}"
+       ".langs[open] .chev{transform:rotate(180deg)}"
+       (str ".langs ul{position:absolute;z-index:2;top:calc(100% + .4rem);inset-inline-end:0;min-width:12rem;max-width:calc(100vw - 2rem);"
+            "margin:0;padding:.35rem;list-style:none;background:var(--surface);border:1px solid var(--control);border-radius:1rem;box-shadow:var(--shadow)}")
+       (str ".langs a{display:block;padding:.45rem .8rem;border-radius:.65rem;"
+            "font-family:var(--text-font);font-size:.9rem;font-weight:600;color:var(--text);text-decoration:none}")
+       ".langs a:hover{color:var(--link);text-decoration:underline}"
+       ".langs a[aria-current=page]{background:var(--chip);color:var(--chip-ink)}"
        ;; the theme switcher: radios as a segmented control
        (str ".theme{display:inline-flex;gap:2px;min-width:0;margin:0;padding:3px;border:1px solid var(--control);"
             "border-radius:999px;background:var(--surface);box-shadow:var(--shadow)}")
-       ".theme legend{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}"
+       ".vh,.theme legend{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}"
        ".theme input{position:absolute;width:1px;height:1px;margin:0;opacity:0}"
        (str ".theme label{display:inline-flex;align-items:center;gap:.4rem;padding:.42rem .85rem;border-radius:999px;"
             "font-size:.86rem;font-weight:650;color:var(--muted);cursor:pointer;transition:background-color .2s ease,color .2s ease}")
@@ -450,7 +462,7 @@
        (str "footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.4rem 1.5rem;margin-top:clamp(3.5rem,9vw,5.5rem);"
             "padding-top:1.4rem;border-top:1px solid var(--border);font-size:.88rem;color:var(--muted)}")
        "footer p{margin:0}"
-       "@media (prefers-reduced-motion:reduce){:root,.theme label,.button span{transition:none}.button:hover span{transform:none}}"
+       "@media (prefers-reduced-motion:reduce){:root,.theme label,.chev,.button span{transition:none}.button:hover span{transform:none}}"
        ;; print: black on white, whatever the theme. The second rule is as
        ;; specific as the dark ones above (an id and a :checked inside
        ;; :has(), one of the three always true), and later, so it beats them;
@@ -489,15 +501,25 @@
                      (= k :system) (assoc :checked true))]
            [:label {:for (str "theme-" id) :title title} (h/raw (theme-icons k)) label]))])
 
+(def ^:private globe
+  "<svg viewBox=\"0 0 16 16\" aria-hidden=\"true\" focusable=\"false\"><g fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.3\"><circle cx=\"8\" cy=\"8\" r=\"6.25\"/><ellipse cx=\"8\" cy=\"8\" rx=\"2.6\" ry=\"6.25\"/><path d=\"M1.75 8h12.5M2.7 4.75h10.6M2.7 11.25h10.6\"/></g></svg>")
+
+(def ^:private chevron
+  "<svg class=\"chev\" viewBox=\"0 0 16 16\" aria-hidden=\"true\" focusable=\"false\"><path d=\"m4 6 4 4 4-4\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>")
+
 (defn- language-switcher
-  "The five versions as plain links, each named in its own language; no
-  script, and no redirect by the browser's language (DESIGN.md §7.5)."
+  "The five versions as plain links, each named in its own language, in a
+  <details> dropdown: the browser opens and closes it, so no script, and
+  no redirect by the browser's language (DESIGN.md §7.5)."
   [pages tag]
-  [:nav.langs {:aria-label (get-in pages [tag :langs-label])}
-   [:ul (for [t tags]
-          [:li [:a (cond-> {:href (relative-href tag t) :hreflang t :lang t}
-                     (= t tag) (assoc :aria-current "page"))
-                (get-in pages [t :lang-name])]])]])
+  [:nav {:aria-label (get-in pages [tag :langs-label])}
+   [:details.langs
+    [:summary (h/raw globe) [:span.vh (str (get-in pages [tag :lang-label]) " ")]
+     [:span (get-in pages [tag :lang-name])] (h/raw chevron)]
+    [:ul (for [t tags]
+           [:li [:a (cond-> {:href (relative-href tag t) :hreflang t :lang t}
+                      (= t tag) (assoc :aria-current "page"))
+                 (get-in pages [t :lang-name])]])]]])
 
 (defn- alternates
   "Every version's address, for each tag it is offered for, and English as
@@ -539,7 +561,6 @@
          [:body
           [:div.page
            [:header.hero
-            (language-switcher pages tag)
             [:div.top
              [:div.brand
               [:img.mark {:src icon :alt (:icon-alt page) :width "48" :height "48"}]
@@ -547,7 +568,7 @@
                [:p.eyebrow (:eyebrow page)]
                [:h1 (:name page)]
                [:p.sub (:subtitle page)]]]
-             (theme-switcher theme)]
+             [:div.tools (language-switcher pages tag) (theme-switcher theme)]]
             [:div.rule]
             [:p.lead (:lead page)]
             [:nav.jump {:aria-label (:jump-label page)}
