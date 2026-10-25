@@ -168,6 +168,8 @@
         (is (some? print))
         (is (re-find #"\.jump,\.theme[^{]*\{display:none\}" print))
         (is (str/includes? print "--text:#000"))
+        (is (re-find #":root:has\(#theme-system:checked,#theme-light:checked,#theme-dark:checked\)\{color-scheme:light;--bg:#fff;[^}]*--text:#000" print)
+            "as specific as the dark rules, so a dark theme prints black on white too")
         (is (str/includes? print "body{background:#fff;color:#000}"))))))
 
 ;; ---------------------------------------------------------------------------
@@ -315,7 +317,9 @@
         (is (= (str (fs/file dir "clogem-press" "index.html")) file))
         (is (= html (slurp file)) "the build writes the page these tests read")
         (is (<= bytes sp/budget) (str bytes " bytes"))
-        (is (<= sp/budget (* 150 1024)) "the budget is at most 150 KB"))
+        (is (<= sp/budget (* 150 1024)) "the budget is at most 150 KB")
+        (is (str/includes? (slurp "README.md") (String/format java.util.Locale/ROOT "It is **%,d bytes**" (object-array [bytes])))
+            "the README states the page's actual size"))
       (finally (fs/delete-tree dir)))))
 
 ;; ---------------------------------------------------------------------------

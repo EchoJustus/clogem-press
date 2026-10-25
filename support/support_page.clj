@@ -322,10 +322,15 @@
             "padding-top:1.4rem;border-top:1px solid var(--border);font-size:.88rem;color:var(--muted)}")
        "footer p{margin:0}"
        "@media (prefers-reduced-motion:reduce){:root,.theme label,.button span{transition:none}.button:hover span{transform:none}}"
-       (str "@media print{:root{--bg:#fff;--surface:#fff;--surface-2:#fff;--text:#000;--muted:#000;--heading:#000;--link:#000;"
-            "--chip:#fff;--chip-ink:#000;--border:#999;--control:#999;--shadow:none;transition:none}"
-            "body{background:#fff;color:#000}.jump,.theme,.card::before,.button span{display:none}"
-            "h2::after,.rule{background:#000}.card,pre{break-inside:avoid}}")]))))
+       ;; print: black on white, whatever the theme. The second rule is as
+       ;; specific as the dark ones above (an id and a :checked inside
+       ;; :has(), one of the three always true), and later, so it beats them;
+       ;; the first covers a browser without :has().
+       (let [ink (str "{color-scheme:light;--bg:#fff;--surface:#fff;--surface-2:#fff;--text:#000;--muted:#000;--heading:#000;--link:#000;"
+                      "--chip:#fff;--chip-ink:#000;--border:#999;--control:#999;--shadow:none;transition:none}")]
+         (str "@media print{:root" ink ":root:has(#theme-system:checked,#theme-light:checked,#theme-dark:checked)" ink
+              "body{background:#fff;color:#000}.jump,.theme,.card::before,.button span{display:none}"
+              "h2::after,.rule{background:#000}.card,pre{break-inside:avoid}}"))]))))
 
 (defn csp
   "Nothing but the page's own style (by the SHA-256 of `style`) and data:
