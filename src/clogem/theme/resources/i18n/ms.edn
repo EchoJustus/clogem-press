@@ -100,4 +100,11 @@
 
  ;; Code blocks (Phase 4 C), the copy button. Awaiting native review (CHANGELOG, Unreleased).
  :code/copy                   "Salin"
- :code/copied                 "Disalin"}
+ :code/copied                 "Disalin"
+
+ ;; Phase 4 Task E1a: the blogger card's name, the social links' list, and
+ ;; the footer's credit, {{name}} being the generator's linked name.
+ ;; Awaiting native review (CHANGELOG, Unreleased, "Needs native review (E1a)").
+ :blogger/label               "Tentang penulis"
+ :social/label                "Pautan sosial"
+ :footer/powered-by           "Dikuasakan oleh {{name}}"}

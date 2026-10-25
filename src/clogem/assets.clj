@@ -101,6 +101,10 @@
     ;; §11.3 item 14: the loader, only when a page loads it — never under
     ;; :analytics :none, never in `bb dev`
     "js/analytics.js" (nil? (config/analytics cfg))
+    ;; P4-E1a: the opt-in identity rules, while a page uses them; the
+    ;; background's rotation, for two or more images
+    "css/identity.css" (not (config/identity-css? cfg))
+    "js/bodybg.js"     (< (count (config/body-bg-images cfg)) 2)
     false))
 
 (def custom-css

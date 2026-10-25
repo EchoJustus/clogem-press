@@ -19,6 +19,7 @@
             [clogem.config :as config]
             [clogem.i18n :as i18n]
             [clogem.model :as model]
+            [clogem.theme.identity :as identity]
             [clogem.theme.layout :as layout]
             [clogem.theme.parity :as parity]
             [clogem.util :as u]))
@@ -84,13 +85,17 @@
      (layout/pagination ctx page total page-url))))
 
 (defn- right-bar
-  "The homepage's right bar: the 10 most recent articles by front-matter
-  date (clogem's own box — vdoing's right bar has none; \"More\" goes where
-  `:theme :update-bar :more-article` says, Task E2), then categories and
-  tags with counts."
-  [{:keys [cfg lang model index-paths] :as ctx}]
+  "vdoing's homepage sidebar (Home.vue), in D-P4-13's order: the blogger
+  card (P4-E1a), the update bar (date-desc — \"recently updated\" is the
+  date until git dates arrive; \"More\" goes where `:theme :update-bar
+  :more-article` says, Task E2), categories and tags with counts, then
+  E1b's `home-sidebar-b`. Under `postList: simple` the main column already
+  is the recent list — vdoing's UpdateArticle there, with its own \"More\"
+  — so there is no update bar."
+  [{:keys [cfg lang model index-paths] :as ctx} mode]
   [:aside.clogem-home-right
-   (let [recent (take 10 (:posts model))]
+   (identity/blogger-card ctx)
+   (let [recent (when (not= :simple mode) (take 10 (:posts model)))]
      (when (seq recent)
        [:section.clogem-updates
         [:h2 (i18n/tr ctx :index/updates)]
@@ -119,14 +124,25 @@
   [{:keys [cfg home-fm body ids page total page-url] :as ctx}]
   (let [mode (post-list-mode home-fm)
         hide-right? (true? (:hideRightBar home-fm))
+        ;; P4-E1a: one h1 per page — the banner's heroText is the h1 when
+        ;; the main column has none, and then the fallback title goes
+        ;; a raw-HTML `<h1` in the body counts too (P4-E1a.1 item 8c), but
+        ;; not one inside an HTML comment (P4-E1a.2 item 3)
+        body-h1? (some #(or (and (vector? %) (keyword? (first %))
+                                 (re-matches #"h1(?:[.#].*)?" (name (first %))))
+                            (and (= "hiccup.util.RawString" (some-> % class .getName))
+                                 (re-find #"(?i)<h1[\s>/]" (str/replace (str %) #"(?s)<!--.*?-->" ""))))
+                       (tree-seq sequential? seq body))
+        hero-h1? (boolean (and (identity/hero-text ctx) (not body-h1?)))
+        content  (or body
+                     (when-not hero-h1?
+                       (list [:h1 (i18n/resolve-str ctx (get-in cfg [:site :title]))]
+                             [:p (i18n/resolve-str ctx (get-in cfg [:site :description]))])))
         ;; P4-B2a.1: post cards sit on the page, so their column is no card
         main [:main.clogem-main {:class (when (and (= :detailed mode) (seq ids)) "clogem-main--posts")}
               ;; a home without a body of its own still has a heading — the
               ;; body's `# Title` is the h1 when there is one
-              [:div.clogem-content
-               (or body
-                   (list [:h1 (i18n/resolve-str ctx (get-in cfg [:site :title]))]
-                         [:p (i18n/resolve-str ctx (get-in cfg [:site :description]))]))]
+              (when content [:div.clogem-content content])
               (features ctx home-fm)
               (post-list ctx mode home-fm ids page total page-url)]]
     (layout/document
@@ -134,7 +150,9 @@
                 ;; the body and the excerpts: the main column only
                 :has-code? (layout/has-code? main))
      (layout/navbar ctx)
+     ;; P4-E1a: vdoing's banner, on the first page only
+     (identity/hero ctx hero-h1?)
      (into [:div.clogem-shell {:class (if hide-right? "clogem-shell--single" "clogem-shell--home")}
             main]
-           (when-not hide-right? [(right-bar ctx)]))
+           (when-not hide-right? [(right-bar ctx mode)]))
      (layout/footer ctx))))

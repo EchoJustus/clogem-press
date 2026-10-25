@@ -10,17 +10,276 @@ and line page styles, focus rings and B1's follow-ups (the first half of
 B2, §11.3 item 1), then Task F — analytics, verification and a static root
 (§11.3 items 14, 15), then Task B2b — the navbar, the mobile drawer and the
 page chrome (the second half of B2, §11.3 item 9, D-P4-9), then Task E2 —
-article-page parity (§11.3 item 16, D-P4-13). The version stays 0.2.0.
-Every article page now ends with an update bar by default, as in vdoing
-(`:theme :update-bar {:show-to-article false}` drops it), an
-article's `titleTag` badge now shows in every list row, and every build
-now writes `dist/404.html` (a root `404.html` in the static directory
-replaces it). A site that already set `:theme :page-style :line` now gets
+article-page parity (§11.3 item 16, D-P4-13), then Task E1a — the blog
+identity and the home banner (the first half of §11.3 item 13, D-P4-13).
+The version stays 0.2.0. Every article page now ends with an update bar
+by default, as in vdoing (`:theme :update-bar {:show-to-article false}`
+drops it), an article's `titleTag` badge now shows in every list row, and
+every build now writes `dist/404.html` (a root `404.html` in the static
+directory replaces it). A site that already set `:theme :page-style :line` now gets
 that look: 0.2.0 and B1 accepted the value but drew card and line the same.
 Likewise a site that set any of the five keys 0.2.0 listed as planned —
 `:theme :sidebar-collapsed`, `:right-menu-bar`, `:page-button`,
 `:content-bg-style` or `:back-to-top` — now gets that behaviour, and page
 buttons and a back-to-top button now appear by default, as in vdoing.
+Likewise for E1a's keys (`:theme :blogger`, `:social`, `:footer`,
+`:banner-bg`, `:body-bg-img*`, `:title-badge*`): a site that set one now
+gets it, and title badges appear by default, as in vdoing.
+
+**Task E1a — blog identity and banner** (§11.3 item 13, first half; D-P4-13):
+
+### Added (E1a)
+
+- **Config** (`clogem.config/check-identity!`): `:theme :blogger`,
+  `:social`, `:footer`, `:banner-bg`, `:body-bg-img`,
+  `:body-bg-img-opacity`, `:body-bg-img-interval`, `:title-badge` and
+  `:title-badge-icons` are read. Every problem is a warning that drops the
+  value or sets its default (`:title-badge true`, opacity 0.5, interval
+  15). Images (`:avatar`, `:body-bg-img`, a string badge icon, a social
+  `:svg`, `heroImage`) are an `https:` URL, a `data:image/…` URI or a site
+  path, given a leading `/`; `http:` warns (mixed content), `//…` and other
+  schemes are dropped. The keys inside `:blogger`, `:footer` and each social
+  link are known keys, and `check-keys!` walks `:theme :social :icons` as it
+  walks `:nav`; vdoing's `createYear`, `copyrightInfo` and `iconClass` name
+  the kebab key, `iconfontCssFile` is not needed.
+- **Social links**: in the blogger card and the footer, `rel="me"`, named
+  by their `:title` (else the host or mail address, with a warning), in the
+  same tab. One resolver, `clogem.sprite/social-icon`: a vendored brand
+  (brands win, so `:x` is X) or a UI icon; an unknown icon warns and shows
+  the link icon. `sprite/brands-in-use` is the brands the links name, so the
+  sprite holds exactly those, and the icon helper renders no other brand.
+- **The blogger card** (vdoing's BloggerBar: avatar, links, name, slogan)
+  first in the home's right bar, and a hidden copy first in the mobile
+  drawer, shown only with scripting at 50rem and below — where the right
+  bar's copy (`clogem-blogger--paired`) hides. Opening the drawer focuses
+  its first link (nav.js unchanged: it focuses the drawer's first link).
+- **The footer**: the social links, `© {years} {copyright-info}` and
+  *Powered by clogem-press* (`:footer/powered-by`, linked). The years are
+  `:create-year`–`:end-year`, the end year defaulting to the newest dated
+  article's. `:copyright-info` is trusted HTML (D-P4-13), per language along
+  the fallback chain with `""` suppressing it, and `{{base}}` interpolated.
+  `:powered-by false` drops the credit; an empty footer is omitted.
+- **The home banner** (vdoing's hero) between the navbar and the shell, on
+  the home's first page, when its front matter has `heroImage`, `heroText`,
+  `tagline`, `actionText` with `actionLink`, or `bannerBg`. `heroText` is
+  the `<h1>` of a home without one (the fallback title then goes: one h1
+  per page). `bannerBg` beats `:theme :banner-bg`: auto (a grid on
+  #28282d, white, 14.67:1), none, an image behind the text, or a trusted
+  `background: …` style attribute; a bad one is auto, with a warning naming
+  the home file. The action is `--mainBg` on `--accent` (≥ 5.19:1 in every
+  mode; never white, which is 2.75:1 in dark).
+- **The title badge**, first in article and archive `<h1>`s: book-open,
+  pencil or hash (or `:title-badge-icons`), chosen by the CRC32 of the
+  identity permalink (of the archive's root path), so every language and
+  build shows the same one. `aria-hidden`; the Pagefind result title is
+  unchanged. Not on catalogues, categories or tags, as in vdoing.
+- **The body background image**, `img.clogem-body-bg` fixed behind the page
+  before back to top, its opacity a `data-o` in tenths (no style
+  attribute). Two or more images rotate with `js/bodybg.js` (deferred,
+  same-origin, 445 B gzipped, budget 600), which does nothing under reduced
+  motion or while the page is hidden, and ships only then.
+- **`css/identity.css`** (1,410 B gzipped, budget 2,048): the card, the
+  links and the background image, linked right after theme.css and shipped
+  only while a site uses one of them (`config/identity-css?`). theme.css
+  gains only the badge, the banner and the footer lines: 11,354 → 11,717 B
+  gzipped (+363) of 12,288.
+  Merged with Task E2 (+259, 11,354 → 11,613 on its own): 11,970 B
+  gzipped of 12,288.
+- Strings `:blogger/label`, `:social/label`, `:footer/powered-by` in all
+  five languages.
+
+### Changed (E1a)
+
+- **The footer text**: `clogem-press 0.2.0` gives way to the copyright
+  line and *Powered by clogem-press*; the version stays in `<meta
+  name="generator">`.
+- **Title badges are on by default**, as in vdoing; `:theme :title-badge
+  false` gives exactly the old `<h1>`.
+- **A home with `postList: simple` loses *Recently updated***: its list is
+  the recent articles already (vdoing shows UpdateArticle there).
+- **The "planned" warnings are gone** for the E1a keys (and their vdoing
+  spellings say only which key to write).
+- **A social `:svg` is an `<img>`**, not a sprite symbol, so it is not
+  recoloured.
+- `:theme :body-bg-img` forces `:page-style :card`, with a warning, as
+  vdoing does.
+- The demo shows the identity: a blogger card, four social links (its
+  sprite: the UI icons plus github and mastodon, 11,648 B), a footer from
+  2024, and a banner on its English home. Its `assets/demo.png` was the
+  PNG signature written out as text; it is a real 64×64 PNG now.
+
+### Tests (E1a)
+
+- New `clogem.identity-test`: every config rule (0 errors each; the
+  0.2.0-era `:footer "x"`, `:social []` and `:blogger "me"` one warning
+  each), the sprite of a temp site with github, x, `:mail` and an unknown
+  `:yuque` (exactly the UI icons plus brand-github and brand-x, every `<use>`
+  resolving), the right bar's order under detailed and simple, the drawer
+  card, the footer's years, per-language info and `{{base}}`, "Powered by"
+  in five languages, the banner (h1, page 2, base, each `bannerBg` kind,
+  `:theme :banner-bg`, the warning), the badge (CRC32, stable across builds
+  and variants, off, custom), the background image (one, two, base, no
+  inline script), the budgets and the colour pairs in every mode, the
+  demo, whose new links all resolve under `--base /clogem-demo/`, and, with
+  `CLOGEM_PAGEFIND`, every indexed article's result title equal to its
+  `<h1>` text with the badge in place.
+- New `test/browser/identity.test.mjs`; its reduced-motion check records
+  every `src` the image takes (one sample missed a full red → blue → red
+  turn).
+- Mutants, each killed: an unknown social icon kept (`social-links`,
+  `the-sprite-holds-exactly-the-brands-in-use`, …); identity.css linked
+  with nothing on (`identity-css-ships-and-is-linked-only-when-used`);
+  `icon*` taking a brand not in use (`the-icon-helper`); the drawer card
+  without `hidden` (`the-drawer-card`, `the-demo-shows-the-identity`,
+  layout_test's drawer pin); the end year from the create year
+  (`footer-years`); the hero on `/page/2/` (`the-hero`); the badge hashed
+  on the language URL (`the-title-badge`); bodybg.js shipped with one image
+  and the reduced-motion check removed (`the-body-background`, and the
+  browser test).
+- Pins changed deliberately: `config_test`'s pre-flight warnings (6 → 4),
+  `a-new-key-is-registered-in-one-place` (now Task G's
+  `:search :cross-language`) and the `bodyBgImgInterval` messages;
+  `theme_modes_test`'s icon helper (a brand not in use throws) and the
+  demo's sprite (two brands and their notice); `build_test`'s simple home
+  (no update bar) and the indexed-page `<h1>` (a badge may come first);
+  `layout_test`'s drawer (the hidden card may come first);
+  `layout.test.mjs`'s `:nav []` drawer case drops the card, as its subject
+  is the sidebar, and its "a page that fits, then grows" case runs at
+  1280×1100 instead of ×1024: the demo's new footer made
+  `/zh-Hans/pages/643259/` 7 px taller than 1024.
+
+### Fixed (E1a.1)
+
+- **An owner's site path keeps its `?query`, `#fragment` and `%XX`
+  escapes** (item 1). Every identity URL — social links, the avatar, a
+  social `:svg`, `heroImage`, `bannerBg`, the body image, badge images —
+  was encoded whole, so `/about/#contact` became `/about/%23contact`,
+  `?v=2` became `%3Fv%3D2`, and `/assets/my%20pic.png` (the spelling
+  `image-value` asks for) became `my%2520pic.png`: a file with a space in
+  its name could not be used. New `u/url-encode-href` keeps the query, the
+  fragment and every valid escape, and encodes non-ASCII and other unsafe
+  characters once (`identity-urls-keep-their-query-fragment-and-escapes`,
+  under `/` and `/my docs/`, each URL resolving to its file in `dist/`;
+  `an-owner-href-keeps-its-structure`).
+- **A rejected front-matter `heroImage` warns once** (item 2), not once per
+  page of a paginated home (3 times in `build`, 6 in `doctor`, for three
+  pages): it is checked on the first page only. A rejected `heroImage`
+  with nothing else asking for a banner no longer leaves an empty one
+  (`a-rejected-hero-image`: `http:`, `//host/x.png` and a bare word, and
+  the paginated case in `build` and `doctor`).
+- **A home that inherits its banner from `index.md` marks its language**
+  (item 5): the demo's `/zh-Hant/`, `/ms/` and `/ta/` showed the English
+  tagline and action as if in the page's language. The title, tagline,
+  action (and an `heroAlt`'s image) inherited as a string from the
+  site-default file now carry `lang` (`config/html-lang`); a per-language
+  map is resolved as before (`an-inherited-hero-names-its-language`, and
+  `the-demo-shows-the-identity`: `/ms/` marked `lang="en"`, `/zh-Hans/`,
+  whose own `index.zh-Hans.md` sets no hero key, has no banner).
+- **A blank language in a social link's per-language `:title` falls back**
+  (item 3): `{:en "Mail" :zh-Hans ""}` gave every zh-Hans page a link with
+  `aria-label=""`, silently. The blank entry now warns and is dropped, so
+  the fallback chain names the link (`a-blank-language-in-a-link-title-falls-back`).
+- **`:body-bg-img-interval` is at most a day** (item 4). Above 2³¹−1 ms
+  Chromium's `setInterval` fires at once, so `3000000` swapped the image
+  nonstop (529 requests in 2 s). A finite number from 1 to 86,400 is kept;
+  above that it warns and is 86,400; anything else (`##Inf` and `##NaN`
+  included) warns and is 15, as before (`body-bg-img-values`,
+  `the-body-background`: `data-interval="86400"`).
+- **A bare word is no image** (item 8b): `:banner-bg "dark-blue"`,
+  `:body-bg-img "transparent"` and `:title-badge-icons ["star"]` became
+  `/dark-blue` and so on, and dangling `<img>`s. A value with neither `/`
+  nor `.` now warns and is dropped (`:banner-bg` is auto); for a badge
+  icon the warning says to write a keyword (`a-bare-word-is-no-image`).
+- **One bad blogger value, one warning** (item 8a): `{:blogger {:name ""}}`
+  also said the card had "neither a :name nor an :avatar". And an explicit
+  `nil` inside an identity map (`{:footer {:powered-by nil}}`, `{:blogger
+  {:name "J" :avatar nil}}`, a social link's `:svg nil`) is absent, as a
+  top-level `nil` is, instead of a warning
+  (`the-blogger-card-needs-a-name-or-an-avatar`).
+- **A raw-HTML `<h1>` in the home's body is its `<h1>`** (item 8c), so a
+  `heroText` beside it is a `<p>`, not a second `<h1>` (`the-hero`).
+- **Text drawn on the page keeps 4.5:1 over a body image** (item 6). The
+  footer, the home's pagination and a clear banner's text sit on the page
+  with no box, so over a 0.5-opacity image against the mode they fell to
+  1.32:1 (footer) and 2.56:1 (pagination, banner title) on a black image
+  in light mode, 1.22:1 and 2.18:1 on a white one in dark. While a body
+  image is on, identity.css gives them a `--mainBg` backdrop, on screen
+  only (`identity.test.mjs`: black and white 64×64 images in light and
+  dark, each text's colour against the colour its box paints most in a
+  screenshot).
+- **No gap above the home's right bar on mobile** (item 8d): with the
+  paired blogger card hidden at 50rem and below, the next box still took
+  `section + section`'s 1rem (595.1 against the aside's 579.1 at 360 px).
+  It is 0 there now (`identity.test.mjs`, at 360 and 800).
+- **The demo's `overrides/custom.css` marker shows once** (item 8e), on the
+  footer's first `<p>`, not on both (`identity.test.mjs`; `modes.test.mjs`
+  unchanged).
+- **Tests (item 9)**: `layout.test.mjs`'s "end of `/pages/17c887/`, then
+  600 px more below" check no longer hangs on the footer's height (it went
+  red at `545d09c` and green at `849cd4e` with no test change). The
+  viewport is sized from the page's own geometry so the last heading is in
+  view below the line at the end, which makes the end's choice and the
+  line's differ; the check asserts that they do, then that growth gives
+  the line's entry back. It runs as built, with the footer 150 px taller,
+  and with it 150 px shorter (it is 147 px, so gone), and all three fail
+  with `toc.js`'s `ResizeObserver` removed.
+- **Tests (item 7)**: the stylesheet order theme, identity, highlight is
+  pinned on a highlighted build with the fake Chroma
+  (`highlight_test`'s `identity-css-sits-between-theme-and-highlight`;
+  `bb test` otherwise builds with highlighting off, so moving
+  `identity/head` below highlight.css changed no test); `actionText`
+  without `actionLink`, or the reverse, gives no banner
+  (`action-text-alone-is-no-banner`); the badge test's three articles each
+  have a zh-Hans variant, and it asserts that hashing the language URL
+  would pick another icon for at least one of them (it does for all
+  three), so the fixture discriminates (`the-title-badge`).
+- **A hero value from a per-language map's other language names it**
+  (E1a.2, item 1): `heroText: {en: Hello}` showed `Hello` on `/zh-Hans/`
+  unmarked, though an inherited plain-string `tagline` beside it carried
+  `lang="en"`. A map's value taken from another language along the
+  fallback chain now carries that language's `lang`; the page's own
+  language, from a map or from its own index file, stays unmarked
+  (`a-hero-in-its-own-language-is-unmarked`: an `index.zh-Hans.md` with
+  its own `heroText` and `tagline`, `{en: Hello, zh-Hans: 你好}` and
+  `{en: Hello}` on `/zh-Hans/`).
+- **A value with a scheme is no bare word** (E1a.2, item 2):
+  `javascript:x` or `mailto:x` as `:avatar`, `:body-bg-img`, a social
+  `:svg` or a badge icon was called "a bare word, not a file", and for a
+  badge the warning suggested the keyword `:javascript:x`. It gets the
+  "not an https: URL, a data:image/… URI or a site path" warning again
+  (`a-bare-word-is-no-image`).
+- **An `<h1>` inside an HTML comment is not the home's `<h1>`** (E1a.2,
+  item 3): `<!-- <h1>old</h1> -->` in the body made `heroText` a `<p>`, and
+  the page had no `<h1>` at all (`the-hero`).
+- **A `nil` in a social link's per-language `:title` is absent** (E1a.2,
+  item 4): `{:en "L" :zh-Hans nil}` threw the whole title away, with a
+  warning, and named the link `l.example`; it is now `{:en "L"}`, silently.
+  A title blank in every language (`{:en "" :zh-Hans ""}`) warns once, not
+  three times (`a-blank-language-in-a-link-title-falls-back`).
+- **Docs** (E1a.2, item 5): `css/identity.css` is 1,410 B gzipped after
+  E1a.1 (the Task E1a block said 1,222); README's `bb test` count is
+  775 tests / ~50,100 assertions.
+
+### Merged with Task E2 (E1a)
+
+- **Tests**: `parity_test.clj`'s `the-home-s-more-follows-more-article`
+  asserted a 10-row *Recently updated* box in the zh-Hans home's right bar,
+  which E1a drops under `postList: simple`. It now asserts the box is absent
+  there, and checks the right bar's *More →* (the archives, else
+  `:more-article`) on a temp build with a `postList: detailed` home.
+  README's `bb test` count is 800 tests / ~52,100 assertions.
+- **Browser pins**: `parity.test.mjs` item 1 counts the links named
+  "GitHub" in the navbar only — E1a's footer has a social link of that
+  name. `layout.test.mjs` item 13's "back to top covers neither prev/next
+  link" at 360 scrolls prev/next to the viewport's bottom edge, not to the
+  page's end, below which E2's update bar and E1a's footer now push them
+  out of view.
+
+### Needs native review (E1a)
+
+- `:blogger/label`: ms "Tentang penulis", ta "ஆசிரியர் பற்றி".
+- `:social/label`: ms "Pautan sosial", ta "சமூக ஊடக இணைப்புகள்".
+- `:footer/powered-by`: ms "Dikuasakan oleh {{name}}", ta "{{name}} மூலம் இயக்கப்படுகிறது".
 
 **Task E2 — article-page parity** (§11.3 item 16, D-P4-13):
 

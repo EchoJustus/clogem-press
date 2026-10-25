@@ -291,6 +291,12 @@
                ctx (ctx-for lang {:page-kind :home
                                   :seo seo
                                   :home-fm fm
+                                  ;; P4-E1a: names the file in a front-matter
+                                  ;; warning, from its own language only
+                                  :home-path (when own? path)
+                                  ;; P4-E1a.1 item 5: inherited from the
+                                  ;; site-default language's `index.md`
+                                  :home-fm-lang (when (and path (not own?)) (config/default-lang cfg))
                                   ;; Task E2: `pageClass`, warned about from the
                                   ;; first page of the file's own language
                                   :page-fm fm

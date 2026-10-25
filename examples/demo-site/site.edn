@@ -64,7 +64,24 @@
          ;; Task E2: the navbar's logo (the title is visually hidden at 64rem
          ;; and below) and its repository link, the nav's last item
          :logo "/assets/logo.svg"
-         :repo "EchoJustus/clogem-press"}
+         :repo "EchoJustus/clogem-press"
+         ;; Phase 4 Task E1a (§11.3 item 13): the blog identity. The card
+         ;; heads the zh-Hans home's right bar and every page's mobile drawer;
+         ;; the links are in it and in the footer. Brands are built into the
+         ;; sprite only as they are used — here github and mastodon
+         :blogger {:avatar "/assets/demo.png"
+                   :name   {:en "The clogem-press demo" :zh-Hans "clogem-press 演示" :zh-Hant "clogem-press 示範"}
+                   :slogan {:en "Five languages, one tree." :zh-Hans "五种语言，一棵树。" :zh-Hant "五種語言，一棵樹。"}}
+         :social {:icons [{:icon :github :title "GitHub" :link "https://github.com/EchoJustus/clogem-press"}
+                          {:icon :mastodon :title "Mastodon" :link "https://mastodon.example/@clogem"}
+                          {:icon :mail :title {:en "Email" :zh-Hans "电子邮件" :zh-Hant "電子郵件"}
+                           :link "mailto:demo@clogem-demo.example"}
+                          {:icon :rss :title {:en "Atom feed" :zh-Hans "Atom 订阅" :zh-Hant "Atom 訂閱"}
+                           :link "/feed.xml"}]}
+         ;; :copyright-info is trusted HTML; {{base}} is the site's base, so
+         ;; the link resolves under CI's --base /clogem-demo/ too
+         :footer {:create-year 2024
+                  :copyright-info "<a href=\"{{base}}pages/559f0f/\">clogem-press contributors</a>"}}
  :search   {:provider :pagefind}   ; D-P3-8: CI indexes the demo in all five languages
  ;; D-P3-15: giscus on every article, one thread per identity. The ids are
  ;; well-formed placeholders for a repository that does not exist, so the

@@ -1,0 +1,60 @@
+/* clogem-press: the opt-in identity rules (Phase 4 Task E1a, DESIGN.md
+ * §11.3 item 13): the blogger card, the social links and the body
+ * background image. Shipped and linked, right after theme.css, only while
+ * a page uses one of them (`clogem.config/identity-css?`); E1b's module
+ * wrappers and windows join them here. Palette variables only, so no new
+ * contrast pair. Budget: 2,048 B gzipped (identity_test). */
+
+/* vdoing's BloggerBar: the avatar, the links, the name and the slogan. No
+ * overflow: hidden, which would clip the links' focus rings */
+.clogem-blogger { text-align: center; }
+.clogem-home-right > .clogem-blogger { padding: 1rem; }
+.clogem-blogger__avatar { display: block; width: 100%; max-height: 15rem; object-fit: cover; border-radius: 5px; }
+.clogem-blogger__name { margin: 0.5rem 0 0; font-size: 1.1rem; font-weight: 700; }
+.clogem-blogger__slogan { margin: 0.25rem 0 0; color: var(--textColorSubtle); font-size: 0.9rem; }
+
+/* the card's copy at the top of the drawer, shown only where the drawer is
+ * (vdoing's sidebar card at 719 px and below); the right bar's copy, on a
+ * page that has both, hides there */
+@media (scripting: enabled) and (max-width: 50rem) {
+  #clogem-drawer > .clogem-blogger[hidden] { display: block; padding: 0.5rem 0 0.75rem; margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--borderColor); }
+  .clogem-blogger--paired { display: none; }
+  .clogem-home-right > .clogem-blogger--paired + section { margin-top: 0; }
+}
+
+.clogem-social { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.25rem;
+  list-style: none; margin: 0.5rem 0 0; padding: 0; }
+.clogem-social a { display: inline-flex; align-items: center; justify-content: center;
+  width: 2.25rem; height: 2.25rem; font-size: 1.2rem; color: var(--textColorSubtle); border-radius: 50%; }
+.clogem-social a:hover { color: var(--accent); background: var(--customBlockBg); text-decoration: none; }
+.clogem-footer .clogem-social { margin: 0 0 0.5rem; }
+
+/* vdoing's BodyBgImg: fixed behind the page — the root's background paints
+ * the canvas and <body> has none, so z-index -1 shows above it; the
+ * boxes (cards) cover it. data-o is the opacity in tenths */
+.clogem-body-bg { position: fixed; inset: 0; z-index: -1; width: 100%; height: 100%; object-fit: cover;
+  pointer-events: none; opacity: 0.5; }
+.clogem-body-bg[data-o="1"] { opacity: 0.1; }
+.clogem-body-bg[data-o="2"] { opacity: 0.2; }
+.clogem-body-bg[data-o="3"] { opacity: 0.3; }
+.clogem-body-bg[data-o="4"] { opacity: 0.4; }
+.clogem-body-bg[data-o="6"] { opacity: 0.6; }
+.clogem-body-bg[data-o="7"] { opacity: 0.7; }
+.clogem-body-bg[data-o="8"] { opacity: 0.8; }
+.clogem-body-bg[data-o="9"] { opacity: 0.9; }
+.clogem-body-bg[data-o="10"] { opacity: 1; }
+/* text drawn on the page itself — the footer, the home's pagination, a
+ * clear banner's text — gets a --mainBg backdrop, so it keeps 4.5:1 over
+ * any image */
+@media screen {
+  body:has(.clogem-body-bg) :is(.clogem-footer, .clogem-pagination, .clogem-hero--clear > :is(h1, p)) {
+    background: var(--mainBg); }
+  body:has(.clogem-body-bg) :is(.clogem-pagination, .clogem-hero--clear > :is(h1, p)) {
+    width: fit-content; margin-inline: auto; padding: 0.25rem 0.75rem; border-radius: 5px; }
+}
+
+/* print hides all of it; the footer's text lines still print */
+@media print {
+  .clogem-blogger, .clogem-social, .clogem-body-bg { display: none !important; }
+}

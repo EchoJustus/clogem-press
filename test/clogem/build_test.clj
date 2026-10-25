@@ -388,8 +388,11 @@
         "simplePostListLength: 3")
     (is (not (str/includes? zh "clogem-pagination")))
     (is (str/includes? zh "<aside class=\"clogem-home-right\">") "the right bar stays on zh-Hans")
-    (is (str/includes? zh ">最近更新<") "the update bar, in the page's language")
-    (is (str/includes? zh "href=\"/zh-Hans/archives/\"") "…linking to that language's /archives/")
+    ;; P4-E1a (deliberate): under postList: simple the main column is the
+    ;; recent list, as vdoing's UpdateArticle is, so the update bar goes
+    (is (not (str/includes? zh ">最近更新<")) "no update bar under postList: simple")
+    (is (not (str/includes? zh "clogem-updates")))
+    (is (str/includes? zh "href=\"/zh-Hans/archives/\"") "the nav still links that language's /archives/")
     (is (not (str/includes? en "clogem-home-right")) "hideRightBar: true on index.md")))
 
 (deftest post-list-mode-and-home-ids
@@ -1710,7 +1713,9 @@
         (doseq [m (re-seq #"<time class=\"clogem-meta__date\"[^>]*>" h)
                 :when (not (str/includes? h (str "<p class=\"clogem-meta\" data-pagefind-ignore=\"\">" m)))]
           (is (str/includes? m "data-pagefind-ignore") "a catalogue row's date is chrome too"))
-        (is (re-find #"<h1><span data-pagefind-meta=\"title\">[^<]+</span>" h))))
+        ;; P4-E1a (deliberate): the title badge, an aria-hidden icon with
+        ;; no text, may come first; the result title is still the text alone
+        (is (re-find #"<h1>(?:<svg aria-hidden=\"true\" class=\"clogem-icon clogem-title-badge\"[^>]*><use [^>]*>(?:</use>)?</svg>)?<span data-pagefind-meta=\"title\">[^<]+</span>" h))))
     (let [h (slurp-out "pages" "y2025a" "index.html")]
       (is (str/includes? h "<a class=\"clogem-tag\" data-pagefind-filter=\"tag\" href=\"/tags/meta/\">meta</a>"))
       (is (str/includes? h "<a data-pagefind-filter=\"category\" href=\"/categories/notes/\">Notes</a>"))

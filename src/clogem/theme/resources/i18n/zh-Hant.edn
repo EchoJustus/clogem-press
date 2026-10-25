@@ -91,4 +91,10 @@
 
  ;; 程式碼區塊（Phase 4 C）：js/code.js 加入的複製按鈕。
  :code/copy                   "複製"
- :code/copied                 "已複製"}
+ :code/copied                 "已複製"
+
+ ;; Phase 4 Task E1a: the blogger card's name, the social links' list, and
+ ;; the footer's credit, {{name}} being the generator's linked name.
+ :blogger/label               "關於作者"
+ :social/label                "社群連結"
+ :footer/powered-by           "由 {{name}} 驅動"}

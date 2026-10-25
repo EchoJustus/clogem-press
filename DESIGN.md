@@ -791,10 +791,13 @@ any more). Note what arrived: `:generator`, `:langs`, `:i18n`, `:analytics`, `:s
          ;; article-page parity (E2, §11.3 item 16)
          :last-updated false :update-bar {:show-to-article true :more-article nil}
          :logo nil :repo nil :repo-label nil
-         :banner-bg "auto" :body-bg-img nil :title-badge true
+         ;; the blog identity (E1a, §11.3 item 13): every bad value warns and is repaired
+         :banner-bg "auto" :body-bg-img nil :title-badge true   ; + :body-bg-img-opacity 0.5,
+                                                                ;   :body-bg-img-interval 15,
+                                                                ;   :title-badge-icons []
          :blogger {:avatar "…" :name "…" :slogan "…"}
-         :social  {:icons [{:icon :github :title "GitHub" :link "…"}]}
-         :footer  {:create-year 2026 :copyright-info "…"}
+         :social  {:icons [{:icon :github :title "GitHub" :link "…"}]}   ; or :svg "assets/x.svg"
+         :footer  {:create-year 2026 :copyright-info "…"}   ; + :end-year, :powered-by
          :fonts   {:tamil :system}      ; :system | :self-hosted  (§6.9)
          :html-modules {:sidebar-b "…raw html…"}}
 
@@ -1874,7 +1877,10 @@ order; each builds on A:
     text-card padding (§11.3 item 9); and the five chrome keys of §11.3 item 16 — sidebar
     collapse, the right menu bar switch, page buttons, background patterns and back to top.
 - **F — Analytics, verification, static root** (1 d) (§11.3 items 14, 15). *Done.*
-- **E1 — Blog identity, banner, htmlModules** (2.75 d) (§11.3 item 13). *From B2b:* the
+- **E1 — Blog identity, banner, htmlModules** (2.75 d) (§11.3 item 13), split by the owner in two
+  PRs. **E1a — blog identity and the home banner** (1.75 d): *done* — §11.3 item 13 records what was
+  built. **E1b — htmlModules** (the 7 slots and 2 show-modes, the windows): *pending*, on its own
+  branch after E1a merges; `identity.css` and the home right bar leave room for it. *From B2b:* the
   `sidebar-t`/`sidebar-b` slots go inside `aside.clogem-sidebar`, around its `<nav>`, as vdoing's
   (`Sidebar.vue`), so `nav.js`'s move carries them into the drawer and a collapse hides them; their
   CSS must not depend on where the aside sits (no `.clogem-shell > .clogem-sidebar + …`, no
@@ -2990,8 +2996,10 @@ their own findings. Item 19 onward are corrections.
    attributes kept on each `<symbol>` — with the licence notices (the ISC and MIT permission texts,
    the Feather-derived icons named; CC0 and the trademark note only when a brand is in) as its opening
    comment; the default sprite is 9,375 bytes (the test allows 12 KB). Brand ids are `brand-<name>`,
-   since Lucide and Simple Icons both have an `x`; `sprite/brands-in-use` returns `#{}` until E1, and
-   the mechanism is tested with `#{:github :linkedin}`. `clogem.assets/files` ships the sprite as
+   since Lucide and Simple Icons both have an `x`; `sprite/brands-in-use` returned `#{}` until E1, and
+   the mechanism is tested with `#{:github :linkedin}`. *E1a:* it is now the brands
+   `:theme :social :icons` names, through `sprite/social-icon`, the one resolver (brands win: `:x` is
+   X), and `icons/icon*` renders a brand only when the sprite holds it. `clogem.assets/files` ships the sprite as
    `icons.svg` (so it is fingerprinted like any theme asset, D-P4-7) and no longer copies `icons/`.
    `clogem.theme.icons/icon` is a macro over `icon*`, so an unknown name throws naming the template's
    namespace and line and the icon; the build then fails naming the page. The CSS glyphs `▾ ▸ ›` are
@@ -3414,6 +3422,23 @@ their own findings. Item 19 onward are corrections.
     fallback chain only, and `""` suppresses; `{{base}}` is interpolated; raw HTML from the owner is
     trusted; the footer's end year is the newest article's year; the title badge is chosen by a hash
     of the permalink (vdoing picks at random per route; a static build must be deterministic).
+    *E1a — done.* `clogem.config/check-identity!` reads `:theme :blogger`, `:social`, `:footer`,
+    `:banner-bg`, `:body-bg-img*` and `:title-badge*`; every problem is a warning that repairs the
+    config, so renderers and `brands-in-use` read valid values only (D-P4-6's "config error" for an
+    unknown icon became a warning with the `link` icon, by the warnings-only rule). Images are
+    `https:`, `data:image/…` or site paths; the existence of a file is not checked. The renderers are
+    `clogem.theme.identity`, which does not require `clogem.theme.layout`: the blogger card first in
+    the home's right bar (then Recently updated — dropped under `postList: simple` — categories,
+    tags, and E1b's `home-sidebar-b`) and a hidden copy first in `#clogem-drawer`, shown by
+    `identity.css` only with scripting at ≤ 50rem; social links `rel="me"`, same tab, an `:svg` as an
+    `<img>`; the footer (links, `©` years and the owner's `:copyright-info`, *Powered by*; no version);
+    the hero on the home's first page only, `heroText` the `<h1>` when the main column has none, a
+    `<div>` not a `<header>`; the title badge in article and archive `<h1>`s by CRC32 of the identity
+    permalink (or of the archive's path), the built-ins `book-open pencil hash`; the body image, a
+    fixed `<img>` before back to top, rotated by `js/bodybg.js` (600 B budget) only for two or more
+    images and never under reduced motion. `theme.css` took only the always-on rules (+363 B
+    gzipped); the opt-in ones are `css/identity.css` (2,048 B budget), shipped and linked only while
+    `config/identity-css?` holds. *E1b — htmlModules — pending.*
 14. **Analytics (F).** A self-hosted loader, with no inline script; never loaded in dev, only on the
     `:site :url` host; DNT/GPC respected by default; providers GA4, Plausible and Umami, default
     `:none`; GA4 gets an opt-in consent default; the docs cover CSP and the site owner's PDPA duty.
@@ -3489,7 +3514,8 @@ their own findings. Item 19 onward are corrections.
 16. **Parity details (E2, and A).** `:content :edit-link {:repo :branch :dir}` plus `editLink: false`;
     `:theme :last-updated` from one `git log` pass; `:theme :sidebar-collapsed`, keeping
     `:sidebar-open`'s 0.2.0 meaning; right-menu-bar, page-button, content-bg-style, back-to-top,
-    logo, repo link, hero keys, `pageClass`, and a 404 page (`noindex`, not in the sitemap). *The
+    logo, repo link, hero keys (E1's: done in E1a, item 13), `pageClass`, and a 404 page (`noindex`,
+    not in the sitemap). *The
     five chrome keys — `:sidebar-collapsed`, `:right-menu-bar`, `:page-button`,
     `:content-bg-style`, `:back-to-top` — are done in B2b (below).*
     *Fix round P4-A.1.* `:site :author` is checked only in its named shape (`:name`/`:link`, keyword

@@ -364,6 +364,17 @@
             (is (= before (count (fake/chroma-runs bin))))
             (is (= (golden-css) (slurp (fs/file out "clogem" "css" "highlight.css"))))))))))
 
+
+(deftest identity-css-sits-between-theme-and-highlight
+  (testing "P4-E1a.1 item 7: on a highlighted page the order is theme, identity, highlight"
+    (with-site mixed-site
+      (fn [dir out _]
+        (let [{:keys [error]} (build! dir out)
+              links (fn [html] (map second (re-seq #"<link href=\"/clogem/css/([a-z]+)\.css\?v=[0-9a-f]{8}\" rel=\"stylesheet\" />" html)))]
+          (is (nil? error) (str error))
+          (doseq [html [(page out "pages" "c0de01") (page out "zh-Hans" "pages" "c0de01") (page out)]]
+            (is (= ["theme" "identity" "highlight"] (links html))))))
+      {:site-edn {:theme {:blogger {:name "J"}}}})))
 (deftest a-new-binary-misses-the-cache
   (with-site {"01.Guide/01.a.md" (article "A" "/pages/aaaaa1/" "```clojure\n(defn a [])\n```\n")}
     (fn [dir out bin]

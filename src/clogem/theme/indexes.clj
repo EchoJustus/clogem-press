@@ -14,6 +14,7 @@
   one static page per category, tag and pagination step, no query strings."
   (:require [clojure.string :as str]
             [clogem.i18n :as i18n]
+            [clogem.theme.identity :as identity]
             [clogem.theme.layout :as layout]
             [clogem.util :as u]))
 
@@ -86,7 +87,9 @@
   [{:keys [archives] :as ctx}]
   (layout/page ctx
                (into [:section.clogem-index.clogem-index--archives
-                      [:h1 (:title ctx)]
+                      ;; P4-E1a: the title badge, chosen by the archive's
+                      ;; path without base or language prefix
+                      [:h1 (identity/title-badge ctx (get-in ctx [:index-paths :archives])) (:title ctx)]
                       (user-body ctx)]
                      (if (seq archives)
                        (for [[year months] archives]

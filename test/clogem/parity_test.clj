@@ -597,23 +597,32 @@
                ["zh-Hans" "index.html"] ["archives" "index.html"] ["tags" "meta" "index.html"]]]
       (is (not (str/includes? (apply html p) "clogem-update-bar")) (str/join "/" p)))))
 
-(deftest the-home-s-more-follows-more-article
-  (testing "the simple list gets vdoing's More; the right bar's goes to the archives as before"
-    (let [zh (html "zh-Hans" "index.html")
-          simple (second (re-find #"(?s)clogem-list--simple\">(.*?</ul>(?:<p>.*?</p>)?)" zh))]
-      (is (str/ends-with? simple "</ul><p><a href=\"/zh-Hans/archives/\">更多 →</a></p>"))
-      (is (= 3 (count (row-hrefs (first (str/split simple #"</ul>" 2))))) "simplePostListLength: 3 still")
-      (is (str/includes? (re-find #"(?s)<section class=\"clogem-updates\">.*?</section>" zh)
-                         "<p><a href=\"/zh-Hans/archives/\">更多 →</a></p>"))
-      (is (= 10 (count (row-hrefs (re-find #"(?s)<section class=\"clogem-updates\">.*?</section>" zh))))
-          "the home's 10 stays"))))
-
 (def ^:private three-articles
   {"01.A/01.one.md"   (article "One" "/pages/one001/" {:date "2026-01-01"})
    "01.A/01.one.zh-Hans.md" (article "一" "/pages/one001/" {:date "2026-01-01"})
    "01.A/02.two.md"   (article "Two" "/pages/two002/" {:date "2026-01-02"})
    "01.A/03.off.md"   (article "Off" "/pages/off003/" {:article "false"})
    "01.A/04.four.md"  (article "Four" "/pages/fou004/" {:date "2026-01-04"})})
+
+(deftest the-home-s-more-follows-more-article
+  (testing "the simple list gets vdoing's More; the right bar's goes to the archives as before"
+    (let [zh (html "zh-Hans" "index.html")
+          simple (second (re-find #"(?s)clogem-list--simple\">(.*?</ul>(?:<p>.*?</p>)?)" zh))]
+      (is (str/ends-with? simple "</ul><p><a href=\"/zh-Hans/archives/\">更多 →</a></p>"))
+      (is (= 3 (count (row-hrefs (first (str/split simple #"</ul>" 2))))) "simplePostListLength: 3 still")
+      ;; merged with Task E1a: under `postList: simple` the right bar has no
+      ;; update bar (vdoing's Home.vue) — the simple list is the recent list
+      (is (not (str/includes? zh "<section class=\"clogem-updates\">"))
+          "no right-bar update bar under postList: simple (P4-E1a)")))
+  (testing "a detailed home's right bar: More → the archives, else :more-article"
+    (let [home "---\nhome: true\npostList: detailed\n---\n\n# Home\n"
+          bar  (fn [edn]
+                 (re-find #"(?s)<section class=\"clogem-updates\">.*?</section>"
+                          ((:pages (build-temp edn (assoc three-articles "index.md" home))) "index.html")))]
+      (is (str/ends-with? (bar {}) "<p><a href=\"/archives/\">More →</a></p></section>"))
+      (is (= ["/pages/fou004/" "/pages/two002/" "/pages/one001/"] (row-hrefs (bar {}))))
+      (is (str/ends-with? (bar {:theme {:update-bar {:more-article "/tags/"}}})
+                          "<p><a href=\"/tags/\">More →</a></p></section>")))))
 
 (deftest update-bar-options
   (testing ":more-article \"/tags/\" goes to the page language's tags; an article: false page has no bar"
