@@ -558,7 +558,7 @@ provider's own hosts are needed:
 ## Development
 
 ```bash
-bb test                                             # 766 tests / ~49,400 assertions
+bb test                                             # 775 tests / ~50,100 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 

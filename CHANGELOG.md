@@ -249,6 +249,9 @@ gets it, and title badges appear by default, as in vdoing.
   warning, and named the link `l.example`; it is now `{:en "L"}`, silently.
   A title blank in every language (`{:en "" :zh-Hans ""}`) warns once, not
   three times (`a-blank-language-in-a-link-title-falls-back`).
+- **Docs** (E1a.2, item 5): `css/identity.css` is 1,410 B gzipped after
+  E1a.1 (the Task E1a block said 1,222); README's `bb test` count is
+  775 tests / ~50,100 assertions.
 
 ### Needs native review (E1a)
 
