@@ -33,13 +33,15 @@
 ;; URLs and owner text
 
 (defn- with-base
-  "A site path base-prefixed and percent-encoded, as every emitted URL is;
-  a URL (`https:`, `data:`, `mailto:`) as it is — `markdown/with-base`
-  prefixes any string under a non-root base, so a URL never reaches it."
+  "A site path base-prefixed and percent-encoded, as every emitted URL is
+  — its `?query`, `#fragment` and `%XX` escapes kept (`u/url-encode-href`,
+  P4-E1a.1 item 1); a URL (`https:`, `data:`, `mailto:`) as it is —
+  `markdown/with-base` prefixes any string under a non-root base, so a URL
+  never reaches it."
   [{:keys [cfg]} v]
   (when v
     (if (config/site-path? v)
-      (markdown/with-base cfg (u/url-encode-path v))
+      (markdown/with-base cfg (u/url-encode-href v))
       v)))
 
 (defn base-href
@@ -193,31 +195,39 @@
   none (the card's colours), an image behind the text, or the owner's
   `background: …` as a style attribute. Under `:body-bg-img` auto and none
   are transparent, as vdoing's are."
-  [{:keys [cfg home-fm home-path page rewrite-href] :as ctx} h1?]
-  (let [{:keys [heroImage heroAlt tagline actionText actionLink bannerBg]} home-fm
-        text    (hero-text ctx)
-        img     (when (some? heroImage)
-                  (or (config/image-value (str heroImage))
-                      (do (when home-path
-                            (diag/warn! home-path (str "front matter heroImage is " (pr-str heroImage)
-                                                       ", which is not an https: URL, a data:image/… URI or a "
-                                                       "site path; it is not shown.")))
-                          nil)))
-        tagline (fm-str ctx tagline)
-        action  (fm-str ctx actionText)
-        link    (some-> actionLink str str/trim u/blank->nil)]
-    (when (and (= 1 page)
-               (or (some? heroImage) text tagline (and action link) (some? bannerBg)))
-      (let [[kind v] (banner-kind ctx)
-            kind (if (and (#{:auto :none} kind) (config/body-bg-images cfg)) :clear kind)]
-        [:div {:class (str "clogem-hero clogem-hero--" (name kind))
-               :style (when (= :custom kind) v)}
-         (when (= :image kind) [:img.clogem-hero__bg {:src (with-base ctx v) :alt ""}])
-         (when img [:img.clogem-hero__img {:src (with-base ctx img) :alt (or (fm-str ctx heroAlt) "")}])
-         (when text (if h1? [:h1.clogem-hero__title text] [:p.clogem-hero__title text]))
-         (when tagline [:p.clogem-hero__tagline tagline])
-         (when (and action link)
-           [:a.clogem-hero__action {:href ((or rewrite-href identity) link)} action])]))))
+  [{:keys [cfg home-fm home-path home-fm-lang page rewrite-href] :as ctx} h1?]
+  (when (= 1 page)
+    (let [{:keys [heroImage heroAlt tagline actionText actionLink bannerBg]} home-fm
+          ;; checked on the first page only, so a paginated home warns once
+          ;; (P4-E1a.1 item 2), as `banner-kind` does
+          img     (when (some? heroImage)
+                    (or (config/image-value (str heroImage))
+                        (do (when home-path
+                              (diag/warn! home-path (str "front matter heroImage is " (pr-str heroImage)
+                                                         ", which is not an https: URL, a data:image/… URI or a "
+                                                         "site path; it is not shown.")))
+                            nil)))
+          text    (hero-text ctx)
+          tagline (fm-str ctx tagline)
+          action  (fm-str ctx actionText)
+          link    (some-> actionLink str str/trim u/blank->nil)
+          ;; a string inherited from another language's file is in that
+          ;; language, and says so (P4-E1a.1 item 5); a per-language map
+          ;; already resolved to this page's language where it could
+          lang    (fn [v] (when (and home-fm-lang (not (map? v))) {:lang (config/html-lang cfg home-fm-lang)}))]
+      (when (or img text tagline (and action link) (some? bannerBg))
+        (let [[kind v] (banner-kind ctx)
+              kind (if (and (#{:auto :none} kind) (config/body-bg-images cfg)) :clear kind)
+              alt  (fm-str ctx heroAlt)]
+          [:div {:class (str "clogem-hero clogem-hero--" (name kind))
+                 :style (when (= :custom kind) v)}
+           (when (= :image kind) [:img.clogem-hero__bg {:src (with-base ctx v) :alt ""}])
+           (when img [:img.clogem-hero__img (merge {:src (with-base ctx img) :alt (or alt "")} (when alt (lang heroAlt)))])
+           (when text (let [l (lang (:heroText home-fm))]
+                        (if h1? [:h1.clogem-hero__title l text] [:p.clogem-hero__title l text])))
+           (when tagline [:p.clogem-hero__tagline (lang (:tagline home-fm)) tagline])
+           (when (and action link)
+             [:a.clogem-hero__action (merge {:href ((or rewrite-href identity) link)} (lang actionText)) action])])))))
 
 ;; ---------------------------------------------------------------------------
 ;; Item 7: the title badge

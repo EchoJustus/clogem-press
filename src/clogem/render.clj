@@ -279,6 +279,9 @@
                                   ;; P4-E1a: names the file in a front-matter
                                   ;; warning, from its own language only
                                   :home-path (when own? path)
+                                  ;; P4-E1a.1 item 5: inherited from the
+                                  ;; site-default language's `index.md`
+                                  :home-fm-lang (when (and path (not own?)) (config/default-lang cfg))
                                   :body (when body (markdown/render body lc))
                                   :ids page-ids :page n :total total
                                   :page-url (fn [n] (model/paged-url cfg lang "/" n))

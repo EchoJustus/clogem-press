@@ -325,6 +325,20 @@
   [path]
   (str/join "/" (map url-encode-segment (str/split (str path) #"/" -1))))
 
+(defn url-encode-href
+  "A site path the owner wrote (`/about/#contact`, `/a.png?v=2`,
+  `/assets/my%20pic.png`) made safe for an href, keeping its structure
+  (P4-E1a.1 item 1): a `?query` and a `#fragment` stay what they are, a
+  valid `%XX` escape is kept as written — so nothing is encoded twice —
+  and every other character that is not legal in a URL (non-ASCII,
+  whitespace, a stray `%`, quotes, brackets) is encoded once, as
+  `url-encode-path` would. `url-encode-path` is for the paths clogem
+  derives, whose `?`, `#` and `%` are part of a name."
+  [s]
+  (->> (re-seq #"(?s)%[0-9A-Fa-f]{2}|." (str s))
+       (map #(if (= 3 (count %)) % (percent-encode #"[A-Za-z0-9\-._~!$&'()*+,;=:@/?#]" %)))
+       (apply str)))
+
 (defn iso-date
   "YYYY-MM-DD from a canonical date string, or the string as written when it
   does not start with a date (D-P2-7: ISO, no locale formats yet)."

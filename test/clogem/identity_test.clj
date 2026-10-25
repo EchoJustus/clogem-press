@@ -100,6 +100,22 @@
       (is (= {:name "J"} (:blogger th)))
       (is (str/includes? m "mixed content") m))))
 
+(deftest a-bare-word-is-no-image
+  (testing "P4-E1a.1 item 8b: neither / nor . — a warning, and the value dropped"
+    (doseq [v ["dark-blue" "transparent" "star"]]
+      (is (nil? (config/image-value v)) v))
+    (let [[th ms] (theme-of {:banner-bg "dark-blue"})]
+      (is (nil? (:banner-bg th)) "auto")
+      (is (= 1 (count ms)) (pr-str ms)))
+    (let [[th ms] (theme-of {:body-bg-img "transparent"})]
+      (is (nil? (:body-bg-img th)))
+      (is (= 1 (count ms)))
+      (is (str/includes? (first ms) "a bare word") (first ms)))
+    (let [[th ms] (theme-of {:title-badge-icons ["star" :sun]})]
+      (is (= [:sun] (:title-badge-icons th)))
+      (is (= 1 (count ms)))
+      (is (str/includes? (first ms) "write it as a keyword, such as :star") (first ms)))))
+
 (deftest social-links
   (let [[th ms] (theme-of {:social {:icons [{:icon :github :title "GH" :link "https://github.com/me"}
                                             {:icon "x" :title "X" :link "https://x.com/me"}
@@ -239,15 +255,18 @@
    (str "---\ntitle: " title "\n" (when date (str "date: \"" date "\"\n")) "permalink: " permalink "\n---\n\nbody\n")))
 
 (defn- build
-  "Build a temp site from `edn` and content `files` {rel text}; returns
+  "Build a temp site from `edn` and content `files` {rel text} (or, for a
+  rel starting `/`, a file of the site's own); returns
   {:pages {rel-path html} :dist #{rel-path} :sprite text :warnings [msg]}."
   [edn files]
   (let [dir (fs/create-temp-dir {:prefix "clogem-e1a"})]
     (try
       (spit (fs/file dir "site.edn") (pr-str (merge {:site {:title "S"} :search {:provider :none}} edn)))
-      (doseq [[rel content] files]
-        (fs/create-dirs (fs/parent (fs/path dir "content" rel)))
-        (spit (fs/file dir "content" rel) content))
+      ;; a key starting `/` is a file of the site's own (`/assets/x.png`)
+      (doseq [[rel content] files
+              :let [p (if (str/starts-with? rel "/") (fs/path dir (subs rel 1)) (fs/path dir "content" rel))]]
+        (fs/create-dirs (fs/parent p))
+        (spit (fs/file p) content))
       (let [err  (java.io.StringWriter.)
             [_ ds] (binding [*out* (java.io.StringWriter.) *err* err]
                      (diag/collecting (cli/build {:site-dir (str dir) :no-write true})))
@@ -381,6 +400,43 @@
     (is (str/includes? f "href=\"/my%20docs/feed.xml\""))
     (is (str/includes? f "<a aria-label=\"S\" href=\"https://s.example/\" rel=\"me\" title=\"S\"><img alt=\"\" class=\"clogem-icon\" src=\"/my%20docs/assets/s.svg\" /></a>")
         "an :svg is an <img>, base-prefixed; a URL is never prefixed")))
+
+;; P4-E1a.1 item 1: a site path keeps its ?query, #fragment and %XX escapes
+
+(defn- resolves?
+  "Does the emitted URL `l`, under the encoded base `enc`, name a file in
+  `dist` (a set of rel paths) — its query and fragment dropped, decoded?"
+  [dist enc l]
+  (and (str/starts-with? l enc)
+       (let [rel (java.net.URLDecoder/decode (str/replace (subs l (count enc)) #"[?#].*$" "") "UTF-8")]
+         (or (contains? dist rel) (contains? dist (str rel "index.html"))))))
+
+(deftest identity-urls-keep-their-query-fragment-and-escapes
+  (doseq [[base enc] [["/" "/"] ["/my docs/" "/my%20docs/"]]]
+    (let [{:keys [pages dist]}
+          (build (assoc one-lang :site {:title "S" :base base}
+                        :theme {:blogger {:name "J" :avatar "/assets/my%20pic.png"}
+                                :social {:icons [{:icon :mail :title "Contact" :link "/about/#contact"}
+                                                 {:svg "/assets/a.png?v=2" :title "A" :link "/about/"}]}
+                                :title-badge-icons ["/assets/图.png"]})
+                 {"index.md" "# Home\n"
+                  "01.Guide/01.a.md" (article "/pages/a00001/" "2025-01-01")
+                  "01.Guide/02.about.md" (article "/about/" "2025-01-01")
+                  "/assets/my pic.png" "p" "/assets/a.png" "a" "/assets/图.png" "t"})
+          home  (pages "index.html")
+          found {:link   (second (re-find #"<a aria-label=\"Contact\" href=\"([^\"]+)\"" home))
+                 :svg    (second (re-find #"class=\"clogem-icon\" src=\"([^\"]+)\"" home))
+                 :avatar (second (re-find #"class=\"clogem-blogger__avatar\" src=\"([^\"]+)\"" home))
+                 :badge  (second (re-find #"class=\"clogem-title-badge\" src=\"([^\"]+)\""
+                                          (pages "pages/a00001/index.html")))}]
+      (is (= {:link   (str enc "about/#contact")
+              :svg    (str enc "assets/a.png?v=2")
+              :avatar (str enc "assets/my%20pic.png")
+              :badge  (str enc "assets/%E5%9B%BE.png")}
+             found)
+          base)
+      (doseq [[k l] found]
+        (is (resolves? dist enc l) (str base " " k ": " l " names a file in dist/"))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Item 4: the blogger card
@@ -529,6 +585,59 @@
       (is (str/includes? ((:pages (b {:theme {:per-page 2 :body-bg-img "/a.png"}} (fm "tagline: T\n"))) "index.html")
                          "clogem-hero--clear")))))
 
+(defn- doctor-warnings
+  "The warning messages `bb doctor` reports for a temp site, asserting no error."
+  [edn files]
+  (let [dir (fs/create-temp-dir {:prefix "clogem-e1a-doc"})]
+    (try
+      (spit (fs/file dir "site.edn") (pr-str (merge {:site {:title "S"} :search {:provider :none}} edn)))
+      (doseq [[rel content] files]
+        (fs/create-dirs (fs/parent (fs/path dir "content" rel)))
+        (spit (fs/file dir "content" rel) content))
+      (let [{:keys [warnings errors]} (binding [*out* (java.io.StringWriter.) *err* (java.io.StringWriter.)]
+                                        (cli/doctor {:site-dir (str dir) :no-write true}))]
+        (is (empty? errors) (pr-str errors))
+        (mapv :message warnings))
+      (finally (fs/delete-tree dir)))))
+
+(deftest a-rejected-hero-image
+  (let [posts (into {} (for [i (range 1 4)]
+                         [(format "_posts/p%d.md" i) (article (format "/pages/p0000%d/" i) (format "2025-01-0%d" i))]))
+        fm    (fn [v] (str "---\nhome: true\npostList: detailed\nheroImage: \"" v "\"\n---\n"))
+        hero-warnings (fn [ws] (filterv #(str/includes? % "front matter heroImage") ws))]
+    (testing "http:, //host and a bare word: one warning each, no <img>, no error (the build helper asserts it)"
+      (doseq [v ["http://insecure.example/x.png" "//host/x.png" "word"]
+              :let [{:keys [pages warnings]} (build (assoc one-lang :theme {:per-page 10})
+                                                    (assoc posts "index.md" (str (fm v) "\n# Home\n")))]]
+        (is (= 1 (count (hero-warnings warnings))) (str v " " (pr-str warnings)))
+        (is (not-any? #(str/includes? (val %) "clogem-hero__img") pages) v)
+        (is (not-any? #(str/includes? (val %) (str/replace v #"^/+" "")) pages) (str v ": not written anywhere"))
+        (is (not-any? #(str/includes? (val %) "clogem-hero") pages)
+            (str v ": nothing else asked for a banner, so there is none"))))
+    (testing "a paginated home (three pages) warns once, in build and in doctor"
+      (let [edn (assoc one-lang :theme {:per-page 1})
+            files (assoc posts "index.md" (fm "http://insecure.example/x.png"))
+            {:keys [pages warnings]} (build edn files)]
+        (is (contains? pages "page/3/index.html"))
+        (is (= 1 (count (hero-warnings warnings))) (pr-str warnings))
+        (is (= 1 (count (hero-warnings (doctor-warnings edn files)))))))))
+
+(deftest action-text-alone-is-no-banner
+  (let [b (fn [fm] ((:pages (build one-lang {"index.md" (str "---\nhome: true\n" fm "---\n\n# Home\n")})) "index.html"))]
+    (is (not (str/includes? (b "actionText: Go\n") "clogem-hero")) "actionText without actionLink")
+    (is (not (str/includes? (b "actionLink: /x/\n") "clogem-hero")) "actionLink without actionText")
+    (is (str/includes? (b "actionText: Go\nactionLink: /x/\n") "<a class=\"clogem-hero__action\"") "both: a banner")))
+
+(deftest an-inherited-hero-names-its-language
+  (let [b (build two-langs {"index.md" "---\nhome: true\nheroText: Hello\ntagline: Tag\nheroImage: /h.png\nheroAlt: A cat\nactionText: Go\nactionLink: /x/\n---\n"})
+        en (hero-of ((:pages b) "index.html"))
+        zh (hero-of ((:pages b) "zh-Hans/index.html"))]
+    (is (not (str/includes? en "lang=")) "its own language: unmarked")
+    (is (str/includes? zh "<h1 class=\"clogem-hero__title\" lang=\"en\">Hello</h1>") zh)
+    (is (str/includes? zh "<p class=\"clogem-hero__tagline\" lang=\"en\">Tag</p>"))
+    (is (re-find #"<a class=\"clogem-hero__action\" href=\"[^\"]+\" lang=\"en\">Go</a>" zh))
+    (is (str/includes? zh "<img alt=\"A cat\" class=\"clogem-hero__img\" lang=\"en\""))))
+
 ;; ---------------------------------------------------------------------------
 ;; Item 7: the title badge
 
@@ -646,6 +755,12 @@
         (is (not (str/includes? html "clogem-hero")) rel))
       (doseq [[rel html] pages :when (str/includes? html "clogem-navbar")]
         (is (= 1 (count (re-seq #"<h1[ >]" html))) rel)))
+    (testing "P4-E1a.1 item 5: /ms/ inherits index.md's hero, marked lang=\"en\"; zh-Hans has its own file and no hero keys"
+      (let [ms (hero-of (pages "ms/index.html"))]
+        (is (str/includes? ms "<p class=\"clogem-hero__tagline\" lang=\"en\">A five-language fixture") ms)
+        (is (re-find #"<a class=\"clogem-hero__action\" href=\"[^\"]+\" lang=\"en\">Read the guide</a>" ms))
+        (is (not (str/includes? (hero-of (pages "index.html")) "lang=")))
+        (is (not (str/includes? zh "clogem-hero")) "zh-Hans: no banner, so nothing to mark")))
     (testing "the zh-Hans home's right bar: blogger, categories, tags (postList: simple)"
       (is (= ["clogem-blogger" "clogem-home-cats" "clogem-home-tags"] (section-order (aside-of zh))))
       (is (str/includes? (aside-of zh) "<p class=\"clogem-blogger__name\">clogem-press 演示</p>")))

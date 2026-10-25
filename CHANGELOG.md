@@ -141,6 +141,39 @@ gets it, and title badges appear by default, as in vdoing.
   1280×1100 instead of ×1024: the demo's new footer made
   `/zh-Hans/pages/643259/` 7 px taller than 1024.
 
+### Fixed (E1a.1)
+
+- **An owner's site path keeps its `?query`, `#fragment` and `%XX`
+  escapes** (item 1). Every identity URL — social links, the avatar, a
+  social `:svg`, `heroImage`, `bannerBg`, the body image, badge images —
+  was encoded whole, so `/about/#contact` became `/about/%23contact`,
+  `?v=2` became `%3Fv%3D2`, and `/assets/my%20pic.png` (the spelling
+  `image-value` asks for) became `my%2520pic.png`: a file with a space in
+  its name could not be used. New `u/url-encode-href` keeps the query, the
+  fragment and every valid escape, and encodes non-ASCII and other unsafe
+  characters once (`identity-urls-keep-their-query-fragment-and-escapes`,
+  under `/` and `/my docs/`, each URL resolving to its file in `dist/`;
+  `an-owner-href-keeps-its-structure`).
+- **A rejected front-matter `heroImage` warns once** (item 2), not once per
+  page of a paginated home (3 times in `build`, 6 in `doctor`, for three
+  pages): it is checked on the first page only. A rejected `heroImage`
+  with nothing else asking for a banner no longer leaves an empty one
+  (`a-rejected-hero-image`: `http:`, `//host/x.png` and a bare word, and
+  the paginated case in `build` and `doctor`).
+- **A home that inherits its banner from `index.md` marks its language**
+  (item 5): the demo's `/zh-Hant/`, `/ms/` and `/ta/` showed the English
+  tagline and action as if in the page's language. The title, tagline,
+  action (and an `heroAlt`'s image) inherited as a string from the
+  site-default file now carry `lang` (`config/html-lang`); a per-language
+  map is resolved as before (`an-inherited-hero-names-its-language`, and
+  `the-demo-shows-the-identity`: `/ms/` marked `lang="en"`, `/zh-Hans/`,
+  whose own `index.zh-Hans.md` sets no hero key, has no banner).
+- **A bare word is no image** (item 8b): `:banner-bg "dark-blue"`,
+  `:body-bg-img "transparent"` and `:title-badge-icons ["star"]` became
+  `/dark-blue` and so on, and dangling `<img>`s. A value with neither `/`
+  nor `.` now warns and is dropped (`:banner-bg` is auto); for a badge
+  icon the warning says to write a keyword (`a-bare-word-is-no-image`).
+
 ### Needs native review (E1a)
 
 - `:blogger/label`: ms "Tentang penulis", ta "ஆசிரியர் பற்றி".

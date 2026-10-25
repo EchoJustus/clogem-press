@@ -838,7 +838,8 @@
   (D-P4-6's `\"assets/x.svg\"`). The renderer prefixes a site path with
   the base. `http:` (mixed content), `//host/…`, `javascript:` and every
   other scheme are nil, as is a path holding whitespace, `#`, quotes,
-  brackets or `;` (CSS such as `#ccc` is no file name; write `%20`).
+  brackets or `;` (CSS such as `#ccc` is no file name; write `%20`), and
+  a bare word with neither `/` nor `.` (`dark-blue`, P4-E1a.1 item 8b).
   Whether the file exists is not checked."
   [v]
   (when (string? v)
@@ -851,6 +852,8 @@
         (re-find #"^[A-Za-z][A-Za-z0-9+.-]*:" s)             nil
         ;; a path, not CSS or markup: `#ccc` or `url(x)` is no file name
         (not (re-matches #"[^\s()<>\"';\\#]+" s))          nil
+        ;; a bare word is no path either: `dark-blue`, `transparent`, `star`
+        (not (re-find #"[/.]" s))                            nil
         (str/starts-with? s "/")                             s
         :else                                                (str "/" s)))))
 
@@ -863,8 +866,12 @@
 (defn- image-why
   "Why `v` is not an `image-value`, completing \"… is <v>, …\"."
   [v]
-  (if (and (string? v) (re-find #"(?i)^\s*http:" v))
+  (cond
+    (and (string? v) (re-find #"(?i)^\s*http:" v))
     "an http: URL — on an https page that is mixed content, which the browser blocks"
+    (and (string? v) (not (re-find #"[/.]" v)) (not (str/blank? v)))
+    "a bare word, not a file — a site path has a / or a ., such as /assets/me.png"
+    :else
     "which is not an https: URL, a data:image/… URI or a site path such as /assets/me.png"))
 
 (defn link-value
@@ -1073,6 +1080,12 @@
                                (fn [i x]
                                  (let [p [:theme :title-badge-icons i]]
                                    (cond
+                                     ;; `"star"`: a sprite icon is a keyword
+                                     (and (string? x) (not (str/blank? x)) (not (re-find #"[/.]" x)))
+                                     (warn! (str (path-str p) " is " (pr-str x) ", a bare word, not a file; "
+                                                 "it is ignored. To use a sprite icon, write it as a keyword, "
+                                                 "such as " (keyword (str/trim x)) "; the UI icons are "
+                                                 (str/join " " (map name (sprite/ui-names))) "."))
                                      (string? x) (image p x)
                                      (and (keyword? x) (nil? (namespace x)) (contains? (sprite/ui-names) x)) x
                                      :else (warn! (str (path-str p) " is " (pr-str x) ", but it must be an image "

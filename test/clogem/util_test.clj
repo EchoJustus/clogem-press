@@ -65,6 +65,17 @@
       (is (= s (java.net.URLDecoder/decode (u/url-encode-segment s) "UTF-8")))
       (is (= s (java.net.URLDecoder/decode (u/url-encode-fragment s) "UTF-8"))))))
 
+(deftest an-owner-href-keeps-its-structure
+  (testing "P4-E1a.1 item 1: ?query, #fragment and %XX kept; the rest encoded once"
+    (doseq [[in want] [["/about/#contact" "/about/#contact"]
+                       ["/a.png?v=2" "/a.png?v=2"]
+                       ["/assets/my%20pic.png" "/assets/my%20pic.png"]
+                       ["/assets/图.png" "/assets/%E5%9B%BE.png"]
+                       ["/a b/100%/x%2" "/a%20b/100%25/x%252"]
+                       ["/😀?q=你#é" "/%F0%9F%98%80?q=%E4%BD%A0#%C3%A9"]]]
+      (is (= want (u/url-encode-href in)) in)
+      (is (= want (u/url-encode-href want)) (str want ": encoding twice changes nothing")))))
+
 (deftest slugs-are-legal-windows-file-names
   (testing "fix 9"
     (is (= "q&a-why" (u/slug "Q&A: why?")))
