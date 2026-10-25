@@ -191,6 +191,22 @@ gets it, and title badges appear by default, as in vdoing.
   (`the-blogger-card-needs-a-name-or-an-avatar`).
 - **A raw-HTML `<h1>` in the home's body is its `<h1>`** (item 8c), so a
   `heroText` beside it is a `<p>`, not a second `<h1>` (`the-hero`).
+- **Text drawn on the page keeps 4.5:1 over a body image** (item 6). The
+  footer, the home's pagination and a clear banner's text sit on the page
+  with no box, so over a 0.5-opacity image against the mode they fell to
+  1.32:1 (footer) and 2.56:1 (pagination, banner title) on a black image
+  in light mode, 1.22:1 and 2.18:1 on a white one in dark. While a body
+  image is on, identity.css gives them a `--mainBg` backdrop, on screen
+  only (`identity.test.mjs`: black and white 64×64 images in light and
+  dark, each text's colour against the colour its box paints most in a
+  screenshot).
+- **No gap above the home's right bar on mobile** (item 8d): with the
+  paired blogger card hidden at 50rem and below, the next box still took
+  `section + section`'s 1rem (595.1 against the aside's 579.1 at 360 px).
+  It is 0 there now (`identity.test.mjs`, at 360 and 800).
+- **The demo's `overrides/custom.css` marker shows once** (item 8e), on the
+  footer's first `<p>`, not on both (`identity.test.mjs`; `modes.test.mjs`
+  unchanged).
 - **Tests (item 7)**: the stylesheet order theme, identity, highlight is
   pinned on a highlighted build with the fake Chroma
   (`highlight_test`'s `identity-css-sits-between-theme-and-highlight`;

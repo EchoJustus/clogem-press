@@ -9,4 +9,4 @@
  * The demo uses it for one visible, harmless mark, so CI and the browser
  * tests can see that it loaded.
  */
-.clogem-footer p::after { content: " · overrides/custom.css"; }
+.clogem-footer p:first-of-type::after { content: " · overrides/custom.css"; }

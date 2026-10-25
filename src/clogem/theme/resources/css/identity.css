@@ -20,6 +20,7 @@
   #clogem-drawer > .clogem-blogger[hidden] { display: block; padding: 0.5rem 0 0.75rem; margin-bottom: 0.5rem;
     border-bottom: 1px solid var(--borderColor); }
   .clogem-blogger--paired { display: none; }
+  .clogem-home-right > .clogem-blogger--paired + section { margin-top: 0; }
 }
 
 .clogem-social { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.25rem;
@@ -43,6 +44,15 @@
 .clogem-body-bg[data-o="8"] { opacity: 0.8; }
 .clogem-body-bg[data-o="9"] { opacity: 0.9; }
 .clogem-body-bg[data-o="10"] { opacity: 1; }
+/* text drawn on the page itself — the footer, the home's pagination, a
+ * clear banner's text — gets a --mainBg backdrop, so it keeps 4.5:1 over
+ * any image */
+@media screen {
+  body:has(.clogem-body-bg) :is(.clogem-footer, .clogem-pagination, .clogem-hero--clear > :is(h1, p)) {
+    background: var(--mainBg); }
+  body:has(.clogem-body-bg) :is(.clogem-pagination, .clogem-hero--clear > :is(h1, p)) {
+    width: fit-content; margin-inline: auto; padding: 0.25rem 0.75rem; border-radius: 5px; }
+}
 
 /* print hides all of it; the footer's text lines still print */
 @media print {
