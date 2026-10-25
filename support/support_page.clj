@@ -27,13 +27,15 @@
 ;;   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 (ns support-page
   "clogem-press's page on the Clogem support site,
-  https://echojustus.github.io/clogem-support/clogem-press/ (DESIGN.md §7.5):
+  https://echojustus.github.io/clogem-support/clogem-press/ (DESIGN.md §7.5),
+  in five languages: English there, the others in folders inside it named
+  by their BCP 47 tags (zh-Hans/, zh-Hant/, pt-BR/, es-ES/).
 
-    bb support-page                 writes dist-support/clogem-press/index.html
-    bb support-page --out DIR       writes DIR/clogem-press/index.html
+    bb support-page                 writes dist-support/clogem-press/
+    bb support-page --out DIR       writes DIR/clogem-press/
 
-  The words are support/page.edn's, the icon support/clogem-press.svg; this
-  file adds markup only. The page is built as the hub's own pages are
+  The words are support/i18n/<tag>.edn's, the icon support/clogem-press.svg;
+  this file adds markup only. Each page is built as the hub's own pages are
   (clogem-support's scripts/portal.clj): one self-contained file, no
   JavaScript, nothing loaded from another site, a Content-Security-Policy
   that allows only its own style (by its SHA-256) and data: images, light
@@ -55,17 +57,46 @@
 
 (def folder "The page's folder on gh-pages." "clogem-press")
 
+(def base-url
+  "The English page's address; the others are folders inside it."
+  "https://echojustus.github.io/clogem-support/clogem-press/")
+
+(def languages
+  "The page's languages, in the switcher's order: English, the default,
+  first. :also is a wider tag the page is offered for too (hreflang)."
+  [{:tag "en"} {:tag "zh-Hans"} {:tag "zh-Hant"} {:tag "pt-BR" :also "pt"} {:tag "es-ES" :also "es"}])
+
+(def tags (mapv :tag languages))
+
+(defn page-url [tag] (if (= tag "en") base-url (str base-url tag "/")))
+
+(defn page-path
+  "Where a language's page sits in clogem-press/."
+  [tag]
+  (if (= tag "en") "index.html" (str tag "/index.html")))
+
+(defn- relative-href
+  "The link from `from`'s page to `to`'s: each sits in its own folder, the
+  others' inside English's."
+  [from to]
+  (let [up (if (= from "en") "" "../")]
+    (cond (= from to)   "./"
+          (= to "en")   up
+          :else         (str up to "/"))))
+
 (def budget
-  "The built page's byte budget (at most 150 KB, the task's limit); the
+  "Each built page's byte budget (at most 150 KB, the task's limit); the
   build and `bb test` both hold it."
   65536)
 
 (defn- fail! [& msg] (binding [*out* *err*] (println (str/join " " msg))) (System/exit 1))
 
 (defn read-page
-  "page.edn, read."
-  ([] (read-page (str (fs/path here "i18n" "en.edn"))))
-  ([file] (edn/read-string (slurp file))))
+  "A language's words, read: support/i18n/<tag>.edn."
+  [tag]
+  (edn/read-string (slurp (str (fs/path here "i18n" (str tag ".edn"))))))
+
+(defn read-pages "Every language's words, by tag." [] (into {} (for [t tags] [t (read-page t)])))
 
 (defn icon-svg [] (slurp (str (fs/path here "clogem-press.svg"))))
 
@@ -116,14 +147,17 @@
     [(str where ": unknown block " (pr-str tag) " (:p, :ul, :pre, :h3 or :cards)")]))
 
 (defn check-page
-  "page.edn's problems, in words."
-  [{:keys [url hub sections theme footer] :as page}]
+  "A language's words' problems, in words."
+  ([page] (check-page page "en"))
+  ([{:keys [url hub sections theme footer] :as page} tag]
   (concat
-   (for [k [:url :hub :title :description :eyebrow :name :subtitle :icon-alt :lead :jump-label]
+   (for [k (cond-> [:url :hub :title :description :eyebrow :name :subtitle :icon-alt :lead :jump-label
+                    :lang-name :langs-label]
+             (not= tag "en") (conj :en-note))
          :when (not (text? (get page k)))]
      (str k " must be text"))
-   (when-not (and (string? url) (str/ends-with? url (str "/" folder "/")) (str/starts-with? url "https://"))
-     [(str ":url must be the https address of " folder "/")])
+   (when-not (= url (page-url tag))
+     [(str ":url must be " (page-url tag) ", its page's address")])
    (when-not (and (string? hub) (str/starts-with? hub "https://") (str/ends-with? hub "/"))
      [":hub must be https and end with /"])
    (when-not (and (text? (:legend theme))
@@ -143,14 +177,84 @@
                        (if (seq blocks)
                          (mapcat #(block-problems where %) blocks)
                          [(str where ": needs :blocks")]))))
-           sections)))
+           sections))))
+
+;; ---------------------------------------------------------------------------
+;; The languages, in step: a translation changes words, never what they
+;; point at or the commands they show
+
+(defn- fixed
+  "What a translation keeps of some pieces: its links' targets and its
+  code, in any order (word order differs between languages)."
+  [pieces]
+  (sort (map pr-str (for [x pieces :when (and (vector? x) (#{:a :code} (first x)))]
+                      (if (= :a (first x)) [:a (second x)] x)))))
+
+(defn- block-shape [[tag & args]]
+  (case tag
+    :p     [:p (fixed args)]
+    :ul    [:ul (map fixed args)]
+    :pre   [:pre (first args)]
+    :h3    [:h3]
+    :cards [:cards (for [c args] [(set (keys c)) (:href c) (fixed (:text c))])]
+    [tag]))
+
+(defn- shape
+  "Everything a translation shares with English, by part."
+  [page]
+  (into {"its keys"     (set (keys (dissoc page :en-note :url)))
+         ":theme's keys" (set (keys (:theme page)))
+         ":footer"       [(set (keys (:footer page))) (fixed (get-in page [:footer :licence]))]
+         ":hub and :name" (select-keys page [:hub :name])
+         "its sections"  (mapv :id (:sections page))}
+        (for [{:keys [id blocks] :as s} (:sections page)]
+          [(str "section " (pr-str id)) [(set (keys s)) (mapv block-shape blocks)]])))
+
+(defn parity-problems
+  "Where a translation's sections, blocks, link targets, code or commands
+  differ from English's, in words; `pages` is {tag words}."
+  [pages]
+  (let [en (shape (get pages "en"))]
+    (for [tag (rest tags)
+          :let [page (get pages tag)]
+          problem (if-not (map? page)
+                    [(str tag ": missing")]
+                    (let [it (shape page)]
+                      (for [[part v] en :when (not= v (get it part))]
+                        (str tag ": " part " differ from English's"))))]
+      problem)))
+
+;; ---------------------------------------------------------------------------
+;; Links to pages in English only
+
+(def english-only
+  "Pages that are in English only, whatever the reader's language: on the
+  other pages, their links carry hreflang=\"en\" and the page's :en-note."
+  #{"https://github.com/EchoJustus/clogem-press#readme"
+    "https://github.com/EchoJustus/clogem-press/blob/main/CHANGELOG.md"
+    "https://github.com/EchoJustus/clogem-press/blob/main/DESIGN.md"
+    "https://github.com/EchoJustus/clogem-press/blob/main/LICENSE"
+    "https://github.com/EchoJustus/clogem-press/tree/main/examples/demo-site"
+    "https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement"
+    "https://babashka.org/"
+    "https://echojustus.github.io/clogem-support/"})
+
+(def ^:private ^:dynamic *en-note*
+  "The note after a link to a page in English, on a page that isn't; nil on
+  the English page."
+  nil)
+
+(defn- link [href words]
+  (if (and *en-note* (english-only href))
+    (list [:a {:href href :hreflang "en"} words] [:span.en-note *en-note*])
+    [:a {:href href} words]))
 
 (defn- piece [x]
   (if (string? x)
     x
     (let [[tag & args] x]
       (case tag
-        :a      [:a {:href (first args)} (second args)]
+        :a      (link (first args) (second args))
         :code   [:code (first args)]
         :strong [:strong (first args)]))))
 
@@ -227,10 +331,22 @@
 (def ^:private shadow-dark "--shadow:0 1px 2px rgba(0,0,0,.35),0 24px 48px -24px rgba(0,0,0,.65)")
 
 (def ^:private heading-font
-  "\"Segoe UI Variable Display\",\"Segoe UI\",system-ui,-apple-system,BlinkMacSystemFont,Roboto,sans-serif")
+  "\"Segoe UI Variable Display\",\"Segoe UI\",system-ui,-apple-system,BlinkMacSystemFont,Roboto")
 
 (def ^:private text-font
-  "\"Segoe UI Variable Text\",\"Segoe UI\",system-ui,-apple-system,BlinkMacSystemFont,Roboto,\"Helvetica Neue\",Arial,sans-serif")
+  "\"Segoe UI Variable Text\",\"Segoe UI\",system-ui,-apple-system,BlinkMacSystemFont,Roboto,\"Helvetica Neue\",Arial")
+
+(def ^:private cjk-fonts
+  "The systems' own CJK fonts (no font is bundled), after the Latin ones and
+  ahead of the generic family, by :lang()."
+  {"zh-Hans" "\"PingFang SC\",\"Microsoft YaHei\",\"Noto Sans CJK SC\",\"Source Han Sans SC\""
+   "zh-Hant" "\"PingFang TC\",\"Microsoft JhengHei\",\"Noto Sans CJK TC\",\"Source Han Sans TC\""})
+
+(defn- font-stacks
+  "--text-font and --heading-font, with `cjk` (or nothing) before sans-serif."
+  [cjk]
+  (let [with (fn [latin] (str latin (when cjk (str "," cjk)) ",sans-serif"))]
+    (str "--text-font:" (with text-font) ";--heading-font:" (with heading-font))))
 
 (defn css
   "The page's one stylesheet. The theme follows the system, or the switcher:
@@ -250,16 +366,23 @@
        (str "@media (prefers-color-scheme:dark){:root:not(:has(#theme-light:checked)){" dark-decls "}}")
        (str ":root:has(#theme-dark:checked){" dark-decls "}")
        ":root:has(#theme-light:checked){color-scheme:light}"
+       (str ":root{" (font-stacks nil) "}")
+       ;; on any element, so a switcher label in another script gets its fonts
+       (str/join (for [[tag cjk] cjk-fonts] (str ":lang(" tag "){" (font-stacks cjk) "}")))
        "*,*::before{box-sizing:border-box}"
        "html{-webkit-text-size-adjust:100%;text-size-adjust:100%}"
        (str "body{margin:0;min-height:100vh;color:var(--text);background:"
             "radial-gradient(1100px 560px at 8% -12%,var(--glow-1),transparent 62%),"
             "radial-gradient(900px 520px at 100% -4%,var(--glow-2),transparent 58%),var(--bg);"
-            "font:400 1rem/1.65 " text-font ";-webkit-font-smoothing:antialiased;overflow-wrap:break-word}")
+            "font:400 1rem/1.65 var(--text-font);-webkit-font-smoothing:antialiased;overflow-wrap:break-word}")
        ".page{max-width:62rem;margin:0 auto;padding:clamp(2.5rem,7vw,5.5rem) 1rem 2.5rem}"
        "a{color:var(--link);text-underline-offset:.18em}"
        "a:focus-visible{outline:3px solid var(--focus);outline-offset:3px;border-radius:.45rem}"
-       (str "h1,h2,h3{font-family:" heading-font ";color:var(--heading)}")
+       "h1,h2,h3{font-family:var(--heading-font);color:var(--heading)}"
+       ;; CJK: no letter-spacing (it breaks up the characters), a little more line height
+       ":is(.eyebrow,.chip,h1,h2):lang(zh){letter-spacing:0}"
+       "body:lang(zh){line-height:1.8}"
+       ".en-note{color:var(--muted);font-size:.9em}"
        "code,pre{font-family:ui-monospace,\"Cascadia Code\",\"SF Mono\",Menlo,Consolas,monospace;font-size:.9em}"
        ;; the header
        ".hero{display:grid;gap:1.4rem}"
@@ -271,6 +394,12 @@
        ".sub{margin:.35rem 0 0;font-size:1.08rem;color:var(--muted)}"
        (str ".rule{width:min(11rem,40%);height:3px;border-radius:3px;background:" rule "}")
        ".lead{margin:0;max-width:42rem;font-size:1.15rem;color:var(--muted)}"
+       ;; the language switcher: plain links, the current one marked
+       ".langs ul{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.4rem;margin:0;padding:0;list-style:none}"
+       (str ".langs a{display:inline-block;padding:.3rem .75rem;border-radius:999px;border:1px solid var(--border);"
+            "font-family:var(--text-font);font-size:.84rem;font-weight:600;color:var(--muted);text-decoration:none}")
+       ".langs a:hover{border-color:var(--focus);color:var(--link)}"
+       ".langs a[aria-current=page]{background:var(--chip);border-color:var(--control);color:var(--chip-ink)}"
        ;; the theme switcher: radios as a segmented control
        (str ".theme{display:inline-flex;gap:2px;min-width:0;margin:0;padding:3px;border:1px solid var(--control);"
             "border-radius:999px;background:var(--surface);box-shadow:var(--shadow)}")
@@ -329,7 +458,7 @@
        (let [ink (str "{color-scheme:light;--bg:#fff;--surface:#fff;--surface-2:#fff;--text:#000;--muted:#000;--heading:#000;--link:#000;"
                       "--chip:#fff;--chip-ink:#000;--border:#999;--control:#999;--shadow:none;transition:none}")]
          (str "@media print{:root" ink ":root:has(#theme-system:checked,#theme-light:checked,#theme-dark:checked)" ink
-              "body{background:#fff;color:#000}.jump,.theme,.card::before,.button span{display:none}"
+              "body{background:#fff;color:#000}.jump,.theme,.langs,.card::before,.button span{display:none}"
               "h2::after,.rule{background:#000}.card,pre{break-inside:avoid}}"))]))))
 
 (defn csp
@@ -360,75 +489,108 @@
                      (= k :system) (assoc :checked true))]
            [:label {:for (str "theme-" id) :title title} (h/raw (theme-icons k)) label]))])
 
+(defn- language-switcher
+  "The five versions as plain links, each named in its own language; no
+  script, and no redirect by the browser's language (DESIGN.md §7.5)."
+  [pages tag]
+  [:nav.langs {:aria-label (get-in pages [tag :langs-label])}
+   [:ul (for [t tags]
+          [:li [:a (cond-> {:href (relative-href tag t) :hreflang t :lang t}
+                     (= t tag) (assoc :aria-current "page"))
+                (get-in pages [t :lang-name])]])]])
+
+(defn- alternates
+  "Every version's address, for each tag it is offered for, and English as
+  the default."
+  []
+  (concat (for [{:keys [tag also]} languages
+                t (cond-> [tag] also (conj also))]
+            [:link {:rel "alternate" :hreflang t :href (page-url tag)}])
+          [[:link {:rel "alternate" :hreflang "x-default" :href (page-url "en")}]]))
+
 (defn page-html
-  "The page, as one string."
-  [page svg]
+  "A language's page, as one string; `pages` is {tag words}, for the
+  switcher."
+  [pages tag svg]
   (let [style (css)
         icon  (data-uri svg)
+        page  (get pages tag)
         {:keys [sections theme footer]} page]
-    (str
-     "<!doctype html>\n"
-     (h/html
-      {:mode :html}
-      [:html {:lang "en"}
-       [:head
-        [:meta {:charset "utf-8"}]
-        [:meta {:name "viewport" :content "width=device-width, initial-scale=1"}]
-        [:meta {:http-equiv "Content-Security-Policy" :content (csp style)}]
-        [:meta {:name "referrer" :content "no-referrer"}]
-        [:meta {:name "color-scheme" :content "light dark"}]
-        [:meta {:name "theme-color" :media "(prefers-color-scheme: light)" :content "#F4F6F9"}]
-        [:meta {:name "theme-color" :media "(prefers-color-scheme: dark)" :content "#0D1016"}]
-        [:title (:title page)]
-        [:meta {:name "description" :content (:description page)}]
-        [:link {:rel "canonical" :href (:url page)}]
-        [:link {:rel "icon" :type "image/svg+xml" :href icon}]
-        [:style (h/raw style)]]
-       [:body
-        [:div.page
-         [:header.hero
-          [:div.top
-           [:div.brand
-            [:img.mark {:src icon :alt (:icon-alt page) :width "48" :height "48"}]
-            [:div
-             [:p.eyebrow (:eyebrow page)]
-             [:h1 (:name page)]
-             [:p.sub (:subtitle page)]]]
-           (theme-switcher theme)]
-          [:div.rule]
-          [:p.lead (:lead page)]
-          [:nav.jump {:aria-label (:jump-label page)}
-           [:ul (for [{:keys [id title]} sections] [:li [:a {:href (str "#" id)} title]])]]]
-         [:main
-          (for [{:keys [id title blocks]} sections]
-            [:section {:id id :aria-labelledby (str id "-title")}
-             [:h2 {:id (str id "-title")} title]
-             (map block blocks)])]
-         [:footer
-          [:p [:a {:href (:hub page)} (:hub footer)] " · " (pieces (:licence footer))]
-          [:p (:note footer)]]]]]))))
+    (binding [*en-note* (when (not= tag "en") (:en-note page))]
+      (str
+       "<!doctype html>\n"
+       (h/html
+        {:mode :html}
+        [:html {:lang tag}
+         [:head
+          [:meta {:charset "utf-8"}]
+          [:meta {:name "viewport" :content "width=device-width, initial-scale=1"}]
+          [:meta {:http-equiv "Content-Security-Policy" :content (csp style)}]
+          [:meta {:name "referrer" :content "no-referrer"}]
+          [:meta {:name "color-scheme" :content "light dark"}]
+          [:meta {:name "theme-color" :media "(prefers-color-scheme: light)" :content "#F4F6F9"}]
+          [:meta {:name "theme-color" :media "(prefers-color-scheme: dark)" :content "#0D1016"}]
+          [:title (:title page)]
+          [:meta {:name "description" :content (:description page)}]
+          [:link {:rel "canonical" :href (page-url tag)}]
+          (alternates)
+          [:link {:rel "icon" :type "image/svg+xml" :href icon}]
+          [:style (h/raw style)]]
+         [:body
+          [:div.page
+           [:header.hero
+            (language-switcher pages tag)
+            [:div.top
+             [:div.brand
+              [:img.mark {:src icon :alt (:icon-alt page) :width "48" :height "48"}]
+              [:div
+               [:p.eyebrow (:eyebrow page)]
+               [:h1 (:name page)]
+               [:p.sub (:subtitle page)]]]
+             (theme-switcher theme)]
+            [:div.rule]
+            [:p.lead (:lead page)]
+            [:nav.jump {:aria-label (:jump-label page)}
+             [:ul (for [{:keys [id title]} sections] [:li [:a {:href (str "#" id)} title]])]]]
+           [:main
+            (for [{:keys [id title blocks]} sections]
+              [:section {:id id :aria-labelledby (str id "-title")}
+               [:h2 {:id (str id "-title")} title]
+               (map block blocks)])]
+           [:footer
+            [:p (link (:hub page) (:hub footer)) " · " (pieces (:licence footer))]
+            [:p (:note footer)]]]]])))))
 
 (defn build!
-  "Writes `out`/clogem-press/index.html; returns its path and size."
+  "Writes `out`/clogem-press/: the five pages and nothing else (the folder
+  is emptied first, so a page no longer built isn't left to be published).
+  Returns each page's tag, path and size."
   [out]
-  (let [page (read-page)
-        svg  (icon-svg)]
-    (when-let [problems (seq (check-page page))]
-      (fail! (str "support/page.edn isn't right:\n  " (str/join "\n  " problems))))
+  (let [pages (read-pages)
+        svg   (icon-svg)]
+    (when-let [problems (seq (concat (for [t tags, p (check-page (get pages t) t)] (str "support/i18n/" t ".edn: " p))
+                                     (parity-problems pages)))]
+      (fail! (str "The support page's words aren't right:\n  " (str/join "\n  " problems))))
     (some->> (icon-problem svg) (fail! "support/clogem-press.svg:"))
-    (let [html  (page-html page svg)
-          bytes (alength (.getBytes ^String html StandardCharsets/UTF_8))
-          file  (fs/file out folder "index.html")]
-      (when (> bytes budget)
-        (fail! (str "The page is " bytes " bytes, over its budget of " budget ".")))
-      (fs/create-dirs (fs/parent file))
-      (spit file html)
-      {:file (str file) :bytes bytes})))
+    (let [dir   (fs/file out folder)
+          built (vec (for [t tags
+                           :let [html  (page-html pages t svg)
+                                 bytes (alength (.getBytes ^String html StandardCharsets/UTF_8))]]
+                       (if (> bytes budget)
+                         (fail! (str "The " t " page is " bytes " bytes, over its budget of " budget "."))
+                         {:tag t :html html :bytes bytes :file (str (fs/file dir (page-path t)))})))]
+      (fs/delete-tree dir)
+      (doseq [{:keys [file html]} built]
+        (fs/create-dirs (fs/parent file))
+        (spit file html))
+      (mapv #(dissoc % :html) built))))
 
 (defn -main [& args]
   (let [out (loop [[a & more] args, out "dist-support"]
               (cond (nil? a)        out
                     (= a "--out")   (if (seq more) (recur (rest more) (first more)) (fail! "--out needs a folder"))
                     :else           (fail! "bb support-page [--out DIR], not" a)))
-        {:keys [file bytes]} (build! out)]
-    (println (str "Wrote " file " (" bytes " bytes, budget " budget ")"))))
+        built (build! out)]
+    (doseq [{:keys [file bytes]} built]
+      (println (str "Wrote " file " (" bytes " bytes, budget " budget ")")))
+    (println (str (count built) " pages, " (reduce + (map :bytes built)) " bytes in all"))))

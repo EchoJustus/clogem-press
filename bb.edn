@@ -37,7 +37,7 @@
   doctor  {:doc "Report content problems without building."    :task (exec 'clogem.cli/doctor)}
   fm-fix  {:doc "Write missing front matter into source files."  :task (exec 'clogem.cli/fm-fix)}
   fetch-tool {:doc "Fetch, verify and cache Pagefind (or --tool chroma|fswatcher); print its path." :task (exec 'clogem.cli/fetch-tool)}
-  support-page {:doc "Build the support page to dist-support/clogem-press/index.html (support/page.edn; README, Support page)."
+  support-page {:doc "Build the support page, in five languages, to dist-support/clogem-press/ (support/i18n/; README, Support page)."
                 :requires ([support-page])
                 :task (apply support-page/-main *command-line-args*)}
   test    {:doc "Run the test suite."                          :task (exec 'clogem.cli/test-cmd)}}}

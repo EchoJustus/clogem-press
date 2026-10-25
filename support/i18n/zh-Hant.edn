@@ -2,8 +2,8 @@
 ;;
 ;; The Traditional Chinese words of clogem-press's support page,
 ;; https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/ —
-;; Taiwan wording and punctuation (DESIGN.md §7.5): 軟體, 程式碼, 檔案,
-;; 資料夾, 網路, 連結, 預設, 設定, 介面, 伺服器, 原始碼, 授權, 搜尋, 資訊;
+;; Taiwan wording and punctuation (DESIGN.md §7.5): 軟體、程式碼、檔案、
+;; 資料夾、網路、連結、預設、設定、介面、伺服器、原始碼、授權、搜尋、資訊；
 ;; full-width ，。：；「」. A translation of en.edn, of its shape: en.edn's
 ;; header says what may go here. The build refuses it if its sections,
 ;; blocks, link targets, code or commands differ from English's. Awaiting a
