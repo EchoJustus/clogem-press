@@ -9,7 +9,12 @@
 //      shows;
 //   2. the logo loads and is 2.2rem tall; with it, the site title is
 //      visually hidden at 64rem and below and still names the brand link;
-//   3. print hides the edit link and the update bar.
+//   3. print hides the edit link and the update bar;
+//   4. (P4-E2.1 item 1) a row's badges (`titleTag`, the fallback marker)
+//      on an index, a tag page, a home and a catalogue at 320, 360 and
+//      414: each on one line, no taller than its single-line box plus
+//      2 px, within its row, the date at the row's end; at 1280 the badge
+//      follows the title on its line.
 //
 // The navbar's one-row scan (801–1600 px, every home) is layout.test.mjs
 // item 2's, which runs on the same demo.
@@ -138,8 +143,64 @@ async function item3(t) {
   await page.close();
 }
 
+// runs in the page: every badge in a row, with its box, its single-line
+// height (an absolutely positioned clone beside it, so nothing squeezes
+// it), its text's line boxes, its row's box and the row's link and date
+function rowBadges() {
+  return [...document.querySelectorAll('.clogem-row')].flatMap((row) =>
+    [...row.querySelectorAll('.clogem-title-tag, .clogem-fallback')].map((b) => {
+      const clone = b.cloneNode(true);
+      clone.style.cssText = 'position: absolute; white-space: nowrap; visibility: hidden;';
+      row.appendChild(clone);
+      const one = clone.getBoundingClientRect().height;
+      clone.remove();
+      const range = document.createRange();
+      range.selectNodeContents(b);
+      const rects = [...range.getClientRects()].filter((r) => r.width > 0);
+      const br = b.getBoundingClientRect(), rr = row.getBoundingClientRect();
+      const cs = getComputedStyle(row);
+      const time = row.querySelector('time');
+      const links = [...row.querySelector('a').getClientRects()];
+      const last = links[links.length - 1];
+      return { text: b.textContent, w: br.width, h: br.height, one, lines: rects.length,
+               top: br.top, bottom: br.bottom, left: br.left, rowTop: rr.top, rowBottom: rr.bottom,
+               rowRight: rr.right - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth),
+               timeRight: time ? time.getBoundingClientRect().right : null,
+               linkRight: last.right, linkTop: last.top, linkBottom: last.bottom };
+    }));
+}
+
+async function item4(t) {
+  const pages = ['archives/', 'tags/meta/', 'zh-Hans/', 'pages/559f0f/'];
+  for (const width of [320, 360, 414, 1280]) {
+    const page = await t.newPage({ viewport: { width, height: 740 } });
+    for (const rel of pages) {
+      await open(page, t, rel);
+      const what = `${width}px /${rel}`;
+      const bs = await page.evaluate(rowBadges);
+      t.check(bs.length > 0, `${what}: the page has a badge in a row`);
+      for (const b of bs) {
+        const box = `"${b.text}" ${b.w.toFixed(1)}×${b.h.toFixed(1)}`;
+        if (width === 1280) {
+          const mid = (b.top + b.bottom) / 2;
+          t.check(b.left >= b.linkRight - 1 && mid > b.linkTop && mid < b.linkBottom,
+                  `${what}: badge ${box} follows the title on its line (left ${b.left}, title ends ${b.linkRight}, ${b.linkTop}–${b.linkBottom})`);
+          continue;
+        }
+        t.check(b.lines === 1, `${what}: badge ${box} is one line (${b.lines} line boxes)`);
+        t.check(b.h <= b.one + 2, `${what}: badge ${box} is no taller than its single-line ${b.one.toFixed(1)} px + 2`);
+        t.check(b.top >= b.rowTop - 0.5 && b.bottom <= b.rowBottom + 0.5,
+                `${what}: badge ${box} is within its row (${b.top}–${b.bottom} in ${b.rowTop}–${b.rowBottom})`);
+        if (b.timeRight !== null)
+          t.check(Math.abs(b.timeRight - b.rowRight) <= 0.5, `${what}: the date ends at the row's end (${b.timeRight}, row ${b.rowRight})`);
+      }
+    }
+    await page.close();
+  }
+}
+
 export default async function (t) {
-  for (const item of [item1, item2, item3]) {
+  for (const item of [item1, item2, item3, item4]) {
     try {
       await item(t);
     } catch (e) {

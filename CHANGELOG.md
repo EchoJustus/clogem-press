@@ -236,6 +236,21 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   `menu brand search mode` and the drawer-link checks are unchanged and
   pass with the logo and the repo link.
 
+### Fixed (E2.1)
+
+- **A row's badges keep one line.** In a list or catalogue row (a flex
+  row), the `titleTag` badge shrank to its min-content width and
+  stretched to the row's height: at 320 px on `/zh-Hans/` the y2025a
+  row's 原创 was 26.0×108.8, one character per line; the fallback marker
+  had stretched the same way since before E2. Both are now `flex: none;
+  white-space: nowrap; align-self: center` in a `.clogem-row`, so the
+  title wraps instead and the date stays at the row's end. `theme.css`
+  is 11,594 B gzipped, 240 B over `main`. `parity.test.mjs` item 4, at
+  320, 360 and 414 on `/archives/`, `/tags/meta/`, `/zh-Hans/` and a
+  catalogue: each badge in a row has one line box, is no taller than its
+  single-line box plus 2 px and lies within its row, and the date ends at
+  the row's end; at 1280 the badge follows the title on its line.
+
 ### Needs native review (E2)
 
 - `ms`: `:nav/source` "Kod sumber" (the navbar's repository link, when

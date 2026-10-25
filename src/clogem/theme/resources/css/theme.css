@@ -470,6 +470,8 @@ img { max-width: 100%; height: auto; }
 .clogem-bar li.is-active { border-color: var(--accent); }
 .clogem-bar__count { color: var(--textColorSubtle); margin-left: 0.35rem; font-size: 0.8rem; }
 .clogem-row time { color: var(--textColorSubtle); font-size: 0.85rem; white-space: nowrap; margin-inline-start: auto; }
+/* P4-E2.1: a row's badges keep one line and their height; the title wraps */
+.clogem-row .clogem-title-tag, .clogem-row .clogem-fallback { flex: none; white-space: nowrap; align-self: center; }
 .clogem-pagination { display: flex; gap: 1rem; justify-content: center; align-items: center; margin: 1.5rem 0; }
 .clogem-pagination .is-disabled { color: var(--textColorSubtle); }
 .clogem-empty { color: var(--textColorSubtle); font-style: italic; }
