@@ -207,6 +207,15 @@ gets it, and title badges appear by default, as in vdoing.
 - **The demo's `overrides/custom.css` marker shows once** (item 8e), on the
   footer's first `<p>`, not on both (`identity.test.mjs`; `modes.test.mjs`
   unchanged).
+- **Tests (item 9)**: `layout.test.mjs`'s "end of `/pages/17c887/`, then
+  600 px more below" check no longer hangs on the footer's height (it went
+  red at `545d09c` and green at `849cd4e` with no test change). The
+  viewport is sized from the page's own geometry so the last heading is in
+  view below the line at the end, which makes the end's choice and the
+  line's differ; the check asserts that they do, then that growth gives
+  the line's entry back. It runs as built, with the footer 150 px taller,
+  and with it 150 px shorter (it is 147 px, so gone), and all three fail
+  with `toc.js`'s `ResizeObserver` removed.
 - **Tests (item 7)**: the stylesheet order theme, identity, highlight is
   pinned on a highlighted build with the fake Chroma
   (`highlight_test`'s `identity-css-sits-between-theme-and-highlight`;

@@ -270,24 +270,48 @@ async function item1(t) {
     await page.close();
   }
   // at the end of a page that then grows below the reader (giscus), the
-  // end-of-page choice is dropped for the line's (a ResizeObserver; no scroll)
-  {
+  // end-of-page choice is dropped for the line's (a ResizeObserver; no
+  // scroll). The verdict must not hang on the footer's height (P4-E1a.1
+  // item 9): the viewport is sized from the page's own geometry so that,
+  // at the end, the last heading is in view below the line — so the end's
+  // choice (the last heading in view) and the line's differ — and the run
+  // is repeated with the footer 150 px taller and with it gone (it is
+  // 147 px on the demo).
+  for (const [how, css] of [['as built', null],
+                            ['the footer 150 px taller', '.clogem-footer { padding-bottom: calc(1.5rem + 150px) !important; }'],
+                            ['the footer 150 px shorter', 'shorter']]) {
     const page = await t.newPage({ viewport: { width: 1280, height: 1024 }, reducedMotion: 'reduce' });
     await open(page, t, 'pages/17c887/');
+    if (css === 'shorter') {
+      const h = await page.evaluate(() => document.querySelector('.clogem-footer').getBoundingClientRect().height);
+      await page.addStyleTag({ content: `.clogem-footer { box-sizing: border-box; height: ${Math.max(0, h - 150)}px; padding: 0; overflow: hidden; }` });
+    } else if (css) {
+      await page.addStyleTag({ content: css });
+    }
+    const g = await page.evaluate(() => ({ H: document.documentElement.scrollHeight,
+      line: document.querySelector('.clogem-navbar').getBoundingClientRect().bottom + 16,
+      last: Math.max(...[...document.querySelectorAll('.clogem-toc a')].map((a) =>
+        document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1))).getBoundingClientRect().top + scrollY)) }));
+    const height = Math.round(Math.min(g.H - 100, Math.max(600, g.H - g.last + g.line + 120)));
+    await page.setViewportSize({ width: 1280, height });
+    await settle(page);
     await page.evaluate(() => scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }));
     await settle(page);
-    const atEnd = await page.evaluate(() => document.querySelector('.clogem-toc li.is-active a').getAttribute('href'));
-    await page.evaluate(() => { const d = document.createElement('div'); d.style.height = '600px'; document.querySelector('main').appendChild(d); });
-    await settle(page);
-    const r = await page.evaluate(() => {
+    const lineEntry = () => {
       const line = document.querySelector('.clogem-navbar').getBoundingClientRect().bottom + 16;
       const ls = [...document.querySelectorAll('.clogem-toc a')];
       const passed = ls.filter((a) => document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1))).getBoundingClientRect().top <= line);
       return { want: (passed.pop() || ls[0]).getAttribute('href'), got: document.querySelector('.clogem-toc li.is-active a').getAttribute('href'),
                end: scrollY >= document.documentElement.scrollHeight - innerHeight - 1 };
-    });
-    t.check(!r.end && r.got === r.want && r.got !== atEnd,
-            `the end of /pages/17c887/ (${atEnd} active), then 600 px more below: ${r.got} is active, want the line's ${r.want} (${JSON.stringify(r)})`);
+    };
+    const before = await page.evaluate(lineEntry);
+    t.check(before.end && before.got !== before.want,
+            `${how}, 1280×${height}: at the end of /pages/17c887/ the end's choice ${before.got} is not the line's ${before.want}, so the check discriminates (${JSON.stringify(before)})`);
+    await page.evaluate(() => { const d = document.createElement('div'); d.style.height = '600px'; document.querySelector('main').appendChild(d); });
+    await settle(page);
+    const r = await page.evaluate(lineEntry);
+    t.check(!r.end && r.got === r.want && r.got !== before.got,
+            `${how}: the end of /pages/17c887/ (${before.got} active), then 600 px more below: ${r.got} is active, want the line's ${r.want} (${JSON.stringify(r)})`);
     await page.close();
   }
   // a page that fits the viewport marks its first entry, not its last
