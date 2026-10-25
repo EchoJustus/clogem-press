@@ -1782,6 +1782,47 @@ Design points worth stating:
    and confirming the existing comments appear before announcing the switch. `clogem migrate` prints
    the marker line per thread. Nothing to do for a site with no prior discussions.
 
+### 7.5 The support page
+
+*Added October 2026, before 0.3.0; the version stays 0.2.0.* clogem-press has a page on the Clogem
+support site, **https://echojustus.github.io/clogem-support/clogem-press/**. The site is the `gh-pages`
+branch of EchoJustus/clogem-support: its front page is built there (`portal.yml`, from `site/site.edn`),
+and each product publishes its own folder from its own repository, Wmark Pro's `wmark-pro/` first.
+clogem-press publishes `clogem-press/` (README, "Support page"; CHANGELOG, Unreleased).
+
+Decisions:
+
+1. **The hub's technology, not clogem-press's theme** (owner). The page is built as the hub's own pages
+   are: a Babashka script with the hiccup2 built into bb (`support/support_page.clj`, `bb
+   support-page`), its words in `support/page.edn`, one self-contained `index.html` with no JavaScript,
+   no cookies and nothing loaded from other sites, a Content-Security-Policy that allows only its one
+   style (by SHA-256) and `data:` images, the hub's no-script theme switcher (three radio buttons read
+   with `:has()`). The theme in `src/clogem/theme/` runs scripts the hub forbids (the mode script,
+   `nav.js`, Pagefind) and would bring a site's whole asset tree for one page, so it is not used. The
+   generator stays out of `src/clogem/` and shares no code with the site generator; the parts adapted
+   from the hub's `scripts/portal.clj` keep its MIT notice beside the file's EPL-2.0 line. The look is
+   the hub's family (its backgrounds, cards and type) with clogem-press's jade (`#23A982`) as the accent:
+   a darker jade for text in light mode, a lighter one in dark, every pair tested at WCAG AA.
+2. **A deploy key, as Wmark Pro's page is published** (owner). `.github/workflows/support-page.yml`
+   pushes to clogem-support's `gh-pages` over SSH with a deploy key of its own (the
+   `CLOGEM_SUPPORT_DEPLOY_KEY` secret; write access to clogem-support alone), not with `GITHUB_TOKEN`,
+   which cannot write to another repository; a deploy-key push also starts the Pages build that a
+   `GITHUB_TOKEN` push would not. It stages `clogem-press/` alone, never forces (the branch is
+   protected), retries from a fresh clone when another writer got there first, pins GitHub's
+   published host keys, and never runs on pull requests, since it holds a secret in a public
+   repository. Without the secret it builds and stops with a notice. This key is the support page's
+   only: §7.4 step 6 still holds for the site, whose deployment needs no secret.
+3. **English only** (owner). The hub is English, so the page is too; it says that clogem-press itself
+   builds sites in up to five languages (§6).
+4. **Six sections, in this order** (ours, pinned by `support_page_test`): what clogem-press is; what it
+   does today (0.2.0 released, Phase 4 in progress and unreleased, following the CHANGELOG, no dates);
+   getting started; help and feedback (issues and pull requests here, questions and ideas in the hub's
+   Discussions, since this repository's are off, and the hub's address for what shouldn't be public);
+   privacy; licence and source. No commerce: no store, price, trial or Pro edition.
+5. **The privacy note is a draft** (owner's call). Its wording was written from the code (the tool
+   descriptors in `clogem.tools`, the config defaults, the theme's storage keys) and is marked in
+   `page.edn` as awaiting the owner's approval, which comes before the first publication.
+
 ---
 
 ## 8. Implementation plan

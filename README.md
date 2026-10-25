@@ -641,10 +641,63 @@ provider's own hosts are needed:
 | Plausible | its host (`https://plausible.io`, or the `:src` host) in `script-src` and `connect-src` |
 | Umami Cloud | `script-src https://cloud.umami.is`; `connect-src https://gateway.umami.is` |
 
+## Support page
+
+clogem-press's page on the Clogem support site,
+**https://echojustus.github.io/clogem-support/clogem-press/**: what it is,
+what it does today, how to start, where to ask, and a privacy note. It is
+built as the hub's own pages are (one self-contained file: no JavaScript,
+no cookies, nothing loaded from other sites, a Content-Security-Policy
+that allows only its own style and `data:` images, light and dark after the
+system or a no-script switcher), and lives outside the generator, in
+`support/` ([DESIGN.md §7.5](DESIGN.md#75-the-support-page)).
+
+```bash
+bb support-page                # dist-support/clogem-press/index.html (--out DIR elsewhere)
+bb test --pattern support-page # the page's rules and the workflow's publishing step
+```
+
+- **The words** are `support/page.edn`; the generator,
+  `support/support_page.clj`, adds markup only. The icon is
+  `support/clogem-press.svg`, the v3 48-unit master, embedded as a `data:`
+  URI in the header and as the favicon.
+- **The built page** goes to `dist-support/` (ignored): built HTML is never
+  committed. It is **28,183 bytes**, within the 64 KB budget `bb test`
+  holds it to.
+- **Publishing:** `.github/workflows/support-page.yml`, on pushes to `main`
+  that touch `support/`, its test, the workflow or `bb.edn`, and by hand
+  (**Actions > support-page > Run workflow**); never on pull requests. It
+  tests and builds the page, clones clogem-support's `gh-pages` over SSH
+  with a deploy key, replaces `clogem-press/` and stages that folder alone,
+  and pushes without force, starting again from a fresh clone (3 attempts)
+  if someone else published at the same moment. The push starts a Pages
+  build; the job then waits up to 10 minutes for the live page and warns if
+  it hasn't changed. Without the deploy key it builds the page and stops
+  with a notice, successfully.
+
+**The owner's one-time steps:**
+1. Make an SSH key pair for this repository alone:
+   `ssh-keygen -t ed25519 -N "" -C "clogem-press support page" -f clogem-support-deploy`.
+2. Add the public half (`clogem-support-deploy.pub`) to
+   EchoJustus/clogem-support under **Settings > Deploy keys**, with
+   **Allow write access**. It must be a key of its own: GitHub allows a
+   deploy key on one repository only, and Wmark Pro's key is already there.
+3. Add the private half (`clogem-support-deploy`) as an Actions secret
+   named `CLOGEM_SUPPORT_DEPLOY_KEY` in this repository (**Settings >
+   Secrets and variables > Actions**), then delete the local copy.
+4. Approve the privacy note's wording (`support/page.edn`, the `privacy`
+   section, marked as a draft) before the first publication. The first
+   run after step 3 publishes the page, so leave the secret unset until
+   then.
+
+**When it's live:** the hub's own session adds the link on its front page's
+clogem-press card and a row in its README's table. Nothing in this
+repository does that.
+
 ## Development
 
 ```bash
-bb test                                             # 800 tests / ~52,100 assertions
+bb test                                             # 819 tests / ~52,000 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 

@@ -26,6 +26,79 @@ Likewise for E1a's keys (`:theme :blogger`, `:social`, `:footer`,
 `:banner-bg`, `:body-bg-img*`, `:title-badge*`): a site that set one now
 gets it, and title badges appear by default, as in vdoing.
 
+**Support page** (DESIGN.md §7.5): clogem-press's page on the Clogem
+support site, https://echojustus.github.io/clogem-support/clogem-press/,
+built and published as the hub's own pages are. Not part of the generator:
+nothing in `src/clogem/` changes, and a built site is unaffected.
+
+### Added (support page)
+
+- `bb support-page` (`support/support_page.clj`, Babashka and its built-in
+  hiccup2) writes `dist-support/clogem-press/index.html` from
+  `support/page.edn` (the words) and `support/clogem-press.svg` (the v3
+  48-unit icon, EPL-2.0). One self-contained file of **28,183 bytes**
+  (budget 64 KB): no JavaScript, no cookies, nothing loaded from other
+  sites, no `style=` attributes; a Content-Security-Policy allowing only its
+  one style by SHA-256 and `data:` images; `no-referrer`, `color-scheme`,
+  light and dark `theme-color`, a canonical link and a description; the
+  icon as a `data:` image in the header and as the favicon (base64, the
+  form the hub's front page reads an app's icon from). Light and dark after
+  the system, or the hub's no-script switcher (Auto, Light, Dark; opens on
+  Auto, remembers nothing), with clogem-press's jade as the accent: a darker
+  jade for text in light mode, a lighter one in dark, every pair WCAG AA.
+  Six sections, in this order: what clogem-press is, what it does today
+  (0.2.0, and Phase 4 as in progress and unreleased), getting started, help
+  and feedback, privacy, licence and source.
+- The privacy section is a **draft for the owner**, who approves its
+  wording before the first publication: the page (no cookies, no script,
+  nothing from other sites; GitHub Pages' own logs), the generator (runs
+  locally, sends nothing; downloads Chroma, Pagefind and the fswatcher pod
+  from their GitHub releases only when first needed or on `bb fetch-tool`,
+  each SHA-256-verified and cached), and the sites it builds (other
+  services only when their owner turns on giscus, analytics, or an image
+  hosted elsewhere).
+- `.github/workflows/support-page.yml`: on pushes to `main` that touch the
+  page's sources, and by hand; never on pull requests. It tests and builds
+  the page, then clones clogem-support's `gh-pages` over SSH with the
+  `CLOGEM_SUPPORT_DEPLOY_KEY` deploy key (from `env:`, mode 600, GitHub's
+  published host keys pinned), replaces `clogem-press/` and stages it
+  alone, commits as `github-actions[bot]` and pushes without force,
+  retrying from a fresh clone up to 3 times; then waits up to 10 minutes
+  for the live page, warning if it hasn't changed. Without the secret it
+  stops with a notice, successfully. Actions pinned by commit.
+- `bb.edn`: the `support-page` task, and `"support"` on `:paths` so the
+  task and its tests can require the generator.
+
+### Tests (support page)
+
+- `test/clogem/support_page_test.clj` (19 tests): no script, handlers or
+  style attributes; the CSP's hash is the style's; the head tags; every
+  image a `data:` URI with alt, width and height; nothing loaded from
+  elsewhere; the icon passes the hub's plain-drawing checks; the switcher;
+  every colour pair AA in light and dark; the sections, the jump links and
+  the heading levels in order; no commerce words and no address but
+  `EchoJustus.Studio@outlook.com`; the help links; words escaped and only
+  the allowed pieces; the byte budget; licence headers. The workflow's
+  text, and its publishing step run against a local bare repository
+  standing in for `gh-pages`: the first publication adds
+  `clogem-press/index.html` and nothing else changes, a rerun pushes
+  nothing, another writer's commit is kept, a refused push is retried from
+  a fresh clone, and a missing secret is a notice and exit 0.
+
+### The owner's one-time steps (support page)
+
+1. `ssh-keygen -t ed25519 -N "" -C "clogem-press support page" -f clogem-support-deploy`.
+2. The public half to EchoJustus/clogem-support, **Settings > Deploy
+   keys**, with **Allow write access** (a key of its own: Wmark Pro's is
+   already there, and GitHub allows a key on one repository only).
+3. The private half as the Actions secret `CLOGEM_SUPPORT_DEPLOY_KEY` here,
+   then delete the local copy.
+4. Approve the privacy note's wording before the first publication (leave
+   the secret unset until then).
+
+Once it is live, the hub's own session links it from the front page's
+clogem-press card and its README's table.
+
 **Task E1a — blog identity and banner** (§11.3 item 13, first half; D-P4-13):
 
 ### Added (E1a)
