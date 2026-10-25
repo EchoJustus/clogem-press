@@ -80,6 +80,13 @@
      :warnings (mapv :message (diag/warnings ds))
      :diags    (diag/warnings ds)}))
 
+(defn- build-or-error
+  "`build-dir`, or {:thrown message} when the build raises, so a test
+  asserts the result rather than relying on the exception."
+  [dir]
+  (try (build-dir dir)
+       (catch clojure.lang.ExceptionInfo e {:thrown (ex-message e)})))
+
 (defn- build-temp
   "`write-site!` and `build-dir` in a temp directory, deleted afterwards."
   [edn files]
@@ -890,9 +897,11 @@
           (write-site! dir (assoc site :content {:static-dir "public"}) files)
           (fs/create-dirs (fs/path dir "public"))
           (spit (fs/file dir "public" "404.html") "<!doctype html><title>mine</title><p>my own 404")
-          (let [{:keys [pages warnings]} (build-dir dir)]
-            (is (= "<!doctype html><title>mine</title><p>my own 404" (pages "404.html")))
-            (is (not-any? #(str/includes? % "404") warnings)))
+          (let [{:keys [pages warnings thrown]} (build-or-error dir)]
+            (is (nil? thrown) "the build succeeds")
+            (is (= "<!doctype html><title>mine</title><p>my own 404" (get pages "404.html")))
+            (is (not-any? #(str/includes? % "<h1>404</h1>") (vals pages)) "no generated 404 page anywhere")
+            (is (not-any? #(str/includes? % "404") warnings) "an exact 404.html: no warning"))
           (let [{:keys [pages]} (build-dir dir)]
             (is (= "<!doctype html><title>mine</title><p>my own 404" (pages "404.html")) "a rebuild keeps it"))
           (fs/delete (fs/path dir "public" "404.html"))
@@ -905,6 +914,21 @@
                       (spit (fs/file dir "public" "404.html") "x")
                       (cli/doctor {:site-dir (str dir)}))]
               (is (empty? (:errors r)))))
+          (finally (fs/delete-tree dir)))))
+    (testing "P4-E2.1 item 3: a 404.HTML still replaces it, with one warning and no error"
+      (let [dir (fs/create-temp-dir {:prefix "clogem-e2"})]
+        (try
+          (write-site! dir (assoc site :content {:static-dir "public"}) files)
+          (fs/create-dirs (fs/path dir "public"))
+          (spit (fs/file dir "public" "404.HTML") "mine")
+          (let [{:keys [pages diags thrown]} (build-or-error dir)
+                ws (filterv #(str/includes? (:message %) "404") diags)]
+            (is (nil? thrown) "the build succeeds")
+            (is (not (contains? pages "404.html")) "the generated page is not written")
+            (is (= "mine" (slurp (fs/file dir "dist" "404.HTML"))))
+            (is (= 1 (count ws)) (pr-str ws))
+            (is (re-find #"public/404\.HTML.*hosts.*`404\.html`.*[Rr]ename" (str (:message (first ws)) " " (:hint (first ws))))
+                (pr-str ws)))
           (finally (fs/delete-tree dir)))))))
 
 (deftest dev-and-serve-answer-a-miss-with-the-404-page

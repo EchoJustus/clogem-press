@@ -469,11 +469,24 @@
 
 (declare static-files)
 
-(defn- static-404?
-  "Does the static directory ship its own root `404.html` (case-folded)? It
-  then replaces the generated page (Task E2)."
+(defn- static-404
+  "The static directory's own root `404.html` (case-folded), as
+  [source-path rel-path], or nil. It then replaces the generated page
+  (Task E2)."
   [cfg]
-  (boolean (some (fn [[_ rel]] (= parity/not-found-file (u/lower (str rel)))) (static-files cfg))))
+  (some (fn [[_ rel :as f]] (when (= parity/not-found-file (u/lower (str rel))) f)) (static-files cfg)))
+
+(defn- static-404? [cfg] (boolean (static-404 cfg)))
+
+(defn warn-static-404-case!
+  "P4-E2.1: a static `404.HTML` (any case but `404.html`) still replaces the
+  generated page, but the hosts look for `404.html`: say so, once."
+  [cfg]
+  (when-let [[src rel] (static-404 cfg)]
+    (when (not= parity/not-found-file (str rel))
+      (diag/warn! nil (str (config/site-rel cfg src) " replaces the generated 404 page, but GitHub Pages "
+                           "and other hosts look for `404.html`, so the site has no 404 page.")
+                  "Rename it to `404.html`."))))
 
 (defn page-map
   "{uri → (fn [] hiccup)} for every emitted document.
@@ -1536,13 +1549,15 @@
   (`output-collisions`) — what `doctor` and the build's analysis run, so a
   permalink such as `/assets/demo.txt/` or `/robots.txt/` is a content error
   before anything is rendered. The page map's own diagnostics are not
-  repeated here; the links the copy skips are warned about
-  (`warn-skipped-links!`). Returns the collisions."
+  repeated here; the links the copy skips, a static 404 page named in
+  another case and a missing logo are warned about. Returns the
+  collisions."
   [model]
   (let [out    (config/out-dir (:cfg model))
         [plan] (diag/collecting (planned-outputs model))
         cs     (output-collisions out plan)]
     (warn-skipped-links! (:cfg model))
+    (warn-static-404-case! (:cfg model))
     (warn-missing-logo! (:cfg model) out plan)
     (doseq [{:keys [inner outer] :as c} cs]
       (diag/error! (or (get-in inner [:what :source]) (get-in outer [:what :source]))

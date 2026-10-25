@@ -259,6 +259,17 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   `a-backslash-in-a-posix-file-name-is-kept`: the href ends in
   `02.back%5Cslash.md` and the page has the file's commit date.
 
+- **A static `404.HTML` warns.** A static 404 page in another case still
+  replaces the generated one (the collision rule folds case too, so this
+  stays no error), but GitHub Pages and other hosts look for `404.html`,
+  so the site had no 404 page and nothing said so. The build (and
+  `doctor`) now warns once, naming the file and saying to rename it to
+  `404.html`; an exact `404.html` gives no warning. `parity_test.clj`
+  `the-404-page-under-a-base-a-static-override-and-the-sweep`: a
+  `404.HTML` gives one warning and no error, and the static-override case
+  now asserts the build's result (`build-or-error`) instead of relying on
+  an exception.
+
 ### Needs native review (E2)
 
 - `ms`: `:nav/source` "Kod sumber" (the navbar's repository link, when
