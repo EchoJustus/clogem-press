@@ -41,7 +41,9 @@
     ;; Phase 4 Task E2
     clogem.parity-test
     ;; Phase 4 Task E1a
-    clogem.identity-test])
+    clogem.identity-test
+    ;; The support page (support/, DESIGN.md §7.5)
+    clogem.support-page-test])
 
 (defn- highlighting-off-by-default!
   "§11.3 item 10 turns highlighting on by default, which would make every
