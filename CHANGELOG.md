@@ -270,6 +270,16 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   now asserts the build's result (`build-or-error`) instead of relying on
   an exception.
 
+- **(E2.2) A long word in a row's title wraps.** At 320 px on `/zh-Hans/`
+  the y2025a row (a `titleTag` and a fallback marker) titled
+  "Configuration" pushed its date out of the row and the page 7 px wide
+  (`scrollWidth` 327). The row's link is now `min-width: 0;
+  overflow-wrap: anywhere`; the badges' `flex: none` changed nothing
+  beside `white-space: nowrap` and is gone, and the badges are selected
+  as `.clogem-row > span`. `parity.test.mjs` item 4 (`item4LongWord`): at
+  320 that row titled "Configuration" and a 40-character word does not
+  overflow the page, and its date ends at the row's end.
+
 - **(E2.2) No case warning beside an exact `404.html`.** With both
   `public/404.html` and `public/404.HTML`, the build warned that the site
   had no 404 page (it took the first case-folded match) beside the

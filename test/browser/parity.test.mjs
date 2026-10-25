@@ -14,7 +14,10 @@
 //      on an index, a tag page, a home and a catalogue at 320, 360 and
 //      414: each on one line, no taller than its single-line box plus
 //      2 px, within its row, the date at the row's end; at 1280 the badge
-//      follows the title on its line.
+//      follows the title on its line. (P4-E2.2 item 1) at 320 the
+//      /zh-Hans/ y2025a row (a `titleTag` and a fallback marker), its title
+//      set to "Configuration" and to a 40-character word, does not
+//      overflow the page and its date ends at the row's end.
 //
 // The navbar's one-row scan (801–1600 px, every home) is layout.test.mjs
 // item 2's, which runs on the same demo.
@@ -199,8 +202,35 @@ async function item4(t) {
   }
 }
 
+// runs in the page: set the y2025a row's title to `text`, then the page's
+// and the row's widths and the date's right edge
+function longWordRow(text) {
+  const a = document.querySelector('.clogem-row a[href$="/y2025a/"]');
+  if (!a) return null;
+  a.textContent = text;
+  const row = a.closest('.clogem-row'), rr = row.getBoundingClientRect(), cs = getComputedStyle(row);
+  return { scrollWidth: document.documentElement.scrollWidth, innerWidth,
+           badges: row.querySelectorAll('.clogem-title-tag, .clogem-fallback').length,
+           rowRight: rr.right - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth),
+           timeRight: row.querySelector('time').getBoundingClientRect().right };
+}
+
+async function item4LongWord(t) {
+  const page = await t.newPage({ viewport: { width: 320, height: 740 } });
+  for (const text of ['Configuration', 'x'.repeat(40)]) {
+    await open(page, t, 'zh-Hans/');
+    const r = await page.evaluate(longWordRow, text);
+    const what = `320px /zh-Hans/ y2025a titled "${text}"`;
+    t.check(r && r.badges === 2, `${what}: the row has two badges (${r && r.badges})`);
+    if (!r) continue;
+    t.check(r.scrollWidth <= r.innerWidth, `${what}: the page does not overflow (${r.scrollWidth} > ${r.innerWidth})`);
+    t.check(Math.abs(r.timeRight - r.rowRight) <= 0.5, `${what}: the date ends at the row's end (${r.timeRight}, row ${r.rowRight})`);
+  }
+  await page.close();
+}
+
 export default async function (t) {
-  for (const item of [item1, item2, item3, item4]) {
+  for (const item of [item1, item2, item3, item4, item4LongWord]) {
     try {
       await item(t);
     } catch (e) {
