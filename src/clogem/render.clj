@@ -470,11 +470,12 @@
 (declare static-files)
 
 (defn- static-404
-  "The static directory's own root `404.html` (case-folded), as
-  [source-path rel-path], or nil. It then replaces the generated page
-  (Task E2)."
+  "The static directory's own root `404.html` (case-folded; an exact
+  `404.html` first, P4-E2.2), as [source-path rel-path], or nil. It then
+  replaces the generated page (Task E2)."
   [cfg]
-  (some (fn [[_ rel :as f]] (when (= parity/not-found-file (u/lower (str rel))) f)) (static-files cfg)))
+  (let [fs (filter (fn [[_ rel]] (= parity/not-found-file (u/lower (str rel)))) (static-files cfg))]
+    (or (some (fn [[_ rel :as f]] (when (= parity/not-found-file (str rel)) f)) fs) (first fs))))
 
 (defn- static-404? [cfg] (boolean (static-404 cfg)))
 

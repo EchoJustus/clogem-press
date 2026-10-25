@@ -929,6 +929,19 @@
             (is (= 1 (count ws)) (pr-str ws))
             (is (re-find #"public/404\.HTML.*hosts.*`404\.html`.*[Rr]ename" (str (:message (first ws)) " " (:hint (first ws))))
                 (pr-str ws)))
+          (finally (fs/delete-tree dir)))))
+    (testing "P4-E2.2 item 3: both 404.html and 404.HTML: the collision error, no case warning"
+      (let [dir (fs/create-temp-dir {:prefix "clogem-e2"})]
+        (try
+          (write-site! dir (assoc site :content {:static-dir "public"}) files)
+          (fs/create-dirs (fs/path dir "public"))
+          (spit (fs/file dir "public" "404.html") "mine")
+          (spit (fs/file dir "public" "404.HTML") "mine too")
+          (let [[_ ds] (diag/collecting
+                        (render/check-output-collisions!
+                         (cli/analyse (config/load-config (str dir) nil {:content {:write-front-matter false}}))))]
+            (is (some #(re-find #"(?i)404\.html" (:message %)) (diag/errors ds)) (pr-str ds))
+            (is (not-any? #(str/includes? (:message %) "404") (diag/warnings ds)) (pr-str (diag/warnings ds))))
           (finally (fs/delete-tree dir)))))))
 
 (deftest dev-and-serve-answer-a-miss-with-the-404-page

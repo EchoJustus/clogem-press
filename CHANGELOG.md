@@ -270,6 +270,14 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   now asserts the build's result (`build-or-error`) instead of relying on
   an exception.
 
+- **(E2.2) No case warning beside an exact `404.html`.** With both
+  `public/404.html` and `public/404.HTML`, the build warned that the site
+  had no 404 page (it took the first case-folded match) beside the
+  collision error. An exact `404.html` is now taken first, so only the
+  collision error is reported. `parity_test.clj`
+  `the-404-page-under-a-base-a-static-override-and-the-sweep`: both files
+  give the collision error and no warning.
+
 ### Needs native review (E2)
 
 - `ms`: `:nav/source` "Kod sumber" (the navbar's repository link, when
