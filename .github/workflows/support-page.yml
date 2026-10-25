@@ -5,9 +5,11 @@
 #
 # The site is the gh-pages branch of EchoJustus/clogem-support. Each product
 # publishes its own folder there from its own repository; this workflow
-# owns clogem-press/ alone. It tests and builds the page (`bb support-page`,
-# from support/page.edn), clones gh-pages over SSH with a deploy key of its
-# own, replaces clogem-press/, stages that path and nothing else, and pushes
+# owns clogem-press/ alone. It tests and builds the page in its five
+# languages (`bb support-page`, from support/i18n/: English at clogem-press/,
+# the others in zh-Hans/, zh-Hant/, pt-BR/ and es-ES/ inside it), clones
+# gh-pages over SSH with a deploy key of its own, replaces clogem-press/ with
+# the built folder, stages that path and nothing else, and pushes
 # without force. If someone else published at the same moment, it starts
 # again from a fresh clone, 3 attempts at most, as the hub's portal.yml does.
 #
@@ -82,7 +84,8 @@ jobs:
           export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts"
 
           # One attempt: a fresh clone of the branch as it is now, clogem-press/
-          # replaced by the page just built, everything else as it was.
+          # replaced by the folder just built (all five pages, and a page no
+          # longer built gone), everything else as it was.
           # 0 = published or unchanged, 1 = refused.
           publish() {
             rm -rf pages
@@ -91,7 +94,7 @@ jobs:
             git -C pages config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             rm -rf pages/clogem-press
             mkdir -p pages/clogem-press
-            cp dist-support/clogem-press/index.html pages/clogem-press/index.html || exit 1
+            cp -R dist-support/clogem-press/. pages/clogem-press/ || exit 1
             git -C pages add -- clogem-press || return 1
             if git -C pages diff --cached --name-only | grep -v '^clogem-press/'; then
               echo "::error::Something outside clogem-press/ was staged; nothing was pushed."; exit 1
@@ -117,8 +120,9 @@ jobs:
         if: steps.publish.outputs.published == 'true'
         run: |
           set -uo pipefail
-          # The live page, past any cache, against the one just built; a
-          # warning, not a failure, if Pages is slow.
+          # The live English page, past any cache, against the one just built
+          # (the five are published in one commit); a warning, not a failure,
+          # if Pages is slow.
           for i in $(seq 1 40); do
             if curl -fsS --max-time 20 -o live.html "${URL}?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$i" 2> /dev/null &&
                cmp -s live.html dist-support/clogem-press/index.html; then
