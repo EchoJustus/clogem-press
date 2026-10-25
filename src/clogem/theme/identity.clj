@@ -161,6 +161,14 @@
   [ctx v]
   (u/blank->nil (str/trim (str (i18n/resolve-str ctx v)))))
 
+;; P4-E1a.2 item 1
+(defn- map-lang
+  "The language `i18n/resolve-str` takes a per-language map's value from:
+  the first on the fallback chain with a value, else the map's first key."
+  [{:keys [cfg lang]} m]
+  (or (some #(when (get m %) %) (config/fallback-chain cfg lang))
+      (first (keys m))))
+
 (defn hero-text
   "The home's `heroText` on its first page, or nil."
   [{:keys [home-fm page] :as ctx}]
@@ -212,9 +220,10 @@
           action  (fm-str ctx actionText)
           link    (some-> actionLink str str/trim u/blank->nil)
           ;; a string inherited from another language's file is in that
-          ;; language, and says so (P4-E1a.1 item 5); a per-language map
-          ;; already resolved to this page's language where it could
-          lang    (fn [v] (when (and home-fm-lang (not (map? v))) {:lang (config/html-lang cfg home-fm-lang)}))]
+          ;; language, and says so (P4-E1a.1 item 5); so is a per-language
+          ;; map's value taken from another language (P4-E1a.2 item 1)
+          lang    (fn [v] (when-let [l (if (map? v) (map-lang ctx v) home-fm-lang)]
+                            (when (not= l (:lang ctx)) {:lang (config/html-lang cfg l)})))]
       (when (or img text tagline (and action link) (some? bannerBg))
         (let [[kind v] (banner-kind ctx)
               kind (if (and (#{:auto :none} kind) (config/body-bg-images cfg)) :clear kind)

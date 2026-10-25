@@ -73,7 +73,7 @@ gets it, and title badges appear by default, as in vdoing.
   attribute). Two or more images rotate with `js/bodybg.js` (deferred,
   same-origin, 445 B gzipped, budget 600), which does nothing under reduced
   motion or while the page is hidden, and ships only then.
-- **`css/identity.css`** (1,222 B gzipped, budget 2,048): the card, the
+- **`css/identity.css`** (1,410 B gzipped, budget 2,048): the card, the
   links and the background image, linked right after theme.css and shipped
   only while a site uses one of them (`config/identity-css?`). theme.css
   gains only the badge, the banner and the footer lines: 11,354 → 11,717 B
@@ -226,6 +226,29 @@ gets it, and title badges appear by default, as in vdoing.
   have a zh-Hans variant, and it asserts that hashing the language URL
   would pick another icon for at least one of them (it does for all
   three), so the fixture discriminates (`the-title-badge`).
+- **A hero value from a per-language map's other language names it**
+  (E1a.2, item 1): `heroText: {en: Hello}` showed `Hello` on `/zh-Hans/`
+  unmarked, though an inherited plain-string `tagline` beside it carried
+  `lang="en"`. A map's value taken from another language along the
+  fallback chain now carries that language's `lang`; the page's own
+  language, from a map or from its own index file, stays unmarked
+  (`a-hero-in-its-own-language-is-unmarked`: an `index.zh-Hans.md` with
+  its own `heroText` and `tagline`, `{en: Hello, zh-Hans: 你好}` and
+  `{en: Hello}` on `/zh-Hans/`).
+- **A value with a scheme is no bare word** (E1a.2, item 2):
+  `javascript:x` or `mailto:x` as `:avatar`, `:body-bg-img`, a social
+  `:svg` or a badge icon was called "a bare word, not a file", and for a
+  badge the warning suggested the keyword `:javascript:x`. It gets the
+  "not an https: URL, a data:image/… URI or a site path" warning again
+  (`a-bare-word-is-no-image`).
+- **An `<h1>` inside an HTML comment is not the home's `<h1>`** (E1a.2,
+  item 3): `<!-- <h1>old</h1> -->` in the body made `heroText` a `<p>`, and
+  the page had no `<h1>` at all (`the-hero`).
+- **A `nil` in a social link's per-language `:title` is absent** (E1a.2,
+  item 4): `{:en "L" :zh-Hans nil}` threw the whole title away, with a
+  warning, and named the link `l.example`; it is now `{:en "L"}`, silently.
+  A title blank in every language (`{:en "" :zh-Hans ""}`) warns once, not
+  three times (`a-blank-language-in-a-link-title-falls-back`).
 
 ### Needs native review (E1a)
 

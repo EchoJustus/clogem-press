@@ -127,7 +127,18 @@
     (let [[th ms] (theme-of {:title-badge-icons ["star" :sun]})]
       (is (= [:sun] (:title-badge-icons th)))
       (is (= 1 (count ms)))
-      (is (str/includes? (first ms) "write it as a keyword, such as :star") (first ms)))))
+      (is (str/includes? (first ms) "write it as a keyword, such as :star") (first ms))))
+  (testing "P4-E1a.2 item 2: a value with a scheme is no bare word"
+    (doseq [v ["javascript:x" "mailto:x"]
+            theme [{:blogger {:name "J" :avatar v}}
+                   {:body-bg-img v}
+                   {:social {:icons [{:icon :github :svg v :title "S" :link "https://s.example/"}]}}
+                   {:title-badge-icons [v :sun]}]
+            :let [[_ ms] (theme-of theme)]]
+      (is (= 1 (count ms)) (pr-str theme ms))
+      (is (str/includes? (first ms) "which is not an https: URL, a data:image/… URI or a site path") (first ms))
+      (is (not (str/includes? (first ms) "bare word")) (first ms))
+      (is (not (str/includes? (first ms) "keyword")) (first ms)))))
 
 (deftest social-links
   (let [[th ms] (theme-of {:social {:icons [{:icon :github :title "GH" :link "https://github.com/me"}
@@ -420,7 +431,15 @@
       (is (= 1 (count (filter #(str/includes? % ":title :zh-Hans") warnings))) (pr-str warnings))
       (doseq [rel ["index.html" "zh-Hans/index.html"]]
         (is (str/includes? (footer-of (pages rel)) "<a aria-label=\"Mail\" href=\"mailto:a@b.example\" rel=\"me\" title=\"Mail\">") rel)
-        (is (not (str/includes? (pages rel) "aria-label=\"\"")) rel)))))
+        (is (not (str/includes? (pages rel) "aria-label=\"\"")) rel))))
+  (testing "P4-E1a.2 item 4: a nil language is absent, silently, and the rest of the title stays"
+    (let [[th ms] (theme-of {:social {:icons [{:icon :link :title {:en "L" :zh-Hans nil} :link "https://l.example/"}]}})]
+      (is (= {:en "L"} (get-in th [:social :icons 0 :title])))
+      (is (= [] ms))))
+  (testing "P4-E1a.2 item 4: a title blank in every language warns once"
+    (let [[th ms] (theme-of {:social {:icons [{:icon :github :title {:en "" :zh-Hans ""} :link "https://github.com/me"}]}})]
+      (is (= "github.com" (get-in th [:social :icons 0 :title])))
+      (is (= [":theme :social :icons 0 :title is {:en \"\", :zh-Hans \"\"}, which is blank in every language; the link is named \"github.com\"."] ms)))))
 
 (deftest social-links-under-a-base
   (let [{:keys [pages]} (build (assoc one-lang :site {:title "S" :base "/my docs/"}
@@ -595,6 +614,11 @@
         (let [home ((:pages (b {} (str (fm "heroText: Hello\n") "\n" body))) "index.html")]
           (is (str/includes? home "<p class=\"clogem-hero__title\">Hello</p>") body)
           (is (= 1 (count (re-seq #"(?i)<h1[ >]" home))) body))))
+    (testing "P4-E1a.2 item 3: an <h1> inside an HTML comment does not"
+      (doseq [body ["<!-- <h1>old</h1> -->\n\nText.\n" "<!--\n<h1>old</h1>\n-->\n\nText.\n"]]
+        (let [home ((:pages (b {} (str (fm "heroText: Hello\n") "\n" body))) "index.html")]
+          (is (str/includes? home "<h1 class=\"clogem-hero__title\">Hello</h1>") body)
+          (is (= 1 (count (re-seq #"(?i)<h1[ >]" (str/replace home #"(?s)<!--.*?-->" "")))) body))))
     (testing "no hero keys, no hero"
       (is (not (str/includes? ((:pages (b {} (fm "postList: detailed\n"))) "index.html") "clogem-hero"))))
     (testing "base-prefixed image and action"
@@ -673,6 +697,25 @@
     (is (str/includes? zh "<p class=\"clogem-hero__tagline\" lang=\"en\">Tag</p>"))
     (is (re-find #"<a class=\"clogem-hero__action\" href=\"[^\"]+\" lang=\"en\">Go</a>" zh))
     (is (str/includes? zh "<img alt=\"A cat\" class=\"clogem-hero__img\" lang=\"en\""))))
+
+(deftest a-hero-in-its-own-language-is-unmarked
+  (testing "P4-E1a.2 item 1: a non-default language's own index file"
+    (let [b  (build two-langs {"index.md" "---\nhome: true\nheroText: Hello\ntagline: Tag\n---\n"
+                               "index.zh-Hans.md" "---\nhome: true\nheroText: 你好\ntagline: 标语\n---\n"})
+          zh (hero-of ((:pages b) "zh-Hans/index.html"))]
+      (is (str/includes? zh "<h1 class=\"clogem-hero__title\">你好</h1>") zh)
+      (is (str/includes? zh "<p class=\"clogem-hero__tagline\">标语</p>") zh)))
+  (testing "P4-E1a.2 item 1: a per-language map, resolved to the page's own language"
+    (let [b  (build two-langs {"index.md" "---\nhome: true\nheroText:\n  en: Hello\n  zh-Hans: 你好\n---\n"})
+          zh (hero-of ((:pages b) "zh-Hans/index.html"))]
+      (is (str/includes? zh "<h1 class=\"clogem-hero__title\">你好</h1>") zh)))
+  (testing "P4-E1a.2 item 1: a per-language map without the page's language names the one it fell back to"
+    (let [b  (build two-langs {"index.md" "---\nhome: true\nheroText:\n  en: Hello\ntagline: Tag\n---\n"})
+          en (hero-of ((:pages b) "index.html"))
+          zh (hero-of ((:pages b) "zh-Hans/index.html"))]
+      (is (str/includes? en "<h1 class=\"clogem-hero__title\">Hello</h1>") en)
+      (is (str/includes? zh "<h1 class=\"clogem-hero__title\" lang=\"en\">Hello</h1>") zh)
+      (is (str/includes? zh "<p class=\"clogem-hero__tagline\" lang=\"en\">Tag</p>") zh))))
 
 ;; ---------------------------------------------------------------------------
 ;; Item 7: the title badge

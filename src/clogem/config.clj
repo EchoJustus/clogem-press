@@ -863,13 +863,19 @@
   [v]
   (and (string? v) (str/starts-with? v "/") (not (str/starts-with? v "//"))))
 
+(defn- scheme?
+  "Does `s` start with a URL scheme, such as `javascript:` or `mailto:`?
+  Such a value is not a bare word (P4-E1a.2 item 2)."
+  [s]
+  (boolean (re-find #"^\s*[A-Za-z][A-Za-z0-9+.-]*:" s)))
+
 (defn- image-why
   "Why `v` is not an `image-value`, completing \"… is <v>, …\"."
   [v]
   (cond
     (and (string? v) (re-find #"(?i)^\s*http:" v))
     "an http: URL — on an https page that is mixed content, which the browser blocks"
-    (and (string? v) (not (re-find #"[/.]" v)) (not (str/blank? v)))
+    (and (string? v) (not (re-find #"[/.]" v)) (not (str/blank? v)) (not (scheme? v)))
     "a bare word, not a file — a site path has a / or a ., such as /assets/me.png"
     :else
     "which is not an https: URL, a data:image/… URI or a site path such as /assets/me.png"))
@@ -995,8 +1001,17 @@
                                                      ;; a blank language in a per-language title
                                                      ;; would name the link "" there: dropped, so
                                                      ;; the fallback chain names it (P4-E1a.1 item 3)
-                                                     tv    (let [t (:title e)]
-                                                             (if (and (map? t) (every? string? (vals t)))
+                                                     ;; a nil in it is absent, silently, and a title
+                                                     ;; blank in every language warns once, below
+                                                     ;; (P4-E1a.2 item 4)
+                                                     t0    (let [t (:title e)]
+                                                             (if (map? t) (into {} (remove (comp nil? val)) t) t))
+                                                     all-blank? (and (map? t0) (seq t0)
+                                                                     (every? #(and (string? %) (str/blank? %)) (vals t0)))
+                                                     tv    (let [t t0]
+                                                             (cond
+                                                               all-blank? {}
+                                                               (and (map? t) (every? string? (vals t)))
                                                                (into {} (remove (fn [[l x]]
                                                                                   (when (str/blank? x)
                                                                                     (warn! (str (path-str (conj p :title l)) " is "
@@ -1005,15 +1020,19 @@
                                                                                                 "falls back."))
                                                                                     true)))
                                                                      t)
-                                                               t))
+                                                               :else t))
                                                      title (if (per-lang-str? tv)
                                                              tv
                                                              (let [t (if (re-find #"(?i)^mailto:" link)
                                                                        (str/replace link #"(?i)^mailto:([^?]*).*$" "$1")
                                                                        (or (second (re-find #"(?i)^https?://([^/?#:]+)" link)) link))]
                                                                (warn! (str (path-str p)
-                                                                           (if (and (contains? e :title) (not (and (map? tv) (empty? tv) (seq (:title e)))))
+                                                                           (cond
+                                                                             all-blank?
+                                                                             (str " :title is " (pr-str (:title e)) ", which is blank in every language")
+                                                                             (and (contains? e :title) (not (and (map? tv) (empty? tv) (seq (:title e)))))
                                                                              (str " :title is " (pr-str (:title e)) ", but it must be a string or a per-language map of strings")
+                                                                             :else
                                                                              " has no :title")
                                                                            "; the link is named " (pr-str t) "."))
                                                                t))]
@@ -1110,7 +1129,7 @@
                                  (let [p [:theme :title-badge-icons i]]
                                    (cond
                                      ;; `"star"`: a sprite icon is a keyword
-                                     (and (string? x) (not (str/blank? x)) (not (re-find #"[/.]" x)))
+                                     (and (string? x) (not (str/blank? x)) (not (re-find #"[/.]" x)) (not (scheme? x)))
                                      (warn! (str (path-str p) " is " (pr-str x) ", a bare word, not a file; "
                                                  "it is ignored. To use a sprite icon, write it as a keyword, "
                                                  "such as " (keyword (str/trim x)) "; the UI icons are "
