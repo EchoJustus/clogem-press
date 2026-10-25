@@ -1,9 +1,14 @@
 ;; Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).
 ;;
-;; The words of clogem-press's page on the Clogem support site,
+;; The English words of clogem-press's page on the Clogem support site,
 ;; https://echojustus.github.io/clogem-support/clogem-press/ — built by
 ;; `bb support-page` (support/support_page.clj), published by
-;; .github/workflows/support-page.yml. English only (DESIGN.md §7.5).
+;; .github/workflows/support-page.yml (DESIGN.md §7.5).
+;;
+;; English is the default, and the reference: the four translations beside
+;; this file (zh-Hans.edn, zh-Hant.edn, pt-BR.edn, es-ES.edn) have its shape,
+;; and the build refuses one whose sections, blocks, link targets, code or
+;; commands differ from these. A change here is made in all five.
 ;;
 ;; Every word on the page is here; the generator adds markup only. Text is
 ;; escaped. Inside a paragraph, a list item or a card's :text, a piece is a
@@ -23,6 +28,10 @@
 ;;                              cards; :href and :action are optional, together
 ;;
 ;; The sections appear, and the "On this page" links list them, in this order.
+;;
+;; :lang-name is this language's name in itself, for the language switcher
+;; (named :langs-label). A translation also has :en-note, the note that
+;; follows a link to a page in English (support_page.clj, `english-only`).
 
 {:url         "https://echojustus.github.io/clogem-support/clogem-press/"
  :hub         "https://echojustus.github.io/clogem-support/"
@@ -34,6 +43,8 @@
  :icon-alt    "The clogem-press icon: three stacked jade pages with a bookmark"
  :lead        "An open-source static site generator with a babashka command line. It turns a folder of Markdown into a site with a sidebar, indexes, search and up to five languages."
  :jump-label  "On this page"
+ :lang-name   "English"
+ :langs-label "Languages"
  :theme       {:legend "Colour theme"
                :system ["Auto" "Follow your system's setting"]
                :light  ["Light" "Always light"]
@@ -83,7 +94,7 @@
 
   {:id     "help"
    :title  "Help and feedback"
-   :blocks [[:p "Everything below happens on GitHub, in the open."]
+   :blocks [[:p "Everything below happens on GitHub, in the open. Write in any of the languages this page is offered in; replies may come in English."]
             [:cards
              {:chip   "Bug"
               :title  "Report a problem"

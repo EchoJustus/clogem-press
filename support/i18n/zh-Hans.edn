@@ -1,0 +1,130 @@
+;; Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).
+;;
+;; The Simplified Chinese words of clogem-press's support page,
+;; https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/ —
+;; generic Simplified Chinese, mainland-neutral wording (DESIGN.md §7.5).
+;; A translation of en.edn, of its shape: en.edn's header says what may go
+;; here. The build refuses it if its sections, blocks, link targets, code or
+;; commands differ from English's. Awaiting a native speaker's review
+;; (CHANGELOG, "Needs native review (support page)").
+
+{:url         "https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/"
+ :hub         "https://echojustus.github.io/clogem-support/"
+ :title       "clogem-press：帮助与源代码"
+ :description "clogem-press 是一个开源的知识库、博客和文档生成器，支持最多五种语言，基于 babashka 构建。本页介绍它能做什么、如何上手、去哪里提问，以及它的隐私说明。"
+ :eyebrow     "Clogem · 开源"
+ :name        "clogem-press"
+ :subtitle    "用 Markdown 生成知识库、博客和文档"
+ :icon-alt    "clogem-press 的图标：三张叠放的玉绿色页面，带一枚书签"
+ :lead        "一个开源的静态网站生成器，通过 babashka 命令行使用。它把一个存放 Markdown 文件的文件夹变成网站，带有侧边栏、索引、搜索，并支持最多五种语言。"
+ :jump-label  "本页内容"
+ :lang-name   "简体中文"
+ :langs-label "语言"
+ :en-note     "（英文）"
+ :theme       {:legend "配色主题"
+               :system ["自动" "跟随系统设置"]
+               :light  ["浅色" "始终使用浅色"]
+               :dark   ["深色" "始终使用深色"]}
+ :footer      {:hub     "Clogem Support"
+               :licence ["clogem-press 是自由软件，采用 "
+                         [:a "https://github.com/EchoJustus/clogem-press/blob/main/LICENSE" "Eclipse Public License 2.0"]
+                         " 许可证。"]
+               :note    "本页不设置 Cookie，也不从其他网站加载任何内容。"}
+
+ :sections
+ [{:id     "about"
+   :title  "clogem-press 是什么"
+   :blocks [[:p "clogem-press 用一个存放 Markdown 文件的文件夹构建静态网站：知识库、博客、文档，或者三者合一的网站。它沿用 "
+             [:a "https://github.com/xugaoyi/vuepress-theme-vdoing" "vuepress-theme-vdoing"]
+             " 的内容约定：带编号的文件夹成为侧边栏，front matter 会自动替你写好，每篇文章都有一个简短的永久地址。"]
+            [:p "它运行在 " [:a "https://babashka.org/" "babashka"]
+             " 上，无需安装任何库：Markdown、模板、YAML、HTTP 和订阅源都已内置在 babashka 中。"]
+            [:p "一个网站最多可以包含五种语言：英语、简体中文、繁体中文、马来语和泰米尔语。同一篇文章的各语言版本共用一个地址，读者可以在它们之间切换。"]]}
+
+  {:id     "status"
+   :title  "目前能做什么"
+   :blocks [[:p "最新版本是 " [:strong "0.2.0"] "。下一阶段的工作正在 main 分支上进行，尚未发布。"
+             [:a "https://github.com/EchoJustus/clogem-press/blob/main/CHANGELOG.md" "更新日志"]
+             "会随时列出每一项已合入的改动。"]
+            [:cards
+             {:chip  "已发布 · 0.2.0"
+              :title "内容与结构"
+              :text  ["由带编号的文件夹生成侧边栏，自动写好 front matter 并提供稳定的永久链接，分类、标签和归档页面，可分页并支持置顶文章的博客首页，面包屑导航，上一篇和下一篇链接，目录页，以及 Markdown 容器。"]}
+             {:chip  "已发布 · 0.2.0"
+              :title "多语言与内容发现"
+              :text  ["五种语言，每篇文章一个地址；canonical 和 hreflang 链接，每种语言一个 Atom 订阅源，站点地图，每种语言各有索引的 Pagefind 搜索，以及可选的 giscus 评论，每篇文章一个讨论串。"]}
+             {:chip  "进行中 · 未发布"
+              :title "主题（main 分支）"
+              :text  ["目前已完成：浅色、深色和阅读三种配色模式，代码高亮，可实时重新加载的 " [:code "bb dev"]
+                      "，卡片式和列表式页面样式，带移动端抽屉菜单的导航栏，编辑链接和最后更新日期，404 页面，博客的个人资料卡片和首页横幅，以及可选的统计分析标签和搜索引擎站长平台验证标签。本阶段尚待完成：自定义 HTML 插槽和跨语言搜索，之后发布下一个版本。"]}]]}
+
+  {:id     "start"
+   :title  "快速上手"
+   :blocks [[:p "你需要 " [:a "https://babashka.org/" "babashka"] " 1.13.219 或更新版本，以及 git。clogem-press 在你的网站文件夹中运行，使用放在它旁边的一份生成器副本："]
+            [:pre "git clone https://github.com/EchoJustus/clogem-press\ncd my-site\nbb --config ../clogem-press/bb.edn dev      # build, serve on localhost:1888, rebuild on change\nbb --config ../clogem-press/bb.edn build    # write the site to dist/\nbb --config ../clogem-press/bb.edn doctor   # report content problems without building"]
+            [:ul
+             [[:a "https://github.com/EchoJustus/clogem-press#readme" "README"] "：每个命令和选项、一屏看完的约定，以及主题的设置。"]
+             [[:a "https://github.com/EchoJustus/clogem-press/tree/main/examples/demo-site" "演示网站"] "：一个可以照着复制的完整网站，每次改动时测试都会构建它。"]
+             [[:a "https://github.com/EchoJustus/clogem-press/blob/main/config.example.edn" "config.example.edn"] "：每项设置及其默认值。"]
+             [[:a "https://github.com/EchoJustus/clogem-press/blob/main/DESIGN.md" "DESIGN.md"] "：设计及其背后的理由。"]]]}
+
+  {:id     "help"
+   :title  "帮助与反馈"
+   :blocks [[:p "以下一切都在 GitHub 上公开进行。你可以用本页提供的任何一种语言来写，回复可能是英文。"]
+            [:cards
+             {:chip   "缺陷"
+              :title  "报告问题"
+              :text   ["clogem-press 的某项功能与描述不符。请说明是哪个版本或提交，以及你运行了什么。"]
+              :href   "https://github.com/EchoJustus/clogem-press/issues"
+              :action "提交 issue"}
+             {:chip   "代码"
+              :title  "提出修改"
+              :text   ["对代码或文档的修复或改进。"]
+              :href   "https://github.com/EchoJustus/clogem-press/pulls"
+              :action "查看 pull request"}
+             {:chip   "问答"
+              :title  "提出问题"
+              :text   ["如何用 clogem-press 做某件事，或者它为什么这样工作。"]
+              :href   "https://github.com/EchoJustus/clogem-support/discussions/new?category=q-a"
+              :action "在 Discussions 中提问"}
+             {:chip   "想法"
+              :title  "分享想法"
+              :text   ["clogem-press 可以做到、或者可以做得更好的事。"]
+              :href   "https://github.com/EchoJustus/clogem-support/discussions/new?category=ideas"
+              :action "在 Discussions 中分享"}]
+            [:p "Issue、pull request 和讨论都是公开的：任何人都能看到。请不要写入个人信息，例如你的电子邮件地址，也不要写入你网站内容中任何私密的东西。"]
+            [:h3 "不宜公开的事"]
+            [:p "安全问题、关于你的数据的问题，或者法律通知：请发邮件至 "
+             [:a "mailto:EchoJustus.Studio@outlook.com?subject=clogem-press" "EchoJustus.Studio@outlook.com"] "。"]]}
+
+  ;; draft: the owner approves the wording before publication
+  {:id     "privacy"
+   :title  "隐私"
+   :blocks [[:h3 "本页"]
+            [:p "本页不设置 Cookie，不运行任何脚本，也不从其他网站加载任何内容：它的样式和图标都在这一个文件里。为本页提供服务的 GitHub Pages 会为它收到的请求保留自己的日志，详见 "
+             [:a "https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" "GitHub 隐私声明"]
+             "。指向 GitHub 的链接会带你前往 GitHub，适用 GitHub 自己的条款。"]
+            [:h3 "生成器"]
+            [:p "clogem-press 在你自己的电脑上运行。它没有账户，没有遥测，也不检查更新，不会把关于你或你的内容的任何信息发送到任何地方。"]
+            [:p "它只在下载所需的工具时联网，而且只从该工具自己在 GitHub 上的发布页面下载："]
+            [:ul
+             [[:strong "Chroma"] "，用于代码高亮：在首次构建含有代码的网站时下载，除非关闭了高亮；"]
+             [[:strong "Pagefind"] "，用于搜索：在首次构建开启了搜索的网站时下载；"]
+             [[:strong "fswatcher pod"] "，用于监视你的文件：在你第一次运行 " [:code "bb dev"] " 时下载；"]
+             ["或者在你运行 " [:code "bb fetch-tool"] " 时下载其中任何一个。"]]
+            [:p "每次下载都会用 clogem-press 中固定的 SHA-256 哈希值校验，并保存在你的网站以外的缓存中（默认为 " [:code "~/.cache/clogem-press/tools"]
+             "），因此只下载一次。你自己安装并在 "
+             [:code "CLOGEM_CHROMA"] "、" [:code "CLOGEM_PAGEFIND"] " 或 " [:code "CLOGEM_FSWATCHER"] " 中指定的工具，永远不会被下载。"]
+            [:h3 "你构建的网站"]
+            [:p "用 clogem-press 构建的网站是一个文件夹，由你决定发布到哪里。默认情况下，它不会向其他网站发出任何请求。只有当网站所有者开启 giscus 评论或统计分析（Google Analytics 4、Plausible 或 Umami），或者把徽标或图片写成其他网站上的地址时，它才会这样做。搜索引擎站长平台的验证标签如果由所有者添加，只是页面里的几行内容，不会加载任何东西。网站会把读者选择的配色模式和语言保存在读者自己的浏览器中，两者都不会发送到任何地方。"]]}
+
+  {:id     "source"
+   :title  "许可证与源代码"
+   :blocks [[:p "clogem-press 是自由软件，采用 "
+             [:a "https://github.com/EchoJustus/clogem-press/blob/main/LICENSE" "Eclipse Public License 2.0"]
+             " 许可证。它的源代码、历史和设计都是公开的。"]
+            [:ul
+             [[:a "https://github.com/EchoJustus/clogem-press" "GitHub 上的源代码"]]
+             [[:a "https://github.com/EchoJustus/clogem-press/blob/main/CHANGELOG.md" "更新日志"]]
+             [[:a "https://github.com/EchoJustus/clogem-press/blob/main/DESIGN.md" "设计文档"]]]
+            [:p "clogem-press 和 Clogem 这两个名称以及图标，是其所属项目的标识：许可证涵盖代码和图形，但不涵盖把这些名称作为标识使用。"]]}]}

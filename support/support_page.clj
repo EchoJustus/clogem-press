@@ -64,7 +64,7 @@
 
 (defn read-page
   "page.edn, read."
-  ([] (read-page (str (fs/path here "page.edn"))))
+  ([] (read-page (str (fs/path here "i18n" "en.edn"))))
   ([file] (edn/read-string (slurp file))))
 
 (defn icon-svg [] (slurp (str (fs/path here "clogem-press.svg"))))
