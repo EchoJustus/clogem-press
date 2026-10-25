@@ -1794,7 +1794,7 @@ Decisions:
 
 1. **The hub's technology, not clogem-press's theme** (owner). The page is built as the hub's own pages
    are: a Babashka script with the hiccup2 built into bb (`support/support_page.clj`, `bb
-   support-page`), its words in `support/page.edn`, one self-contained `index.html` with no JavaScript,
+   support-page`), its words in `support/i18n/*.edn`, one self-contained `index.html` per language with no JavaScript,
    no cookies and nothing loaded from other sites, a Content-Security-Policy that allows only its one
    style (by SHA-256) and `data:` images, the hub's no-script theme switcher (three radio buttons read
    with `:has()`). The theme in `src/clogem/theme/` runs scripts the hub forbids (the mode script,
@@ -1812,8 +1812,43 @@ Decisions:
    published host keys, and never runs on pull requests, since it holds a secret in a public
    repository. Without the secret it builds and stops with a notice. This key is the support page's
    only: §7.4 step 6 still holds for the site, whose deployment needs no secret.
-3. **English only** (owner). The hub is English, so the page is too; it says that clogem-press itself
-   builds sites in up to five languages (§6).
+3. **Five languages** (owner, 2026-10-25; it replaces "English only"). English is the default; then
+   Simplified Chinese (generic, mainland-neutral wording); Traditional Chinese with Taiwan wording and
+   punctuation (軟體, 程式碼, 檔案, 資料夾, 網路, 預設, 設定…; full-width ，。：；「」), not Hong Kong's;
+   Portuguese, Brazilian; Spanish, European (the reader is *tú*; *ordenador*, *archivo*, *enlace*,
+   *descargar*). Every translation says, in its own words, that clogem-press builds sites in its own
+   five content languages (English, Simplified and Traditional Chinese, Malay, Tamil, §6), and none
+   suggests it builds Portuguese or Spanish content.
+   - **One Portuguese version, Brazilian** (owner). For a short technical help page the two are
+     mutually intelligible, but a reader notices which one it is: vocabulary (*arquivo/ficheiro*,
+     *tela/ecrã*, *usuário/utilizador*, *baixar/transferir*, *compartilhar/partilhar*,
+     *equipe/equipa*, *contato/contacto*); address and grammar (Brazil's *você* and the third person
+     against Portugal's subject-less or *o utilizador* phrasing; *está usando* / *está a usar*;
+     *me envie* / *envie-me*); and a few spellings the 1990 Agreement left apart (*fato/facto*,
+     *recepção/receção*). None of this blocks a European reader, so the Brazilian page serves
+     Portuguese in general (`hreflang` both `pt-BR` and `pt`), written consistently Brazilian,
+     preferring a neutral word where one costs nothing. A European Portuguese version comes only if
+     readers in Portugal ask for one: every version is a second text to keep in step. Likewise the
+     Spanish page is also `hreflang="es"`.
+   - **URLs.** English stays at `clogem-press/`; the others are folders inside it named by their BCP 47
+     tag, with its case, as clogem-press's own sites name theirs: `zh-Hans/`, `zh-Hant/`, `pt-BR/`,
+     `es-ES/`, each an `index.html`. Everything stays inside `clogem-press/`, so the workflow still
+     owns one folder and copies the whole built one. Each page has its `lang`, its own canonical link
+     and the reciprocal `hreflang` set of all five, with `pt`, `es` and `x-default` (English).
+   - **A switcher, no redirect.** A `<nav>` in the header lists the five, each named in its own
+     language, as plain relative links. Nothing sends a reader to a version by the browser's
+     language: that would need a script, which the hub's pages don't run (and an HTTP redirect is not
+     something GitHub Pages offers).
+   - **Words in step.** One EDN file per language (`support/i18n/<tag>.edn`, English's the reference);
+     the build refuses a translation whose sections, blocks, link targets, code or commands differ
+     from English's, and the tests check the same. Product names, code, commands, file names and
+     the email address stay as they are. Links to pages in English only carry `hreflang="en"` and a
+     short note on the other pages; issues and discussions are open to any of the page's languages,
+     and replies may come in English.
+   - **Type.** No bundled font: the one stylesheet adds the systems' CJK fonts by `:lang()` ahead of
+     the generic family, and drops letter-spacing on CJK text. One stylesheet, so one CSP hash.
+   - **Native review.** The four translations are listed in the CHANGELOG for a native speaker's
+     review before or soon after publication.
 4. **Six sections, in this order** (ours, pinned by `support_page_test`): what clogem-press is; what it
    does today (0.2.0 released, Phase 4 in progress and unreleased, following the CHANGELOG, no dates);
    getting started; help and feedback (issues and pull requests here, questions and ideas in the hub's
@@ -1821,7 +1856,8 @@ Decisions:
    privacy; licence and source. No commerce: no store, price, trial or Pro edition.
 5. **The privacy note is a draft** (owner's call). Its wording was written from the code (the tool
    descriptors in `clogem.tools`, the config defaults, the theme's storage keys) and is marked in
-   `page.edn` as awaiting the owner's approval, which comes before the first publication.
+   each `support/i18n/*.edn` as awaiting the owner's approval, which comes before the first
+   publication. The translations mirror the English text fact for fact, and change when it changes.
 
 ---
 

@@ -30,13 +30,20 @@ gets it, and title badges appear by default, as in vdoing.
 support site, https://echojustus.github.io/clogem-support/clogem-press/,
 built and published as the hub's own pages are. Not part of the generator:
 nothing in `src/clogem/` changes, and a built site is unaffected.
+Languages (SP.2): English (the default) at `clogem-press/`; Simplified
+Chinese at `zh-Hans/`; Traditional Chinese, with Taiwan wording, at
+`zh-Hant/`; Brazilian Portuguese at `pt-BR/` (also for `pt`); European
+Spanish at `es-ES/` (also for `es`). Five pages, **161,053 bytes** in all:
+`index.html` 31,086, `zh-Hans/index.html` 32,145, `zh-Hant/index.html`
+32,247, `pt-BR/index.html` 32,754, `es-ES/index.html` 32,821 (each within
+the 64 KB budget).
 
 ### Added (support page)
 
 - `bb support-page` (`support/support_page.clj`, Babashka and its built-in
-  hiccup2) writes `dist-support/clogem-press/index.html` from
-  `support/page.edn` (the words) and `support/clogem-press.svg` (the v3
-  48-unit icon, EPL-2.0). One self-contained file of **28,183 bytes**
+  hiccup2) writes `dist-support/clogem-press/` from `support/i18n/*.edn`
+  (the words, one file per language) and `support/clogem-press.svg` (the
+  v3 48-unit icon, EPL-2.0). Each page is one self-contained file
   (budget 64 KB): no JavaScript, no cookies, nothing loaded from other
   sites, no `style=` attributes; a Content-Security-Policy allowing only its
   one style by SHA-256 and `data:` images; `no-referrer`, `color-scheme`,
@@ -49,8 +56,26 @@ nothing in `src/clogem/` changes, and a built site is unaffected.
   Six sections, in this order: what clogem-press is, what it does today
   (0.2.0, and Phase 4 as in progress and unreleased), getting started, help
   and feedback, privacy, licence and source.
+- Five languages (SP.2): the words in `support/i18n/` (`en.edn`, which was
+  `support/page.edn`; `zh-Hans.edn`, `zh-Hant.edn`, `pt-BR.edn`,
+  `es-ES.edn`), each page in its own folder, `<html lang>` set, its own
+  canonical link and the reciprocal `hreflang` alternates of all five
+  (`pt`, `es` and `x-default` too); a language switcher of plain relative
+  links in the header, each label in its own language, the current one
+  marked `aria-current="page"`; no automatic redirect. The build refuses a
+  translation whose sections, blocks, link targets, code or commands differ
+  from English's. On the translations, links to pages in English only carry
+  `hreflang="en"` and a note, （英文）, *(em inglês)* or *(en inglés)*. The
+  help section says people may write in any of the page's languages, and
+  replies may come in English. The one stylesheet adds system CJK fonts by
+  `:lang()` (PingFang, Microsoft YaHei or JhengHei, Noto Sans CJK, Source
+  Han Sans; none bundled) and no letter-spacing on CJK. Each translation
+  names the generator's own content languages (English, Simplified and
+  Traditional Chinese, Malay, Tamil), and none suggests it supports
+  Portuguese or Spanish content.
 - The privacy section is a **draft for the owner**, who approves its
-  wording before the first publication: the page (no cookies, no script,
+  wording before the first publication (the translations mirror the
+  English text fact for fact, and change when it changes): the page (no cookies, no script,
   nothing from other sites; GitHub Pages' own logs), the generator (runs
   locally, sends nothing; downloads Chroma, Pagefind and the fswatcher pod
   from their GitHub releases only when first needed or on `bb fetch-tool`,
@@ -59,10 +84,10 @@ nothing in `src/clogem/` changes, and a built site is unaffected.
   hosted elsewhere).
 - `.github/workflows/support-page.yml`: on pushes to `main` that touch the
   page's sources, and by hand; never on pull requests. It tests and builds
-  the page, then clones clogem-support's `gh-pages` over SSH with the
+  the pages, then clones clogem-support's `gh-pages` over SSH with the
   `CLOGEM_SUPPORT_DEPLOY_KEY` deploy key (from `env:`, mode 600, GitHub's
-  published host keys pinned), replaces `clogem-press/` and stages it
-  alone, commits as `github-actions[bot]` and pushes without force,
+  published host keys pinned), replaces `clogem-press/` with the built
+  folder (`cp -R dist-support/clogem-press/.`) and stages it alone, commits as `github-actions[bot]` and pushes without force,
   retrying from a fresh clone up to 3 times; then waits up to 10 minutes
   for the live page, warning if it hasn't changed. Without the secret it
   stops with a notice, successfully. Actions pinned by commit.
@@ -71,8 +96,8 @@ nothing in `src/clogem/` changes, and a built site is unaffected.
 
 ### Tests (support page)
 
-- `test/clogem/support_page_test.clj` (19 tests): no script, handlers or
-  style attributes; the CSP's hash is the style's; the head tags; every
+- `test/clogem/support_page_test.clj` (28 tests), every rule on each of
+  the five pages: no script, handlers or style attributes; the CSP's hash is the style's; the head tags; every
   image a `data:` URI with alt, width and height; nothing loaded from
   elsewhere; the icon passes the hub's plain-drawing checks; the switcher;
   every colour pair AA in light and dark; the sections, the jump links and
@@ -84,6 +109,30 @@ nothing in `src/clogem/` changes, and a built site is unaffected.
   `clogem-press/index.html` and nothing else changes, a rerun pushes
   nothing, another writer's commit is kept, a refused push is retried from
   a fresh clone, and a missing secret is a notice and exit 0.
+- SP.2: the build writes the five files and nothing else; each page's
+  `lang`, canonical link and complete, reciprocal `hreflang` set, each
+  resolving to a built file; the language switcher (all five in order,
+  `aria-current` on itself, each relative `href` resolving to the right
+  file, each label's `lang`); parity with English (sections, blocks, link
+  targets, commands, keys, no empty string) and the build refusing drift;
+  every title, the lead, the description and the switchers' labels
+  translated; `hreflang="en"` and the note on English-only links; smoke
+  checks on wording (no 软件, 軟件, 程序代碼 or 網絡 in zh-Hant; no 軟, 體, 網,
+  連, 結, 設 or 預 in zh-Hans; Brazilian, not European, Portuguese; Spain's
+  Spanish and *tú*); the generator's five content languages named on every
+  page and no claim of Portuguese or Spanish content; CJK fonts and
+  spacing; the stand-in publishes all five files and nothing else.
+
+### Needs native review (support page)
+
+Machine-made translations, to be read by a native speaker before or soon
+after publication, and whenever `en.edn` changes:
+
+- `support/i18n/zh-Hans.edn`: Simplified Chinese, mainland-neutral.
+- `support/i18n/zh-Hant.edn`: Traditional Chinese, Taiwan wording and
+  punctuation.
+- `support/i18n/pt-BR.edn`: Brazilian Portuguese.
+- `support/i18n/es-ES.edn`: Spanish of Spain, *tú*.
 
 ### The owner's one-time steps (support page)
 
@@ -94,7 +143,7 @@ nothing in `src/clogem/` changes, and a built site is unaffected.
 3. The private half as the Actions secret `CLOGEM_SUPPORT_DEPLOY_KEY` here,
    then delete the local copy.
 4. Approve the privacy note's wording before the first publication (leave
-   the secret unset until then).
+   the secret unset until then); the four translations follow it.
 
 Once it is live, the hub's own session links it from the front page's
 clogem-press card and its README's table.

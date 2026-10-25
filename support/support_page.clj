@@ -52,7 +52,7 @@
            (java.util Base64)))
 
 (def ^:private here
-  "This file's folder: page.edn and the icon sit beside it, wherever bb runs."
+  "This file's folder: i18n/ and the icon sit beside it, wherever bb runs."
   (str (fs/parent (fs/absolutize *file*))))
 
 (def folder "The page's folder on gh-pages." "clogem-press")

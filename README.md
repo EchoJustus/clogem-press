@@ -645,30 +645,59 @@ provider's own hosts are needed:
 
 clogem-press's page on the Clogem support site,
 **https://echojustus.github.io/clogem-support/clogem-press/**: what it is,
-what it does today, how to start, where to ask, and a privacy note. It is
-built as the hub's own pages are (one self-contained file: no JavaScript,
+what it does today, how to start, where to ask, and a privacy note, in five
+languages. Each page is built as the hub's own pages are (one self-contained file: no JavaScript,
 no cookies, nothing loaded from other sites, a Content-Security-Policy
 that allows only its own style and `data:` images, light and dark after the
 system or a no-script switcher), and lives outside the generator, in
 `support/` ([DESIGN.md §7.5](DESIGN.md#75-the-support-page)).
 
 ```bash
-bb support-page                # dist-support/clogem-press/index.html (--out DIR elsewhere)
-bb test --pattern support-page # the page's rules and the workflow's publishing step
+bb support-page                # dist-support/clogem-press/, five pages (--out DIR elsewhere)
+bb test --pattern support-page # the pages' rules and the workflow's publishing step
 ```
 
-- **The words** are `support/page.edn`; the generator,
-  `support/support_page.clj`, adds markup only. The icon is
-  `support/clogem-press.svg`, the v3 48-unit master, embedded as a `data:`
-  URI in the header and as the favicon.
-- **The built page** goes to `dist-support/` (ignored): built HTML is never
-  committed. It is **28,183 bytes**, within the 64 KB budget `bb test`
-  holds it to.
+| Language | Address | Built file | Size |
+| --- | --- | --- | --- |
+| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 31,086 bytes |
+| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 32,145 bytes |
+| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 32,247 bytes |
+| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 32,754 bytes |
+| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 32,821 bytes |
+
+- **The words** are `support/i18n/<tag>.edn`, one file per language:
+  `en.edn` (English, which was `support/page.edn`), `zh-Hans.edn`,
+  `zh-Hant.edn`, `pt-BR.edn` and `es-ES.edn`, all of one shape (`en.edn`'s
+  header describes it). The generator, `support/support_page.clj`, adds
+  markup only. The icon is `support/clogem-press.svg`, the v3 48-unit
+  master, embedded as a `data:` URI in the header and as the favicon.
+- **The languages** are offered by a switcher of plain links in each
+  page's header, and by `hreflang` alternates in each `<head>` (the
+  Portuguese page also for `pt`, the Spanish for `es`; English is
+  `x-default`). Nothing redirects by the browser's language. Links to pages
+  in English only (the README, the CHANGELOG, DESIGN.md, the demo site,
+  the licence, babashka.org, the hub, GitHub's privacy statement) carry
+  `hreflang="en"` and a short note on the other pages.
+- **To change the words**, change `en.edn` and the same place in the four
+  translations. Sections, blocks, link targets, `[:code]` and `[:pre]` are
+  shared: the build refuses a translation whose ones differ from English's
+  (`support-page/parity-problems`), so a link or a command is changed in all
+  five at once. A changed translation is reviewed by a native speaker
+  (CHANGELOG, "Needs native review (support page)").
+- **To add a language**, add its tag to `support-page/languages` (its
+  folder is the tag, with its case), copy `en.edn` to `<tag>.edn` and
+  translate it (`:url` is its own page's address, `:lang-name` its name in
+  itself, `:en-note` the note after an English-only link), add its tag to
+  `langs` in `test/clogem/support_page_test.clj`, and add its row above.
+- **The built pages** go to `dist-support/` (ignored): built HTML is never
+  committed. They are **161,053 bytes** in all; each page is within the
+  64 KB budget `bb test` holds it to.
 - **Publishing:** `.github/workflows/support-page.yml`, on pushes to `main`
   that touch `support/`, its test, the workflow or `bb.edn`, and by hand
   (**Actions > support-page > Run workflow**); never on pull requests. It
-  tests and builds the page, clones clogem-support's `gh-pages` over SSH
-  with a deploy key, replaces `clogem-press/` and stages that folder alone,
+  tests and builds the pages, clones clogem-support's `gh-pages` over SSH
+  with a deploy key, replaces `clogem-press/` with the built folder (all
+  five pages) and stages that folder alone,
   and pushes without force, starting again from a fresh clone (3 attempts)
   if someone else published at the same moment. The push starts a Pages
   build; the job then waits up to 10 minutes for the live page and warns if
@@ -685,8 +714,9 @@ bb test --pattern support-page # the page's rules and the workflow's publishing 
 3. Add the private half (`clogem-support-deploy`) as an Actions secret
    named `CLOGEM_SUPPORT_DEPLOY_KEY` in this repository (**Settings >
    Secrets and variables > Actions**), then delete the local copy.
-4. Approve the privacy note's wording (`support/page.edn`, the `privacy`
-   section, marked as a draft) before the first publication. The first
+4. Approve the privacy note's wording (`support/i18n/en.edn`, the
+   `privacy` section, marked as a draft; the four translations mirror it
+   fact for fact, and change when it changes) before the first publication. The first
    run after step 3 publishes the page, so leave the secret unset until
    then.
 
