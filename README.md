@@ -166,7 +166,8 @@ content/
 - **Every index holds article identities**, so an article with three language
   versions is one sidebar leaf, one category row, one archive entry — in every
   language, in the same order. A row shows the reader's own version when it
-  exists, else the primary with a fallback marker.
+  exists, else the primary with a fallback marker, and the `titleTag:`
+  badge (原创, 转载, …) of the version it shows.
 - **Hyphenated words are titles, not language tags.** `02.api-design.md` is an
   article titled `api-design`; only confusables (`zh-CN`), one-edit misspellings
   (`zh-Hanz`) and configured-primary-plus-region shapes (`en-us`) are errors.
@@ -229,7 +230,8 @@ It is an error, before anything is written and
 in `bb doctor`, when a static file would land where the build writes: at
 the same path as a page, `feed.xml`, `sitemap.xml`, `robots.txt` (the
 generated one, or `assets/robots.txt`, which already replaces it) or a site
-asset; inside `clogem/`, `assets/` or `pagefind/`; on `.clogem-output`, a
+asset (a root `404.html` is the exception: it replaces the generated 404
+page, below); inside `clogem/`, `assets/` or `pagefind/`; on `.clogem-output`, a
 `.clogem-tmp-…` name or a top-level `.pagefind-…` name; or where a page's
 directory goes (a file `public/categories`). Each error says how to fix
 it.
@@ -249,6 +251,18 @@ from it — `CNAME`, `BingSiteAuth.xml` — stays in the output until `bb
 clean`. Prefer the static directory to placing files in `dist/` by hand:
 those survive a rebuild only when they are not `.html`, and are lost to
 `bb clean`.
+
+**The 404 page.** Every build writes `dist/404.html` — at the output
+root whatever `--base`, which is where GitHub Pages, Netlify, Cloudflare
+Pages and `bb serve` look for it. It is in the site's default language,
+with the navbar and footer, says that there is no page at this address,
+and links every language's home, each in that language's words; every link
+carries the base, since a host serves the page at whatever address was
+missed. It is `noindex`, not in `sitemap.xml`, and has no canonical,
+hreflang or `og:locale`. A root `404.html` in the static directory
+replaces it. `bb dev` and `bb serve` answer a missing page under the base
+with it, status 404 (the plain stub outside the base, or with no
+`404.html`).
 
 `CNAME` matters to a GitHub Pages branch deploy and to other hosts.
 GitHub's Actions artifact flow (`actions/deploy-pages`, what the publish
@@ -308,6 +322,22 @@ step by the browser's usual 87.5% of the window, so in a window under about
 navbar, as before B2b. There is no key for smooth scrolling
 (vdoing's `smoothScroll`, off by default there, is known and ignored: a
 site that sets it is told to remove it).
+
+**Logo and repository link.** `:theme :logo` (vdoing's `logo`) puts an
+image, 2.2rem tall, before the site title in the navbar: a site path —
+`"/assets/logo.svg"` for `assets/logo.svg` (a path the build does not
+write is a warning; the image is linked all the same) — or an `https://`
+URL. It is decorative (`alt=""`): the title stays the link's name, and at
+64rem and below, where vdoing hides it too, the title is visually hidden
+and only the logo shows. `:theme :repo` (vdoing's `repo`: `"owner/name"`
+for GitHub, or an `https://` URL) adds a link at the end of the nav,
+labelled `:theme :repo-label` (a string or a map by language), else
+*GitHub*, *GitLab* or *Bitbucket* by its host, else *Source*
+(`:nav/source`), with an external-link icon. It opens in the same tab, like
+every nav link (vdoing opens a new one). Between 50 and 64rem the label is
+visually hidden, leaving the icon; at 50rem and below the link is in the
+drawer with the rest of the nav, so a one-language site with no `:nav`
+gets the drawer when it has `:repo`.
 
 **Mobile layout.** At 50rem (800 px) and below the navbar is one sticky
 row: a menu button, the brand (cut short with an ellipsis), the search
@@ -415,6 +445,62 @@ are text — a string or a per-language map — and are escaped.
 
 The opt-in parts — the card, the links and the background image — are in
 `css/identity.css`, which ships and is linked only while a site uses them.
+
+**Edit link.** `:content :edit-link` (vdoing's `editLinks`, `docsRepo`,
+`docsBranch` and `docsDir`) puts *Edit this page* (`:page/edit`, with a
+pencil) under every article and catalogue page — never under a home or an
+index page — and opens the page's own source file in the repository's web
+editor, in the same tab; a translation opens its own `.<lang>.md`:
+
+```clojure
+:content {:edit-link {:repo "owner/name"      ; or an https:// URL; absent: :theme :repo
+                      :branch "main"          ; the default
+                      :dir "docs"}}           ; where the site sits in the repository, default ""
+```
+
+github.com, and any host but two, get `<repo>/edit/<branch>/<path>`;
+gitlab.com gets `<repo>/-/edit/<branch>/<path>`, and bitbucket.org
+`<repo>/src/<branch>/<path>?mode=edit…`, as vdoing's do. Gitee and
+self-hosted forges get the GitHub form. Front matter `editLink: false`
+hides the link on that page. A bad `:repo`, no repository at all, or an
+`:edit-link` that is not a map is a warning that turns the link off; a bad
+`:branch` or `:dir` warns and takes the default. Print never shows it.
+
+**Last updated.** `:theme :last-updated true` (vdoing's `lastUpdated`; off
+by default) adds *Last updated 2026-10-04* (`:page/last-updated`, with a
+clock) beside the edit link: the date of the last commit that touched the
+page's own source file, the author's calendar date, `yyyy-mm-dd` in every
+language. The build runs **one** `git log` over the content directory;
+`doctor` never runs git. A file git has no commit for (new, untracked)
+shows no date, and a site outside git shows none, silently. **A shallow
+clone dates every file to its newest commit**, so it is refused with one
+warning and no dates: `actions/checkout` is shallow by default, so a
+workflow that builds with this on must check out with `fetch-depth: 0`
+(the live site's `publish.yml` already does). A commit the build itself
+makes before building (an `fm-fix` step, say) dates the files it touched.
+Print keeps the date.
+
+**Update bar.** On by default, as in vdoing (`updateBar`): every article
+ends — after the comments — with *Recently updated*, the three newest
+other articles by front-matter `date` (an untranslated one in its
+primary language, flagged like any index row), and *More →*. A catalogue
+or `article: false` page has none, and neither does a site with only one
+article. `:theme :update-bar {:show-to-article false}` drops it.
+`:more-article` (a site path such as `"/tags/"`, which gets the page's
+language prefix, or an `https://` URL) is where *More →* goes, here and
+on the home page — its right bar's recent list, and the `postList: simple`
+list, which now ends with one too; by default it is the archives in the
+page's language, and with the archives switched off there is none. Print
+never shows the bar.
+
+**Page classes.** Front matter `pageClass` (vdoing's) adds class names to
+that page's `<body>`, after `lang-<lang> page-<kind>`, for your own CSS:
+`pageClass: wide` or `pageClass: [wide, no-toc]`. An article or catalogue
+page reads its own file's; a home reads its `index.md` (or
+`index.<lang>.md`); an index page its `@pages/` file, on every page of
+that index. Each name must be a plain class name — a letter or `_`, then
+letters, digits, `-` or `_` — and any other is dropped with a warning:
+the names go into the page as they are, so treat them as trusted.
 
 The mode and page-style classes are on `<html>`, unqualified:
 `.theme-mode-dark`, `.theme-style-card`. (0.2.0 put them on `<body>`; CSS

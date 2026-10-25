@@ -779,7 +779,8 @@ any more). Note what arrived: `:generator`, `:langs`, `:i18n`, `:analytics`, `:s
            :category-text "Notes" :extend-frontmatter {}
            :permalink-prefix "/pages/" :write-front-matter true
            :permalinks-file "permalinks.edn"
-           :static-dir nil}               ; e.g. "public": copied to the output root (§11.3 item 15)
+           :static-dir nil                ; e.g. "public": copied to the output root (§11.3 item 15)
+           :edit-link nil}                ; {:repo "owner/name" :branch "main" :dir ""} (§11.3 item 16)
 
  :theme {:default-mode :auto          ; :auto | :light | :dark | :read (§11.2 item 49)
          :page-style :card :sidebar-open true
@@ -787,6 +788,9 @@ any more). Note what arrived: `:generator`, `:langs`, `:i18n`, `:analytics`, `:s
          ;; pageButton and contentBgStyle (nil | 1–6), and clogem's back to top
          :sidebar-collapsed false :right-menu-bar true :page-button true
          :content-bg-style nil :back-to-top true
+         ;; article-page parity (E2, §11.3 item 16)
+         :last-updated false :update-bar {:show-to-article true :more-article nil}
+         :logo nil :repo nil :repo-label nil
          ;; the blog identity (E1a, §11.3 item 13): every bad value warns and is repaired
          :banner-bg "auto" :body-bg-img nil :title-badge true   ; + :body-bg-img-opacity 0.5,
                                                                 ;   :body-bg-img-interval 15,
@@ -1887,7 +1891,13 @@ order; each builds on A:
   the navbar goes into the drawer at ≤ 50rem, or must fit the row: at 320 px the brand gets about
   160 px.
 - **E2 — Article-page parity** (1.75 d): edit link, last-updated, update bar, `titleTag` rows,
-  logo/repo, `pageClass`, a 404 page (§11.3 item 16).
+  logo/repo, `pageClass`, a 404 page (§11.3 item 16). *Done* (§11.3 item 16 records what was
+  built): the edit link and the git last-updated date under articles and catalogues
+  (`theme/parity.clj`, `gitlog.clj`); the update bar under articles, on by default, and
+  `:more-article` for every *More*; `titleTag` in every list row; the navbar logo and the
+  repository link, the last nav item (in the drawer at ≤ 50rem; the title, with a logo, and the
+  repo label visually hidden at ≤ 64rem so the row holds — `ms` wrapped at 801–901 px without it);
+  `pageClass` on `<body>`; `dist/404.html`.
 - **G — Cross-language search, then release 0.3.0** (2 d) (§11.3 item 17).
 - **Exit criterion:** every key of vdoing's `themeConfig`, and every front-matter key vdoing reads, is
   implemented, deferred (below) or removed (below); for a `site.edn` key, `doctor` already says which
@@ -2413,9 +2423,9 @@ and canonical pages, ogp.me, Facebook's locale list, RFC 4287 and sitemaps.org.
     than a key nothing reads (P3-A.1). Redirect
     stubs: **no canonical** — the stub's old `rel=canonical` to its target is dropped, since the stub
     is `noindex` and noindex beside a canonical is a conflicting signal; never in a set; not in the
-    sitemap; `<html lang>` is the default language's `:html-lang`, not a hard-coded `en`. There is no
-    404 page yet; the tags are emitted only for pages that carry `:seo`, so one added later gets none
-    unless it is given one.
+    sitemap; `<html lang>` is the default language's `:html-lang`, not a hard-coded `en`. The tags are
+    emitted only for pages that carry `:seo`; the 404 page (Task E2, §11.3 item 16) carries none, so
+    it has no canonical, set or `og:locale`, is `noindex` and is not in the sitemap.
 32. **Atom feeds, one per language (§6.6, D-P3-3).** `/feed.xml` for the site-default language and
     `/<lang>/feed.xml` otherwise (model.clj's prefix rule; the name stays `feed.xml`). Each lists that
     language's own variants: the 20 newest by `date`, in `newest-first` order. Feed: `xml:lang`, `id`
@@ -3307,7 +3317,8 @@ their own findings. Item 19 onward are corrections.
       `dev/error-page` with status 500 and the reload script.
     - *Base and host.* `dev/make-handler` strips `:base` (`dev/strip-base`): `/project/…` is
       served, `/` and `/project` redirect to `/project/`, anything else 404s with a link to the
-      base; `/__reload` stays at the root. `bb serve --base` defaults to the site's `:base` when
+      base (a miss under the base gets the build's `404.html`, status 404 — Task E2); `/__reload`
+      stays at the root. `bb serve --base` defaults to the site's `:base` when
       `--site-dir` holds its `site.edn`. `--host` (default `127.0.0.1`) on both; `dev/server-options`.
     - *Pagefind in dev.* `search/run-staged!` and `dev/background-runner`; `search/sweep-staging!`
       removes staging and retired bundles of dead processes. On the demo the index takes 0.7–0.85 s
@@ -3576,6 +3587,33 @@ their own findings. Item 19 onward are corrections.
     `:blogger`, `:footer` and `:bodyBgImg` used to produce zero warnings; the demo's `doctor` still
     reports exactly its one, and EchoJustus.github.io's `site.edn` none. **A task that makes the
     generator read a new key registers it in `known-keys`.**
+    *E2 — done* (D-P4-13, D-P4-16; `theme/parity.clj`, which requires `layout`, never the
+    reverse, and `gitlog.clj`). `config/check-article-parity!` reads `:content :edit-link`,
+    `:theme :last-updated`, `:update-bar`, `:repo`, `:logo` and `:repo-label`: every bad value is a
+    warning that repairs it or turns the feature off, and none has an entry in `defaults`
+    (`check-shapes!`). **Edit link:** `{:repo :branch :dir}` is stored as `{:url :branch :dir}`
+    (`:repo` `owner/name` or `https://`, else `:theme :repo`; `"main"`; `""`); after `</article>`
+    on article and catalogue pages, vdoing's `createEditLink` patterns (GitLab `/-/edit/`,
+    Bitbucket `?mode=edit…`, anything else GitHub's `/edit/`, Gitee included — vdoing's Gitee Web
+    IDE form is not copied), path and branch percent-encoded per segment, same tab; `editLink:
+    false` hides it. **Last updated:** one `git log --format=%x01%aI --name-only -z --relative` over
+    the content directory in `render-site`, first (newest) date per path, `yyyy-mm-dd` in every
+    language (babashka has only `en` locales); nothing outside git, one warning for a shallow clone
+    or any other git failure; `doctor` never runs git. **Update bar:** on article pages only (vdoing
+    renders it on `article: false` pages too and hides it with CSS), 3 rows of `(:posts model)`
+    other than the page, then *More*: `:more-article` through `nav-href`, else the language's
+    archives (vdoing: `/archives/` always), none with the archives off; the home's right bar and
+    its simple list use the same *More*. **`titleTag`** in every `article-row`, catalogues
+    included. **Navbar:** a decorative logo (2.2rem) before the title, which is visually hidden at
+    ≤ 64rem (vdoing hides the site name at ≤ 959 px); the repository link last in the nav, its
+    label (`:repo-label`, else the host's name, else `:nav/source`) visually hidden above 50rem up
+    to 64rem — measured, `ms` wrapped at 801–901 px with both and no such rule — and counted in
+    `shown?`. Both in the same tab (vdoing opens a new one). **`pageClass`** tokens after
+    `page-<kind>` on `<body>`, each `[A-Za-z_][A-Za-z0-9_-]*` or dropped with a warning. **404:**
+    `dist/404.html` at the output root whatever the base (`render/page-file`, `:clogem/file`),
+    through `layout/page`, default language, every language's home in its own words, `noindex`, no
+    `:seo`; a static root `404.html` replaces it; `bb dev` and `bb serve` answer a miss under the
+    base with it, status 404.
 17. **Cross-language search (G).** Opt-in `:search {:cross-language true}`: a named Pagefind
     instance with absolute `mergeIndex` URLs and `indexWeight` 0.001, so the reader's own language
     leads; only languages that have indexed pages are merged; a per-reader checkbox, off by default,

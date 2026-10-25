@@ -38,6 +38,8 @@
     clogem.static-test
     ;; Phase 4 Task B2b
     clogem.layout-test
+    ;; Phase 4 Task E2
+    clogem.parity-test
     ;; Phase 4 Task E1a
     clogem.identity-test])
 

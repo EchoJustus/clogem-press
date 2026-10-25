@@ -399,6 +399,8 @@
   "The static handler over `root`, mounted at `:base` (default `/`): `/`
   redirects to the base, and nothing outside it is served. `root` and
   `:base` may be functions, read on every request — dev's follow `site.edn`.
+  A miss under the base answers 404 with the build's `404.html` (Task E2),
+  else — and outside the base — with `not-found`.
   With `:inject-reload?` (dev), `/__reload` is the SSE channel, HTML gets
   the reload script, and — when `:state` says no build has succeeded yet —
   a page request gets `error-page`. A `pagefind/` file the live bundle no
@@ -436,7 +438,11 @@
           (let [rel (strip-base base path)]
             (or (when rel
                   (or (when-let [f (resolve-path root rel)] (file-response req f inject-reload?))
-                      (when-let [f (pagefind-fallback root rel)] (file-response req f inject-reload?))))
+                      (when-let [f (pagefind-fallback root rel)] (file-response req f inject-reload?))
+                      ;; Task E2: a miss under the base gets the site's own
+                      ;; 404 page, as a static host serves it
+                      (when-let [f (resolve-path root "/404.html")]
+                        (some-> (file-response req f inject-reload?) (assoc :status 404)))))
                 (not-found base path)))))
       (catch Throwable _ server-error))))
 

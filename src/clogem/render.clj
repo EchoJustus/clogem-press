@@ -19,6 +19,7 @@
             [clogem.assets :as assets]
             [clogem.config :as config]
             [clogem.diag :as diag]
+            [clogem.gitlog :as gitlog]
             [clogem.highlight :as highlight]
             [clogem.i18n :as i18n]
             [clogem.markdown :as markdown]
@@ -31,6 +32,7 @@
             [clogem.theme.indexes :as indexes]
             [clogem.theme.layout :as layout]
             [clogem.theme.page :as page]
+            [clogem.theme.parity :as parity]
             [clogem.util :as u]))
 
 ;; ---------------------------------------------------------------------------
@@ -81,6 +83,12 @@
   "The cached {:path :own? :front-matter :body} `lang` reads for `rel`, or nil."
   [model rel lang]
   (get-in model [:site-files [rel lang]]))
+
+(defn- content-rel
+  "A site file's path as a diagnostic names it: relative to the content
+  directory, `/`-separated."
+  [cfg p]
+  (str/replace (str (fs/relativize (config/content-dir cfg) (fs/path (str p)))) "\\" "/"))
 
 (defn index-paths
   "{kind → site-relative root path} for every enabled index: the `@pages/`
@@ -165,7 +173,12 @@
                                      (markdown/render b (link-context model model lang (str file*)))))))
                        base  {:kind kind :page-kind kind :title title
                               :root-uri (model/site-url cfg lang root)
-                              :href-for (fn [k] (model/site-url cfg lang (str root (u/slug k) "/")))}
+                              :href-for (fn [k] (model/site-url cfg lang (str root (u/slug k) "/")))
+                              ;; Task E2: the @pages file's `pageClass`, on every
+                              ;; page of this index; warned about from its first
+                              ;; page, in its own language (`own-file`)
+                              :page-fm (or (:front-matter sf) {})}
+                       own-file (when (and file* own?) (content-rel cfg file*))
                        index (get model kind)
                        ;; the file whose `permalink:` put this index where it is
                        src   (let [d (site-file model (pages/file-rel k) (config/default-lang cfg))]
@@ -185,6 +198,7 @@
                                               :seo seo
                                               :alt-url (fn [l] (model/site-url cfg l root))
                                               :page-body (body)
+                                              :page-file own-file
                                               :archives index))))
                       (m seo))]])
                 ;; the overview: the bar, then EVERY article paginated below
@@ -206,6 +220,7 @@
                                              :page n :total total
                                              :page-url (fn [n] (model/paged-url cfg lang root n))
                                              :alt-url (fn [l] (model/paged-url cfg l root n))
+                                             :page-file (when (= 1 n) own-file)
                                              :page-body (when (= 1 n) (body))))))
                      (m seo))])))
               ;; one filtered list per category/tag, paginated
@@ -240,7 +255,7 @@
     {:fm   (or (:front-matter sf) {})
      :body (when (and own? sf (not (str/blank? (:body sf)))) (:body sf))
      :path (some-> f str)
-     :own? own?}))
+     :own? (boolean (and f own?))}))
 
 (defn- home-pages
   "Each language's home and its /page/N/ continuations (D-P2-5): the list is
@@ -282,6 +297,10 @@
                                   ;; P4-E1a.1 item 5: inherited from the
                                   ;; site-default language's `index.md`
                                   :home-fm-lang (when (and path (not own?)) (config/default-lang cfg))
+                                  ;; Task E2: `pageClass`, warned about from the
+                                  ;; first page of the file's own language
+                                  :page-fm fm
+                                  :page-file (when (and own? (= 1 n)) (content-rel cfg path))
                                   :body (when body (markdown/render body lc))
                                   :ids page-ids :page n :total total
                                   :page-url (fn [n] (model/paged-url cfg lang "/" n))
@@ -454,6 +473,28 @@
             n (highlight/code-nodes ast)]
       (highlight/warn-unknown! hl path (:lang (highlight/parse-info (:info n)))))))
 
+(declare static-files)
+
+(defn- static-404
+  "The static directory's own root `404.html` (case-folded; an exact
+  `404.html` first, P4-E2.2), as [source-path rel-path], or nil. It then
+  replaces the generated page (Task E2)."
+  [cfg]
+  (let [fs (filter (fn [[_ rel]] (= parity/not-found-file (u/lower (str rel)))) (static-files cfg))]
+    (or (some (fn [[_ rel :as f]] (when (= parity/not-found-file (str rel)) f)) fs) (first fs))))
+
+(defn- static-404? [cfg] (boolean (static-404 cfg)))
+
+(defn warn-static-404-case!
+  "P4-E2.1: a static `404.HTML` (any case but `404.html`) still replaces the
+  generated page, but the hosts look for `404.html`: say so, once."
+  [cfg]
+  (when-let [[src rel] (static-404 cfg)]
+    (when (not= parity/not-found-file (str rel))
+      (diag/warn! nil (str (config/site-rel cfg src) " replaces the generated 404 page, but GitHub Pages "
+                           "and other hosts look for `404.html`, so the site has no 404 page.")
+                  "Rename it to `404.html`."))))
+
 (defn page-map
   "{uri → (fn [] hiccup)} for every emitted document.
 
@@ -547,7 +588,15 @@
       (home-pages model ctx-for)
 
       ;; index pages
-      (index-pages model ctx-for)))))
+      (index-pages model ctx-for)
+
+      ;; Task E2: the 404 page, at the output root whatever the base
+      ;; (`page-file`), unless the static directory ships its own
+      (when-not (static-404? cfg)
+        [[(str (config/base-path cfg) parity/not-found-file)
+          (with-meta
+            (fn [] (parity/not-found (ctx-for (config/default-lang cfg) {})))
+            {:clogem/file parity/not-found-file})]])))))
 
 (defn check-code-languages!
   "`doctor`: the unknown code languages `build` would warn about, when a
@@ -604,6 +653,15 @@
     (if (str/blank? rel)
       (fs/path out "index.html")
       (fs/path out rel "index.html"))))
+
+(defn page-file
+  "The output file of the page-map entry `uri` → `f`: `uri->file`, unless
+  its thunk names its own file — `:clogem/file`, relative to the output
+  root whatever the base (the 404 page, Task E2)."
+  [base out uri f]
+  (if-let [file (:clogem/file (meta f))]
+    (fs/path out file)
+    (uri->file base out uri)))
 
 (def jobs-env
   "The environment variable that bounds the render pool (D-P4-11)."
@@ -737,14 +795,10 @@
                          t)))))
 
 (defn- site-rel
-  "`p` as the site author would name it: relative to the site directory
-  when it is inside it (`content/01.Guide/a.md`), else as it is."
+  "`config/site-rel`: `p` relative to the site directory, as its author
+  would name it, when it is inside it."
   [cfg p]
-  (let [site (fs/normalize (fs/absolutize (config/site-dir cfg)))
-        p    (fs/normalize (fs/absolutize p))]
-    (if (str/starts-with? (str p) (str site java.io.File/separator))
-      (str/replace (str (fs/relativize site p)) "\\" "/")
-      (str p))))
+  (config/site-rel cfg p))
 
 (defn- theme-file-what [rel] {:label (str "the theme file clogem/" rel)})
 
@@ -1466,7 +1520,7 @@
         pages (page-map model)]
     (vec (concat
           (for [[uri f] pages]
-            {:file (uri->file base out uri) :what (page-what cfg uri f)})
+            {:file (page-file base out uri f) :what (page-what cfg uri f)})
           (for [rel (keys (assets/files cfg))]
             {:file (fs/path out "clogem" rel) :what (theme-file-what rel)})
           (for [[p file] (site-assets cfg)]
@@ -1477,18 +1531,41 @@
             {:file (fs/path out rel) :what (static-what cfg p) :static? true})
           (reserved-outputs cfg)))))
 
+(defn warn-missing-logo!
+  "Task E2: warn when a site-path `:theme :logo` names no file this build
+  writes (`plan`, `planned-outputs`) — the site's `assets/`, the static
+  directory, a theme file. The image is still linked. An `https://` logo
+  is not checked."
+  [cfg out plan]
+  (let [logo (get-in cfg [:theme :logo])]
+    (when (and (string? logo) (str/starts-with? logo "/"))
+      (let [base  (config/base-path cfg)
+            path  (u/percent-decode (str/replace logo #"[?#].*$" ""))
+            path  (if (and (not= "/" base) (str/starts-with? path base)) (subs path (count base)) path)
+            file  (str (normal-abs (fs/path out (str/replace path #"^/+" ""))))
+            files (into #{} (comp (remove :reserved?) (map #(str (normal-abs (:file %))))) plan)]
+        (when-not (contains? files file)
+          (diag/warn! nil (str ":theme :logo " (pr-str logo) " names no file the build writes; "
+                               "the navbar links it all the same.")
+                      (str "Put the image in the assets directory (its " (get-in cfg [:content :assets-dir])
+                           "/logo.svg is :logo \"/assets/logo.svg\") or the static directory, "
+                           "or use an https:// URL.")))))))
+
 (defn check-output-collisions!
   "Report, as errors, the outputs of `model` that would collide
   (`output-collisions`) — what `doctor` and the build's analysis run, so a
   permalink such as `/assets/demo.txt/` or `/robots.txt/` is a content error
   before anything is rendered. The page map's own diagnostics are not
-  repeated here; the links the copy skips are warned about
-  (`warn-skipped-links!`). Returns the collisions."
+  repeated here; the links the copy skips, a static 404 page named in
+  another case and a missing logo are warned about. Returns the
+  collisions."
   [model]
   (let [out    (config/out-dir (:cfg model))
         [plan] (diag/collecting (planned-outputs model))
         cs     (output-collisions out plan)]
     (warn-skipped-links! (:cfg model))
+    (warn-static-404-case! (:cfg model))
+    (warn-missing-logo! (:cfg model) out plan)
     (doseq [{:keys [inner outer] :as c} cs]
       (diag/error! (or (get-in inner [:what :source]) (get-in outer [:what :source]))
                    (collision-message out c)))
@@ -1516,6 +1593,10 @@
         parsed      (when (highlight/enabled? cfg) (pre-parse model n))
         hl          (highlight/session cfg (highlight/has-code? (map second (:sources parsed))))
         _           (highlight-pre-pass! hl parsed)
+        ;; Task E2: each file's last commit date, from one `git log` pass,
+        ;; only under :theme :last-updated true (`clogem.gitlog`)
+        git-dates   (gitlog/dates cfg)
+        cfg         (cond-> cfg git-dates (assoc :clogem/git-dates git-dates))
         cfg         (cond-> cfg hl (assoc :clogem/highlight hl))
         theme-files (assets/files cfg)
         ;; the fingerprints every page's asset URLs carry are those of the
@@ -1527,7 +1608,7 @@
         [rendered ds] (render-pages pages n)
         _           (diag/emit-all! ds)
         page-outs   (mapv (fn [[uri bytes]]
-                            {:file (uri->file base out uri) :bytes bytes
+                            {:file (page-file base out uri (get pages uri)) :bytes bytes
                              :what (page-what cfg uri (get pages uri))})
                           rendered)]
     {:outputs  (vec (concat page-outs

@@ -21,6 +21,7 @@
             [clogem.model :as model]
             [clogem.theme.identity :as identity]
             [clogem.theme.layout :as layout]
+            [clogem.theme.parity :as parity]
             [clogem.util :as u]))
 
 (defn post-list-mode
@@ -73,8 +74,12 @@
   (case mode
     :none nil
     :simple (let [n (or (some-> (:simplePostListLength home-fm) str parse-long) 10)]
-              (into [:ul.clogem-list.clogem-list--simple]
-                    (map #(layout/article-row ctx (get-in model [:articles %])) (take n ids))))
+              (list
+               (into [:ul.clogem-list.clogem-list--simple]
+                     (map #(layout/article-row ctx (get-in model [:articles %])) (take n ids)))
+               ;; Task E2: vdoing's simple list is an UpdateArticle, with
+               ;; its "more" (Home.vue)
+               (when (seq ids) (parity/more-article ctx))))
     (list
      (into [:div.clogem-post-list] (map #(detailed-row ctx %) ids))
      (layout/pagination ctx page total page-url))))
@@ -82,10 +87,11 @@
 (defn- right-bar
   "vdoing's homepage sidebar (Home.vue), in D-P4-13's order: the blogger
   card (P4-E1a), the update bar (date-desc — \"recently updated\" is the
-  date until git dates arrive), categories and tags with counts, then
+  date until git dates arrive; \"More\" goes where `:theme :update-bar
+  :more-article` says, Task E2), categories and tags with counts, then
   E1b's `home-sidebar-b`. Under `postList: simple` the main column already
-  is the recent list — vdoing's UpdateArticle there — so there is no update
-  bar."
+  is the recent list — vdoing's UpdateArticle there, with its own \"More\"
+  — so there is no update bar."
   [{:keys [cfg lang model index-paths] :as ctx} mode]
   [:aside.clogem-home-right
    (identity/blogger-card ctx)
@@ -94,8 +100,7 @@
        [:section.clogem-updates
         [:h2 (i18n/tr ctx :index/updates)]
         (into [:ul.clogem-list] (map #(layout/article-row ctx (get-in model [:articles %])) recent))
-        (when-let [root (:archives index-paths)]
-          [:p [:a {:href (layout/href ctx (model/site-url cfg lang root))} (i18n/tr ctx :index/more) " →"]])]))
+        (parity/more-article ctx)]))
    ;; a card only when there is something to list: a site whose articles
    ;; all carry `tags: []` gets no empty Tags box
    (when-let [root (and (seq (:categories model)) (:categories index-paths))]

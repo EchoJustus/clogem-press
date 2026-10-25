@@ -465,8 +465,8 @@
    [:content]             {:dir :ok :assets-dir :ok :category :ok :tag :ok :archive :ok
                            :category-text :ok :extend-frontmatter :ok :permalink-prefix :ok
                            :permalink-length :ok :write-front-matter :ok :permalinks-file :ok
-                           ;; Phase 4 Task E2
-                           :edit-link :planned
+                           ;; Phase 4 Task E2: `check-article-parity!`
+                           :edit-link :ok
                            ;; Phase 4 Task F (§11.3 item 15): `check-static-dir!`
                            :static-dir :ok}
    [:theme]               {:default-mode :ok :page-style :ok :sidebar-open :ok :sidebar-depth :ok
@@ -478,10 +478,10 @@
                            :body-bg-img :ok :body-bg-img-opacity :ok :body-bg-img-interval :ok
                            :title-badge :ok :title-badge-icons :ok
                            ;; Phase 4 Tasks B1, E2 (DESIGN.md §5.6 sketches several)
-                           :update-bar :planned :right-menu-bar :ok :page-button :ok
-                           :content-bg-style :ok :last-updated :planned
-                           :sidebar-collapsed :ok :back-to-top :ok :logo :planned
-                           :repo :planned}
+                           :update-bar :ok :right-menu-bar :ok :page-button :ok
+                           :content-bg-style :ok :last-updated :ok
+                           :sidebar-collapsed :ok :back-to-top :ok :logo :ok
+                           :repo :ok :repo-label :ok}
    [:theme :fonts]        {:tamil :ok}
    ;; Phase 4 Task E1: `:name`, `:slogan`, `:title` and `:copyright-info`
    ;; may be per-language user maps, and are not walked; `:icons` is a
@@ -490,6 +490,9 @@
    [:theme :social]       {:icons :ok}
    [:theme :social :icons :*] {:icon :ok :title :ok :link :ok :svg :ok}
    [:theme :footer]       {:create-year :ok :end-year :ok :copyright-info :ok :powered-by :ok}
+   ;; Phase 4 Task E2 (§11.3 item 16, D-P4-13): `check-article-parity!`
+   [:content :edit-link]  {:repo :ok :branch :ok :dir :ok}
+   [:theme :update-bar]   {:show-to-article :ok :more-article :ok}
    [:highlight]           {:provider :ok :line-numbers :ok :copy-button :ok :style :ok :dark-style :ok}
    [:search]              {:provider :ok
                            ;; Phase 4 Task G
@@ -589,18 +592,24 @@
    "iconfontCssFile"         [nil :implicit "draws social icons from its own sprite"
                               (str "Remove it, and name each link's icon with :icon — a vendored brand "
                                    "such as :github, or a UI icon such as :mail (config.example.edn).")]
-   "updateBar"               [[:theme :update-bar] :planned]
+   "updateBar"               [[:theme :update-bar] :ok]
    "rightMenuBar"            [[:theme :right-menu-bar] :ok]
    "pageButton"              [[:theme :page-button] :ok]
    "contentBgStyle"          [[:theme :content-bg-style] :ok]
-   "lastUpdated"             [[:theme :last-updated] :planned]
-   "logo"                    [[:theme :logo] :planned]
-   "repo"                    [[:theme :repo] :planned]
-   "editLinks"               [[:content :edit-link] :planned]
-   "editLinkText"            [[:content :edit-link] :planned]
-   "docsRepo"                [[:content :edit-link] :planned]
-   "docsDir"                 [[:content :edit-link] :planned]
-   "docsBranch"              [[:content :edit-link] :planned]
+   "lastUpdated"             [[:theme :last-updated] :ok]
+   "logo"                    [[:theme :logo] :ok]
+   "repoLabel"               [[:theme :repo-label] :ok]
+   "repo"                    [[:theme :repo] :ok]
+   "editLinks"               [[:content :edit-link] :ok "a map {:repo :branch :dir}; absent is off"]
+   "editLinkText"            [nil :implicit "labels the edit link with the i18n string :page/edit"
+                              "Remove it; to change the label, set :page/edit in i18n/<lang>.edn."]
+   "docsRepo"                [[:content :edit-link :repo] :ok]
+   "docsDir"                 [[:content :edit-link :dir] :ok]
+   "docsBranch"              [[:content :edit-link :branch] :ok]
+   ;; vdoing nests these in `updateBar` (types/index.ts), which
+   ;; `check-keys!` walks as :theme :update-bar (Task E2)
+   "showToArticle"           [[:theme :update-bar :show-to-article] :ok]
+   "moreArticle"             [[:theme :update-bar :more-article] :ok]
    "algolia"                 [nil :deferred "search is Pagefind's (:search :provider :pagefind)"]
    "searchMaxSuggestions"    [nil :dropped]
    "displayAllHeaders"       [nil :dropped]
@@ -1152,6 +1161,168 @@
                         :page-style style :title-badge badge)
                  (put :title-badge-icons badge-icons)))))
 
+;; ---------------------------------------------------------------------------
+;; Article-page parity (Phase 4 Task E2, §11.3 item 16, D-P4-13). Every bad
+;; value is a WARNING that repairs it to its default or switches the feature
+;; off: 0.2.0 accepted all of these as planned keys with no effect. Nothing
+;; here has an entry in `defaults` (`check-shapes!` would make a non-map
+;; under a map default an error); the repaired values are `assoc-in`ed, and
+;; the accessors below read them.
+
+(def ^:private repo-url-re
+  "An `https://` repository URL: a host and an optional path, no query or
+  fragment — an edit link appends `/edit/<branch>/<path>` to it."
+  #"(?i)https://[^/?#\s]+(?:/[^?#\s]*)?")
+
+(defn repo->url
+  "A repository as a URL: `owner/name` (`giscus-repo-re`) is GitHub's,
+  `https://github.com/owner/name`; an `https://` URL is kept, any trailing
+  `/` dropped; anything else is nil."
+  [v]
+  (when (string? v)
+    (let [s (str/trim v)]
+      (cond
+        (re-matches giscus-repo-re s) (str "https://github.com/" s)
+        (re-matches repo-url-re s)    (str/replace s #"/+$" "")))))
+
+(defn- parity-warn!
+  "One Task E2 warning: the key, the value, what it must be and what it
+  becomes, and vdoing's name for it."
+  [path v what becomes vdoing]
+  (diag/warn! nil (str (str/join " " path) " is " (pr-str v) ", but it must be " what "; " becomes ".")
+              (str "See config.example.edn" (when vdoing (str " (vdoing's " vdoing ")")) "."))
+  nil)
+
+(defn- edit-link-dir
+  "`:content :edit-link :dir` normalized — no leading, trailing or doubled
+  `/`, no `.` segment — or ::bad: not a string, or a `..` segment or a `\\`."
+  [v]
+  (if-not (string? v)
+    ::bad
+    (let [segs (remove #{"" "."} (str/split (str/trim v) #"/"))]
+      (if (or (str/includes? v "\\") (some #{".."} segs))
+        ::bad
+        (str/join "/" segs)))))
+
+(defn- check-edit-link!
+  "`:content :edit-link {:repo :branch :dir}` (D-P4-16): nil is off. Stored
+  normalized as {:url :branch :dir} — `:repo` (else a valid `:theme :repo`)
+  as a URL (`repo->url`), `:branch` default \"main\", `:dir` default \"\"."
+  [cfg]
+  (let [path [:content :edit-link]
+        v    (get-in cfg path)
+        off  (fn [cfg] (assoc-in cfg path nil))]
+    (cond
+      (nil? v) cfg
+
+      (not (map? v))
+      (do (parity-warn! path v "a map {:repo :branch :dir}" "the edit link is off" "editLinks")
+          (off cfg))
+
+      :else
+      (let [{:keys [repo branch dir]} v
+            url (repo->url (if (some? repo) repo (get-in cfg [:theme :repo])))]
+        (cond
+          (some? repo)
+          (if url
+            nil
+            (parity-warn! (conj path :repo) repo "\"owner/name\" or an https:// URL"
+                          "the edit link is off" "docsRepo"))
+          (nil? url)
+          (diag/warn! nil (str ":content :edit-link has no :repo, and :theme :repo names none; the edit link is off.")
+                      "See config.example.edn (vdoing's docsRepo)."))
+        (if-not url
+          (off cfg)
+          (let [branch (cond
+                         (nil? branch) "main"
+                         (and (string? branch) (not (str/blank? branch))) (str/trim branch)
+                         :else (do (parity-warn! (conj path :branch) branch "a non-blank string"
+                                                 "using \"main\"" "docsBranch")
+                                   "main"))
+                d      (if (nil? dir) "" (edit-link-dir dir))
+                d      (if (= ::bad d)
+                         (do (parity-warn! (conj path :dir) dir
+                                           "a relative path inside the repository, with no .. segment and no \\"
+                                           "using \"\"" "docsDir")
+                             "")
+                         d)]
+            (assoc-in cfg path {:url url :branch branch :dir d})))))))
+
+(defn- check-update-bar!
+  "`:theme :update-bar {:show-to-article :more-article}` (D-P4-13): nil is
+  {:show-to-article true} — the bar is on, as in vdoing. `:more-article` is
+  a site path (`/…`, not `//…`) or an `https://` URL."
+  [cfg]
+  (let [path [:theme :update-bar]
+        v    (get-in cfg path)
+        on   {:show-to-article true}]
+    (cond
+      (nil? v) (assoc-in cfg path on)
+
+      (not (map? v))
+      (do (parity-warn! path v "a map {:show-to-article :more-article}" "using {:show-to-article true}" "updateBar")
+          (assoc-in cfg path on))
+
+      :else
+      (let [{s :show-to-article m :more-article} v
+            s (cond
+                (nil? s)     true
+                (boolean? s) s
+                :else (do (parity-warn! (conj path :show-to-article) s "true or false" "using true"
+                                        "updateBar.showToArticle")
+                          true))
+            m (when (some? m)
+                (let [t (when (string? m) (str/trim m))]
+                  (if (and t (re-find #"^(?:/(?!/)|(?i:https://)\S)" t))
+                    t
+                    (parity-warn! (conj path :more-article) m
+                                  "a site path starting with / or an https:// URL" "it is ignored"
+                                  "updateBar.moreArticle"))))]
+        (assoc-in cfg path (cond-> {:show-to-article s} m (assoc :more-article m)))))))
+
+(defn logo-ok?
+  "`:theme :logo`: a site path (`/…`, not `//…`) or an `https://` URL."
+  [v]
+  (boolean (and (string? v) (re-find #"^(?:/(?!/)|(?i:https://)\S)" v))))
+
+(defn- label-ok?
+  "`:theme :repo-label`: a non-blank string, or a per-language map of them
+  (read by `i18n/resolve-str`)."
+  [v]
+  (or (and (string? v) (not (str/blank? v)))
+      (and (map? v) (seq v) (every? #(and (string? %) (not (str/blank? %))) (vals v)))))
+
+(defn- check-article-parity!
+  "Phase 4 Task E2: `:theme :repo` first (the edit link falls back to it),
+  then `:content :edit-link`, `:theme :last-updated`, `:theme :update-bar`,
+  `:theme :logo` and `:theme :repo-label`."
+  [cfg]
+  (let [repo (get-in cfg [:theme :repo])
+        cfg  (if (or (nil? repo) (repo->url repo))
+               cfg
+               (do (parity-warn! [:theme :repo] repo "\"owner/name\" or an https:// URL"
+                                 "there is no repository link" "repo")
+                   (assoc-in cfg [:theme :repo] nil)))
+        logo (get-in cfg [:theme :logo])
+        cfg  (if (or (nil? logo) (logo-ok? logo))
+               cfg
+               (do (parity-warn! [:theme :logo] logo "a site path starting with / (such as \"/assets/logo.svg\") or an https:// URL"
+                                 "there is no logo" "logo")
+                   (assoc-in cfg [:theme :logo] nil)))
+        lbl  (get-in cfg [:theme :repo-label])
+        cfg  (if (or (nil? lbl) (label-ok? lbl))
+               cfg
+               (do (parity-warn! [:theme :repo-label] lbl "a non-blank string or a map of them by language"
+                                 "the label follows the host" "repoLabel")
+                   (assoc-in cfg [:theme :repo-label] nil)))
+        lu   (get-in cfg [:theme :last-updated])
+        cfg  (cond
+               (nil? lu)     (assoc-in cfg [:theme :last-updated] false)
+               (boolean? lu) cfg
+               :else (do (parity-warn! [:theme :last-updated] lu "true or false" "using false" "lastUpdated")
+                         (assoc-in cfg [:theme :last-updated] false)))]
+    (-> cfg check-edit-link! check-update-bar!)))
+
 (defn- check-i18n-comments!
   "D-P3-14 / D-P3-15: the stored-preference behaviour, the comments
   provider and its keys, and the colour mode the page (and giscus) starts
@@ -1527,6 +1698,8 @@
       check-i18n-comments! check-out-dir! check-no-effect! check-highlight! check-page-chrome!
       ;; Phase 4 Task E1 (P4-E1a)
       check-identity!
+      ;; Task E2
+      check-article-parity!
       ;; Task F; the static directory after the output directory it must avoid
       check-analytics! check-verification! check-static-dir!))
 
@@ -1605,6 +1778,20 @@
 (defn strings-dir   [cfg] (fs/path (site-dir cfg) (get-in cfg [:i18n :strings-dir])))
 (defn permalinks-file [cfg] (fs/path (site-dir cfg) (get-in cfg [:content :permalinks-file])))
 (defn out-dir       [cfg] (fs/path (site-dir cfg) (get-in cfg [:build :out])))
+
+(defn site-rel
+  "`p` as the site author would name it: relative to the site directory,
+  with `/` separators, when it is inside it (`content/01.Guide/a.md`), else
+  as it is. An edit link's path (Task E2) and a git log key are this. Only
+  where `\\` is the separator is it replaced: on POSIX it is a name's own
+  character (P4-E2.1)."
+  [cfg p]
+  (let [site (fs/normalize (fs/absolutize (site-dir cfg)))
+        p    (fs/normalize (fs/absolutize p))]
+    (if (str/starts-with? (str p) (str site java.io.File/separator))
+      (cond-> (str (fs/relativize site p))
+        (= "\\" java.io.File/separator) (str/replace "\\" "/"))
+      (str p))))
 
 (defn static-dir
   "§11.3 item 15: the directory whose files are copied as they are to the
@@ -1699,6 +1886,30 @@
   (boolean (or (map? (get-in cfg [:theme :blogger]))
                (seq (get-in cfg [:theme :social :icons]))
                (body-bg-images cfg))))
+
+(defn edit-link
+  "`:content :edit-link` as `check-edit-link!` left it — {:url :branch :dir}
+  — or nil: the edit link is off (Task E2)."
+  [cfg]
+  (let [e (get-in cfg [:content :edit-link])]
+    (when (and (map? e) (string? (:url e))) e)))
+
+(defn last-updated?
+  "`:theme :last-updated`: show each article's last commit date (Task E2)."
+  [cfg]
+  (true? (get-in cfg [:theme :last-updated])))
+
+(defn update-bar
+  "`:theme :update-bar` as `check-update-bar!` left it: {:show-to-article
+  bool, :more-article site-path-or-URL?}; on by default (D-P4-13)."
+  [cfg]
+  (let [u (get-in cfg [:theme :update-bar])]
+    (merge {:show-to-article true} (when (map? u) u))))
+
+(defn repo-url
+  "`:theme :repo` as a URL (`repo->url`), or nil (Task E2)."
+  [cfg]
+  (repo->url (get-in cfg [:theme :repo])))
 
 (defn absolute-url
   "The absolute URL of a base-inclusive site path, percent-encoded per

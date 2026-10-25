@@ -57,6 +57,14 @@ async function settle(page) {
   }));
 }
 
+// a page without what P4-E2 added below its article — the edit line and
+// the update bar — for the tests whose page must end where its article
+// does, as when they were written
+function withoutE2(html) {
+  return html.replace(/<div class="clogem-page-edit">[\s\S]*?<\/div>/, '')
+    .replace(/<section class="clogem-update-bar">[\s\S]*?<\/section>/, '');
+}
+
 async function open(page, t, rel, id) {
   await page.goto(url(t, rel, id), { waitUntil: 'load' });
   await page.waitForSelector('button.pf-trigger-btn', { state: 'attached', timeout: 5000 }).catch(() => {});
@@ -257,8 +265,8 @@ async function item1(t) {
     const page = await t.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
     await page.route(url(t, article), async (route) => {
       const res = await route.fetch();
-      const body = (await res.text()).replace('<div class="custom-block tip">\n<p class="custom-block-title">A heading inside</p>',
-        '<h4 id="clogem-b2b-h4">A deeper heading</h4><div class="custom-block tip">\n<p class="custom-block-title">A heading inside</p>');
+      const body = withoutE2((await res.text()).replace('<div class="custom-block tip">\n<p class="custom-block-title">A heading inside</p>',
+        '<h4 id="clogem-b2b-h4">A deeper heading</h4><div class="custom-block tip">\n<p class="custom-block-title">A heading inside</p>'));
       await route.fulfill({ response: res, body });
     });
     await open(page, t, article, 'clogem-b2b-h4');
@@ -328,8 +336,13 @@ async function item1(t) {
     // /zh-Hans/pages/643259/ fits 1280×1100 when toc.js first looks; then
     // 150 px join the page below the article, as giscus's iframe does.
     // P4-E1a: 1100, not 1024 — the demo's footer (links, © line, credit)
-    // made the page 7 px taller than 1024
+    // made the page 7 px taller than 1024. Task E2's edit line and update
+    // bar are stripped (`withoutE2`), so the page still fits at first
     const page = await t.newPage({ viewport: { width: 1280, height: 1100 }, reducedMotion: rm });
+    await page.route(url(t, 'zh-Hans/pages/643259/'), async (route) => {
+      const res = await route.fetch();
+      await route.fulfill({ response: res, body: withoutE2(await res.text()) });
+    });
     await open(page, t, 'zh-Hans/pages/643259/');
     const fits = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
     await page.evaluate(() => { const d = document.createElement('div'); d.style.height = '150px'; document.querySelector('main').appendChild(d); });
@@ -711,10 +724,10 @@ async function item2Resize(t) {
 // a nav too long for one row (10 items added, 13 in all): above 50rem no
 // two controls overlap, nothing overflows, every control is inside the
 // navbar, and a jump lands below it however tall it wraps (P4-B2b.1 item 3)
-async function longNav(page, t, rel, label = 'Item') {
+async function longNav(page, t, rel, label = 'Item', count = 10) {
   await page.route(url(t, rel), async (route) => {
     const res = await route.fetch();
-    const extra = Array.from({ length: 10 }, (_, i) => `<li class="clogem-navbar__item"><a href="/">${label} ${i + 1}</a></li>`).join('');
+    const extra = Array.from({ length: count }, (_, i) => `<li class="clogem-navbar__item"><a href="/">${label} ${i + 1}</a></li>`).join('');
     const body = (await res.text()).replace('<nav class="clogem-navbar__nav"><ul>', '<nav class="clogem-navbar__nav"><ul>' + extra);
     await route.fulfill({ response: res, body });
   });
@@ -780,10 +793,12 @@ async function item2LongNav(t) {
     }
   }
   // loaded on one row at 1280, then narrowed until it wraps: the offset
-  // follows (nav.js's ResizeObserver, P4-B2b.2 item 2)
+  // follows (nav.js's ResizeObserver, P4-B2b.2 item 2). 13 items: since
+  // P4-E2 the demo's brand is its logo alone at 64rem and below, and 10
+  // no longer wrap at 801 or 850
   {
     const page = await t.newPage({ viewport: { width: 1280, height: 740 }, reducedMotion: 'reduce' });
-    await longNav(page, t, article);
+    await longNav(page, t, article, 'Item', 13);
     await open(page, t, article);
     for (const width of [801, 850]) {
       await page.setViewportSize({ width, height: 740 });
