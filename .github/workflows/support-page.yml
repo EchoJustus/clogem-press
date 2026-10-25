@@ -1,5 +1,30 @@
 # Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).
 #
+# The publishing step (`publish` and its loop of 3 attempts) is adapted
+# from .github/workflows/portal.yml of EchoJustus/clogem-support, under the
+# MIT License:
+#
+#   Copyright 2026 EchoJustus
+#
+#   Permission is hereby granted, free of charge, to any person obtaining a
+#   copy of this software and associated documentation files (the
+#   "Software"), to deal in the Software without restriction, including
+#   without limitation the rights to use, copy, modify, merge, publish,
+#   distribute, sublicense, and/or sell copies of the Software, and to
+#   permit persons to whom the Software is furnished to do so, subject to
+#   the following conditions:
+#
+#   The above copyright notice and this permission notice shall be included
+#   in all copies or substantial portions of the Software.
+#
+#   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+#   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+#   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+#   IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+#   CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+#   TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+#   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
 # clogem-press's page on the Clogem support site,
 # https://echojustus.github.io/clogem-support/clogem-press/ (DESIGN.md §7.5).
 #
@@ -117,14 +142,22 @@ jobs:
           exit 1
 
       - name: Wait for the live page
+        id: live
         if: steps.publish.outputs.published == 'true'
+        # About 10 minutes: no try starts after 570 s, and a try takes at
+        # most 15 s and its pause 15 s, so the loop ends by 600 s. The
+        # timeout is a backstop that, like the loop, only warns.
+        timeout-minutes: 12
+        continue-on-error: true
         run: |
           set -uo pipefail
           # The live English page, past any cache, against the one just built
           # (the five are published in one commit); a warning, not a failure,
           # if Pages is slow.
-          for i in $(seq 1 40); do
-            if curl -fsS --max-time 20 -o live.html "${URL}?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$i" 2> /dev/null &&
+          i=0
+          while [ "$SECONDS" -lt 570 ]; do
+            i=$((i + 1))
+            if curl -fsS --max-time 15 -o live.html "${URL}?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$i" 2> /dev/null &&
                cmp -s live.html dist-support/clogem-press/index.html; then
               echo "::notice::Live: $URL"; exit 0
             fi

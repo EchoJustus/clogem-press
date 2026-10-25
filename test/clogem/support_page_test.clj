@@ -1,4 +1,29 @@
 ;; Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).
+;;
+;; Parts of this file (`git!`, `stand-in!` and the hook that refuses one push)
+;; are adapted from test/portal_test.clj of EchoJustus/clogem-support, under
+;; the MIT License:
+;;
+;;   Copyright 2026 EchoJustus
+;;
+;;   Permission is hereby granted, free of charge, to any person obtaining a
+;;   copy of this software and associated documentation files (the
+;;   "Software"), to deal in the Software without restriction, including
+;;   without limitation the rights to use, copy, modify, merge, publish,
+;;   distribute, sublicense, and/or sell copies of the Software, and to
+;;   permit persons to whom the Software is furnished to do so, subject to
+;;   the following conditions:
+;;
+;;   The above copyright notice and this permission notice shall be included
+;;   in all copies or substantial portions of the Software.
+;;
+;;   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+;;   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+;;   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+;;   IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+;;   CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+;;   TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+;;   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 (ns clogem.support-page-test
   "The support page (DESIGN.md §7.5): `bb support-page`
   (support/support_page.clj) from support/i18n/*.edn, five pages in five
@@ -307,8 +332,11 @@
   (testing "the summary looks like the theme switcher: its border, radius, surface and shadow"
     (doseq [d ["border:1px solid var(--control)" "border-radius:999px" "background:var(--surface)" "box-shadow:var(--shadow)"]]
       (is (re-find (re-pattern (str "\\.langs summary\\{[^}]*" (java.util.regex.Pattern/quote d))) style) d)))
-  (testing "the panel: below, at the end edge, above the content, never wider than the screen"
-    (is (re-find #"\.langs ul\{[^}]*position:absolute;[^}]*inset-inline-end:0;[^}]*max-width:calc\(100vw - 2rem\)" style))
+  (testing "the panel: below, at the switchers' end edge (the content box's), above the content, never wider than it"
+    (is (re-find #"\.langs ul\{[^}]*position:absolute;[^}]*inset-inline-end:0;[^}]*max-width:100%" style))
+    (is (re-find #"\.tools\{[^}]*position:relative" style) "it hangs from the switchers, not the summary")
+    (is (not (re-find #"\.langs\{[^}]*position:relative" style)) "a summary near the left can't push it off the screen")
+    (is (re-find #"\.tools\{[^}]*flex-wrap:wrap-reverse" style) "wrapped, the language's line is the lower one, above the panel")
     (is (re-find #"\.langs ul\{[^}]*z-index:" style)))
   (testing "the chevron turns when open, unless the reader asked for less motion"
     (is (re-find #"\.langs\[open\] \.chev\{transform:rotate\(180deg\)\}" style))
@@ -322,6 +350,33 @@
 
 ;; ---------------------------------------------------------------------------
 ;; Type: system CJK fonts, and no letter-spacing on CJK
+
+(deftest the-header-fits-a-narrow-screen
+  ;; At 360 px the pt-BR and es-ES theme switchers were wider than the
+  ;; content box, and the grid's auto column grew with them: the page
+  ;; scrolled sideways at 320 (SP.4 item 1). Checked by hand in Chromium at
+  ;; 320, 360 and 1280 px, every language, light and dark.
+  (testing "the hero's one column may shrink below its content's width"
+    (is (re-find #"\.hero\{[^}]*grid-template-columns:minmax\(0,1fr\)" style)))
+  (testing "the switchers never outgrow the content box"
+    (is (re-find #"\.tools\{[^}]*min-width:0;[^}]*max-width:100%" style))
+    (is (re-find #"\.theme\{[^}]*flex-wrap:wrap;[^}]*min-width:0;max-width:100%" style)))
+  (testing "a narrow screen drops the theme icons and tightens the labels"
+    (is (re-find #"@media \(max-width:30rem\)\{\.theme svg\{display:none\}\.theme label\{padding:[^}]*\}\}" style)))
+  (testing "at 1280 px the brand's words wrap beside the switchers (a basis, not its whole width)"
+    (is (re-find #"\.brand\{flex:1 1 18rem;" style))
+    (is (re-find #"\.tools\{[^}]*flex:0 1 auto" style))))
+
+(deftest short-code-keeps-one-line
+  ;; `bb dev` broke into `bb` / `dev`, each half its own chip (SP.4 item 8)
+  (is (str/includes? style ".nw{white-space:nowrap}"))
+  (is (re-find #"p code,li code\{[^}]*overflow-wrap:anywhere" style) "long code may still break")
+  (doseq [l langs
+          [_ attrs code] (re-seq #"<code( class=\"nw\")?>([^<]*)</code>" (str/replace (html l) #"(?s)<pre>.*?</pre>" ""))
+          :let [n (count (unescape code))]]
+    (if (<= n sp/short-code)
+      (is attrs (str l ": " code " keeps one line"))
+      (is (nil? attrs) (str l ": " code " may break")))))
 
 (deftest cjk-text-gets-cjk-fonts
   (let [sc "\"PingFang SC\",\"Microsoft YaHei\",\"Noto Sans CJK SC\",\"Source Han Sans SC\""
@@ -573,10 +628,76 @@
   (let [text (body-text (html "en"))]
     (is (re-find #"(?i)in progress" text))
     (is (re-find #"(?i)not released|unreleased" text))
-    (is (re-find #"(?i)five languages" text)))
+    (is (re-find #"(?i)five languages" text))
+    (testing "live reload shipped in 0.1.0; Phase 4 made bb dev quicker (SP.4 item 6)"
+      (is (not (re-find #"(?i)live-reload" text)))
+      (is (str/includes? text "one rebuild per burst of saves"))))
   (doseq [l langs :let [text (body-text (html l))]]
     (is (str/includes? text "0.2.0") l)
     (is (not (re-find #"(?i)\b(?:20\d\d|q[1-4]|next (?:week|month)|coming soon)\b" text)) (str l ": no dates promised"))))
+
+(def ^:private storage-words
+  "How the privacy note says each key a built site keeps in its reader's
+  browser, in each language: a key the theme's code uses and this map
+  doesn't name fails `the-privacy-note-names-every-stored-key`."
+  {"clogem-mode"             {"en" "the colour mode they chose" "zh-Hans" "读者选择的配色模式" "zh-Hant" "讀者選擇的色彩模式"
+                              "pt-BR" "o modo de cor escolhido" "es-ES" "el modo de color elegido"}
+   "clogem-lang"             {"en" "the language they chose" "zh-Hans" "选择的语言" "zh-Hant" "選擇的語言"
+                              "pt-BR" "o idioma escolhido" "es-ES" "el idioma elegido"}
+   "clogem-banner-dismissed" {"en" "language banners they dismissed" "zh-Hans" "关闭了哪些" "zh-Hant" "關閉了哪些"
+                              "pt-BR" "o leitor fechou" "es-ES" "ha cerrado el lector"}})
+
+(defn- theme-storage-keys
+  "Every localStorage key the theme names: written as
+  localStorage[\"k\"] or localStorage \"k\" in its comments, as a literal
+  in a getItem or setItem call, or in a variable that one reads."
+  []
+  (set (for [f (fs/glob "src/clogem/theme" "**.{js,clj}")
+             :let [src (slurp (str f))]
+             k (concat (map second (re-seq #"localStorage\W{1,3}(clogem-[\w-]+)" src))
+                       (map second (re-seq #"localStorage\.\w+Item\(\\?[\"'](clogem-[\w-]+)" src))
+                       (for [[_ v k] (re-seq #"var (\w+) = [\"'](clogem-[\w-]+)[\"']" src)
+                             :when (re-find (re-pattern (str "(?:localStorage\\.\\w+Item|\\b(?:read|write))\\(" v "\\b")) src)]
+                         k))]
+         k)))
+
+(deftest the-privacy-note-names-every-stored-key
+  ;; it said the mode and the language, not the dismissed banners (SP.4 item 4)
+  (is (= #{"clogem-mode" "clogem-lang" "clogem-banner-dismissed"} (theme-storage-keys))
+      "the scan finds the keys known today")
+  (doseq [k (theme-storage-keys)]
+    (is (contains? storage-words k) (str k ": a key the privacy note doesn't cover yet; say it in all five, then here")))
+  (doseq [l langs
+          :let [text (body-text (str (section-html (html l) "privacy")))]
+          [k by-lang] storage-words]
+    (is (str/includes? text (by-lang l)) (str l ": " k))))
+
+(deftest tool-downloads-are-the-default
+  ;; a site's :tools config can name its own URL, hash or binary (SP.4 item 5)
+  (let [text (body-text (str (section-html (html "en") "privacy")))]
+    (is (str/includes? text "by default from that tool's own releases on GitHub"))
+    (is (str/includes? text "By default, each download is checked against a SHA-256 hash"))
+    (is (str/includes? text "A site's config can name its own source and hash for a tool instead, or a copy already installed")))
+  (doseq [[l w] {"zh-Hans" "默认" "zh-Hant" "預設" "pt-BR" "Por padrão" "es-ES" "De forma predeterminada"}
+          :let [text (body-text (str (section-html (html l) "privacy")))]]
+    (is (<= 3 (count (re-seq (re-pattern (str "(?i)" w)) text))) (str l ": the source, the hash and the cache, each by default"))))
+
+(deftest trademarks-are-trademarks
+  ;; 标识 / 標識 are "signs", not trademarks (SP.4 item 7)
+  (let [zs (body-text (str (section-html (html "zh-Hans") "source")))
+        zt (body-text (str (section-html (html "zh-Hant") "source")))]
+    (is (str/includes? zs "商标")) (is (not (str/includes? zs "标识")))
+    (is (str/includes? zt "商標")) (is (not (str/includes? zt "標識")))))
+
+(deftest pill-labels-are-short
+  ;; long translated labels wrapped inside their pills (SP.4 item 9)
+  (doseq [l langs
+          {:keys [sections]} [(words l)]
+          {:keys [blocks]} sections
+          [tag & cards] blocks :when (= tag :cards)
+          {:keys [chip action]} cards]
+    (is (<= (count chip) 24) (str l ": chip " chip))
+    (when action (is (<= (count action) 21) (str l ": " action)))))
 
 (deftest the-privacy-note-is-marked-a-draft
   (doseq [l langs]
@@ -640,13 +761,17 @@
   (doseq [f (concat ["support/support_page.clj" "test/clogem/support_page_test.clj"]
                     (for [l langs] (str "support/i18n/" l ".edn")))]
     (is (str/starts-with? (slurp f) ";; Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).\n") f))
+  (is (str/starts-with? (slurp ".github/workflows/support-page.yml") "# Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).\n"))
   (is (not (fs/exists? "support/page.edn")) "English lives in support/i18n/en.edn")
-  (testing "the code adapted from the hub carries its MIT notice too"
-    (let [src (slurp "support/support_page.clj")]
-      (is (str/includes? src ";;   Copyright 2026 EchoJustus\n"))
-      (is (str/includes? src "Permission is hereby granted, free of charge"))
-      (is (str/includes? src "The above copyright notice and this permission notice shall be included"))
-      (is (str/includes? src "OTHER DEALINGS IN THE SOFTWARE.")))))
+  (testing "the code adapted from the hub carries its MIT notice too: the generator, this file's
+           `git!` and `stand-in!` (portal_test.clj's), the workflow's `publish` (portal.yml's)"
+    (doseq [[f c] [["support/support_page.clj" ";;"] ["test/clogem/support_page_test.clj" ";;"]
+                   [".github/workflows/support-page.yml" "#"]]
+            :let [src (slurp f)]]
+      (is (str/includes? src (str c "   Copyright 2026 EchoJustus\n")) f)
+      (is (str/includes? src "Permission is hereby granted, free of charge") f)
+      (is (str/includes? src "The above copyright notice and this permission notice shall be included") f)
+      (is (str/includes? src "OTHER DEALINGS IN THE SOFTWARE.") f))))
 
 ;; ---------------------------------------------------------------------------
 ;; The workflow (.github/workflows/support-page.yml): its text, and its
@@ -689,6 +814,18 @@
       (is (not (re-find #"add\s+(?:[^\n]*\s)?(?:--all|-A|\.)(?:\s|$)" run)))
       (is (not (re-find #"git[^\n]*(?:--force|\s-f\b|\s\+[A-Za-z]|:\+|push[^\n]*\+)" run)))
       (is (str/includes? run "for attempt in 1 2 3")))
+    (testing "the live-page wait: about 10 minutes, and only ever a warning (SP.4 item 10)"
+      (let [live  (step "live")
+            r     (:run live)
+            limit (some-> (re-find #"\$SECONDS\" -lt (\d+)" r) second parse-long)
+            try-s (some-> (re-find #"--max-time (\d+)" r) second parse-long)
+            pause (some-> (re-find #"sleep (\d+)" r) second parse-long)]
+        (is (= "steps.publish.outputs.published == 'true'" (:if live)))
+        (is (<= (:timeout-minutes live) 12))
+        (is (true? (:continue-on-error live)))
+        (is (and limit try-s pause (<= (+ limit try-s pause) 600)) (str "worst case " limit "+" try-s "+" pause " s"))
+        (is (not (re-find #"exit [1-9]|::error" r)))
+        (is (str/includes? r "::warning::"))))
     (testing "commits as github-actions[bot]"
       (is (str/includes? run "user.name \"github-actions[bot]\""))
       (is (str/includes? run "user.email \"41898282+github-actions[bot]@users.noreply.github.com\"")))

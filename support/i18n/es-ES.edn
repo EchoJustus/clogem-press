@@ -58,8 +58,9 @@
               :text  ["Cinco idiomas con una dirección por artículo, enlaces canonical y hreflang, un feed Atom por idioma, un mapa del sitio, búsqueda con Pagefind con un índice por idioma y comentarios opcionales con giscus, con un hilo por artículo."]}
              {:chip  "En curso · sin publicar"
               :title "El tema, en la rama main"
-              :text  ["Ya incluido: modos de color claro, oscuro y de lectura, resaltado de código, un " [:code "bb dev"]
-                      " con recarga en directo, estilos de página de tarjetas y de líneas, una barra de navegación con menú lateral en el móvil, enlaces de edición y fechas de última actualización, una página 404, la tarjeta de perfil y el banner de portada del blog, y etiquetas opcionales de analítica y de verificación para consolas de búsqueda. Falta en esta fase: espacios para HTML personalizado y búsqueda entre idiomas; después, la siguiente versión."]}]]}
+              :text  ["Ya incluido: modos de color claro, oscuro y de lectura, resaltado de código, estilos de página de tarjetas y de líneas, una barra de navegación con menú lateral en el móvil, enlaces de edición y fechas de última actualización, una página 404, la tarjeta de perfil y el banner de portada del blog, etiquetas opcionales de analítica y de verificación para consolas de búsqueda, y un "
+                      [:code "bb dev"]
+                      " más ágil: una sola recompilación por cada tanda de guardados, los errores de compilación mostrados en el navegador, el tema recargado al cambiar y la ruta base del sitio servida tal como se publicará. Falta en esta fase: espacios para HTML personalizado y búsqueda entre idiomas; después, la siguiente versión."]}]]}
 
   {:id     "start"
    :title  "Primeros pasos"
@@ -89,12 +90,12 @@
               :title  "Hacer una pregunta"
               :text   ["Cómo hacer algo con clogem-press, o por qué funciona como funciona."]
               :href   "https://github.com/EchoJustus/clogem-support/discussions/new?category=q-a"
-              :action "Preguntar en Discussions"}
+              :action "Hacer una pregunta"}
              {:chip   "Idea"
               :title  "Compartir una idea"
               :text   ["Algo que clogem-press podría hacer, o hacer mejor."]
               :href   "https://github.com/EchoJustus/clogem-support/discussions/new?category=ideas"
-              :action "Compartir en Discussions"}]
+              :action "Proponer una idea"}]
             [:p "Las issues, las pull requests y las discusiones son públicas: cualquiera puede leerlas. No incluyas datos personales, como tu dirección de correo electrónico, ni nada privado del contenido de tu sitio."]
             [:h3 "Algo que no debería ser público"]
             [:p "Un problema de seguridad, una pregunta sobre tus datos o un aviso legal: escribe a "
@@ -109,17 +110,17 @@
              ". Los enlaces a GitHub te llevan a GitHub, con sus propias condiciones."]
             [:h3 "El generador"]
             [:p "clogem-press se ejecuta en tu propio ordenador. No tiene cuenta, ni telemetría, ni comprobación de actualizaciones, y no envía nada sobre ti ni sobre tu contenido a ninguna parte."]
-            [:p "Solo se conecta a internet para descargar una herramienta que necesita, desde las versiones publicadas de esa herramienta en GitHub:"]
+            [:p "Solo se conecta a internet para descargar una herramienta que necesita, de forma predeterminada desde las versiones publicadas de esa herramienta en GitHub:"]
             [:ul
              [[:strong "Chroma"] ", para el resaltado de código, la primera vez que se genera un sitio que contiene código, salvo que el resaltado esté desactivado;"]
              [[:strong "Pagefind"] ", para la búsqueda, la primera vez que se genera un sitio que activa la búsqueda;"]
              [[:strong "el pod fswatcher"] ", que vigila tus archivos, la primera vez que ejecutas " [:code "bb dev"] ";"]
              ["o cualquiera de ellos cuando ejecutas " [:code "bb fetch-tool"] "."]]
-            [:p "Cada descarga se comprueba con un hash SHA-256 fijado en clogem-press y se guarda en una caché fuera de tu sitio (" [:code "~/.cache/clogem-press/tools"]
-             " de forma predeterminada), así que solo ocurre una vez. Una herramienta que hayas instalado tú, indicada en "
+            [:p "De forma predeterminada, cada descarga se comprueba con un hash SHA-256 fijado en clogem-press y se guarda en una caché fuera de tu sitio (" [:code "~/.cache/clogem-press/tools"]
+             " de forma predeterminada), así que solo ocurre una vez. La configuración de un sitio puede indicar otro origen y otro hash para una herramienta, o una copia ya instalada. Una herramienta ya instalada, indicada en la configuración del sitio o en "
              [:code "CLOGEM_CHROMA"] ", " [:code "CLOGEM_PAGEFIND"] " o " [:code "CLOGEM_FSWATCHER"] ", nunca se descarga."]
             [:h3 "Los sitios que generas"]
-            [:p "Un sitio generado con clogem-press es una carpeta de archivos que publicas donde quieras. De forma predeterminada no hace ninguna petición a otro sitio. Solo la hace cuando su propietario activa los comentarios de giscus o la analítica (Google Analytics 4, Plausible o Umami), o indica un logotipo o una imagen como una dirección de otro sitio. Las etiquetas de verificación de consolas de búsqueda, si el propietario las añade, son líneas de la página que no cargan nada. Un sitio recuerda el modo de color y el idioma que elige el lector en el propio navegador del lector, y no envía ninguno de los dos a ninguna parte."]]}
+            [:p "Un sitio generado con clogem-press es una carpeta de archivos que publicas donde quieras. De forma predeterminada no hace ninguna petición a otro sitio. Solo la hace cuando su propietario activa los comentarios de giscus o la analítica (Google Analytics 4, Plausible o Umami), o indica un logotipo o una imagen como una dirección de otro sitio. Las etiquetas de verificación de consolas de búsqueda, si el propietario las añade, son líneas de la página que no cargan nada. Un sitio guarda tres cosas en el propio navegador del lector, y solo allí: el modo de color elegido, el idioma elegido y qué avisos de idioma «también disponible en…» ha cerrado el lector. No envía nada de ello a ninguna parte."]]}
 
   {:id     "source"
    :title  "Licencia y código fuente"

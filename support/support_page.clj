@@ -249,13 +249,18 @@
     (list [:a {:href href :hreflang "en"} words] [:span.en-note *en-note*])
     [:a {:href href} words]))
 
+(def short-code
+  "Inline code this long or shorter keeps one line (`bb dev`, an environment
+  variable); longer code, a path, may break, so nothing overflows at 320 px."
+  24)
+
 (defn- piece [x]
   (if (string? x)
     x
     (let [[tag & args] x]
       (case tag
         :a      (link (first args) (second args))
-        :code   [:code (first args)]
+        :code   (let [c (first args)] (if (<= (count c) short-code) [:code.nw c] [:code c]))
         :strong [:strong (first args)]))))
 
 (defn- pieces [xs] (map piece xs))
@@ -385,19 +390,25 @@
        ".en-note{color:var(--muted);font-size:.9em}"
        "code,pre{font-family:ui-monospace,\"Cascadia Code\",\"SF Mono\",Menlo,Consolas,monospace;font-size:.9em}"
        ;; the header
-       ".hero{display:grid;gap:1.4rem}"
+       ;; one column that may shrink below its content's width, so nothing in
+       ;; the header can widen the page past its gutter
+       ".hero{display:grid;grid-template-columns:minmax(0,1fr);gap:1.4rem}"
        ".top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem 1.5rem}"
-       ".brand{display:flex;align-items:center;gap:clamp(.9rem,2.5vw,1.25rem);min-width:0}"
+       ;; the brand's words wrap beside the switchers (a basis, not its whole
+       ;; width), so the two share a row on a wide screen, as on the hub
+       ".brand{flex:1 1 18rem;display:flex;align-items:center;gap:clamp(.9rem,2.5vw,1.25rem);min-width:0}"
        ".mark{flex:none;display:block;width:clamp(3.75rem,10vw,5.5rem);height:auto}"
        ".eyebrow{margin:0 0 .2rem;font-size:.78rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--chip-ink)}"
        "h1{margin:0;font-size:clamp(2.1rem,5.2vw,3.3rem);line-height:1.05;letter-spacing:-.025em;font-weight:700;overflow-wrap:anywhere}"
        ".sub{margin:.35rem 0 0;font-size:1.08rem;color:var(--muted)}"
        (str ".rule{width:min(11rem,40%);height:3px;border-radius:3px;background:" rule "}")
        ".lead{margin:0;max-width:42rem;font-size:1.15rem;color:var(--muted)}"
-       ;; the switchers, at the end of the top row (and of the screen, when it wraps)
-       ".tools{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:.6rem;margin-inline-start:auto}"
+       ;; the switchers, at the end of the top row (and of the screen, when it
+       ;; wraps). The dropdown hangs from their right edge, which is the
+       ;; content box's, so it never runs off the left of a narrow screen;
+       ;; when they wrap, the language's line is the lower one, just above it.
+       ".tools{position:relative;flex:0 1 auto;min-width:0;max-width:100%;display:flex;flex-wrap:wrap-reverse;justify-content:flex-end;align-items:center;gap:.6rem;margin-inline-start:auto}"
        ;; the language switcher: a <details> dropdown of plain links, the current one marked
-       ".langs{position:relative}"
        (str ".langs summary{display:inline-flex;align-items:center;gap:.4rem;padding:calc(.42rem + 3px) .95rem;border:1px solid var(--control);"
             "border-radius:999px;background:var(--surface);box-shadow:var(--shadow);font-size:.86rem;font-weight:650;cursor:pointer;list-style:none}")
        ".langs summary::-webkit-details-marker{display:none}"
@@ -406,14 +417,14 @@
        ".langs svg{flex:none;width:1rem;height:1rem}"
        ".chev{transition:transform .2s ease}"
        ".langs[open] .chev{transform:rotate(180deg)}"
-       (str ".langs ul{position:absolute;z-index:2;top:calc(100% + .4rem);inset-inline-end:0;min-width:12rem;max-width:calc(100vw - 2rem);"
+       (str ".langs ul{position:absolute;z-index:2;top:calc(100% + .4rem);inset-inline-end:0;min-width:12rem;max-width:100%;"
             "margin:0;padding:.35rem;list-style:none;background:var(--surface);border:1px solid var(--control);border-radius:1rem;box-shadow:var(--shadow)}")
        (str ".langs a{display:block;padding:.45rem .8rem;border-radius:.65rem;"
             "font-family:var(--text-font);font-size:.9rem;font-weight:600;color:var(--text);text-decoration:none}")
        ".langs a:hover{color:var(--link);text-decoration:underline}"
        ".langs a[aria-current=page]{background:var(--chip);color:var(--chip-ink)}"
        ;; the theme switcher: radios as a segmented control
-       (str ".theme{display:inline-flex;gap:2px;min-width:0;margin:0;padding:3px;border:1px solid var(--control);"
+       (str ".theme{display:inline-flex;flex-wrap:wrap;gap:2px;min-width:0;max-width:100%;margin:0;padding:3px;border:1px solid var(--control);"
             "border-radius:999px;background:var(--surface);box-shadow:var(--shadow)}")
        ".vh,.theme legend{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}"
        ".theme input{position:absolute;width:1px;height:1px;margin:0;opacity:0}"
@@ -423,6 +434,9 @@
        ".theme input:checked+label{background:var(--chip);color:var(--chip-ink)}"
        ".theme input:focus-visible+label{outline:3px solid var(--focus);outline-offset:2px}"
        ".theme svg{flex:none;width:1rem;height:1rem}"
+       ;; a narrow screen: the labels without their icons, closer together, so
+       ;; the longest (pt-BR's, es-ES's) keep one line within the gutter
+       "@media (max-width:30rem){.theme svg{display:none}.theme label{padding:.42rem .62rem}}"
        "@supports not selector(:has(*)){.theme{display:none}}"
        ;; the jump links
        ".jump ul{display:flex;flex-wrap:wrap;gap:.6rem;margin:0;padding:0;list-style:none}"
@@ -441,6 +455,8 @@
        "section>ul li{margin:.3rem 0}"
        "section>ul li::marker{color:var(--chip-ink)}"
        "p code,li code{padding:.08rem .38rem;border-radius:.4rem;background:var(--chip);color:var(--chip-ink);overflow-wrap:anywhere}"
+       ;; short code (a command, a variable) keeps one line; a long path may break
+       ".nw{white-space:nowrap}"
        (str "pre{margin:0 0 1.25rem;padding:1.1rem 1.25rem;overflow-x:auto;background:var(--surface);border:1px solid var(--border);"
             "border-radius:1rem;box-shadow:var(--shadow);line-height:1.6}")
        "pre:focus-visible{outline:3px solid var(--focus);outline-offset:3px}"

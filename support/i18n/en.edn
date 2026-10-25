@@ -81,8 +81,9 @@
               :text  ["Five languages with one address per article, canonical and hreflang links, an Atom feed per language, a sitemap, Pagefind search with an index per language, and optional giscus comments with one thread per article."]}
              {:chip  "In progress · unreleased"
               :title "The theme, on the main branch"
-              :text  ["Landed so far: light, dark and reading colour modes, code highlighting, a live-reloading " [:code "bb dev"]
-                      ", card and line page styles, a navbar with a mobile drawer, edit links and last-updated dates, a 404 page, the blog's profile card and home banner, and optional analytics and search-console tags. Still to come in this phase: custom HTML slots and search across languages, then the next release."]}]]}
+              :text  ["Landed so far: light, dark and reading colour modes, code highlighting, card and line page styles, a navbar with a mobile drawer, edit links and last-updated dates, a 404 page, the blog's profile card and home banner, optional analytics and search-console tags, and a quicker "
+                      [:code "bb dev"]
+                      ": one rebuild per burst of saves, build errors shown in the browser, the theme reloaded as it changes, and a site's base path served as it will be published. Still to come in this phase: custom HTML slots and search across languages, then the next release."]}]]}
 
   {:id     "start"
    :title  "Getting started"
@@ -132,17 +133,17 @@
              ". The links to GitHub take you to GitHub, under its own terms."]
             [:h3 "The generator"]
             [:p "clogem-press runs on your own computer. It has no account, no telemetry and no update check, and it sends nothing about you or your content anywhere."]
-            [:p "It goes online only to download a tool it needs, from that tool's own releases on GitHub:"]
+            [:p "It goes online only to download a tool it needs, by default from that tool's own releases on GitHub:"]
             [:ul
              [[:strong "Chroma"] ", for code highlighting, on the first build of a site that has code in it, unless highlighting is off;"]
              [[:strong "Pagefind"] ", for search, on the first build of a site that turns search on;"]
              [[:strong "the fswatcher pod"] ", which watches your files, the first time you run " [:code "bb dev"] ";"]
              ["or any of them when you run " [:code "bb fetch-tool"] "."]]
-            [:p "Each download is checked against a SHA-256 hash pinned in clogem-press, and kept in a cache outside your site (" [:code "~/.cache/clogem-press/tools"]
-             " by default), so it happens once. A tool you installed yourself, named in "
+            [:p "By default, each download is checked against a SHA-256 hash pinned in clogem-press, and kept in a cache outside your site (" [:code "~/.cache/clogem-press/tools"]
+             " by default), so it happens once. A site's config can name its own source and hash for a tool instead, or a copy already installed. A tool already installed, named in the site's config or in "
              [:code "CLOGEM_CHROMA"] ", " [:code "CLOGEM_PAGEFIND"] " or " [:code "CLOGEM_FSWATCHER"] ", is never downloaded."]
             [:h3 "The sites you build"]
-            [:p "A site built with clogem-press is a folder of files that you publish where you choose. Out of the box it makes no request to another site. It does so only when its owner turns on giscus comments or analytics (Google Analytics 4, Plausible or Umami), or gives a logo or an image as an address on another site. Search-console verification tags, if the owner adds them, are lines in the page that load nothing. A site remembers its reader's colour mode and language choice in the reader's own browser, and sends neither anywhere."]]}
+            [:p "A site built with clogem-press is a folder of files that you publish where you choose. Out of the box it makes no request to another site. It does so only when its owner turns on giscus comments or analytics (Google Analytics 4, Plausible or Umami), or gives a logo or an image as an address on another site. Search-console verification tags, if the owner adds them, are lines in the page that load nothing. A site keeps three things in its reader's own browser, and only there: the colour mode they chose, the language they chose, and which “also available in …” language banners they dismissed. It sends none of them anywhere."]]}
 
   {:id     "source"
    :title  "Licence and source"
