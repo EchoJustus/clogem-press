@@ -1430,12 +1430,15 @@
 (defn site-rel
   "`p` as the site author would name it: relative to the site directory,
   with `/` separators, when it is inside it (`content/01.Guide/a.md`), else
-  as it is. An edit link's path (Task E2) and a git log key are this."
+  as it is. An edit link's path (Task E2) and a git log key are this. Only
+  where `\\` is the separator is it replaced: on POSIX it is a name's own
+  character (P4-E2.1)."
   [cfg p]
   (let [site (fs/normalize (fs/absolutize (site-dir cfg)))
         p    (fs/normalize (fs/absolutize p))]
     (if (str/starts-with? (str p) (str site java.io.File/separator))
-      (str/replace (str (fs/relativize site p)) "\\" "/")
+      (cond-> (str (fs/relativize site p))
+        (= "\\" java.io.File/separator) (str/replace "\\" "/"))
       (str p))))
 
 (defn static-dir

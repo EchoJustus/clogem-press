@@ -533,6 +533,22 @@
           (is (not (str/includes? (page-edit-of (pages "pages/cccccc/index.html")) "Last updated")))))
       (finally (fs/delete-tree root)))))
 
+;; P4-E2.1 item 2: on POSIX a backslash is a file name's own character, not
+;; a separator
+(deftest a-backslash-in-a-posix-file-name-is-kept
+  (when (= "/" java.io.File/separator)
+    (let [[root site] (temp-repo "")]
+      (try
+        (write-site! site {:theme {:last-updated true} :content {:edit-link {:repo "o/n"}}}
+                     {"01.G/02.back\\slash.md" (article "B" "/pages/b5b5b5/")})
+        (git! root "2026-07-08T23:59:59+08:00" "add" "-A")
+        (git! root "2026-07-08T23:59:59+08:00" "commit" "-q" "-m" "b")
+        (let [{:keys [pages]} (binding [gitlog/*git* (ceiling-git root)] (build-dir site))
+              edit (page-edit-of (pages "pages/b5b5b5/index.html"))]
+          (is (str/includes? edit "href=\"https://github.com/o/n/edit/main/content/01.G/02.back%5Cslash.md\"") edit)
+          (is (str/includes? edit "<time datetime=\"2026-07-08T23:59:59+08:00\">") edit))
+        (finally (fs/delete-tree root))))))
+
 ;; ---------------------------------------------------------------------------
 ;; Item 4: the update bar and moreArticle
 

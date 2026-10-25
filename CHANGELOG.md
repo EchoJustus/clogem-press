@@ -251,6 +251,14 @@ buttons and a back-to-top button now appear by default, as in vdoing.
   single-line box plus 2 px and lies within its row, and the date ends at
   the row's end; at 1280 the badge follows the title on its line.
 
+- **A backslash in a POSIX file name is kept.** `config/site-rel` turned
+  every `\` into `/`, so on Linux `content/01.G/02.back\slash.md` got the
+  edit link `…/content/01.G/02.back/slash.md` and no last-updated date
+  (its git key did not match). Only where `java.io.File/separator` is `\`
+  is it replaced now. `parity_test.clj`
+  `a-backslash-in-a-posix-file-name-is-kept`: the href ends in
+  `02.back%5Cslash.md` and the page has the file's commit date.
+
 ### Needs native review (E2)
 
 - `ms`: `:nav/source` "Kod sumber" (the navbar's repository link, when
