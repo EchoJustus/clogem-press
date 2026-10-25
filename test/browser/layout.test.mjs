@@ -1863,10 +1863,13 @@ async function item13(t) {
   {
     const page = await t.newPage({ viewport: { width: 360, height: 740 }, reducedMotion: 'reduce' });
     await open(page, t, article);
-    await page.evaluate(() => scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }));
+    // prev/next at the viewport's bottom edge, where back to top sits: below
+    // them the merged demo has E2's update bar and E1a's taller footer, so
+    // at the page's end they are scrolled out of view
+    await page.evaluate(() => scrollTo({ top: document.querySelector('.clogem-prev-next').getBoundingClientRect().bottom + scrollY - innerHeight, behavior: 'instant' }));
     await page.waitForFunction(() => document.querySelector('.clogem-back-to-top').checkVisibility(), null, { timeout: 1000 });
     const c = await page.evaluate(coveredLinks, '.clogem-prev-next a');
-    t.check(c.checked === 2 && c.out.length === 0, `360 at the end: back to top covers neither prev/next link (${c.checked} checked; ${c.out.join('; ')})`);
+    t.check(c.checked === 2 && c.out.length === 0, `360, prev/next at the viewport's bottom: back to top covers neither prev/next link (${c.checked} checked; ${c.out.join('; ')})`);
     await page.close();
   }
   {

@@ -268,6 +268,12 @@ gets it, and title badges appear by default, as in vdoing.
   there, and checks the right bar's *More →* (the archives, else
   `:more-article`) on a temp build with a `postList: detailed` home.
   README's `bb test` count is 800 tests / ~52,100 assertions.
+- **Browser pins**: `parity.test.mjs` item 1 counts the links named
+  "GitHub" in the navbar only — E1a's footer has a social link of that
+  name. `layout.test.mjs` item 13's "back to top covers neither prev/next
+  link" at 360 scrolls prev/next to the viewport's bottom edge, not to the
+  page's end, below which E2's update bar and E1a's footer now push them
+  out of view.
 
 ### Needs native review (E1a)
 

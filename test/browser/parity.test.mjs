@@ -94,8 +94,9 @@ async function item1(t) {
       if (!s) continue;
       if (visible) t.check(s.labelW > 20, `${what}: the label shows (${s.labelW} px)`);
       else t.check(s.labelW <= 1, `${what}: the label is visually hidden (${s.labelW} px)`);
-      const named = await page.getByRole('link', { name: 'GitHub', exact: true }).count();
-      t.check(named === 1, `${what}: one link is named "GitHub" (${named})`);
+      // in the navbar: P4-E1a's footer has a social link named GitHub too
+      const named = await page.locator('.clogem-navbar').getByRole('link', { name: 'GitHub', exact: true }).count();
+      t.check(named === 1, `${what}: one navbar link is named "GitHub" (${named})`);
     }
     await page.close();
   }
