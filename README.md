@@ -477,7 +477,7 @@ clips sideways rather than widening the page, and that Pagefind ignores, so
 a module never lands in a search result.
 
 The two windows are at most 200 px wide and `min(400px, 50vh - 2.5rem)`
-tall, and show from 60rem (960 px) up. With JavaScript each carries a close
+tall, and show only wider than 60rem (960 px). With JavaScript each carries a close
 button that hides it for that page load; without it there is no button and
 the window stays. **A window covers whatever is under it** — as vdoing's
 does — so keep them small. There are none on the 404 page.

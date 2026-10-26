@@ -1,8 +1,8 @@
-/* clogem-press: the opt-in identity rules (Phase 4 Task E1a, DESIGN.md
- * §11.3 item 13): the blogger card, the social links and the body
- * background image. Shipped and linked, right after theme.css, only while
- * a page uses one of them (`clogem.config/identity-css?`); E1b's module
- * wrappers and windows join them here. Palette variables only, so no new
+/* clogem-press: the opt-in identity rules (Phase 4 Tasks E1a and E1b,
+ * DESIGN.md §11.3 item 13): the blogger card, the social links, the body
+ * background image, and the htmlModules wrappers and windows. Shipped and
+ * linked, right after theme.css, only while a page uses one of them
+ * (`clogem.config/identity-css?`). Palette variables only, so no new
  * contrast pair. Budget: 2,048 B gzipped (identity_test). */
 
 /* vdoing's BloggerBar: the avatar, the links, the name and the slogan. No

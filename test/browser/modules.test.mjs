@@ -136,19 +136,30 @@ export default async function (t) {
     {
       const page = await serve(t, b.dist, { viewport: { width: 1280, height: 800 } });
       await page.goto(ARTICLE, { waitUntil: 'load' });
+      // by keyboard, so :focus-visible draws the theme's ring
+      const on = () => page.evaluate(() => document.activeElement
+        === document.querySelector('.clogem-module--page-t a[href]'));
+      let focused = false;
+      for (let i = 0; i < 200 && !focused; i++) {
+        await page.keyboard.press('Tab');
+        focused = await on();
+      }
+      t.check(focused, 'Tab reaches the page-t module\'s link');
       const r = await page.evaluate(() => {
         const w = document.querySelector('.clogem-module--page-t');
         const a = w.querySelector('a[href]');
-        a.focus({ preventScroll: true });
+        const cs = getComputedStyle(a);
+        // the ring's reach: its width plus its offset (2px at 2px)
+        const grow = parseFloat(cs.outlineWidth) + parseFloat(cs.outlineOffset);
         const ring = a.getBoundingClientRect();
         const box = w.getBoundingClientRect();
-        return { focused: document.activeElement === a,
-                 inside: ring.left - 4 >= box.left - 0.5 && ring.right + 4 <= box.right + 0.5
-                         && ring.top - 4 >= box.top - 0.5 && ring.bottom + 4 <= box.bottom + 0.5,
+        return { drawn: cs.outlineStyle !== 'none', grow,
+                 inside: ring.left - grow >= box.left - 0.5 && ring.right + grow <= box.right + 0.5
+                         && ring.top - grow >= box.top - 0.5 && ring.bottom + grow <= box.bottom + 0.5,
                  ring: [ring.left, ring.right, ring.top, ring.bottom].map(Math.round),
                  box: [box.left, box.right, box.top, box.bottom].map(Math.round) };
       });
-      t.check(r.focused, 'the module\'s link takes focus');
+      t.check(r.drawn && r.grow === 4, `the focused link draws the 4 px ring (${r.grow})`);
       t.check(r.inside, `its whole ring is inside the wrapper: ${r.ring} in ${r.box}`);
       await page.close();
     }

@@ -3667,7 +3667,7 @@ their own findings. Item 19 onward are corrections.
     with a close button that `js/window.js` (400 B budget, shipped only while `config/windows?`
     holds) reveals and that hides its window for that page load only; `identity.css` places them
     (`z-index: 5`, at most 200 px by `min(400px, calc(50vh - 2.5rem))`, `rb` at `right: 4.7rem` to
-    clear back to top, none at ≤ 60rem) and hides every module and window in print. E1b added 447 B
+    clear back to top, none at ≤ 60rem) and hides every module and window in print. E1b added 438 B
     gzipped to `identity.css` and nothing to `theme.css`.
 14. **Analytics (F).** A self-hosted loader, with no inline script; never loaded in dev, only on the
     `:site :url` host; DNT/GPC respected by default; providers GA4, Plausible and Umami, default

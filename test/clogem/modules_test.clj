@@ -384,8 +384,16 @@
                   clogem.search/*env* {"CLOGEM_PAGEFIND" real}]
           (let [out (fs/path site "dist")
                 _ (with-out-str (cli/build {:site-dir (str site) :out (str out) :no-write true}))
-                frags (fake/read-fragments out)]
+                frags (fake/read-fragments out)
+                html-of (fn [url] (slurp (fs/file (fs/path out (str (subs url 1) "index.html")))))
+                catalogue? (fn [url] (str/includes? (html-of url) "clogem-catalogue\""))
+                ;; page-t is the slot inside the indexed article
+                marked (filter #(re-find #"clogem-module--page-t\"[^>]*><p>zygotic</p>" (html-of %))
+                               (map :url frags))]
             (is (< 20 (count frags)))
+            (testing "page-t carries the marker on indexed pages, an article and a catalogue among them"
+              (is (some (complement catalogue?) marked) (pr-str marked))
+              (is (some catalogue? marked) (pr-str marked)))
             (doseq [{:keys [url content]} frags]
               (is (not (str/includes? (str content) "zygotic")) (str url ": the module is not indexed")))
             (is (some #(str/includes? (str (:content %)) "Pagefind") frags)
@@ -419,7 +427,11 @@
         (testing rel
           (is (str/includes? head "<meta name=\"x-e1b\" content=\"1\">"))
           (is (str/includes? head "<link rel=\"stylesheet\" href=\"/extra.css\">") "{{base}} is replaced")
-          (is (< (str/index-of head "pagefind-component-ui") (str/index-of head "x-e1b"))
+          ;; the last of Pagefind's tags: its component script, or
+          ;; js/search.js where the UI strings need it
+          (is (< (max (str/last-index-of head "pagefind-component-ui")
+                      (or (str/last-index-of head "clogem/js/search.js") -1))
+                 (str/index-of head "x-e1b"))
               "after Pagefind's tags")
           (is (< (str/index-of head "x-e1b") (str/index-of head "overrides/custom.css"))
               "before the site's own stylesheet"))
@@ -456,6 +468,10 @@
             :when (not= rel "404.html")]
       (is (re-find #"<div class=\"clogem-window clogem-window--lb\">.*<div class=\"clogem-window clogem-window--rb\">.*<button aria-label=\"Back to top\"" page)
           (str rel ": lb, rb, then back to top"))
+      (is (str/includes? page "<p>m-window-lb</p></div></div><div class=\"clogem-window clogem-window--rb\">")
+          (str rel ": rb right after lb"))
+      (is (str/includes? page "<p>m-window-rb</p></div></div><button aria-label=\"Back to top\"")
+          (str rel ": back to top right after rb"))
       (is (str/ends-with? page "#arrow-up\"></use></svg></button></body></html>")
           (str rel ": back to top is still the last child of <body>"))
       (is (= 2 (count (re-seq close-re page))) rel)

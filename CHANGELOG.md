@@ -417,7 +417,7 @@ clogem-press card and its README's table.
   only, and moves focus to `<body>` if the button had it. The script is
   deferred, same-origin, 397 B gzipped (budget 400), linked only on a page
   that renders a window and shipped only while `config/windows?` holds.
-- **CSS** (`css/identity.css`, +447 B gzipped; `theme.css` unchanged): a
+- **CSS** (`css/identity.css`, +438 B gzipped; `theme.css` unchanged): a
   wrapper is `min-width: 0; max-width: 100%; overflow-x: auto` with
   0.25rem of padding, which keeps a focus ring out of the clip; the sidebar
   slots are 0.85rem with a 1rem gap to the tree, by their own class, so
@@ -455,11 +455,12 @@ clogem-press card and its README's table.
   on every wrapper with search on and no `data-pagefind-` at all without
   it; `:head-extra`'s place between Pagefind and `custom.css`, in the
   page's own language, on the 404 page and on no redirect stub; the windows
-  before back to top (and ending `<body>` under `:back-to-top false`), none
-  on the 404 page, `window.js` linked per language and shipped only with a
-  window, and its 400 B budget printed. With `CLOGEM_PAGEFIND`: a word only
-  a module carries is in no fragment, while the article's own words are.
-- New `test/browser/modules.test.mjs` (76 checks): a temp demo copy with
+  right before back to top (and ending `<body>` under `:back-to-top
+  false`), none on the 404 page, `window.js` linked per language and
+  shipped only with a window, and its 400 B budget printed. With
+  `CLOGEM_PAGEFIND`: a word that only `page-t` carries, on an article and a
+  catalogue, is in no fragment, while the article's own words are.
+- New `test/browser/modules.test.mjs` (77 checks): a temp demo copy with
   every slot set, built `--no-search --no-highlight` and served through
   `page.route`. No page overflow at 320 and 360 px with a 480 px element in
   `page-t`, `sidebar-t` and `home-sidebar-b`, each wrapper scrolling

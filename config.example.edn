@@ -231,7 +231,7 @@
                                       ;     `article: false`, catalogues); "article" works
                                       ;   :window-lb, :window-rb — fixed at the window's
                                       ;     bottom left / right, at most 200 × 400 px,
-                                      ;     from 60rem (960 px), closable with JS
+                                      ;     wider than 60rem (960 px), closable with JS
                                       ;   :head-extra — clogem-press's own: <link>,
                                       ;     <meta>, <script>, <style>, <noscript> or
                                       ;     <template> only, added to every page's <head>;
