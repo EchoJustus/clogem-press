@@ -235,6 +235,64 @@
                   (is (= (get-in get [:headers "content-length"]) (get-in head [:headers "content-length"]))
                       "the length of the page as GET sends it, script included"))))))))))
 
+(deftest head-reads-no-file
+  (testing "follow-ups.1 (item 1): a HEAD of a file under 20 MB read it whole
+            (`read-all`), to drop what it read — about 30 times slower than
+            0.2.0 for a 19 MB file"
+    (with-root
+      (fn [root]
+        (spit (fs/file root "small.txt") "small")
+        (sparse! (fs/path root "big.bin") (+ 10 (* 2 1024 1024)))
+        (sparse! (fs/path root "huge.bin") (+ 10 (* 24 1024 1024)))
+        (spit (fs/file root "page.html") "<p>a page</p></body>")
+        (let [reads (atom [])
+              read-all @#'dev/read-all]
+          (with-redefs-fn {#'dev/read-all (fn [f] (swap! reads conj (str f)) (read-all f))}
+            (fn []
+              (let [h (dev/make-handler root {})]
+                (doseq [[uri n] [["/small.txt" 5] ["/big.bin" (+ 10 (* 2 1024 1024))]
+                                 ["/huge.bin" (+ 10 (* 24 1024 1024))] ["/page.html" 20]]]
+                  (testing uri
+                    (let [{:keys [status body]} (h {:uri uri :request-method :head})]
+                      (is (= 200 status))
+                      (if dev/http-kit-drops-head-bodies?
+                        ;; a lazy mapping: http-kit reads its length, and
+                        ;; never its bytes
+                        (do (when-not (and (fs/windows?) (< n dev/whole-read-limit))
+                              (is (instance? java.nio.MappedByteBuffer body) (str (type body))))
+                            (is (= n (when (instance? java.nio.ByteBuffer body) (.remaining ^java.nio.ByteBuffer body)))
+                                "GET's length"))
+                        (is (nil? body) "no body to drop")))))
+                ;; on Windows a file under 20 MB is read: a mapping would
+                ;; hold it against the next rebuild's replace
+                (is (= (if (and (fs/windows?) dev/http-kit-drops-head-bodies?)
+                         (map #(str (fs/path root %)) ["small.txt" "big.bin" "page.html"])
+                         [])
+                       @reads)
+                    "nothing read")
+                (testing "GET still reads what it sends"
+                  (is (bytes? (:body (h {:uri "/small.txt" :request-method :get}))))
+                  (is (= (if (and (fs/windows?) dev/http-kit-drops-head-bodies?) 4 1) (count @reads))))))))))))
+
+(deftest a-whole-read-holds-the-file-once
+  (testing "follow-ups.1: `read-all` copied its buffer, so a read held the
+            file twice; in a heap of 150 MB, a 100 MB file could not be read"
+    (with-root
+      (fn [root]
+        (let [n  (* 100 1024 1024)
+              p  (fs/path root "big.bin")
+              bb (or (-> (java.lang.ProcessHandle/current) .info .command (.orElse nil)) "bb")
+              _  (sparse! p n)
+              pr (-> (ProcessBuilder. [bb "-Xmx150m" "-cp" (str (fs/absolutize "src"))
+                                       "-e" (str "(require 'clogem.dev) (println (count (#'clogem.dev/read-all "
+                                                 (pr-str (str p)) ")))")])
+                     (.directory (fs/file root))
+                     (.redirectErrorStream true)
+                     (.start))
+              out (slurp (.getInputStream pr))]
+          (is (zero? (.waitFor pr)) out)
+          (is (= (str n) (str/trim out))))))))
+
 ;; ---------------------------------------------------------------------------
 ;; Item 4: the fswatcher pod dies while `bb dev` runs
 
@@ -281,6 +339,63 @@
               (is (not (str/includes? (str out) "Pod quit unexpectedly")) (str "nothing else about it: " out))
               (finally (binding [*out* out *err* out] ((:stop! h)))))))))))
 
+(deftest a-pod-that-dies-at-ctrl-c-is-no-fallback
+  (testing "follow-ups.1 (item 4): Ctrl-C signals the pod with dev, and the
+            pod can die before dev's shutdown hook sets `stopping`; the
+            follower read `stopping` once, so it could say `the fswatcher
+            pod quit` and start polling as dev stopped. It waits
+            `signal-grace-ms` for the stop, as the pod's stderr does"
+    (with-site url-site
+      (fn [dir]
+        (doseq [d ["assets" "i18n" "overrides"]] (fs/create-dirs (fs/path dir d)))
+        (let [out    (java.io.StringWriter.)
+              alive? (atom true)
+              pod (fn [_cfg _on-change {:keys [specs on-ready]}]
+                    (on-ready (fn [spec] {:path (:path spec)})
+                              {:unwatch! (fn [_]) :watchers (zipmap (map :path specs) (map :path specs))})
+                    {:pod-id nil :alive? (fn [] @alive?)})
+              h (binding [*out* out *err* out]
+                  (dev/start-dev! {:site-dir (str dir) :port 1888 :no-write true :no-search true :interval 100}
+                                  {:run-server! (fn [& _] (fn [& _] nil))
+                                   :try-pod-watch! pod
+                                   :poll-watch! dev/poll-watch!
+                                   :follow-ms 20
+                                   :notify! (fn [_]) :notify-error! (fn [_])}))]
+          (try
+            (is (str/includes? (str out) "watching via fswatcher") (str out))
+            (reset! alive? false)
+            ;; the follower has seen it several times over before the stop
+            (Thread/sleep 300)
+            (binding [*out* out *err* out] ((:stop! h)))
+            (Thread/sleep (+ 300 dev/signal-grace-ms))
+            (is (not (str/includes? (str out) "fswatcher pod quit")) (str out))
+            (is (not (re-find #"dev polls|rebuilt in \d+ ms \(full" (str out))) (str "no poller: " out))
+            (finally (binding [*out* out *err* out] ((:stop! h))))))))
+    (testing "a pod that dies with no stop to follow still falls back, after the grace"
+      (with-site url-site
+        (fn [dir]
+          (doseq [d ["assets" "i18n" "overrides"]] (fs/create-dirs (fs/path dir d)))
+          (let [out    (java.io.StringWriter.)
+                alive? (atom true)
+                pod (fn [_cfg _on-change {:keys [specs on-ready]}]
+                      (on-ready (fn [spec] {:path (:path spec)})
+                                {:unwatch! (fn [_]) :watchers (zipmap (map :path specs) (map :path specs))})
+                      {:pod-id nil :alive? (fn [] @alive?)})
+                h (binding [*out* out *err* out]
+                    (dev/start-dev! {:site-dir (str dir) :port 1888 :no-write true :no-search true :interval 100}
+                                    {:run-server! (fn [& _] (fn [& _] nil))
+                                     :try-pod-watch! pod
+                                     :poll-watch! dev/poll-watch!
+                                     :follow-ms 20
+                                     :notify! (fn [_]) :notify-error! (fn [_])}))]
+            (try
+              (reset! alive? false)
+              (is (wait-until #(re-find #"(?s)fswatcher pod quit.*rebuilt in \d+ ms \(full rebuild\)" (str out))
+                              (+ 3000 dev/signal-grace-ms))
+                  (str out))
+              (is (= 1 (count (re-seq #"fswatcher pod quit" (str out)))) (str out))
+              (finally (binding [*out* out *err* out] ((:stop! h)))))))))))
+
 ;; ---------------------------------------------------------------------------
 ;; Item 11: the inotify-limit fallback's first rebuild
 
@@ -301,6 +416,9 @@
                     (reset! cb {:on-change on-change :accept? accept?})
                     (on-ready register! {:unwatch! (fn [_]) :watchers (zipmap (map :path specs) (map register! specs))})
                     true)
+              seen (atom [])
+              own-writes dev/own-writes
+              gone-temp? dev/gone-temp?
               h (binding [*out* out *err* out]
                   (dev/start-dev! {:site-dir (str dir) :port 1888 :no-write true :no-search true :interval 100}
                                   {:run-server! (fn [& _] (fn [& _] nil))
@@ -309,16 +427,60 @@
                                    :follow-ms 50
                                    :notify! (fn [_]) :notify-error! (fn [_])}))]
           (try
-            (reset! started? true)
-            (let [d (fs/path dir "content" "50.A")]
-              (fs/create-dirs d)
-              (let [{:keys [on-change accept?]} @cb]
-                (when (accept? (str d)) (on-change (with-meta [(str d)] {:type :create})))))
-            (is (wait-until #(str/includes? (str out) "inotify limit is reached") 5000) (str out))
-            (is (wait-until #(re-find #"rebuilt in \d+ ms \(full rebuild\)" (str out)) 5000)
-                (str "says what it is: " out))
+            ;; follow-ups.1: the marker reaches no path function
+            (with-redefs [dev/own-writes (fn [w ps now] (swap! seen conj (vec ps)) (own-writes w ps now))
+                          dev/gone-temp? (fn [p] (swap! seen conj [p]) (gone-temp? p))]
+              (reset! started? true)
+              (let [d (fs/path dir "content" "50.A")]
+                (fs/create-dirs d)
+                (let [{:keys [on-change accept?]} @cb]
+                  (when (accept? (str d)) (on-change (with-meta [(str d)] {:type :create})))))
+              (is (wait-until #(str/includes? (str out) "inotify limit is reached") 5000) (str out))
+              (is (wait-until #(re-find #"rebuilt in \d+ ms \(full rebuild\)" (str out)) 5000)
+                  (str "says what it is: " out)))
             (is (not (re-find #"files changed" (str out))) (str out))
+            (is (not (str/includes? (str out) "build failed")) (str out))
+            (is (seq @seen) "dev's own-writes check ran")
+            (is (not-any? #(some #{dev/full-rebuild} %) @seen) "on paths only")
             (finally (binding [*out* out *err* out] ((:stop! h))))))))))
+
+(deftest the-full-rebuild-marker-is-never-a-path
+  (testing "follow-ups.1 (item 11): `\"<full rebuild>\"` is no valid Windows
+            path, and the rebuild handed it to `gone-temp?` (`fs/file-name`,
+            `fs/exists?`) and, under --reload-code, to `theme-namespaces`
+            (`fs/absolutize`): a false `build failed` there"
+    (testing "the marker is a path on no system: one that reached an `fs/`
+              function would throw here too"
+      (is (thrown? IllegalArgumentException (fs/path dev/full-rebuild)) "InvalidPathException"))
+    (let [theme (dev/theme-dir true)
+          out   (java.io.StringWriter.)
+          calls (atom [])
+          seen  (atom [])
+          gone-temp? dev/gone-temp?
+          theme-namespaces dev/theme-namespaces
+          rebuild (dev/make-rebuild {:build (fn [] {})
+                                     :out "/nonexistent"
+                                     :state (atom {})
+                                     :reload-code theme
+                                     :notify! #(swap! calls conj %)
+                                     :notify-error! #(swap! calls conj [:error %])})]
+      (is (some? theme) "a checkout, so --reload-code has a theme directory")
+      (with-redefs [dev/gone-temp?       (fn [p] (swap! seen conj p) (gone-temp? p))
+                    dev/theme-namespaces (fn [d ps] (swap! seen into ps) (theme-namespaces d ps))]
+        (testing "alone"
+          (binding [*out* out *err* out] (rebuild [dev/full-rebuild]))
+          (is (re-find #"rebuilt in \d+ ms \(full rebuild\)" (str out)) (str out))
+          (is (not (str/includes? (str out) "build failed")) (str out))
+          (is (= ["reload"] @calls)))
+        (testing "with a path the poller saw in the same batch"
+          (reset! calls [])
+          (binding [*out* out *err* out]
+            (rebuild [dev/full-rebuild (str (fs/path theme "resources" "css" "theme.css"))]))
+          (is (= 2 (count (re-seq #"\(full rebuild\)" (str out)))) (str out))
+          (is (not (str/includes? (str out) "build failed")) (str out))
+          (is (= ["reload"] @calls) "a full rebuild reloads the page")))
+      (is (seq @seen) "the path functions ran")
+      (is (not-any? #{dev/full-rebuild} @seen) "on paths only"))))
 
 ;; ---------------------------------------------------------------------------
 ;; Item 5: `bb clean` and a .git below the output directory's top level
@@ -399,6 +561,13 @@
                      ["/my docs/" "my%20docs/"]
                      ["/my%20docs/" "my%20docs/"]
                      ["/100%/" "100%25/"]
+                     ;; follow-ups.1: `#`, `?` and the sub-delimiters are
+                     ;; part of a site page's name, encoded as on main —
+                     ;; the tag page of `C#` is /tags/c%23/
+                     ["/tags/c#/" "tags/c%23/"]
+                     ["/categories/a?b/" "categories/a%3Fb/"]
+                     ["/a&b=c+d/" "a%26b%3Dc%2Bd/"]
+                     ["/tags/c%23/" "tags/c%23/"]
                      ;; without the slash: as written
                      ["/文档" "文档"]
                      ["/%E6%96%87%E6%A1%A3" "%E6%96%87%E6%A1%A3"]
@@ -417,6 +586,24 @@
                         :let [want (str enc (when (str/ends-with? link "/") prefix) want)
                               got  (second (re-find (re-pattern (str "href=\"([^\"]*)\">N" i "<")) html))]]
                   (is (= want got) (str page ": " link)))))))))))
+
+(deftest more-article-is-encoded-as-a-nav-link-is
+  (testing "follow-ups.1 (item 8): `:theme :update-bar :more-article` goes
+            through `nav-href` too, so `/tags/c#/` was sent as written — a
+            link to /tags/c with the fragment `/`"
+    (doseq [[more want] [["/tags/c#/" "/tags/c%23/"]
+                         ["/categories/a?b/" "/categories/a%3Fb/"]
+                         ["/%E6%96%87%E6%A1%A3/" "/%E6%96%87%E6%A1%A3/"]
+                         ["/文档/" "/%E6%96%87%E6%A1%A3/"]]]
+      (testing more
+        (with-site (assoc url-site :theme {:update-bar {:more-article more}})
+          (fn [dir]
+            (spit (fs/file dir "content" "01.Guide" "02.u.md")
+                  (str/replace article #"t00001|title: T" {"t00001" "u00002" "title: T" "title: U"}))
+            (let [[v out] (run-task #'cli/build dir "--no-write")]
+              (is (not (instance? Throwable v)) (str out (ex-msg v))))
+            (let [html (slurp (fs/file dir "dist" "pages" "t00001" "index.html"))]
+              (is (= want (second (re-find #"<p><a href=\"([^\"]*)\">More →</a></p></section>" html)))))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Item 9: --help without internal references

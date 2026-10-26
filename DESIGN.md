@@ -573,7 +573,8 @@ item 5 for the measurements.
 
 The pod can also die later, while `bb dev` runs (killed, out of memory): its watches die with it,
 silently. dev's follower checks the pod's process on every pass, at least once a second, and when
-it is gone says so in one line, `the fswatcher pod quit; dev polls every … ms for the rest of this
+it is gone — and dev has not started to stop within a second, since Ctrl-C signals the pod too —
+says so in one line, `the fswatcher pod quit; dev polls every … ms for the rest of this
 session`, and polls, with one full rebuild once the poller has its first snapshot — as at the
 inotify limit (Known limitations). babashka's pod client's own `ERROR: Pod quit unexpectedly`,
 which it printed once per watch, is dropped then, as at Ctrl-C (P4 follow-ups).
@@ -696,7 +697,10 @@ listen on 127.0.0.1 unless given `--host`.
   open file behind a client that dropped a download on a reused keep-alive connection, and raced
   http-kit on its buffer). A HEAD request is answered as GET is, with no body, whatever the
   status; its `Content-Length` is GET's where http-kit drops the body itself (babashka 1.13.220
-  and later), and 0 on 1.13.219, whose http-kit counts it from the body it sends. A
+  and later), and 0 on 1.13.219, whose http-kit counts it from the body it sends. A HEAD reads
+  none of the file: the body left for http-kit is the file mapped, whose length it takes without
+  reading a byte, and on 1.13.219 there is none (on Windows a file under 20 MB is still read: Known
+  limitations). A
   file of 2 GiB or more is a clean 500 (Known limitations). On a loopback bind — decided on
   the address `--host` resolves to, so `127.1`, `127.0.0.2`, `::1` and `localhost` all count — a
   request whose `Host` is not `localhost`, `127.0.0.1`, `[::1]` or the address `--host` gave is a 403
@@ -3893,8 +3897,10 @@ their own findings. Item 19 onward are corrections.
   once the poller has its first snapshot, so the change that hit the limit is built (P4-D.4).
 - **Large files in `bb dev` and `bb serve`** (pre-existing, 0.2.0; P4-D.4, P4 follow-ups). A file
   is read into the heap whole, or mapped from 20 MB up — what http-kit did with 0.2.0's `File`
-  body — for each request. On Windows a mapped file cannot be replaced until the mapping is collected, so a rebuild
-  may fail to replace a large asset that was just served until a GC runs. A file of 2 GiB or more
+  body — for each request; for a HEAD, on babashka 1.13.220 and later, it is mapped whatever its
+  size, and not read. On Windows a mapped file cannot be replaced until the mapping is collected, so a rebuild
+  may fail to replace a large asset that was just served until a GC runs; there a HEAD of a file
+  under 20 MB reads it instead, so a small asset is never held. A file of 2 GiB or more
   cannot be sent at all and is a 500 saying so; GitHub Pages refuses a published site over 1 GB.
 - **The stale-HTML sweep skips a symlinked output directory** (pre-existing, 0.2.0).
   `sweep-stale-html!` checks the out directory with `:nofollow-links`, so with `dist ->

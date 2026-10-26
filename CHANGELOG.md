@@ -44,7 +44,10 @@ items, and what the E1a and E2 checks left; tests in
   (`a-large-file-deleted-mid-request-is-sent-whole-never-its-path`,
   `a-file-gone-before-it-is-opened-is-a-plain-404`; `dev_round2_test`'s
   `a-file-is-read-whole-or-mapped-from-one-open` replaces
-  `a-small-file-is-read-whole-and-a-big-one-is-a-file`).
+  `a-small-file-is-read-whole-and-a-big-one-is-a-file`). A read holds the
+  file once: it was read into a buffer and then copied, twice its size
+  (follow-ups.1, `a-whole-read-holds-the-file-once`: a 100 MB read in a
+  150 MB heap).
 - **HEAD sends no body, whatever the status, and the real
   `Content-Length` where http-kit allows it** (item 2). A HEAD of a 404,
   a 500, a 403 or a 400 sent its body on babashka 1.13.219, and every HEAD
@@ -53,7 +56,14 @@ items, and what the E1a and E2 checks left; tests in
   which drops it and sends GET's `Content-Length`; on 1.13.219, whose
   http-kit sends any body to HEAD and counts `Content-Length` from the body
   it sends, the body is dropped here and the length stays 0
-  (`head-reports-the-length-and-sends-no-body`).
+  (`head-reports-the-length-and-sends-no-body`). A HEAD reads none of the
+  file: one under 20 MB was read whole, to be dropped, about 30 times
+  slower than 0.2.0 for 19 MB (follow-ups.1). On 1.13.220 and later its
+  body is the file mapped, whose length http-kit sends without reading a
+  byte (on Windows a file under 20 MB is still read: a mapping would hold
+  it against the next rebuild's replace until a GC); on 1.13.219 there is
+  none; a page dev adds the reload script to is still read, for its length
+  (`head-reads-no-file`).
 - **A fswatcher pod that dies while `bb dev` runs is followed by polling**
   (item 4). dev stopped watching — nothing rebuilt again — and babashka's
   pod client printed `ERROR: Pod quit unexpectedly` once per watch (six
@@ -65,10 +75,20 @@ items, and what the E1a and E2 checks left; tests in
   (`a-pod-that-dies-falls-back-to-polling-with-one-line`, with the real
   pod, kills it; skipped without `CLOGEM_FSWATCHER`. `dev_round3_test`'s
   `the-real-pod-quitting-at-ctrl-c-is-not-reported` now expects silence
-  either way).
+  either way). Ctrl-C signals the pod with dev, and the pod can die before
+  dev's shutdown hook says it is stopping, so the follower waits up to
+  `signal-grace-ms` (1 s) for that, as the pod's stderr does, before it
+  falls back: a stop never prints the line or starts a poller
+  (follow-ups.1, `a-pod-that-dies-at-ctrl-c-is-no-fallback`).
 - **The polling fallback's first rebuild says `(full rebuild)`** (item 11),
   not `(6 files changed)`, the count of the watched roots submitted to
-  force it (`the-fallback-s-first-rebuild-says-full-rebuild`).
+  force it (`the-fallback-s-first-rebuild-says-full-rebuild`), and reloads
+  the page. The marker the poller submits for it is a path on no system,
+  taken out before any path function sees it: the first marker,
+  `"<full rebuild>"`, is no valid Windows path, and the rebuild handed it
+  to `fs/` functions (`gone-temp?`; `theme-namespaces` under
+  `--reload-code`), a false `build failed` there (follow-ups.1,
+  `the-full-rebuild-marker-is-never-a-path`).
 
 - **A `:build :out` in `site.edn` outside the site directory gets a hint
   that helps** (item 6). With `:build {:out "dist"}` and `dist` a link out
@@ -82,14 +102,21 @@ items, and what the E1a and E2 checks left; tests in
 - **A pre-encoded `:nav` link ending in `/` is encoded once** (item 8,
   pre-existing before Task D). A site-page link such as
   `/%E6%96%87%E6%A1%A3/` or `/my%20docs/` was percent-encoded whole, so
-  its escapes became `%25E6…` and `%2520`. The page part is now encoded as
-  an owner's href is (`u/url-encode-href`, E1a.1): a valid `%XX` escape is
-  kept and anything else unsafe is encoded once, so `/文档/` and
-  `/%E6%96%87%E6%A1%A3/` give the same href, under any base and language
-  prefix. A link without the slash gets the base only and is appended as
-  written, as since P4-D.4 (`a-pre-encoded-nav-link-is-not-encoded-twice`:
-  `/文档/`, `/my docs/` and pre-encoded forms, with and without the slash,
-  under `/` and `/my docs/`, on an English and a Chinese page).
+  its escapes became `%25E6…` and `%2520`. The page part is still encoded
+  segment by segment, except that a valid `%XX` escape is kept
+  (`u/url-encode-path-once`), so `/文档/` and `/%E6%96%87%E6%A1%A3/` give
+  the same href, under any base and language prefix, while `#`, `?` and
+  the sub-delimiters stay encoded: they are part of a page's name, and
+  `/tags/c#/` is the tag page of C#, `/tags/c%23/`. (The first fix encoded
+  it as an owner's href is, `u/url-encode-href`, which keeps them, so
+  `/tags/c#/` became a link to `/tags/c` and `/categories/a?b/` a query;
+  `:theme :update-bar :more-article`, which goes the same way, too —
+  follow-ups.1.) A link without the slash gets the base only and is
+  appended as written, as since P4-D.4, so `/my docs` keeps its raw space,
+  as it did before (`a-pre-encoded-nav-link-is-not-encoded-twice`: `/文档/`,
+  `/my docs/`, pre-encoded forms, `/tags/c#/`, `/categories/a?b/` and
+  `/a&b=c+d/`, with and without the slash, under `/` and `/my docs/`, on an
+  English and a Chinese page; `more-article-is-encoded-as-a-nav-link-is`).
 
 - **An unknown command-line option is a warning** (item 10), one line on
   stderr for each, naming it and the task's options — `clogem-press: bb
@@ -130,18 +157,22 @@ items, and what the E1a and E2 checks left; tests in
   `dist/deploy/.git` file. The code refused both; nothing tested it, and
   a `clean` that checks only `dist/.git` passed every test
   (`clean-refuses-a-marked-directory-with-a-git-below-its-top`).
-- **Back to top at 360 px covers none of the links that now end the page**
+- **Back to top's mobile placement rule is guarded by its offset check**
   (item 12, `layout.test.mjs` item 13). The re-pinned check probed only the
   prev/next links' centres, which back to top covers neither with the
   mobile placement rule (`@media (max-width: 50rem)`: 16 px from the right,
   24 from the bottom) nor without it, so it passed with the rule removed.
   Comparing boxes would not do either: with the rule in place the button
   still covers the right end of Next's box (about 430 px², 380 without).
-  The check now also scrolls in 4 px steps from there to the page's end and
-  compares the button's rect with every rect of the update bar's and the
-  footer's links: none is covered with the rule, and without it the
-  footer's copyright link is (by 4 px here). The prev/next check keeps its
-  centres and says so.
+  What fails without the rule, whatever the fonts, is item 13's offset
+  check (`32 px from the right, 40 from the bottom, want 16,24`), and the
+  test now says that is the guard; the prev/next check keeps its centres
+  and says so. A check added first, the update bar's and the footer's
+  links compared rect against rect from there to the page's end, depended
+  on the fonts both ways and is dropped (follow-ups.1): with the rule in
+  place, DejaVu Sans's footer line reaches under the button (5 × 16 px),
+  and without it a serif one clears it, where Liberation Sans missed by
+  4 px.
 - **`parity_test`'s `the-home-s-more-follows-more-article`** (item 13): its
   first `testing` label still said the right bar's More "goes to the
   archives as before"; since the merge with E1a it checks that a simple
