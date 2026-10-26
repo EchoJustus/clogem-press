@@ -33,7 +33,7 @@
                          " 授權。"]
                :note    "本頁不設定 Cookie，也不從其他網站載入任何內容。"
                :font    ["內文字型："
-                         [:a "https://github.com/lxgw/LxgwWenkaiTC" "霞鶩文楷 TC"]
+                         [:a "https://github.com/lxgw/LxgwWenKai" "霞鶩文楷"]
                          "（SIL Open Font License 1.1）。"]}
 
  :sections
@@ -107,7 +107,7 @@
   {:id     "privacy"
    :title  "隱私權"
    :blocks [[:h3 "本頁"]
-            [:p "本頁不設定 Cookie、不執行任何指令碼，也不從其他網站載入任何內容：它的樣式與圖示都在這一個檔案裡。提供本頁的 GitHub Pages 會為它收到的請求保留自己的紀錄，詳見 "
+            [:p "本頁不設定 Cookie、不執行任何指令碼，也不從其他網站載入任何內容：它的樣式與圖示都在這一個檔案裡，字型也來自本站。提供本頁的 GitHub Pages 會為它收到的請求保留自己的紀錄，詳見 "
              [:a "https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" "GitHub 隱私權聲明"]
              "。前往 GitHub 的連結會帶你到 GitHub，適用 GitHub 自己的條款。"]
             [:h3 "產生器"]

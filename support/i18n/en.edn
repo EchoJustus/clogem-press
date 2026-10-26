@@ -131,7 +131,7 @@
   {:id     "privacy"
    :title  "Privacy"
    :blocks [[:h3 "This page"]
-            [:p "This page sets no cookies, runs no script and loads nothing from other sites: its styles and its icon are inside this one file. GitHub Pages, which serves it, keeps its own logs of the requests it receives, as described in "
+            [:p "This page sets no cookies, runs no script and loads nothing from other sites: its styles and its icon are inside this one file, and its fonts come from this same site. GitHub Pages, which serves it, keeps its own logs of the requests it receives, as described in "
              [:a "https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" "GitHub's privacy statement"]
              ". The links to GitHub take you to GitHub, under its own terms."]
             [:h3 "The generator"]

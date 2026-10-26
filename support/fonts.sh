@@ -15,7 +15,8 @@
 #    default ~/.cache/clogem-press/fonts; CI caches it) and checked against
 #    its SHA-256, every run; a mismatch stops the step.
 # 3. fontTools and brotli, at the versions and hashes below, into a venv
-#    outside the repository (CLOGEM_FONT_VENV, by default under TMPDIR).
+#    outside the repository (CLOGEM_FONT_VENV, by default under TMPDIR),
+#    made by python3, which must be Python 3.12 or 3.13 (checked).
 #    The repository holds no Python: pyftsubset and the coverage check run
 #    from here, on the runner (or on your machine).
 # 4. pyftsubset cuts each subset from <out>/glyphs/<id>.txt, the characters
@@ -61,7 +62,14 @@ while read -r kind name url sha _; do
 done <<< "$plan"
 
 # 3. fontTools and brotli, pinned by version and hash (the wheels for
-#    CPython 3.12 and 3.13 on x86-64 Linux, and fontTools' pure one)
+#    CPython 3.12 and 3.13 on x86-64 Linux, and fontTools' pure one): on any
+#    other Python, pip would find no wheel with a pinned hash and report the
+#    files as tampered with, so the version is checked first
+pyver=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])') || fail "the font step needs Python 3.12 or 3.13; found no python3"
+case $pyver in
+  3.12 | 3.13) ;;
+  *) fail "the font step needs Python 3.12 or 3.13; found $pyver" ;;
+esac
 python3 -m venv "$venv"
 "$venv/bin/python" -m pip install --quiet --disable-pip-version-check --require-hashes --no-deps --only-binary=:all: -r /dev/stdin << 'EOF'
 fonttools==4.66.1 \

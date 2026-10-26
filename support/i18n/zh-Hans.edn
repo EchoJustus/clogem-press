@@ -106,7 +106,7 @@
   {:id     "privacy"
    :title  "隐私"
    :blocks [[:h3 "本页"]
-            [:p "本页不设置 Cookie，不运行任何脚本，也不从其他网站加载任何内容：它的样式和图标都在这一个文件里。为本页提供服务的 GitHub Pages 会为它收到的请求保留自己的日志，详见 "
+            [:p "本页不设置 Cookie，不运行任何脚本，也不从其他网站加载任何内容：它的样式和图标都在这一个文件里，字体也来自本站。为本页提供服务的 GitHub Pages 会为它收到的请求保留自己的日志，详见 "
              [:a "https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" "GitHub 隐私声明"]
              "。指向 GitHub 的链接会带你前往 GitHub，适用 GitHub 自己的条款。"]
             [:h3 "生成器"]
