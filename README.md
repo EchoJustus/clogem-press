@@ -863,7 +863,7 @@ repository does that.
 ## Development
 
 ```bash
-bb test                                             # 874 tests / ~61,800 assertions
+bb test                                             # 874 tests / ~61,900 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 
