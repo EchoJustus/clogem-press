@@ -89,12 +89,12 @@
               :title  "Fazer uma pergunta"
               :text   ["Como fazer algo com o clogem-press, ou por que ele funciona do jeito que funciona."]
               :href   "https://github.com/EchoJustus/clogem-support/discussions/new?category=q-a"
-              :action "Fazer uma pergunta"}
+              :action "Perguntar no GitHub"}
              {:chip   "Ideia"
               :title  "Compartilhar uma ideia"
               :text   ["Algo que o clogem-press poderia fazer, ou fazer melhor."]
               :href   "https://github.com/EchoJustus/clogem-support/discussions/new?category=ideas"
-              :action "Sugerir uma ideia"}]
+              :action "Sugerir no GitHub"}]
             [:p "Issues, pull requests e discussões são públicos: qualquer pessoa pode lê-los. Não inclua dados pessoais, como o seu endereço de e-mail, nem nada privado do conteúdo do seu site."]
             [:h3 "Algo que não deveria ser público"]
             [:p "Um problema de segurança, uma dúvida sobre os seus dados ou uma notificação legal: escreva para "
@@ -115,11 +115,11 @@
              [[:strong "Pagefind"] ", para busca, na primeira geração de um site que ative a busca;"]
              [[:strong "o pod fswatcher"] ", que observa os seus arquivos, na primeira vez que você executa " [:code "bb dev"] ";"]
              ["ou qualquer um deles quando você executa " [:code "bb fetch-tool"] "."]]
-            [:p "Por padrão, cada download é verificado com um hash SHA-256 fixado no clogem-press e guardado em um cache fora do seu site (" [:code "~/.cache/clogem-press/tools"]
-             " por padrão), então acontece só uma vez. A configuração de um site pode indicar outra origem e outro hash para uma ferramenta, ou uma cópia já instalada. Uma ferramenta já instalada, indicada na configuração do site ou em "
+            [:p "Cada download é verificado com um hash SHA-256 fixado no clogem-press e guardado em um cache fora do seu site (por padrão, " [:code "~/.cache/clogem-press/tools"]
+             "), então acontece só uma vez. A configuração de um site pode, em vez disso, indicar outra origem e outro hash para uma ferramenta. Uma cópia já instalada, indicada na configuração do site ou em "
              [:code "CLOGEM_CHROMA"] ", " [:code "CLOGEM_PAGEFIND"] " ou " [:code "CLOGEM_FSWATCHER"] ", nunca é baixada."]
             [:h3 "Os sites que você gera"]
-            [:p "Um site gerado com o clogem-press é uma pasta de arquivos que você publica onde quiser. Por padrão, ele não faz nenhuma solicitação a outro site. Ele só faz isso quando o dono ativa os comentários do giscus ou uma ferramenta de análise (Google Analytics 4, Plausible ou Umami), ou informa um logotipo ou uma imagem como um endereço em outro site. As tags de verificação de consoles de busca, se o dono as adicionar, são linhas na página que não carregam nada. Um site guarda três coisas no próprio navegador do leitor, e só ali: o modo de cor escolhido, o idioma escolhido e quais avisos de idioma “também disponível em…” o leitor fechou. Não envia nada disso para lugar nenhum."]]}
+            [:p "Um site gerado com o clogem-press é uma pasta de arquivos que você publica onde quiser. Por padrão, ele não faz nenhuma solicitação a outro site. Ele só faz isso quando o dono ativa os comentários do giscus ou uma ferramenta de análise (Google Analytics 4, Plausible ou Umami), ou informa um logotipo ou uma imagem como um endereço em outro site. As tags de verificação de consoles de busca, se o dono as adicionar, são linhas na página que não carregam nada. Por conta própria, um site guarda três coisas no navegador do leitor (o modo de cor escolhido, o idioma escolhido e quais avisos de idioma “também disponível em…” o leitor fechou) e não envia nada disso para lugar nenhum; os comentários do giscus e a análise, quando o dono os ativa, guardam os próprios dados, sob os próprios termos."]]}
 
   {:id     "source"
    :title  "Licença e código-fonte"

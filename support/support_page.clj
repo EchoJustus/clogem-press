@@ -394,37 +394,45 @@
        ;; the header can widen the page past its gutter
        ".hero{display:grid;grid-template-columns:minmax(0,1fr);gap:1.4rem}"
        ".top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem 1.5rem}"
-       ;; the brand's words wrap beside the switchers (a basis, not its whole
-       ;; width), so the two share a row on a wide screen, as on the hub
-       ".brand{flex:1 1 18rem;display:flex;align-items:center;gap:clamp(.9rem,2.5vw,1.25rem);min-width:0}"
+       ;; the brand's basis is the least it needs, its name whole (below), so
+       ;; it never shrinks under the name: when the brand and the switchers
+       ;; don't both fit, the switchers wrap below it. Beside it they take the
+       ;; room they want first (their larger grow factor, up to their width),
+       ;; and the brand's subtitle the rest.
+       ".brand{flex:1 1 min-content;display:flex;align-items:center;gap:clamp(.9rem,2.5vw,1.25rem);min-width:0}"
        ".mark{flex:none;display:block;width:clamp(3.75rem,10vw,5.5rem);height:auto}"
        ".eyebrow{margin:0 0 .2rem;font-size:.78rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--chip-ink)}"
-       "h1{margin:0;font-size:clamp(2.1rem,5.2vw,3.3rem);line-height:1.05;letter-spacing:-.025em;font-weight:700;overflow-wrap:anywhere}"
+       "h1{margin:0;font-size:clamp(1.85rem,5.2vw,3.3rem);line-height:1.05;letter-spacing:-.025em;font-weight:700;overflow-wrap:anywhere}"
+       ;; the name keeps one line, never broken after its hyphen, from 480 px
+       ;; up; below, it may break rather than widen the page
+       "@media (min-width:30rem){h1{white-space:nowrap}}"
        ".sub{margin:.35rem 0 0;font-size:1.08rem;color:var(--muted)}"
        (str ".rule{width:min(11rem,40%);height:3px;border-radius:3px;background:" rule "}")
        ".lead{margin:0;max-width:42rem;font-size:1.15rem;color:var(--muted)}"
        ;; the switchers, at the end of the top row (and of the screen, when it
-       ;; wraps). The dropdown hangs from their right edge, which is the
-       ;; content box's, so it never runs off the left of a narrow screen;
-       ;; when they wrap, the language's line is the lower one, just above it.
-       ".tools{position:relative;flex:0 1 auto;min-width:0;max-width:100%;display:flex;flex-wrap:wrap-reverse;justify-content:flex-end;align-items:center;gap:.6rem;margin-inline-start:auto}"
+       ;; wraps), the language last: at the end edge, which is the content
+       ;; box's, so its dropdown hangs from it under its own button and never
+       ;; runs off the left of a narrow screen; when they wrap, the language's
+       ;; line is the lower one, just above the dropdown.
+       ".tools{flex:999 1 min-content;min-width:0;max-width:max-content;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:.6rem;margin-inline-start:auto}"
        ;; the language switcher: a <details> dropdown of plain links, the current one marked
        (str ".langs summary{display:inline-flex;align-items:center;gap:.4rem;padding:calc(.42rem + 3px) .95rem;border:1px solid var(--control);"
             "border-radius:999px;background:var(--surface);box-shadow:var(--shadow);font-size:.86rem;font-weight:650;cursor:pointer;list-style:none}")
+       ".langs{position:relative}"
        ".langs summary::-webkit-details-marker{display:none}"
        ".langs summary:hover{border-color:var(--focus)}"
        ".langs summary:focus-visible{outline:3px solid var(--focus);outline-offset:2px}"
        ".langs svg{flex:none;width:1rem;height:1rem}"
        ".chev{transition:transform .2s ease}"
        ".langs[open] .chev{transform:rotate(180deg)}"
-       (str ".langs ul{position:absolute;z-index:2;top:calc(100% + .4rem);inset-inline-end:0;min-width:12rem;max-width:100%;"
+       (str ".langs ul{position:absolute;z-index:2;top:calc(100% + .4rem);inset-inline-end:0;min-width:12rem;max-width:calc(100vw - 2rem);"
             "margin:0;padding:.35rem;list-style:none;background:var(--surface);border:1px solid var(--control);border-radius:1rem;box-shadow:var(--shadow)}")
        (str ".langs a{display:block;padding:.45rem .8rem;border-radius:.65rem;"
             "font-family:var(--text-font);font-size:.9rem;font-weight:600;color:var(--text);text-decoration:none}")
        ".langs a:hover{color:var(--link);text-decoration:underline}"
        ".langs a[aria-current=page]{background:var(--chip);color:var(--chip-ink)}"
        ;; the theme switcher: radios as a segmented control
-       (str ".theme{display:inline-flex;flex-wrap:wrap;gap:2px;min-width:0;max-width:100%;margin:0;padding:3px;border:1px solid var(--control);"
+       (str ".theme{display:inline-flex;gap:2px;min-width:0;max-width:100%;margin:0;padding:3px;border:1px solid var(--control);"
             "border-radius:999px;background:var(--surface);box-shadow:var(--shadow)}")
        ".vh,.theme legend{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}"
        ".theme input{position:absolute;width:1px;height:1px;margin:0;opacity:0}"
@@ -434,9 +442,10 @@
        ".theme input:checked+label{background:var(--chip);color:var(--chip-ink)}"
        ".theme input:focus-visible+label{outline:3px solid var(--focus);outline-offset:2px}"
        ".theme svg{flex:none;width:1rem;height:1rem}"
-       ;; a narrow screen: the labels without their icons, closer together, so
-       ;; the longest (pt-BR's, es-ES's) keep one line within the gutter
-       "@media (max-width:30rem){.theme svg{display:none}.theme label{padding:.42rem .62rem}}"
+       ;; a narrow screen: the switchers on a row of their own, below the
+       ;; brand, and the labels without their icons, closer together, so the
+       ;; longest (pt-BR's, es-ES's) keep one line within the gutter
+       "@media (max-width:30rem){.tools{flex-basis:100%}.theme{flex-wrap:wrap}.theme svg{display:none}.theme label{padding:.42rem .62rem}}"
        "@supports not selector(:has(*)){.theme{display:none}}"
        ;; the jump links
        ".jump ul{display:flex;flex-wrap:wrap;gap:.6rem;margin:0;padding:0;list-style:none}"
@@ -584,7 +593,7 @@
                [:p.eyebrow (:eyebrow page)]
                [:h1 (:name page)]
                [:p.sub (:subtitle page)]]]
-             [:div.tools (language-switcher pages tag) (theme-switcher theme)]]
+             [:div.tools (theme-switcher theme) (language-switcher pages tag)]]
             [:div.rule]
             [:p.lead (:lead page)]
             [:nav.jump {:aria-label (:jump-label page)}

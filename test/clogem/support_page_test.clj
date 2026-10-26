@@ -332,11 +332,16 @@
   (testing "the summary looks like the theme switcher: its border, radius, surface and shadow"
     (doseq [d ["border:1px solid var(--control)" "border-radius:999px" "background:var(--surface)" "box-shadow:var(--shadow)"]]
       (is (re-find (re-pattern (str "\\.langs summary\\{[^}]*" (java.util.regex.Pattern/quote d))) style) d)))
-  (testing "the panel: below, at the switchers' end edge (the content box's), above the content, never wider than it"
-    (is (re-find #"\.langs ul\{[^}]*position:absolute;[^}]*inset-inline-end:0;[^}]*max-width:100%" style))
-    (is (re-find #"\.tools\{[^}]*position:relative" style) "it hangs from the switchers, not the summary")
-    (is (not (re-find #"\.langs\{[^}]*position:relative" style)) "a summary near the left can't push it off the screen")
-    (is (re-find #"\.tools\{[^}]*flex-wrap:wrap-reverse" style) "wrapped, the language's line is the lower one, above the panel")
+  ;; SP.5 item 2: it hung from the switchers' end edge, under the theme
+  ;; switcher; test/browser/support-page.test.mjs checks the boxes
+  (testing "the panel: below its own button, which is last in the row, at the content box's end edge; above the content, never wider than the screen"
+    (is (re-find #"\.langs ul\{[^}]*position:absolute;[^}]*inset-inline-end:0;[^}]*max-width:calc\(100vw - 2rem\)" style))
+    (is (str/includes? style ".langs{position:relative}") "it hangs from the language switcher")
+    (is (not (re-find #"\.tools\{[^}]*position:relative" style)) "not from the switchers' row")
+    (is (re-find #"\.tools\{[^}]*flex-wrap:wrap;[^}]*justify-content:flex-end" style) "wrapped, the language's line is the lower one, at the end edge")
+    (doseq [l langs]
+      (is (re-find #"(?s)<div class=\"tools\"><fieldset class=\"theme\">.*</fieldset><nav [^>]*><details class=\"langs\">.*</details></nav></div>" (html l))
+          (str l ": the language switcher last")))
     (is (re-find #"\.langs ul\{[^}]*z-index:" style)))
   (testing "the chevron turns when open, unless the reader asked for less motion"
     (is (re-find #"\.langs\[open\] \.chev\{transform:rotate\(180deg\)\}" style))
@@ -359,13 +364,23 @@
   (testing "the hero's one column may shrink below its content's width"
     (is (re-find #"\.hero\{[^}]*grid-template-columns:minmax\(0,1fr\)" style)))
   (testing "the switchers never outgrow the content box"
-    (is (re-find #"\.tools\{[^}]*min-width:0;[^}]*max-width:100%" style))
-    (is (re-find #"\.theme\{[^}]*flex-wrap:wrap;[^}]*min-width:0;max-width:100%" style)))
-  (testing "a narrow screen drops the theme icons and tightens the labels"
-    (is (re-find #"@media \(max-width:30rem\)\{\.theme svg\{display:none\}\.theme label\{padding:[^}]*\}\}" style)))
-  (testing "at 1280 px the brand's words wrap beside the switchers (a basis, not its whole width)"
-    (is (re-find #"\.brand\{flex:1 1 18rem;" style))
-    (is (re-find #"\.tools\{[^}]*flex:0 1 auto" style))))
+    (is (re-find #"\.tools\{[^}]*min-width:0;" style))
+    (is (re-find #"\.theme\{[^}]*min-width:0;max-width:100%" style)))
+  (testing "a narrow screen puts the switchers on their own row, wraps the theme switcher, drops its icons and tightens its labels"
+    (is (re-find #"@media \(max-width:30rem\)\{\.tools\{flex-basis:100%\}\.theme\{flex-wrap:wrap\}\.theme svg\{display:none\}\.theme label\{padding:[^}]*\}\}" style))))
+
+(deftest the-name-keeps-one-line
+  ;; At 768-1440 px the brand shrank beside the switchers and the name broke
+  ;; after its hyphen, "clogem-" / "press" (SP.5 item 1).
+  ;; test/browser/support-page.test.mjs counts the h1's lines at 320-1440 px.
+  (testing "from 480 px up the name never wraps; its text stays as it is"
+    (is (str/includes? style "@media (min-width:30rem){h1{white-space:nowrap}}"))
+    (doseq [l langs] (is (str/includes? (html l) "<h1>clogem-press</h1>") l)))
+  (testing "the brand's basis is the least it needs, the whole name, so the switchers wrap below it rather than squeeze it"
+    (is (re-find #"\.brand\{flex:1 1 min-content;" style))
+    (is (not (re-find #"\.brand\{[^}]*flex:[^;}]*rem" style)) "no fixed basis it can shrink to"))
+  (testing "beside the brand the switchers take the width they want first, and no more"
+    (is (re-find #"\.tools\{flex:999 1 min-content;[^}]*max-width:max-content" style))))
 
 (deftest short-code-keeps-one-line
   ;; `bb dev` broke into `bb` / `dev`, each half its own chip (SP.4 item 8)
@@ -673,14 +688,47 @@
     (is (str/includes? text (by-lang l)) (str l ": " k))))
 
 (deftest tool-downloads-are-the-default
-  ;; a site's :tools config can name its own URL, hash or binary (SP.4 item 5)
-  (let [text (body-text (str (section-html (html "en") "privacy")))]
+  ;; a site's :tools config can name its own URL, hash or binary (SP.4 item 5);
+  ;; said once each, "by default" no more than once a sentence (SP.5 item 5)
+  (let [text (-> (body-text (str (section-html (html "en") "privacy")))
+                 (str/replace #"\s+" " ") (str/replace #" ([),.])" "$1"))]
     (is (str/includes? text "by default from that tool's own releases on GitHub"))
-    (is (str/includes? text "By default, each download is checked against a SHA-256 hash"))
-    (is (str/includes? text "A site's config can name its own source and hash for a tool instead, or a copy already installed")))
-  (doseq [[l w] {"zh-Hans" "默认" "zh-Hant" "預設" "pt-BR" "Por padrão" "es-ES" "De forma predeterminada"}
+    (is (str/includes? text "Each download is checked against a SHA-256 hash pinned in clogem-press and kept in a cache outside your site (by default ~/.cache/clogem-press/tools), so it happens once."))
+    (is (str/includes? text "A site's config can instead name its own source and hash for a tool."))
+    (is (str/includes? text "A copy already installed, named in the site's config or in CLOGEM_CHROMA, CLOGEM_PAGEFIND or CLOGEM_FSWATCHER, is never downloaded."))
+    (is (= 1 (count (re-seq #"(?i)installed" text))) "the installed copy, said once")
+    (doseq [s (str/split text #"(?<=[.:;])\s+")]
+      (is (<= (count (re-seq #"(?i)by default" s)) 1) s)))
+  (doseq [[l w] {"zh-Hans" "默认" "zh-Hant" "預設" "pt-BR" "por padrão" "es-ES" "de forma predeterminada"}
           :let [text (body-text (str (section-html (html l) "privacy")))]]
-    (is (<= 3 (count (re-seq (re-pattern (str "(?i)" w)) text))) (str l ": the source, the hash and the cache, each by default"))))
+    (is (= 3 (count (re-seq (re-pattern (str "(?i)" w)) text)))
+        (str l ": the source and the cache, each once, and the built site's requests (English's \"out of the box\")"))))
+
+(deftest the-privacy-note-keeps-to-what-clogem-press-stores
+  ;; it said a site keeps three things "and only there", but giscus and GA4,
+  ;; when turned on, store their own (SP.5 item 3)
+  (doseq [[l own others] [["en" "Of its own, a site keeps three things in its reader's browser"
+                           "giscus comments and analytics, when its owner turns them on, keep their own data under their own terms"]
+                          ["zh-Hans" "网站本身会在读者的浏览器中保存三样东西" "giscus 评论和统计分析如果由网站所有者开启，会按照各自的条款保存它们自己的数据"]
+                          ["zh-Hant" "網站本身會在讀者的瀏覽器中儲存三樣東西" "giscus 留言和流量分析如果由網站擁有者開啟，會依照各自的條款儲存它們自己的資料"]
+                          ["pt-BR" "Por conta própria, um site guarda três coisas no navegador do leitor"
+                           "os comentários do giscus e a análise, quando o dono os ativa, guardam os próprios dados, sob os próprios termos"]
+                          ["es-ES" "Por sí mismo, un sitio guarda tres cosas en el navegador del lector"
+                           "los comentarios de giscus y la analítica, cuando su propietario los activa, guardan sus propios datos según sus propias condiciones"]]
+          :let [text (body-text (str (section-html (html l) "privacy")))]]
+    (is (str/includes? text own) l)
+    (is (str/includes? text others) l)
+    (is (not (re-find #"(?i)only there|只在读者|只在讀者|e só ali|y solo allí" text)) (str l ": no claim that it is all"))))
+
+(deftest buttons-say-where-they-lead
+  ;; pt-BR's and es-ES's question buttons repeated their cards' titles (SP.5 item 4)
+  (doseq [l langs
+          {:keys [blocks]} (:sections (words l))
+          [tag & cards] blocks :when (= tag :cards)
+          {:keys [title action href]} cards :when action]
+    (is (not= (str/lower-case title) (str/lower-case action)) (str l ": " action))
+    (when (str/includes? href "/discussions")
+      (is (re-find #"GitHub|Discussions" action) (str l ": " action " names where it leads")))))
 
 (deftest trademarks-are-trademarks
   ;; 标识 / 標識 are "signs", not trademarks (SP.4 item 7)

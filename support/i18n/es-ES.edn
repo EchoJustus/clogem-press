@@ -90,12 +90,12 @@
               :title  "Hacer una pregunta"
               :text   ["Cómo hacer algo con clogem-press, o por qué funciona como funciona."]
               :href   "https://github.com/EchoJustus/clogem-support/discussions/new?category=q-a"
-              :action "Hacer una pregunta"}
+              :action "Preguntar en GitHub"}
              {:chip   "Idea"
               :title  "Compartir una idea"
               :text   ["Algo que clogem-press podría hacer, o hacer mejor."]
               :href   "https://github.com/EchoJustus/clogem-support/discussions/new?category=ideas"
-              :action "Proponer una idea"}]
+              :action "Proponer en GitHub"}]
             [:p "Las issues, las pull requests y las discusiones son públicas: cualquiera puede leerlas. No incluyas datos personales, como tu dirección de correo electrónico, ni nada privado del contenido de tu sitio."]
             [:h3 "Algo que no debería ser público"]
             [:p "Un problema de seguridad, una pregunta sobre tus datos o un aviso legal: escribe a "
@@ -116,11 +116,11 @@
              [[:strong "Pagefind"] ", para la búsqueda, la primera vez que se genera un sitio que activa la búsqueda;"]
              [[:strong "el pod fswatcher"] ", que vigila tus archivos, la primera vez que ejecutas " [:code "bb dev"] ";"]
              ["o cualquiera de ellos cuando ejecutas " [:code "bb fetch-tool"] "."]]
-            [:p "De forma predeterminada, cada descarga se comprueba con un hash SHA-256 fijado en clogem-press y se guarda en una caché fuera de tu sitio (" [:code "~/.cache/clogem-press/tools"]
-             " de forma predeterminada), así que solo ocurre una vez. La configuración de un sitio puede indicar otro origen y otro hash para una herramienta, o una copia ya instalada. Una herramienta ya instalada, indicada en la configuración del sitio o en "
+            [:p "Cada descarga se comprueba con un hash SHA-256 fijado en clogem-press y se guarda en una caché fuera de tu sitio (de forma predeterminada, " [:code "~/.cache/clogem-press/tools"]
+             "), así que solo ocurre una vez. La configuración de un sitio puede, en cambio, indicar otro origen y otro hash para una herramienta. Una copia ya instalada, indicada en la configuración del sitio o en "
              [:code "CLOGEM_CHROMA"] ", " [:code "CLOGEM_PAGEFIND"] " o " [:code "CLOGEM_FSWATCHER"] ", nunca se descarga."]
             [:h3 "Los sitios que generas"]
-            [:p "Un sitio generado con clogem-press es una carpeta de archivos que publicas donde quieras. De forma predeterminada no hace ninguna petición a otro sitio. Solo la hace cuando su propietario activa los comentarios de giscus o la analítica (Google Analytics 4, Plausible o Umami), o indica un logotipo o una imagen como una dirección de otro sitio. Las etiquetas de verificación de consolas de búsqueda, si el propietario las añade, son líneas de la página que no cargan nada. Un sitio guarda tres cosas en el propio navegador del lector, y solo allí: el modo de color elegido, el idioma elegido y qué avisos de idioma «también disponible en…» ha cerrado el lector. No envía nada de ello a ninguna parte."]]}
+            [:p "Un sitio generado con clogem-press es una carpeta de archivos que publicas donde quieras. De forma predeterminada no hace ninguna petición a otro sitio. Solo la hace cuando su propietario activa los comentarios de giscus o la analítica (Google Analytics 4, Plausible o Umami), o indica un logotipo o una imagen como una dirección de otro sitio. Las etiquetas de verificación de consolas de búsqueda, si el propietario las añade, son líneas de la página que no cargan nada. Por sí mismo, un sitio guarda tres cosas en el navegador del lector (el modo de color elegido, el idioma elegido y qué avisos de idioma «también disponible en…» ha cerrado el lector) y no envía nada de ello a ninguna parte; los comentarios de giscus y la analítica, cuando su propietario los activa, guardan sus propios datos según sus propias condiciones."]]}
 
   {:id     "source"
    :title  "Licencia y código fuente"

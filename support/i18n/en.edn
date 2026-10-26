@@ -139,11 +139,11 @@
              [[:strong "Pagefind"] ", for search, on the first build of a site that turns search on;"]
              [[:strong "the fswatcher pod"] ", which watches your files, the first time you run " [:code "bb dev"] ";"]
              ["or any of them when you run " [:code "bb fetch-tool"] "."]]
-            [:p "By default, each download is checked against a SHA-256 hash pinned in clogem-press, and kept in a cache outside your site (" [:code "~/.cache/clogem-press/tools"]
-             " by default), so it happens once. A site's config can name its own source and hash for a tool instead, or a copy already installed. A tool already installed, named in the site's config or in "
+            [:p "Each download is checked against a SHA-256 hash pinned in clogem-press and kept in a cache outside your site (by default " [:code "~/.cache/clogem-press/tools"]
+             "), so it happens once. A site's config can instead name its own source and hash for a tool. A copy already installed, named in the site's config or in "
              [:code "CLOGEM_CHROMA"] ", " [:code "CLOGEM_PAGEFIND"] " or " [:code "CLOGEM_FSWATCHER"] ", is never downloaded."]
             [:h3 "The sites you build"]
-            [:p "A site built with clogem-press is a folder of files that you publish where you choose. Out of the box it makes no request to another site. It does so only when its owner turns on giscus comments or analytics (Google Analytics 4, Plausible or Umami), or gives a logo or an image as an address on another site. Search-console verification tags, if the owner adds them, are lines in the page that load nothing. A site keeps three things in its reader's own browser, and only there: the colour mode they chose, the language they chose, and which “also available in …” language banners they dismissed. It sends none of them anywhere."]]}
+            [:p "A site built with clogem-press is a folder of files that you publish where you choose. Out of the box it makes no request to another site. It does so only when its owner turns on giscus comments or analytics (Google Analytics 4, Plausible or Umami), or gives a logo or an image as an address on another site. Search-console verification tags, if the owner adds them, are lines in the page that load nothing. Of its own, a site keeps three things in its reader's browser (the colour mode they chose, the language they chose, and which “also available in …” language banners they dismissed) and sends none of them anywhere; giscus comments and analytics, when its owner turns them on, keep their own data under their own terms."]]}
 
   {:id     "source"
    :title  "Licence and source"
