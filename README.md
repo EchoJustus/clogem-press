@@ -784,21 +784,24 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
   it hasn't changed. Without the deploy key it builds the page and stops
   with a notice, successfully.
 
-**The owner's one-time steps:**
+**The owner's one-time steps** (done on 2026-10-26; kept here for replacing
+the key):
 1. Make an SSH key pair for this repository alone:
    `ssh-keygen -t ed25519 -N "" -C "clogem-press support page" -f clogem-support-deploy`.
 2. Add the public half (`clogem-support-deploy.pub`) to
    EchoJustus/clogem-support under **Settings > Deploy keys**, with
-   **Allow write access**. It must be a key of its own: GitHub allows a
-   deploy key on one repository only, and Wmark Pro's key is already there.
+   **Allow write access**. GitHub takes a public key as a deploy key on one
+   repository only; a key of its own is best, so that each can be revoked
+   alone.
 3. Add the private half (`clogem-support-deploy`) as an Actions secret
    named `CLOGEM_SUPPORT_DEPLOY_KEY` in this repository (**Settings >
-   Secrets and variables > Actions**), then delete the local copy.
+   Secrets and variables > Actions**): the whole file, with no passphrase.
+   Then delete the local copy.
 4. Approve the privacy note's wording (`support/i18n/en.edn`, the
-   `privacy` section, marked as a draft; the four translations mirror it
-   fact for fact, and change when it changes) before the first publication. The first
-   run after step 3 publishes the page, so leave the secret unset until
-   then.
+   `privacy` section; the four translations mirror it fact for fact, and
+   change when it changes) before the first publication: once the secret
+   is set, the next push to `main` that touches the page publishes it.
+   The owner approved it on 2026-10-26, and each file marks it so.
 
 **When it's live:** the hub's own session adds the link on its front page's
 clogem-press card and a row in its README's table. Nothing in this

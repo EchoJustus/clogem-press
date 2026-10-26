@@ -1873,10 +1873,11 @@ Decisions:
    getting started; help and feedback (issues and pull requests here, questions and ideas in the hub's
    Discussions, since this repository's are off, and the hub's address for what shouldn't be public);
    privacy; licence and source. No commerce: no store, price, trial or Pro edition.
-5. **The privacy note is a draft** (owner's call). Its wording was written from the code (the tool
-   descriptors in `clogem.tools`, the config defaults, the theme's storage keys) and is marked in
-   each `support/i18n/*.edn` as awaiting the owner's approval, which comes before the first
-   publication. The translations mirror the English text fact for fact, and change when it changes.
+5. **The privacy note is the owner's wording, approved on 2026-10-26** (owner's call). It was
+   written from the code (the tool descriptors in `clogem.tools`, the config defaults, the theme's
+   storage keys), and each `support/i18n/*.edn` marks it as approved: a change to it needs the
+   owner's approval again. The translations mirror the English text fact for fact, and change when
+   it changes.
    It names every key a built site keeps in its reader's browser (`clogem-mode`, `clogem-lang`,
    `clogem-banner-dismissed`); `support_page_test` reads the theme's code for `localStorage` keys
    and fails on one the note doesn't cover.
@@ -1975,8 +1976,9 @@ Decisions:
    - **Written in the generator, not in the words** (`support-page/copyright-holder` and the
      paragraph beside it), so no translation can change a character of it; `support/i18n/` holds
      no `©`.
-   - **The year is fixed**, 2026, the page's first publication, not the build's (the hub prints
-     the build's year), so the text stays exactly as the owner gave it and its test needs no clock.
+   - **The year is fixed**, 2026, the page's first publication, not the build's (the owner,
+     2026-10-26: "all 2026", though the hub prints its build's year), so the text stays exactly as
+     the owner gave it and its test needs no clock.
    - **The name never wraps**: the publisher is one `.nw` element (`white-space: nowrap`), its text
      unchanged (no U+00A0 in it), and so is the product's name, which would otherwise break at its
      hyphen on a 320 px screen; the notice may wrap only between them. It is the footer's first

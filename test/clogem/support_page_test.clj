@@ -1106,9 +1106,10 @@
     (is (<= (count chip) 24) (str l ": chip " chip))
     (when action (is (<= (count action) 21) (str l ": " action)))))
 
-(deftest the-privacy-note-is-marked-a-draft
+(deftest the-privacy-note-is-the-approved-one
+  ;; the owner approved its wording on 2026-10-26: each file says so above it
   (doseq [l langs]
-    (is (re-find #";; draft: the owner approves the wording before publication\n\s*\{:id\s+\"privacy\"" (slurp (str "support/i18n/" l ".edn"))) l))
+    (is (re-find #";; approved by the owner \(2026-10-26\): a change to it needs their approval again\n\s*\{:id\s+\"privacy\"" (slurp (str "support/i18n/" l ".edn"))) l))
   (testing "it names every tool the generator downloads, and how they are checked"
     (doseq [l langs :let [text (body-text (str (section-html (html l) "privacy")))]]
       (doseq [s ["Chroma" "Pagefind" "fswatcher" "bb fetch-tool" "bb dev" "SHA-256" "~/.cache/clogem-press/tools"
