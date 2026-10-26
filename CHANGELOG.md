@@ -33,10 +33,10 @@ nothing in `src/clogem/` changes, and a built site is unaffected.
 Languages (SP.2): English (the default) at `clogem-press/`; Simplified
 Chinese at `zh-Hans/`; Traditional Chinese, with Taiwan wording, at
 `zh-Hant/`; Brazilian Portuguese at `pt-BR/` (also for `pt`); European
-Spanish at `es-ES/` (also for `es`). Five pages, **178,520 bytes** in all
-(as of SP.8): `index.html` 34,780, `zh-Hant/index.html` 36,157,
-`zh-Hans/index.html` 36,042, `pt-BR/index.html` 35,709, `es-ES/index.html`
-35,832 (each within the 64 KB budget), plus, on the English and Chinese
+Spanish at `es-ES/` (also for `es`). Five pages, **178,640 bytes** in all
+(as of SP.8): `index.html` 34,804, `zh-Hant/index.html` 36,181,
+`zh-Hans/index.html` 36,066, `pt-BR/index.html` 35,733, `es-ES/index.html`
+35,856 (each within the 64 KB budget), plus, on the English and Chinese
 pages, the fonts they use (SP.8 and SP.7, below; README).
 
 ### Added (support page)
@@ -137,23 +137,24 @@ pages, the fonts they use (SP.8 and SP.7, below; README).
   copyright notices"; DESIGN.md §7.5 item 9): `© 2026 EchoJustus (Jiapeng
   Ji). clogem-press.`, the same characters on all five pages. The
   publisher is always `EchoJustus (Jiapeng Ji)`, in full, and never wraps
-  across lines (one `white-space: nowrap` element, its text unchanged). It
-  is written in the generator (`support-page/copyright-holder`), not in
-  `support/i18n/`, so no translation changes it; the year is fixed, the
-  page's first publication. Licence headers in source files, the MIT
+  across lines (one `white-space: nowrap` element, its text unchanged; the
+  product's name too, so it never breaks at its hyphen). It is written in
+  the generator (`support-page/copyright-holder`), not in `support/i18n/`,
+  so no translation changes it; the year is fixed, the page's first
+  publication. Licence headers in source files, the MIT
   notices and `LICENSE` are unchanged: the rule covers footers only.
-- **Sizes**: each page grows by 77 bytes, and `wenkai-latin-400` by 120
-  (`©`), to 22,884; the others are unchanged. Five pages, 178,520 bytes:
-  `index.html` 34,780, `zh-Hant/index.html` 36,157, `zh-Hans/index.html`
-  36,042, `pt-BR/index.html` 35,709, `es-ES/index.html` 35,832. A page's
-  download, HTML and fonts, as it opens: English 80,184 (83,600 with the
-  language list open), zh-Hant 202,661, zh-Hans 183,914, pt-BR 35,709,
-  es-ES 35,832.
+- **Sizes**: each page grows by 101 bytes, and `wenkai-latin-400` by 120
+  (`©`), to 22,884; the others are unchanged. Five pages, 178,640 bytes:
+  `index.html` 34,804, `zh-Hant/index.html` 36,181, `zh-Hans/index.html`
+  36,066, `pt-BR/index.html` 35,733, `es-ES/index.html` 35,856. A page's
+  download, HTML and fonts, as it opens: English 80,208 (83,624 with the
+  language list open), zh-Hant 202,685, zh-Hans 183,938, pt-BR 35,733,
+  es-ES 35,856.
 - Tests: the notice word for word, first in every footer and once on each
   page; `copyright-holder`; every `EchoJustus` a reader sees in a footer
-  followed by ` (Jiapeng Ji)`; the publisher's nowrap element; no `©` or
-  `Jiapeng` in `support/i18n/`; DESIGN.md quoting the notice. They failed
-  first. The status check's "no dates promised" now passes over the
+  followed by ` (Jiapeng Ji)`; the paragraph as built, with its two nowrap
+  elements; no `©` or `Jiapeng` in `support/i18n/`; DESIGN.md quoting the
+  notice. They failed first. The status check's "no dates promised" now passes over the
   notice's year, and only that. Chromium (5 languages, 320–1440 px, light
   and dark, 60 runs): the notice exact, the name on one line, the footer's
   paragraphs not overlapping, no sideways scroll, no CSP message.
