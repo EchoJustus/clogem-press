@@ -1,0 +1,202 @@
+# Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).
+#
+# The publishing step (`publish` and its loop of 3 attempts) is adapted
+# from .github/workflows/portal.yml of EchoJustus/clogem-support, under the
+# MIT License:
+#
+#   Copyright 2026 EchoJustus
+#
+#   Permission is hereby granted, free of charge, to any person obtaining a
+#   copy of this software and associated documentation files (the
+#   "Software"), to deal in the Software without restriction, including
+#   without limitation the rights to use, copy, modify, merge, publish,
+#   distribute, sublicense, and/or sell copies of the Software, and to
+#   permit persons to whom the Software is furnished to do so, subject to
+#   the following conditions:
+#
+#   The above copyright notice and this permission notice shall be included
+#   in all copies or substantial portions of the Software.
+#
+#   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+#   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+#   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+#   IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+#   CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+#   TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+#   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
+# clogem-press's page on the Clogem support site,
+# https://echojustus.github.io/clogem-support/clogem-press/ (DESIGN.md §7.5).
+#
+# The site is the gh-pages branch of EchoJustus/clogem-support. Each product
+# publishes its own folder there from its own repository; this workflow
+# owns clogem-press/ alone. Two jobs, so the deploy key never sits beside
+# third-party code:
+#
+#   build    (no secret) tests and builds the page in its five languages
+#            (`bb support-page`, from support/i18n/: English at
+#            clogem-press/, the others in zh-Hant/, zh-Hans/, pt-BR/ and
+#            es-ES/ inside it), cuts its fonts into clogem-press/fonts/
+#            (support/fonts.sh: pinned downloads, pip-installed fontTools,
+#            pyftsubset) and hands the folder on as an artifact;
+#   publish  takes that folder, clones gh-pages over SSH with a deploy key
+#            of its own, replaces clogem-press/ with it (the pages and
+#            fonts/), stages that path and nothing else, and pushes without
+#            force. If someone else published at the same moment, it starts
+#            again from a fresh clone, 3 attempts at most, as the hub's
+#            portal.yml does. It checks out nothing and installs nothing.
+#
+# A push made with a deploy key starts a Pages build by itself, and the
+# hub's portal.yml runs after every Pages build (it adds the front page's
+# link once the hub's own session lists clogem-press).
+#
+# Without the CLOGEM_SUPPORT_DEPLOY_KEY secret it builds the page and stops,
+# successfully, with a notice (README, "Support page", for the owner's
+# one-time steps). It never runs on pull requests: it holds a secret, and
+# this repository is public. test/clogem/support_page_test.clj checks this
+# file's text and runs the publishing step against a local stand-in.
+name: support-page
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - support/**
+      - test/clogem/support_page_test.clj
+      - .github/workflows/support-page.yml
+      - bb.edn
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One publication at a time; never cancel one in flight.
+concurrency:
+  group: support-page
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: DeLaGuardo/setup-clojure@6d46099eae24853c33c0482f2bb54edf4f1a4c74 # 13.7.0
+        with: { bb: latest }
+
+      # The page's own tests; the full `bb test` runs in ci.yml.
+      - run: bb test --pattern support-page
+      - run: bb support-page
+
+      # The fonts' TTFs and licences, keyed by their pins (fonts.sh checks
+      # each file's SHA-256 whether it came from here or from GitHub).
+      - name: Cache the fonts' downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/clogem-press/fonts
+          key: support-fonts-${{ hashFiles('support/fonts.edn') }}
+      - run: support/fonts.sh
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: support-page
+          path: dist-support/clogem-press/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    env:
+      URL: https://echojustus.github.io/clogem-support/clogem-press/
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: support-page
+          path: dist-support/clogem-press
+
+      - name: Publish clogem-press/ to clogem-support's gh-pages
+        id: publish
+        env:
+          DEPLOY_KEY: ${{ secrets.CLOGEM_SUPPORT_DEPLOY_KEY }}
+          REMOTE: git@github.com:EchoJustus/clogem-support.git
+          # GitHub's published SSH host keys ("GitHub's SSH key fingerprints",
+          # GitHub Docs; the test checks their fingerprints), never scanned on the fly.
+          KNOWN_HOSTS: |
+            github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+            github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
+            github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=
+        run: |
+          set -euo pipefail
+          if [ -z "${DEPLOY_KEY:-}" ]; then
+            echo "::notice::The support page was built but not published: the CLOGEM_SUPPORT_DEPLOY_KEY secret isn't set (README, Support page)."
+            exit 0
+          fi
+          ls dist-support/clogem-press/fonts/*.woff2 > /dev/null 2>&1 ||
+            { echo "::error::The built folder has no fonts/ (support/fonts.sh); nothing was pushed."; exit 1; }
+
+          # The key and the host keys, in files only this job can read.
+          key="$RUNNER_TEMP/clogem-support-deploy-key"
+          hosts="$RUNNER_TEMP/clogem-support-known-hosts"
+          trap 'rm -f "$key"' EXIT
+          (umask 077; printf '%s\n' "$DEPLOY_KEY" > "$key")
+          chmod 600 "$key"
+          printf '%s' "$KNOWN_HOSTS" > "$hosts"
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts"
+
+          # One attempt: a fresh clone of the branch as it is now, clogem-press/
+          # replaced by the folder just built (all five pages and fonts/, and a
+          # file no longer built gone), everything else as it was.
+          # 0 = published or unchanged, 1 = refused.
+          publish() {
+            rm -rf pages
+            git clone --quiet --depth 1 --branch gh-pages "$REMOTE" pages || return 1
+            git -C pages config user.name "github-actions[bot]"
+            git -C pages config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            rm -rf pages/clogem-press
+            mkdir -p pages/clogem-press
+            cp -R dist-support/clogem-press/. pages/clogem-press/ || exit 1
+            git -C pages add -- clogem-press || return 1
+            if git -C pages diff --cached --name-only | grep -v '^clogem-press/'; then
+              echo "::error::Something outside clogem-press/ was staged; nothing was pushed."; exit 1
+            fi
+            if git -C pages diff --cached --quiet; then
+              echo "::notice::The support page is unchanged: nothing to publish."; return 0
+            fi
+            git -C pages commit --quiet -m "Publish clogem-press's support page" || return 1
+            git -C pages push --quiet origin HEAD:gh-pages || return 1
+            echo "published=true" >> "${GITHUB_OUTPUT:-/dev/null}"
+            echo "::notice::Published clogem-press/ to clogem-support's gh-pages."
+          }
+
+          for attempt in 1 2 3; do
+            if publish; then exit 0; fi
+            echo "::warning::Publishing was refused (someone may have published at the same moment); attempt $attempt of 3."
+            sleep $((attempt * 5))
+          done
+          echo "::error::Could not publish the support page after 3 attempts."
+          exit 1
+
+      - name: Wait for the live page
+        id: live
+        if: steps.publish.outputs.published == 'true'
+        # About 10 minutes: no try starts after 570 s, and a try takes at
+        # most 15 s and its pause 15 s, so the loop ends by 600 s. The
+        # timeout is a backstop that, like the loop, only warns.
+        timeout-minutes: 12
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          # The live English page, past any cache, against the one just built
+          # (the five are published in one commit); a warning, not a failure,
+          # if Pages is slow.
+          i=0
+          while [ "$SECONDS" -lt 570 ]; do
+            i=$((i + 1))
+            if curl -fsS --max-time 15 -o live.html "${URL}?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$i" 2> /dev/null &&
+               cmp -s live.html dist-support/clogem-press/index.html; then
+              echo "::notice::Live: $URL"; exit 0
+            fi
+            sleep 15
+          done
+          echo "::warning::$URL isn't the page built here after 10 minutes; the Pages build may still be running."

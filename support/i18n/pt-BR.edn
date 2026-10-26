@@ -1,0 +1,136 @@
+;; Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).
+;;
+;; The Portuguese words of clogem-press's support page,
+;; https://echojustus.github.io/clogem-support/clogem-press/pt-BR/ —
+;; Brazilian Portuguese, consistently (você; arquivo, baixar, compartilhar),
+;; and the page for Portuguese in general (hreflang pt-BR and pt; DESIGN.md
+;; §7.5). A translation of en.edn, of its shape: en.edn's header says what
+;; may go here. The build refuses it if its sections, blocks, link targets,
+;; code or commands differ from English's. Awaiting a native speaker's
+;; review (CHANGELOG, "Needs native review (support page)").
+
+{:url         "https://echojustus.github.io/clogem-support/clogem-press/pt-BR/"
+ :hub         "https://echojustus.github.io/clogem-support/"
+ :title       "clogem-press: ajuda e código-fonte"
+ :description "O clogem-press é um gerador de código aberto para bases de conhecimento, blogs e documentação, em até cinco idiomas, feito com babashka. O que ele faz, como começar, onde perguntar e o seu aviso de privacidade."
+ :eyebrow     "Clogem · Código aberto"
+ :name        "clogem-press"
+ :subtitle    "Bases de conhecimento, blogs e documentação a partir de Markdown"
+ :icon-alt    "O ícone do clogem-press: três páginas verde-jade empilhadas, com um marcador"
+ :lead        "Um gerador de sites estáticos de código aberto, com uma linha de comando em babashka. Ele transforma uma pasta de arquivos Markdown em um site com barra lateral, índices, busca e até cinco idiomas."
+ :jump-label  "Nesta página"
+ :lang-name   "Português (Brasil)"
+ :lang-label  "Idioma:"
+ :langs-label "Idiomas"
+ :en-note     " (em inglês)"
+ :theme       {:legend "Tema de cores"
+               :system ["Automático" "Seguir a configuração do sistema"]
+               :light  ["Claro" "Sempre claro"]
+               :dark   ["Escuro" "Sempre escuro"]}
+ :footer      {:hub     "Clogem Support"
+               :licence ["O clogem-press é software livre, sob a "
+                         [:a "https://github.com/EchoJustus/clogem-press/blob/main/LICENSE" "Eclipse Public License 2.0"]
+                         "."]
+               :note    "Esta página não define cookies e não carrega nada de outros sites."
+               :font    ["Texto composto em "
+                         [:a "https://github.com/lxgw/LxgwWenKai" "LXGW WenKai"]
+                         " (SIL Open Font License 1.1)."]}
+
+ :sections
+ [{:id     "about"
+   :title  "O que é o clogem-press"
+   :blocks [[:p "O clogem-press gera um site estático a partir de uma pasta de arquivos Markdown: uma base de conhecimento, um blog, uma documentação, ou os três em um só site. Ele segue as convenções de conteúdo do "
+             [:a "https://github.com/xugaoyi/vuepress-theme-vdoing" "vuepress-theme-vdoing"]
+             ": pastas numeradas viram a barra lateral, o front matter é escrito automaticamente e cada artigo ganha um endereço permanente curto."]
+            [:p "Ele roda no " [:a "https://babashka.org/" "babashka"]
+             ", sem nenhuma biblioteca para instalar: Markdown, templates, YAML, HTTP e feeds já vêm embutidos no babashka."]
+            [:p "Um site pode ter até cinco idiomas: inglês, chinês simplificado e chinês tradicional, malaio e tâmil. As versões de um artigo compartilham um único endereço, para que o leitor possa alternar entre elas."]]}
+
+  {:id     "status"
+   :title  "O que ele faz hoje"
+   :blocks [[:p "A versão mais recente é a " [:strong "0.2.0"] ". O trabalho na próxima fase está em andamento no branch main e ainda não foi lançado. O "
+             [:a "https://github.com/EchoJustus/clogem-press/blob/main/CHANGELOG.md" "histórico de mudanças"]
+             " lista cada mudança assim que ela entra."]
+            [:cards
+             {:chip  "Lançado · 0.2.0"
+              :title "Conteúdo e estrutura"
+              :text  ["Uma barra lateral a partir de pastas numeradas, front matter escrito automaticamente com links permanentes estáveis, páginas de categorias, tags e arquivo cronológico, uma página inicial do blog paginada com posts fixados, trilhas de navegação, links para o anterior e o próximo, páginas de catálogo e contêineres Markdown."]}
+             {:chip  "Lançado · 0.2.0"
+              :title "Idiomas e descoberta"
+              :text  ["Cinco idiomas com um endereço por artigo, links canonical e hreflang, um feed Atom por idioma, um sitemap, busca com Pagefind com um índice por idioma e comentários opcionais com giscus, com uma conversa por artigo."]}
+             {:chip  "Em andamento"
+              :title "O tema, no branch main"
+              :text  ["Já entrou: modos de cor claro, escuro e de leitura, destaque de código, estilos de página em cartões e em linhas, uma barra de navegação com menu lateral no celular, links de edição e datas da última atualização, uma página 404, o cartão de perfil e o banner da página inicial do blog, tags opcionais de análise de tráfego e de verificação para consoles de busca, e um "
+                      [:code "bb dev"]
+                      " mais ágil: uma só recompilação por sequência de salvamentos, erros de compilação mostrados no navegador, o tema recarregado quando muda e o caminho base do site servido como será publicado. Ainda falta nesta fase: espaços para HTML personalizado e busca entre idiomas; depois, a próxima versão."]}]]}
+
+  {:id     "start"
+   :title  "Primeiros passos"
+   :blocks [[:p "Você precisa do " [:a "https://babashka.org/" "babashka"] " 1.13.219 ou mais recente, e do git. O clogem-press roda a partir da pasta do seu site, usando uma cópia do gerador ao lado dela:"]
+            [:pre "git clone https://github.com/EchoJustus/clogem-press\ncd my-site\nbb --config ../clogem-press/bb.edn dev      # build, serve on localhost:1888, rebuild on change\nbb --config ../clogem-press/bb.edn build    # write the site to dist/\nbb --config ../clogem-press/bb.edn doctor   # report content problems without building"]
+            [:ul
+             [[:a "https://github.com/EchoJustus/clogem-press#readme" "O README"] ": todas as tarefas e opções, as convenções em uma tela só e as configurações do tema."]
+             [[:a "https://github.com/EchoJustus/clogem-press/tree/main/examples/demo-site" "O site de demonstração"] ": um site completo para copiar, que os testes geram a cada mudança."]
+             [[:a "https://github.com/EchoJustus/clogem-press/blob/main/config.example.edn" "config.example.edn"] ": cada configuração com o seu valor padrão."]
+             [[:a "https://github.com/EchoJustus/clogem-press/blob/main/DESIGN.md" "DESIGN.md"] ": o design e os motivos por trás dele."]]]}
+
+  {:id     "help"
+   :title  "Ajuda e feedback"
+   :blocks [[:p "Tudo o que está abaixo acontece no GitHub, de forma aberta. Você pode escrever em qualquer um dos idiomas desta página; as respostas podem vir em inglês."]
+            [:cards
+             {:chip   "Bug"
+              :title  "Relatar um problema"
+              :text   ["Algo no clogem-press não funciona como descrito. Diga qual versão ou commit você usa e o que executou."]
+              :href   "https://github.com/EchoJustus/clogem-press/issues"
+              :action "Abrir uma issue"}
+             {:chip   "Código"
+              :title  "Propor uma mudança"
+              :text   ["Uma correção ou uma melhoria no código ou na documentação."]
+              :href   "https://github.com/EchoJustus/clogem-press/pulls"
+              :action "Ver os pull requests"}
+             {:chip   "Dúvida"
+              :title  "Fazer uma pergunta"
+              :text   ["Como fazer algo com o clogem-press, ou por que ele funciona do jeito que funciona."]
+              :href   "https://github.com/EchoJustus/clogem-support/discussions/new?category=q-a"
+              :action "Perguntar no GitHub"}
+             {:chip   "Ideia"
+              :title  "Compartilhar uma ideia"
+              :text   ["Algo que o clogem-press poderia fazer, ou fazer melhor."]
+              :href   "https://github.com/EchoJustus/clogem-support/discussions/new?category=ideas"
+              :action "Sugerir no GitHub"}]
+            [:p "Issues, pull requests e discussões são públicos: qualquer pessoa pode lê-los. Não inclua dados pessoais, como o seu endereço de e-mail, nem nada privado do conteúdo do seu site."]
+            [:h3 "Algo que não deveria ser público"]
+            [:p "Um problema de segurança, uma dúvida sobre os seus dados ou uma notificação legal: escreva para "
+             [:a "mailto:EchoJustus.Studio@outlook.com?subject=clogem-press" "EchoJustus.Studio@outlook.com"] "."]]}
+
+  ;; draft: the owner approves the wording before publication
+  {:id     "privacy"
+   :title  "Privacidade"
+   :blocks [[:h3 "Esta página"]
+            [:p "Esta página não define cookies, não executa nenhum script e não carrega nada de outros sites: os seus estilos e o seu ícone estão dentro deste único arquivo. O GitHub Pages, que a serve, mantém os seus próprios registros das solicitações que recebe, conforme descrito na "
+             [:a "https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" "declaração de privacidade do GitHub"]
+             ". Os links para o GitHub levam você ao GitHub, sob os termos dele."]
+            [:h3 "O gerador"]
+            [:p "O clogem-press roda no seu próprio computador. Ele não tem conta, telemetria nem verificação de atualizações, e não envia nada sobre você ou o seu conteúdo para lugar nenhum."]
+            [:p "Ele só acessa a internet para baixar uma ferramenta de que precisa, por padrão das versões publicadas da própria ferramenta no GitHub:"]
+            [:ul
+             [[:strong "Chroma"] ", para destaque de código, na primeira geração de um site que tenha código, a menos que o destaque esteja desativado;"]
+             [[:strong "Pagefind"] ", para busca, na primeira geração de um site que ative a busca;"]
+             [[:strong "o pod fswatcher"] ", que observa os seus arquivos, na primeira vez que você executa " [:code "bb dev"] ";"]
+             ["ou qualquer um deles quando você executa " [:code "bb fetch-tool"] "."]]
+            [:p "Cada download é verificado com um hash SHA-256 fixado no clogem-press e guardado em um cache fora do seu site (por padrão, " [:code "~/.cache/clogem-press/tools"]
+             "), então acontece só uma vez. A configuração de um site pode, em vez disso, indicar outra origem e outro hash para uma ferramenta. Uma cópia já instalada, indicada na configuração do site ou em "
+             [:code "CLOGEM_CHROMA"] ", " [:code "CLOGEM_PAGEFIND"] " ou " [:code "CLOGEM_FSWATCHER"] ", nunca é baixada."]
+            [:h3 "Os sites que você gera"]
+            [:p "Um site gerado com o clogem-press é uma pasta de arquivos que você publica onde quiser. Por padrão, ele não faz nenhuma solicitação a outro site. Ele só faz isso quando o dono ativa os comentários do giscus ou uma ferramenta de análise (Google Analytics 4, Plausible ou Umami), ou informa um logotipo ou uma imagem como um endereço em outro site. As tags de verificação de consoles de busca, se o dono as adicionar, são linhas na página que não carregam nada. Por conta própria, um site guarda três coisas no navegador do leitor (o modo de cor escolhido, o idioma escolhido e quais avisos de idioma “também disponível em…” o leitor fechou) e não envia nada disso para lugar nenhum; os comentários do giscus e a análise, quando o dono os ativa, guardam os próprios dados, sob os próprios termos."]]}
+
+  {:id     "source"
+   :title  "Licença e código-fonte"
+   :blocks [[:p "O clogem-press é software livre, sob a "
+             [:a "https://github.com/EchoJustus/clogem-press/blob/main/LICENSE" "Eclipse Public License 2.0"]
+             ". O seu código-fonte, o seu histórico e o seu design são públicos."]
+            [:ul
+             [[:a "https://github.com/EchoJustus/clogem-press" "Código-fonte no GitHub"]]
+             [[:a "https://github.com/EchoJustus/clogem-press/blob/main/CHANGELOG.md" "Histórico de mudanças"]]
+             [[:a "https://github.com/EchoJustus/clogem-press/blob/main/DESIGN.md" "Design"]]]
+            [:p "Os nomes clogem-press e Clogem, e o ícone, são marcas do seu projeto: a licença cobre o código e o desenho, não o uso dos nomes como marcas."]]}]}

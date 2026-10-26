@@ -26,6 +26,245 @@ Likewise for E1a's keys (`:theme :blogger`, `:social`, `:footer`,
 `:banner-bg`, `:body-bg-img*`, `:title-badge*`): a site that set one now
 gets it, and title badges appear by default, as in vdoing.
 
+**Support page** (DESIGN.md §7.5): clogem-press's page on the Clogem
+support site, https://echojustus.github.io/clogem-support/clogem-press/,
+built and published as the hub's own pages are. Not part of the generator:
+nothing in `src/clogem/` changes, and a built site is unaffected.
+Languages (SP.2): English (the default) at `clogem-press/`; Simplified
+Chinese at `zh-Hans/`; Traditional Chinese, with Taiwan wording, at
+`zh-Hant/`; Brazilian Portuguese at `pt-BR/` (also for `pt`); European
+Spanish at `es-ES/` (also for `es`). Five pages, **172,483 bytes** in all:
+`index.html` 33,172, `zh-Hans/index.html` 34,237, `zh-Hant/index.html`
+34,348, `pt-BR/index.html` 34,827, `es-ES/index.html` 34,951 (each within
+the 64 KB budget).
+
+### Added (support page)
+
+- `bb support-page` (`support/support_page.clj`, Babashka and its built-in
+  hiccup2) writes `dist-support/clogem-press/` from `support/i18n/*.edn`
+  (the words, one file per language) and `support/clogem-press.svg` (the
+  v3 48-unit icon, EPL-2.0). Each page is one self-contained file
+  (budget 64 KB): no JavaScript, no cookies, nothing loaded from other
+  sites, no `style=` attributes; a Content-Security-Policy allowing only its
+  one style by SHA-256 and `data:` images; `no-referrer`, `color-scheme`,
+  light and dark `theme-color`, a canonical link and a description; the
+  icon as a `data:` image in the header and as the favicon (base64, the
+  form the hub's front page reads an app's icon from). Light and dark after
+  the system, or the hub's no-script switcher (Auto, Light, Dark; opens on
+  Auto, remembers nothing), with clogem-press's jade as the accent: a darker
+  jade for text in light mode, a lighter one in dark, every pair WCAG AA.
+  Six sections, in this order: what clogem-press is, what it does today
+  (0.2.0, and Phase 4 as in progress and unreleased), getting started, help
+  and feedback, privacy, licence and source.
+- Five languages (SP.2): the words in `support/i18n/` (`en.edn`, which was
+  `support/page.edn`; `zh-Hans.edn`, `zh-Hant.edn`, `pt-BR.edn`,
+  `es-ES.edn`), each page in its own folder, `<html lang>` set, its own
+  canonical link and the reciprocal `hreflang` alternates of all five
+  (`pt`, `es` and `x-default` too); a language switcher in the header, each
+  label in its own language, the current one marked `aria-current="page"`;
+  no automatic redirect. The switcher (SP.3) is a no-script `<details>`
+  dropdown beside the theme switcher, not a flat row of five links: its
+  summary shows a globe, the current language and a chevron (the word for
+  "Language" hidden for screen readers, `:lang-label`), and its panel lists
+  the five as plain relative links; the browser opens and closes it (click,
+  Enter or Space), and without a script it does not close on Escape or a
+  click outside. Hidden in print. The build refuses a
+  translation whose sections, blocks, link targets, code or commands differ
+  from English's. On the translations, links to pages in English only carry
+  `hreflang="en"` and a note, （英文）, *(em inglês)* or *(en inglés)*. The
+  help section says people may write in any of the page's languages, and
+  replies may come in English. The one stylesheet adds system CJK fonts by
+  `:lang()` (PingFang, Microsoft YaHei or JhengHei, Noto Sans CJK, Source
+  Han Sans; none bundled) and no letter-spacing on CJK. Each translation
+  names the generator's own content languages (English, Simplified and
+  Traditional Chinese, Malay, Tamil), and none suggests it supports
+  Portuguese or Spanish content.
+- The privacy section is a **draft for the owner**, who approves its
+  wording before the first publication (the translations mirror the
+  English text fact for fact, and change when it changes): the page (no cookies, no script,
+  nothing from other sites; GitHub Pages' own logs), the generator (runs
+  locally, sends nothing; downloads Chroma, Pagefind and the fswatcher pod
+  from their GitHub releases only when first needed or on `bb fetch-tool`,
+  each SHA-256-verified and cached), and the sites it builds (other
+  services only when their owner turns on giscus, analytics, or an image
+  hosted elsewhere).
+- `.github/workflows/support-page.yml`: on pushes to `main` that touch the
+  page's sources, and by hand; never on pull requests. It tests and builds
+  the pages, then clones clogem-support's `gh-pages` over SSH with the
+  `CLOGEM_SUPPORT_DEPLOY_KEY` deploy key (from `env:`, mode 600, GitHub's
+  published host keys pinned), replaces `clogem-press/` with the built
+  folder (`cp -R dist-support/clogem-press/.`) and stages it alone, commits as `github-actions[bot]` and pushes without force,
+  retrying from a fresh clone up to 3 times; then waits up to 10 minutes
+  for the live page, warning if it hasn't changed. Without the secret it
+  stops with a notice, successfully. Actions pinned by commit.
+- `bb.edn`: the `support-page` task, and `"support"` on `:paths` so the
+  task and its tests can require the generator.
+
+### Tests (support page)
+
+- `test/clogem/support_page_test.clj` (34 tests after SP.4), every rule on each of
+  the five pages: no script, handlers or style attributes; the CSP's hash is the style's; the head tags; every
+  image a `data:` URI with alt, width and height; nothing loaded from
+  elsewhere; the icon passes the hub's plain-drawing checks; the switcher;
+  every colour pair AA in light and dark; the sections, the jump links and
+  the heading levels in order; no commerce words and no address but
+  `EchoJustus.Studio@outlook.com`; the help links; words escaped and only
+  the allowed pieces; the byte budget; licence headers. The workflow's
+  text, and its publishing step run against a local bare repository
+  standing in for `gh-pages`: the first publication adds
+  `clogem-press/index.html` and nothing else changes, a rerun pushes
+  nothing, another writer's commit is kept, a refused push is retried from
+  a fresh clone, and a missing secret is a notice and exit 0.
+- SP.2: the build writes the five files and nothing else; each page's
+  `lang`, canonical link and complete, reciprocal `hreflang` set, each
+  resolving to a built file; the language switcher (all five in order,
+  `aria-current` on itself, each relative `href` resolving to the right
+  file, each label's `lang`); parity with English (sections, blocks, link
+  targets, commands, keys, no empty string) and the build refusing drift;
+  every title, the lead, the description and the switchers' labels
+  translated; `hreflang="en"` and the note on English-only links; smoke
+  checks on wording (no 软件, 軟件, 程序代碼 or 網絡 in zh-Hant; no 軟, 體, 網,
+  連, 結, 設 or 預 in zh-Hans; Brazilian, not European, Portuguese; Spain's
+  Spanish and *tú*); the generator's five content languages named on every
+  page and no claim of Portuguese or Spanish content; CJK fonts and
+  spacing; the stand-in publishes all five files and nothing else.
+
+### Changed (SP.6, support page)
+
+- **Text is set in LXGW WenKai (霞鹜文楷)**, all of it but headings and
+  code, in English, Chinese, Portuguese and Spanish; the zh-Hant page in
+  LXGW WenKai TC (霞鶩文楷 TC). Both v1.530, Regular and Medium (emphasis:
+  `<strong>`, the chips, the buttons, the eyebrow, the switchers, the jump
+  links); headings keep the system font, code the monospace one, and the
+  system stacks stay behind WenKai (`font-display: swap`). The owner's
+  decisions of 2026-10-26 (DESIGN.md §7.5 item 8): the files are published
+  beside the pages as `clogem-press/fonts/*.woff2`, the CSP gains
+  `font-src 'self'` and nothing else, and subsetting runs `pyftsubset` in
+  GitHub Actions with no Python in the repository. Five pages, **178,647 bytes** in all, plus the fonts they use:
+  80,838–220,060 bytes per page as it opens, HTML and fonts (README).
+- **WenKai TC's emphasis is Medium, not Bold**: v1.530 of WenKai TC has
+  Light, Regular and Medium and no Bold.
+- **Subsets by script and weight**, each page declaring only those it uses
+  (`unicode-range`, paths relative to its folder, so each page's CSP hash
+  is its own): Latin, Simplified and Traditional, Regular and Medium, and
+  two small ones for the switcher's 简体中文 and 繁體中文 on the other pages.
+  `bb support-page` writes their character lists to `dist-support/glyphs/`;
+  `bb support-fonts` prints the pins in `support/fonts.edn`.
+- **`support/fonts.sh`**, the font step: pinned, hash-checked downloads
+  (cached), fontTools 4.66.1 and brotli 1.2.0 installed by hash, one
+  `pyftsubset` per list, a coverage check, the licences beside the
+  subsets, size caps. Without it the pages still work, in the system fonts.
+- **The workflow is two jobs**: `build` (no secret: tests, page, fonts,
+  artifact) and `publish` (`needs: build`: the artifact and the same SSH
+  publishing loop; no checkout, pip or font download). It refuses a folder
+  without fonts. CI gains `support-fonts`, which runs the font step on
+  every push and keeps the folder as an artifact.
+- **The language order** is English, 繁體中文, 简体中文, Português (Brasil),
+  Español (España), in the dropdown and the `hreflang` alternates.
+- **The footer credits the font** in each language, linking its repository.
+- Tests: the plan's pins; the character lists against the pages' text,
+  read from the HTML; each page's `@font-face` rules; WenKai for text, the
+  system for headings and code, Medium for emphasis, no weight without a
+  face; the CSP; the workflows' jobs, secrets and pins; the font step's
+  options; no Python added; the order; the stand-in publishing the fonts;
+  the credit. Each failed first. Chromium (5 languages, 360 and 1280 px,
+  light and dark) found two gaps, now fixed and tested: the switcher's
+  Latin names inherited WenKai TC on the zh-Hant page, and the chips'
+  capitals (pt-BR's Ó, Ç) were missing from their list.
+
+### Fixed (SP.5, support page)
+
+- **The name keeps one line.** From 480 px up "clogem-press" no longer
+  breaks after its hyphen (it did at 768–1440 px, by language): the `<h1>`
+  is `nowrap` there, with its text unchanged, and the brand's flex basis is
+  its `min-content`, so when the brand and the switchers don't both fit the
+  switchers wrap below it instead of squeezing it; under 30rem they take a
+  row of their own, and the heading's smallest size is 1.85rem, so the name
+  is one line at 320 and 360 px too. At 1280 px the switchers still sit
+  beside the brand in every language.
+- **The language list opens under its own button.** The language switcher
+  is now last in the row, at the end edge, and its panel hangs from it
+  (it hung from the switchers' end edge, under the theme switcher).
+- **The privacy draft no longer reads as a complete list:** clogem-press's
+  own pages keep three things in the reader's browser; giscus and
+  analytics, when the owner turns them on, keep their own data under their
+  own terms. The tool-download paragraph says each fact once.
+- **pt-BR and es-ES buttons say where they lead** ("Perguntar no GitHub",
+  "Preguntar en GitHub", "Sugerir no GitHub", "Proponer en GitHub")
+  instead of repeating their cards' titles.
+- `test/browser/support-page.test.mjs` checks the header in Chromium.
+
+### Fixed (SP.4, support page)
+
+- **The header fits a 320 px screen in every language.** The pt-BR and
+  es-ES theme switchers were wider than the content box at 360 px, and the
+  hero's `auto` grid column grew with them (at 320 the page scrolled
+  sideways). The column is `minmax(0,1fr)`; under 30rem the theme switcher
+  drops its icons and tightens; the switchers never outgrow the content
+  box. The language dropdown hangs from the switchers' end edge, so it no
+  longer runs off the left of a 360 px screen when the summary sits on the
+  left; when the switchers wrap, the language's line is the lower one.
+- **At 1280 px the switchers sit beside the brand** in every language, as
+  on the hub: the brand's words wrap within a flexible basis.
+- **Short inline code keeps one line** (`bb dev` broke into `bb` / `dev`):
+  code of up to 24 characters gets `class="nw"`; a longer path may break.
+- **Shorter pill labels**: pt-BR's chip "Em andamento", and the Q&A and
+  idea buttons in pt-BR and es-ES, which wrapped.
+- **The privacy draft** names all three keys a built site keeps in the
+  reader's browser (the colour mode, the language choice and the
+  dismissed "also available in …" banners), and says that tool downloads
+  come from the tool's releases and are checked against a pinned hash *by
+  default*: a site's `:tools` config can name its own source and hash, or
+  a binary already installed. In all five languages.
+- **The in-progress card** says what Phase 4 added to `bb dev` (one
+  rebuild per burst, the build-error overlay, theme hot reload, `:base`
+  in dev); live reload itself shipped in 0.1.0.
+- **zh-Hans / zh-Hant: "marks" is 商标 / 商標**, the word for trademarks.
+- **The live-page wait is about 10 minutes** (it could run 23): no try
+  after 570 s, `--max-time 15`, a `timeout-minutes: 12` backstop with
+  `continue-on-error`, so it still only warns.
+- **MIT notice** on `support_page_test.clj` (its `git!`, `stand-in!` and
+  refusing hook follow the hub's `portal_test.clj`) and on the workflow
+  (its `publish` and 3-attempt loop follow `portal.yml`).
+- Tests: the hero's column, the switchers' bounds, the panel's anchor;
+  short code on one line; every `localStorage` key in the theme's code
+  covered by the privacy note in each language; "by default" for
+  downloads; 商标 / 商標; pill label lengths; the Phase 4 wording; the
+  live-page wait's bound; the MIT notice in all three files. Each failed
+  first on `f8de9e4`.
+
+### Needs native review (support page)
+
+Machine-made translations, to be read by a native speaker before or soon
+after publication, and whenever `en.edn` changes:
+
+- `support/i18n/zh-Hans.edn`: Simplified Chinese, mainland-neutral.
+- `support/i18n/zh-Hant.edn`: Traditional Chinese, Taiwan wording and
+  punctuation.
+- `support/i18n/pt-BR.edn`: Brazilian Portuguese.
+- `support/i18n/es-ES.edn`: Spanish of Spain, *tú*.
+- **The zh-Hant page's typeface** (SP.6): LXGW WenKai TC draws inherited
+  glyph forms (傳承字形), not Taiwan's Ministry of Education standard forms,
+  and merges some variant code points into one shape (為 is drawn as 爲,
+  真 as 眞, 緒 as 緖; the page's 會成為側邊欄 shows 爲). A Taiwanese reader
+  should judge it from the screenshots; if it reads wrong, `:zh-Hant
+  :wenkai` in `support/fonts.edn` switches the page to the main LXGW
+  WenKai's own Traditional glyphs (DESIGN.md §7.5 item 8).
+
+### The owner's one-time steps (support page)
+
+1. `ssh-keygen -t ed25519 -N "" -C "clogem-press support page" -f clogem-support-deploy`.
+2. The public half to EchoJustus/clogem-support, **Settings > Deploy
+   keys**, with **Allow write access** (a key of its own: Wmark Pro's is
+   already there, and GitHub allows a key on one repository only).
+3. The private half as the Actions secret `CLOGEM_SUPPORT_DEPLOY_KEY` here,
+   then delete the local copy.
+4. Approve the privacy note's wording before the first publication (leave
+   the secret unset until then); the four translations follow it.
+
+Once it is live, the hub's own session links it from the front page's
+clogem-press card and its README's table.
+
 **Task E1a — blog identity and banner** (§11.3 item 13, first half; D-P4-13):
 
 ### Added (E1a)
