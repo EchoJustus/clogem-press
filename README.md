@@ -285,6 +285,21 @@ every surface, which `bb test` checks against `theme.css` — and links inside
 prose are underlined. Pagefind's search dialog and giscus follow the mode;
 printing uses the light palette and drops the chrome.
 
+**Cross-language search.** Search looks in the page's own language. With
+`:search {:cross-language true}` (off by default) the search dialog also
+offers a *Search all languages* checkbox, unticked for each reader until
+they tick it: then the site's other languages are searched too, ranked
+below the page's own, and a *Language* filter narrows the results to one
+language. The choice is remembered in `localStorage` (`clogem-search-all`),
+and no other language's index is downloaded until the box is ticked. A
+page whose own language has no indexed pages yet shows no checkbox: there
+Pagefind searches its largest index, as it already does. Each language's
+pages are matched with that language's word segmentation, but the query is
+stemmed by the page's language (DESIGN.md §6.7): a Tamil page searches the
+English pages with the Tamil stemmer, and a Malay page, which has none,
+stems nothing. `--no-search` drops it with the rest of search, and print
+hides it.
+
 **Page styles.** `:theme :page-style` is vdoing's `pageStyle`. `:card` (the
 default) draws the main column of every page, the sidebar, and the home page's
 right-bar sections and post cards as cards — the card colour, a small radius
@@ -626,6 +641,10 @@ Pagefind needs `worker-src 'self'` and `'wasm-unsafe-eval'` (DESIGN.md §6.8,
 `<script type="application/json">` data block, which CSP does not govern;
 `js/code.js` and `js/nav.js` (the drawer) are same-origin files. A policy without the hash still gets the
 reader's mode: `js/mode.js` (same-origin) applies it, one frame late.
+Cross-language search adds no inline script either: `js/search-all.js` is
+same-origin, and its merges fetch only the site's own `pagefind/` bundle,
+so they need nothing beyond what Pagefind already needs (`worker-src
+'self'`, `'wasm-unsafe-eval'`).
 The blog identity adds no inline script: `js/bodybg.js`, which rotates
 several background images, is same-origin. A `bannerBg: "background: …"`
 banner is a `style` attribute, which a policy that restricts styles must
@@ -801,7 +820,10 @@ the key):
    `privacy` section; the four translations mirror it fact for fact, and
    change when it changes) before the first publication: once the secret
    is set, the next push to `main` that touches the page publishes it.
-   The owner approved it on 2026-10-26, and each file marks it so.
+   The owner approved it on 2026-10-26, and each file marks it so. Task G's
+   clause about cross-language search (`clogem-search-all`, the fourth
+   thing a site may keep) awaits their approval, and merging it publishes
+   the page (CHANGELOG, *Needs the owner's approval (G)*).
 
 **When it's live:** the hub's own session adds the link on its front page's
 clogem-press card and a row in its README's table. Nothing in this
@@ -810,7 +832,7 @@ repository does that.
 ## Development
 
 ```bash
-bb test                                             # 849 tests / ~59,300 assertions
+bb test                                             # 869 tests / ~60,000 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 
