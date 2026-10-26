@@ -1844,9 +1844,14 @@ Decisions:
      flat crowded the header; `<details>` folds them away with no script and no CSP change, since
      the browser itself opens and closes it (click, Enter or Space). The cost of no script: it does
      not close on Escape or on a click outside (a second click on the summary closes it). It is
-     closed on load and hidden in print; the panel hangs from the switchers' end edge, which is
-     the content box's, so it never runs off a narrow screen's other side (when the switchers
-     wrap, the language's line is the lower one, just above the panel). Nothing sends a reader to a version by the browser's
+     closed on load and hidden in print. The language switcher is the last in the row, at the
+     content box's end edge, and its panel hangs from it (SP.5): under its own button, and never
+     off a narrow screen's other side (when the switchers wrap, the language's line is the lower
+     one, just above the panel). The name "clogem-press" keeps one line from 480 px up (`nowrap`;
+     the text itself unchanged, so copy and search see the hyphen): the brand's flex basis is its
+     `min-content`, the whole name, so when the brand and the switchers don't both fit the
+     switchers wrap below it rather than squeeze it, and under 30rem they always take a row of
+     their own. Nothing sends a reader to a version by the browser's
      language: that would need a script, which the hub's pages don't run (and an HTTP redirect is not
      something GitHub Pages offers).
    - **Words in step.** One EDN file per language (`support/i18n/<tag>.edn`, English's the reference);

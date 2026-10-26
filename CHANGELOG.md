@@ -33,7 +33,7 @@ nothing in `src/clogem/` changes, and a built site is unaffected.
 Languages (SP.2): English (the default) at `clogem-press/`; Simplified
 Chinese at `zh-Hans/`; Traditional Chinese, with Taiwan wording, at
 `zh-Hant/`; Brazilian Portuguese at `pt-BR/` (also for `pt`); European
-Spanish at `es-ES/` (also for `es`). Five pages, **171,535 bytes** in all:
+Spanish at `es-ES/` (also for `es`). Five pages, **172,483 bytes** in all:
 `index.html` 33,172, `zh-Hans/index.html` 34,237, `zh-Hant/index.html`
 34,348, `pt-BR/index.html` 34,827, `es-ES/index.html` 34,951 (each within
 the 64 KB budget).
@@ -128,6 +128,28 @@ the 64 KB budget).
   Spanish and *tú*); the generator's five content languages named on every
   page and no claim of Portuguese or Spanish content; CJK fonts and
   spacing; the stand-in publishes all five files and nothing else.
+
+### Fixed (SP.5, support page)
+
+- **The name keeps one line.** From 480 px up "clogem-press" no longer
+  breaks after its hyphen (it did at 768–1440 px, by language): the `<h1>`
+  is `nowrap` there, with its text unchanged, and the brand's flex basis is
+  its `min-content`, so when the brand and the switchers don't both fit the
+  switchers wrap below it instead of squeezing it; under 30rem they take a
+  row of their own, and the heading's smallest size is 1.85rem, so the name
+  is one line at 320 and 360 px too. At 1280 px the switchers still sit
+  beside the brand in every language.
+- **The language list opens under its own button.** The language switcher
+  is now last in the row, at the end edge, and its panel hangs from it
+  (it hung from the switchers' end edge, under the theme switcher).
+- **The privacy draft no longer reads as a complete list:** clogem-press's
+  own pages keep three things in the reader's browser; giscus and
+  analytics, when the owner turns them on, keep their own data under their
+  own terms. The tool-download paragraph says each fact once.
+- **pt-BR and es-ES buttons say where they lead** ("Perguntar no GitHub",
+  "Preguntar en GitHub", "Sugerir no GitHub", "Proponer en GitHub")
+  instead of repeating their cards' titles.
+- `test/browser/support-page.test.mjs` checks the header in Chromium.
 
 ### Fixed (SP.4, support page)
 
