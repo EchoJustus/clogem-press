@@ -351,6 +351,34 @@ after publication, and whenever `en.edn` changes:
 Once it is live, the hub's own session links it from the front page's
 clogem-press card and its README's table.
 
+**Task G — cross-language search** (§11.3 item 17, D-P4-17, D-P4-18):
+
+### Added (G)
+
+- **Config**: `:search {:cross-language true}` is read
+  (`clogem.config/cross-language?`, `check-search!`). 0.2.0 accepted the
+  key as planned and ignored it; it now turns on the "Search all
+  languages" checkbox. `true` and `false` are the values — nil is off, and
+  anything else is one warning naming it, repaired to false, so no site
+  that built before starts failing. `true` under `:provider :none` (what
+  `--no-search` sets) says nothing and does nothing.
+
+### Changed (G)
+
+- `config.example.edn` documents `:cross-language` and drops "deferred to
+  Phase 4 (D-P3-11)".
+
+### Tests (G)
+
+- `test/clogem/search_all_test.clj` (new): `"yes"`, `1` and `:true` each
+  give exactly one warning and leave the feature off; nil and false are
+  silent; `:cross-language true` draws no "planned" warning;
+  `:crossLanguage`'s hint lists `:cross-language` among the options; the
+  example config and the demo stay quiet. `config_test.clj`'s
+  `a-new-key-is-registered-in-one-place` now uses a synthetic `:zz-test`
+  key (`with-redefs`), so it no longer depends on which real key is still
+  planned. Each failed first on `f44fcf6`.
+
 **Task E1a — blog identity and banner** (§11.3 item 13, first half; D-P4-13):
 
 ### Added (E1a)
