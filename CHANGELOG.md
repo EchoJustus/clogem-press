@@ -11,7 +11,9 @@ B2, §11.3 item 1), then Task F — analytics, verification and a static root
 (§11.3 items 14, 15), then Task B2b — the navbar, the mobile drawer and the
 page chrome (the second half of B2, §11.3 item 9, D-P4-9), then Task E2 —
 article-page parity (§11.3 item 16, D-P4-13), then Task E1a — the blog
-identity and the home banner (the first half of §11.3 item 13, D-P4-13).
+identity and the home banner (the first half of §11.3 item 13, D-P4-13),
+then the Phase 4 follow-ups — Task D's known issues and smaller items, and
+what the E1a and E2 checks left.
 The version stays 0.2.0. Every article page now ends with an update bar
 by default, as in vdoing (`:theme :update-bar {:show-to-article false}`
 drops it), an article's `titleTag` badge now shows in every list row, and
@@ -25,6 +27,33 @@ buttons and a back-to-top button now appear by default, as in vdoing.
 Likewise for E1a's keys (`:theme :blogger`, `:social`, `:footer`,
 `:banner-bg`, `:body-bg-img*`, `:title-badge*`): a site that set one now
 gets it, and title badges appear by default, as in vdoing.
+
+**Phase 4 follow-ups** (before 0.3.0: Task D's known issues and smaller
+items, and what the E1a and E2 checks left; tests in
+`clogem.followups-test` unless named):
+
+### Fixed (P4 follow-ups)
+
+- **A file of 1 MB or more deleted mid-request is sent as it was, never
+  http-kit's 500 naming its absolute path** (item 1). It was a `File`
+  body, which http-kit opens only after the handler has returned, so a
+  rebuild deleting it in between answered `500` with the path as the body
+  (reachable with `--host 0.0.0.0`). Every file is now read whole, or from
+  20 MB mapped — what http-kit did with a `File` body — from one open
+  before the response exists; a file gone before that open is a plain 404
+  (`a-large-file-deleted-mid-request-is-sent-whole-never-its-path`,
+  `a-file-gone-before-it-is-opened-is-a-plain-404`; `dev_round2_test`'s
+  `a-file-is-read-whole-or-mapped-from-one-open` replaces
+  `a-small-file-is-read-whole-and-a-big-one-is-a-file`).
+- **HEAD sends no body, whatever the status, and the real
+  `Content-Length` where http-kit allows it** (item 2). A HEAD of a 404,
+  a 500, a 403 or a 400 sent its body on babashka 1.13.219, and every HEAD
+  said `Content-Length: 0`. A HEAD is now answered as GET is: on babashka
+  1.13.220 and later (http-kit 2.9.0-beta4) the body is left for http-kit,
+  which drops it and sends GET's `Content-Length`; on 1.13.219, whose
+  http-kit sends any body to HEAD and counts `Content-Length` from the body
+  it sends, the body is dropped here and the length stays 0
+  (`head-reports-the-length-and-sends-no-body`).
 
 **Support page** (DESIGN.md §7.5): clogem-press's page on the Clogem
 support site, https://echojustus.github.io/clogem-support/clogem-press/,
@@ -1570,7 +1599,10 @@ clogem-press card and its README's table.
   by process id and start time, so a reused pid (dev is often pid 1 in a
   container) is not mistaken for it.
 - **A file renamed while dev served it** is a 404, never a 500 whose body
-  named its absolute path (reachable with `--host 0.0.0.0`). A file under
+  named its absolute path (reachable with `--host 0.0.0.0`) — except, until
+  the Phase 4 follow-ups (item 1), a file of 1 MB or more deleted after the
+  handler answered and before http-kit opened it, which was still that
+  500. A file under
   1 MB — every Pagefind file — is read whole from one open, so a rebuild
   swapping it mid-response cannot mix two versions; a larger one is sent
   as 0.2.0 sent every file, with its `Content-Length`, to HTTP/1.0 and

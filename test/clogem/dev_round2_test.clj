@@ -55,8 +55,12 @@
   (bcli/parse-opts args {:spec (spec-of v)}))
 
 (def ^:private big-size
-  "Over `dev/whole-read-limit` (1 MB)."
+  "Over 1 MB, which was `dev/whole-read-limit` until the P4 follow-ups."
   (+ 10 (* 1024 1024)))
+
+(def ^:private huge-size
+  "Over `dev/whole-read-limit` (20 MB): mapped."
+  (+ 10 (* 20 1024 1024)))
 
 (defn- late-var [sym]
   (let [q (if (namespace sym) sym (symbol "clogem.dev" (name sym)))]
@@ -123,27 +127,33 @@
   (let [root (fs/create-temp-dir {:prefix "clogem-r2root"})]
     (try (f root) (finally (fs/delete-tree root)))))
 
-(deftest a-small-file-is-read-whole-and-a-big-one-is-a-file
-  (testing "item 6, as P4-D.4 item 1 left it: a small file is read whole,
-            from one open (a swap cannot mix two versions); a big one is
-            0.2.0's File body (D.3's stream sent HTTP/1.0 nothing)"
+(deftest a-file-is-read-whole-or-mapped-from-one-open
+  (testing "item 6, as the P4 follow-ups (item 1) leave it: a file is read
+            whole, or from 20 MB mapped, from one open before the response
+            exists (a swap cannot mix two versions, a delete cannot make it
+            http-kit's 500); P4-D.4 item 1's `File` body was opened only after
+            the handler returned"
     (with-root
       (fn [root]
         (spit (fs/file root "small.txt") "small")
         (with-open [o (java.io.FileOutputStream. (fs/file root "big.bin"))]
           (.write o (byte-array big-size (byte 7))))
+        (with-open [f (java.io.RandomAccessFile. (fs/file root "huge.bin") "rw")]
+          (.setLength f huge-size))
         (let [h (dev/make-handler root {})]
           (is (bytes? (:body (h {:uri "/small.txt"}))) "small: read whole, from one open")
           (is (= "small" (String. ^bytes (:body (h {:uri "/small.txt"})) "UTF-8")))
-          (is (instance? java.io.File (:body (h {:uri "/big.bin"}))) "big: a File")
-          (testing "and http-kit sends both, whole"
+          (is (bytes? (:body (h {:uri "/big.bin"}))) "big: read whole too, as http-kit read a File")
+          (is (instance? java.nio.ByteBuffer (:body (h {:uri "/huge.bin"}))) "from 20 MB: mapped, as http-kit mapped a File")
+          (testing "and http-kit sends them, whole"
             (let [srv (dev/run-server! h {:ip "127.0.0.1" :port 0 :legacy-return-value? false})]
               (try
                 (let [port (org.httpkit.server/server-port srv)
                       get! (fn [u] (with-open [in (.openStream (java.net.URL. (str "http://127.0.0.1:" port u)))]
                                      (alength (.readAllBytes in))))]
                   (is (= 5 (get! "/small.txt")))
-                  (is (= big-size (get! "/big.bin"))))
+                  (is (= big-size (get! "/big.bin")))
+                  (is (= huge-size (get! "/huge.bin"))))
                 (finally (org.httpkit.server/server-stop! srv))))))))))
 
 (deftest a-vanished-file-never-puts-a-path-in-a-response

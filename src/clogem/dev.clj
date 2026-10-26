@@ -281,12 +281,17 @@
           (search/previous-dirs root))))
 
 (def whole-read-limit
-  "Files smaller than this are read whole into the heap and sent as bytes
-  (P4-D.2 item 6): what is sent was read at once, so a rebuild swapping the
-  file mid-response cannot mix two versions. 1 MB covers every Pagefind
-  file, which are what change under a running dev. A larger file is a
-  plain `File` body, as 0.2.0 served every file (P4-D.4 item 1)."
-  (* 1024 1024))
+  "Files smaller than this are read whole into the heap and sent as bytes;
+  a file of this size or more is mapped (`map-all`). Both happen from one
+  open, BEFORE the response is returned: what is sent is what that open
+  saw, so a rebuild swapping the file mid-response cannot mix two
+  versions (P4-D.2 item 6), and one deleting it cannot turn the response
+  into http-kit's 500, whose body was the file's absolute path (P4
+  follow-ups item 1: a `File` body is opened by http-kit only after the
+  handler returns). 20 MB is http-kit's own threshold for a `File` body
+  (`org.httpkit.HttpUtils/readAll`), so the heap and the mappings are what
+  0.2.0's `File` bodies cost (DESIGN.md Known limitations)."
+  (* 20 1024 1024))
 
 (defn- read-all
   "Every byte of `f`, read through one open channel: a file gone by now
@@ -298,10 +303,20 @@
       (while (and (.hasRemaining buf) (pos? (.read ch buf))))
       (java.util.Arrays/copyOf (.array buf) (.position buf)))))
 
+(defn- map-all
+  "`f` mapped read-only through one open channel, closed at once: the
+  mapping outlives the channel, and a deletion, which removes the name and
+  not the file. A file gone by now throws an `IOException`, before any
+  response exists."
+  [f]
+  (with-open [ch (java.nio.channels.FileChannel/open
+                  (fs/path f) (into-array java.nio.file.StandardOpenOption [java.nio.file.StandardOpenOption/READ]))]
+    (.map ch java.nio.channels.FileChannel$MapMode/READ_ONLY 0 (.size ch))))
+
 (def max-file-bytes
-  "The largest file http-kit can send: it reads a `File` body whole, or
-  maps it, as one buffer, so a file of 2 GiB or more fails inside it with
-  a stack trace and a 500 (0.2.0 too). Such a file is refused cleanly
+  "The largest file http-kit can send: it sends a body as one buffer, which
+  holds at most 2 GiB - 1 bytes, so a file of 2 GiB or more cannot be
+  sent (0.2.0: a stack trace and a 500). Such a file is refused cleanly
   (`too-large`); GitHub Pages refuses a published site over 1 GB anyway."
   Integer/MAX_VALUE)
 
@@ -313,30 +328,51 @@
 
 (defn- file-response
   "Serve `f`: a file renamed or deleted since it was resolved is nil (the
-  caller tries elsewhere), never a 500 naming its path. Under
-  `whole-read-limit` the bytes are read whole; a larger file is a `File`
-  body, as 0.2.0 served it, which http-kit sends with its `Content-Length`
-  to HTTP/1.0 and HTTP/1.1 alike (P4-D.4 item 1); one of `max-file-bytes`
-  or more is `too-large`. A HEAD request gets the headers and no body:
-  the http-kit in babashka 1.13.219 sent a body to HEAD, which corrupts a
-  keep-alive connection. http-kit then says `Content-Length: 0`."
-  [req f inject-reload?]
+  caller tries elsewhere), never a 500 naming its path. The body is read
+  whole, or mapped, from one open before this returns (`whole-read-limit`),
+  and http-kit sends it with its `Content-Length` to HTTP/1.0 and HTTP/1.1
+  alike (P4-D.4 item 1); a file of `max-file-bytes` or more is
+  `too-large`. A HEAD request is answered as GET is: `head-response`
+  drops the body."
+  [f inject-reload?]
   (try
     (let [html?   (= "html" (u-ext f))
           n       (fs/size f)
           headers (cond-> {"Content-Type" (content-type f)}
                     inject-reload? (assoc "Cache-Control" "no-cache"))]
-      (cond
-        (> n max-file-bytes)            too-large
-        (= :head (:request-method req)) {:status 200 :headers headers :body nil}
-        :else
+      (if (> n max-file-bytes)
+        too-large
         {:status 200 :headers headers
          :body (cond
                  (and html? inject-reload?)
                  (str/replace (slurp (fs/file f)) "</body>" (str reload-script "</body>"))
                  (< n whole-read-limit) (read-all f)
-                 :else                  (fs/file f))}))
+                 :else                  (map-all f))}))
     (catch java.io.IOException _ nil)))
+
+(def http-kit-drops-head-bodies?
+  "Does the http-kit in this babashka leave the body out of a response to
+  HEAD itself? 2.9.0-beta4 does, in babashka 1.13.220 and later, and it
+  sends the body's `Content-Length`; the 2.8 in 1.13.219 sends the body,
+  which corrupts a keep-alive connection, and counts `Content-Length`
+  from the body it sends, so without one it can only say 0 (P4
+  follow-ups item 2)."
+  (let [[a b c] (map #(or (parse-long %) 0)
+                     (take 3 (str/split (str (System/getProperty "babashka.version")) #"[.-]")))]
+    (and (some? (System/getProperty "babashka.version"))
+         (not (neg? (compare [a b c] [1 13 220]))))))
+
+(defn- head-response
+  "`resp`, the answer to `req`, as HEAD gets it: with no body. Where http-kit
+  drops a HEAD's body itself (`http-kit-drops-head-bodies?`) the body is
+  left for it, so `Content-Length` is the length GET sends; elsewhere it is
+  dropped here, and `Content-Length` says 0. Every status alike: a 404 or a
+  500 sent its body to HEAD."
+  [req resp]
+  (if (and (= :head (:request-method req)) (map? resp) (not (::channel? (meta resp)))
+           (not http-kit-drops-head-bodies?))
+    (assoc resp :body nil)
+    resp))
 
 (defn- value [x] (if (fn? x) (x) x))
 
@@ -408,43 +444,46 @@
   `:check-host?` (a loopback bind), a request whose `Host` is not a
   loopback name, or one of `:host-names`, is a 403 (`local-host-header?`): a DNS-rebinding page
   cannot read the site, or the build errors, through a name of its own
-  (P4-D.2 item 17)."
+  (P4-D.2 item 17). A HEAD request is answered as GET is, with no body
+  (`head-response`), whatever the status."
   [root {:keys [inject-reload? base state check-host? host-names] :or {base "/"}}]
   (fn [{:keys [uri headers] :as req}]
-    (try
-      (let [uri  (str uri)
-            base (value base)
-            root (value root)
-            path (decode-path uri)]
-        (cond
-          (and check-host? (not (local-host-header? (get headers "host") (or host-names loopback-names))))
-          wrong-host
+    (head-response
+     req
+     (try
+       (let [uri  (str uri)
+             base (value base)
+             root (value root)
+             path (decode-path uri)]
+         (cond
+           (and check-host? (not (local-host-header? (get headers "host") (or host-names loopback-names))))
+           wrong-host
 
-          (and inject-reload? (= uri "/__reload"))
-          (sse-handler req state)
+           (and inject-reload? (= uri "/__reload"))
+           (vary-meta (sse-handler req state) assoc ::channel? true)
 
-          (nil? path)
-          {:status 400 :headers {"Content-Type" "text/plain; charset=utf-8"} :body "400 Bad Request\n"}
+           (nil? path)
+           {:status 400 :headers {"Content-Type" "text/plain; charset=utf-8"} :body "400 Bad Request\n"}
 
-          (and (not= "/" base) (or (= path "/") (= (str path "/") base)))
-          {:status 302 :headers {"Location" (.toASCIIString (java.net.URI. nil nil base nil))} :body ""}
+           (and (not= "/" base) (or (= path "/") (= (str path "/") base)))
+           {:status 302 :headers {"Location" (.toASCIIString (java.net.URI. nil nil base nil))} :body ""}
 
-          (and inject-reload? state (not (:ever-ok? @state)) (:error @state) (html-request? uri))
-          {:status 500
-           :headers {"Content-Type" "text/html; charset=utf-8" "Cache-Control" "no-cache"}
-           :body (error-page (:error @state))}
+           (and inject-reload? state (not (:ever-ok? @state)) (:error @state) (html-request? uri))
+           {:status 500
+            :headers {"Content-Type" "text/html; charset=utf-8" "Cache-Control" "no-cache"}
+            :body (error-page (:error @state))}
 
-          :else
-          (let [rel (strip-base base path)]
-            (or (when rel
-                  (or (when-let [f (resolve-path root rel)] (file-response req f inject-reload?))
-                      (when-let [f (pagefind-fallback root rel)] (file-response req f inject-reload?))
-                      ;; Task E2: a miss under the base gets the site's own
-                      ;; 404 page, as a static host serves it
-                      (when-let [f (resolve-path root "/404.html")]
-                        (some-> (file-response req f inject-reload?) (assoc :status 404)))))
-                (not-found base path)))))
-      (catch Throwable _ server-error))))
+           :else
+           (let [rel (strip-base base path)]
+             (or (when rel
+                   (or (when-let [f (resolve-path root rel)] (file-response f inject-reload?))
+                       (when-let [f (pagefind-fallback root rel)] (file-response f inject-reload?))
+                       ;; Task E2: a miss under the base gets the site's own
+                       ;; 404 page, as a static host serves it
+                       (when-let [f (resolve-path root "/404.html")]
+                         (some-> (file-response f inject-reload?) (assoc :status 404)))))
+                 (not-found base path)))))
+       (catch Throwable _ server-error)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Servers
