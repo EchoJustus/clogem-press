@@ -497,7 +497,10 @@
                (recur more stack
                       (if (some tags ["h1" "h2" "h3" "code" "pre"])
                         out
-                        (conj out [(some :lang (rseq stack)) medium (unescape text)]))))
+                        (let [t (unescape text)
+                              ;; the chips and the eyebrow are uppercased by the stylesheet
+                              t (if (in? #(some (:class %) ["chip" "eyebrow"])) (str t (str/upper-case t)) t)]
+                          (conj out [(some :lang (rseq stack)) medium t])))))
         (seq close) (recur more (pop stack) out)
         (void-tags tag) (recur more stack out)
         :else (let [a (attrs as)]
@@ -558,7 +561,13 @@
       (is (not (contains? (cps (get-in built [:glyphs "wenkai-latin-400"] "")) (cp "ŧ"))) "not there before")
       (is (contains? (lists "wenkai-sc-500") (cp "龘")))
       (is (not-any? #(contains? % (cp "Ѫ")) (vals lists)) "code")
-      (is (not-any? #(contains? % (cp "Ж")) (vals lists)) "a card's title, an <h3>"))))
+      (is (not-any? #(contains? % (cp "Ж")) (vals lists)) "a card's title, an <h3>")))
+  (testing "the chips and the eyebrow are shown in capitals (text-transform), so their lists hold the capitals too"
+    (is (re-find #"\.chip\{[^}]*text-transform:uppercase" style))
+    (let [pages (assoc-in words ["en" :sections 0 :blocks 0] [:cards {:chip "ŋ ã" :title "t" :text ["y"]}])
+          lists (update-vals (sp/glyph-lists (update pages "en" assoc :eyebrow "ħ") svg) cps)]
+      (doseq [c ["Ŋ" "Ã" "Ħ"]]
+        (is (contains? (lists "wenkai-latin-500") (.codePointAt ^String c 0)) c)))))
 
 (defn- faces
   "A style's @font-face rules, as maps of their descriptors."
@@ -603,7 +612,11 @@
   (testing "body text, the chips, the buttons, the switchers, the jump links and the footer inherit it"
     (doseq [sel [".chip" ".button" ".eyebrow" ".theme label" ".langs summary" ".jump a" "footer" "strong" ".lead" ".sub"]]
       (is (not (re-find #"font-family|font:" (str (rule sel)))) sel))
-    (is (str/includes? (rule ".langs a") "font-family:var(--text-font)") "a name in another script takes its own language's font"))
+    (is (str/includes? (rule ".langs a") "font-family:var(--text-font)") "a name in another script takes its own language's font")
+    ;; without it, on the zh-Hant page "Português (Brasil)" inherited the
+    ;; zh-Hant stack and its ê came from the system (seen in Chromium)
+    (is (re-find #"(?:^|\}|\n):lang\(en\),:lang\(pt-BR\),:lang\(es-ES\)\{--text-font:\"LXGW WenKai\",\"Segoe UI Variable Text\"" style)
+        "every language's text, wherever it sits, in its own font"))
   (testing "emphasis is Medium, which both fonts have; nothing asks for a weight without a face (no faux bold)"
     (doseq [sel ["strong" ".chip" ".button" ".eyebrow" ".theme label" ".langs summary" ".langs a" ".jump a"]]
       (is (str/includes? (str (rule sel)) "font-weight:500") sel))
@@ -686,6 +699,19 @@
       (is (str/includes? (str footer) "Eclipse Public License 2.0"))
       (is (str/includes? (str footer) (esc (get-in words [l :footer :note])))))))
 
+(deftest the-footer-credits-the-font
+  (doseq [l langs
+          :let [footer (second (re-find #"(?s)<footer>(.*)</footer>" (html l)))
+                [repo name] (if (= l "zh-Hant")
+                              ["https://github.com/lxgw/LxgwWenkaiTC" "霞鶩文楷 TC"]
+                              ["https://github.com/lxgw/LxgwWenKai" (if (= l "zh-Hans") "霞鹜文楷" "LXGW WenKai")])]]
+    (testing l
+      (is (str/includes? (str footer) (str "<a href=\"" repo "\">" name "</a>")) "the font's name, linking its repository")
+      (is (str/includes? (str footer) "SIL Open Font License 1.1"))))
+  (testing "the build refuses a credit that doesn't link the page's own font"
+    (is (some #(str/includes? % ":footer :font") (sp/check-page (update en :footer dissoc :font) "en")))
+    (is (some #(str/includes? % ":footer :font") (sp/check-page (words "zh-Hant") "zh-Hans")))))
+
 ;; ---------------------------------------------------------------------------
 ;; The languages, in step
 
@@ -725,7 +751,9 @@
           (is (seq @strings))
           (is (every? (complement str/blank?) @strings))))
       (testing "on the page: the same links and the same commands as English's"
-        (let [content (fn [h] (str/replace h (or (switcher h) "") ""))]
+        ;; the zh-Hant page credits its own edition of the font (SP.6)
+        (let [content (fn [h] (-> h (str/replace (or (switcher h) "") "")
+                                  (str/replace "https://github.com/lxgw/LxgwWenkaiTC" "https://github.com/lxgw/LxgwWenKai")))]
           (is (= (frequencies (hrefs-of (content (html "en")))) (frequencies (hrefs-of (content (html l))))))
           (is (= (re-seq #"(?s)<pre>.*?</pre>" (html "en")) (re-seq #"(?s)<pre>.*?</pre>" (html l))))))))
   (testing "the build refuses a translation that drifts"

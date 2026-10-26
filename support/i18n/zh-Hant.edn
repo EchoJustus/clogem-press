@@ -31,7 +31,10 @@
                :licence ["clogem-press 是自由軟體，採用 "
                          [:a "https://github.com/EchoJustus/clogem-press/blob/main/LICENSE" "Eclipse Public License 2.0"]
                          " 授權。"]
-               :note    "本頁不設定 Cookie，也不從其他網站載入任何內容。"}
+               :note    "本頁不設定 Cookie，也不從其他網站載入任何內容。"
+               :font    ["內文字型："
+                         [:a "https://github.com/lxgw/LxgwWenkaiTC" "霞鶩文楷 TC"]
+                         "（SIL Open Font License 1.1）。"]}
 
  :sections
  [{:id     "about"

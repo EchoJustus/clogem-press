@@ -148,6 +148,8 @@
                        args))
     [(str where ": unknown block " (pr-str tag) " (:p, :ul, :pre, :h3 or :cards)")]))
 
+(declare font-plan font-of)
+
 (defn check-page
   "A language's words' problems, in words."
   ([page] (check-page page "en"))
@@ -168,6 +170,10 @@
      [":theme needs :legend, and :system, :light and :dark as [label title]"])
    (when-not (and (text? (:hub footer)) (text? (:note footer))) [":footer needs :hub and :note"])
    (pieces-problems ":footer :licence" (:licence footer))
+   (pieces-problems ":footer :font" (:font footer))
+   (let [repo (get-in (font-plan) [:fonts (font-of (font-plan) tag) :repo])]
+     (when-not (some #(and (vector? %) (= [:a repo] (take 2 %))) (:font footer))
+       [(str ":footer :font must link " repo ", the font its page is set in")]))
    (when-not (seq sections) [":sections must list at least one section"])
    (when (and (seq sections) (not (apply distinct? (map :id sections))))
      [":sections must each have their own :id"])
@@ -376,10 +382,12 @@
   "[lang weight text] for each run of `node`'s text set in WenKai, as the
   stylesheet sets it: Medium (500) for <strong>, the chips, the buttons,
   the eyebrow, the theme switcher's labels, the language summary and its
-  links and the jump links; Regular (400) for the rest."
-  [node {:keys [lang medium? in] :as ctx}]
+  links and the jump links; Regular (400) for the rest. The chips and the
+  eyebrow are shown in capitals (text-transform), so their runs carry
+  their capitals too."
+  [node {:keys [lang medium? upper? in] :as ctx}]
   (cond
-    (string? node) [[lang (if medium? 500 400) node]]
+    (string? node) [[lang (if medium? 500 400) (if upper? (str node (str/upper-case node)) node)]]
     (vector? node) (let [[t & more] node
                          [tag cls]  (tag-classes t)
                          attrs      (when (map? (first more)) (first more))
@@ -389,6 +397,7 @@
                                       (cls "langs") (conj :langs)
                                       (cls "jump")  (conj :jump))
                          ctx'       {:lang    (or (:lang attrs) lang)
+                                     :upper?  (boolean (or upper? (some cls ["chip" "eyebrow"])))
                                      :in      in'
                                      :medium? (boolean (or medium? (= tag "strong") (some cls ["chip" "button" "eyebrow"])
                                                            (and (= tag "label") (in :theme))
@@ -516,7 +525,10 @@
        (str ":root:has(#theme-dark:checked){" dark-decls "}")
        ":root:has(#theme-light:checked){color-scheme:light}"
        (str ":root{" (font-stacks (family plan "en") nil) "}")
-       ;; on any element, so a switcher label in another script gets its fonts
+       ;; on any element, so a switcher label in another language gets its
+       ;; own fonts, not the page's (the Latin ones too: on the zh-Hant page
+       ;; "Português" would otherwise inherit WenKai TC's stack)
+       (str (str/join "," (for [t tags :when (not (cjk-fonts t))] (str ":lang(" t ")"))) "{" (font-stacks (family plan "en") nil) "}")
        (str/join (for [[lang cjk] cjk-fonts] (str ":lang(" lang "){" (font-stacks (family plan lang) cjk) "}")))
        "*,*::before{box-sizing:border-box}"
        "html{-webkit-text-size-adjust:100%;text-size-adjust:100%}"
@@ -734,7 +746,8 @@
              (map block blocks)])]
          [:footer
           [:p (link (:hub page) (:hub footer)) " · " (pieces (:licence footer))]
-          [:p (:note footer)]]]]))))
+          [:p (:note footer)]
+          [:p (pieces (:font footer))]]]]))))
 
 (defn page-html
   "A language's page, as one string; `pages` is {tag words}, for the

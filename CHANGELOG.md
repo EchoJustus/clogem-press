@@ -133,7 +133,7 @@ the 64 KB budget).
 
 - **Text is set in LXGW WenKai (霞鹜文楷)**, all of it but headings and
   code, in English, Chinese, Portuguese and Spanish; the zh-Hant page in
-  LXGW WenKai TC. Five pages, **176,581 bytes** in all, plus the fonts they use.
+  LXGW WenKai TC. Five pages, **178,647 bytes** in all, plus the fonts they use.
 
 ### Fixed (SP.5, support page)
 

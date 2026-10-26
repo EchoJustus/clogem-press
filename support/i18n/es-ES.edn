@@ -32,7 +32,10 @@
                :licence ["clogem-press es software libre, con la "
                          [:a "https://github.com/EchoJustus/clogem-press/blob/main/LICENSE" "Eclipse Public License 2.0"]
                          "."]
-               :note    "Esta página no instala cookies ni carga nada de otros sitios."}
+               :note    "Esta página no instala cookies ni carga nada de otros sitios."
+               :font    ["Texto compuesto en "
+                         [:a "https://github.com/lxgw/LxgwWenKai" "LXGW WenKai"]
+                         " (SIL Open Font License 1.1)."]}
 
  :sections
  [{:id     "about"
