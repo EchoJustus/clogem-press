@@ -25,8 +25,9 @@
 ;; :subsets    each subset the pages may use, by id (the file is
 ;;             fonts/<id>.woff2, its character list dist-support/glyphs/<id>.txt):
 ;;             the font and weight it is cut from, and its size cap in bytes,
-;;             set from measurement (README, "Support page"); fonts.sh fails
-;;             a subset over its cap.
+;;             set from measurement at v1.530 (README, "Support page": about
+;;             twice each subset's size then, more for the small ones);
+;;             fonts.sh fails a subset over its cap.
 {:fonts
  {:wenkai
   {:family  "LXGW WenKai"
@@ -59,15 +60,15 @@
   "wenkai-latin-400"    {:font :wenkai    :weight 400 :cap 40960}
   "wenkai-latin-500"    {:font :wenkai    :weight 500 :cap 40960}
   ;; the zh-Hans page's Chinese
-  "wenkai-sc-400"       {:font :wenkai    :weight 400 :cap 1048576}
-  "wenkai-sc-500"       {:font :wenkai    :weight 500 :cap 307200}
+  "wenkai-sc-400"       {:font :wenkai    :weight 400 :cap 163840}
+  "wenkai-sc-500"       {:font :wenkai    :weight 500 :cap 32768}
   ;; the other pages' Chinese in LXGW WenKai: the switcher's 简体中文
-  "wenkai-names-500"    {:font :wenkai    :weight 500 :cap 40960}
+  "wenkai-names-500"    {:font :wenkai    :weight 500 :cap 8192}
   ;; the zh-Hant page, Latin and Chinese, in LXGW WenKai TC
-  "wenkai-tc-400"       {:font :wenkai-tc :weight 400 :cap 1048576}
-  "wenkai-tc-500"       {:font :wenkai-tc :weight 500 :cap 307200}
+  "wenkai-tc-400"       {:font :wenkai-tc :weight 400 :cap 262144}
+  "wenkai-tc-500"       {:font :wenkai-tc :weight 500 :cap 98304}
   ;; the other pages' LXGW WenKai TC: the switcher's 繁體中文
-  "wenkai-tc-names-500" {:font :wenkai-tc :weight 500 :cap 40960}
+  "wenkai-tc-names-500" {:font :wenkai-tc :weight 500 :cap 8192}
   ;; the zh-Hant page's Chinese when :zh-Hant is :wenkai
-  "wenkai-hant-400"     {:font :wenkai    :weight 400 :cap 1048576}
-  "wenkai-hant-500"     {:font :wenkai    :weight 500 :cap 307200}}}
+  "wenkai-hant-400"     {:font :wenkai    :weight 400 :cap 262144}
+  "wenkai-hant-500"     {:font :wenkai    :weight 500 :cap 98304}}}
