@@ -530,6 +530,62 @@ clogem-press card and its README's table.
   of its 400 B budget, so a one-line edit no longer broke it. Its inline
   comment is gone; the two-line header stays, and the budget is unchanged.
 
+### Fixed (E1b.2)
+
+An adversarial probe checked `:head-extra`'s scan against parse5 7.1.2, an
+HTML parser to the spec, with scripting on and off.
+
+- **A long value no longer crashes the config check** (item 1). The text
+  pattern, `(?:[^<]|<(?!…))*`, recursed once per character, so a value of
+  ~8,000 characters without a `<` threw `StackOverflowError` out of
+  `check-html-modules!`. Every repetition in the scan is now possessive
+  (or a lazy `.*?`), which Java runs as a loop, and the whole value is read
+  by one regex: 1–2 MB of text, `<meta>` tags, comments, attributes, a
+  quoted value, a script, a style or a template body each take under
+  350 ms here, and 20,000 characters of text warn like any text
+  (`a-long-value-never-overflows-the-stack`).
+- **An `=` where an attribute name may start begins a name** (item 2), as
+  in HTML's attribute states, so `<meta ="><div>">`, `<meta name="x"
+  ="><div>">`, `<meta a="b"="><div>">`, `<meta a=b ="><div>">` and
+  `<meta/="><div>">` end at their first `>` and name `<div>`; they passed.
+  An end tag's attributes are read the same way, so
+  `<script></script x="><div>">` passes, as in a browser, and
+  `<script></script x="><meta>`, whose quote never closes, warns
+  (`an-equals-sign-where-a-name-may-start-begins-a-name`).
+- **A double-escaped script is left open** (item 3). In a script, `<!--`
+  escapes it and a later `<script` double-escapes it, and then a
+  `</script>` does not end it, so `<script><!-- x="<script>"; </script>`
+  swallowed the page and passed. The scan now follows the script's
+  escaped and double-escaped states, and that value warns as "an unclosed
+  <script> (after "<!--" and "<script", HTML does not end it at
+  "</script>")"; `<script><!--<script>--></script>` and
+  `<script><!-- document.write("<script></script>"); --></script>` pass,
+  the latter newly (`a-double-escaped-script-never-ends-at-its-end-tag`).
+- **A `<template>` is read as HTML** (item 4). It was raw text to its first
+  `</template>`, so `<template><template></template><meta x>` and
+  `<template><!--</template><!-- -->` passed though the outer template
+  never closes. Its content is now read as tags (whose quoted values, and
+  comments, may hold `</template>`) and comments; another `<template>`, an
+  element whose content is not HTML (`<script>`, `<style>`, `<title>`,
+  `<textarea>`, …) or a `<!…>`/`<?…>` in it warns
+  (`a-template-holds-html-but-not-a-template`). A `<noscript>` is still
+  read as a browser with scripting on reads it; README and
+  `config.example.edn` say that with scripting off body content in one
+  (an `<img>` pixel) ends `<head>` there, and that double-escaped scripts
+  warn.
+- **Text that does not show is named readably** (item 5): a value of only
+  U+000B was named `text ""`, since `str/trim` removed it; a control,
+  format or separator character other than a space is now written
+  `\uXXXX`, as in `text "\u000b"` or `text "﻿"`, and only HTML
+  whitespace is trimmed (`text-that-does-not-show-is-named-escaped`).
+- **The probe's cases are a regression set**
+  (`the-probe-cases-agree-with-a-browser`): its 76 cases and 61 more, each
+  with parse5's verdict, pass or warn as a browser has them, except 10
+  that a browser reads safely and the scan still rejects, erring toward
+  caution (an end tag such as `</meta>`, a `<!DOCTYPE>`, `<![CDATA[`, `<?`,
+  and a `<template>` holding a `<template>`, `<script>`, `<style>` or
+  `<!DOCTYPE>`). Each new test fails on E1b.1's scan.
+
 ### Needs native review (E1b)
 
 - `:window/close`: ms "Tutup", ta "மூடு".

@@ -235,7 +235,14 @@
                                       ;   :head-extra — clogem-press's own: <link>,
                                       ;     <meta>, <script>, <style>, <noscript> or
                                       ;     <template> only, added to every page's <head>;
-                                      ;     anything else warns and is dropped
+                                      ;     anything else warns and is dropped. It is
+                                      ;     read as a browser reads it: a <script> whose
+                                      ;     "<!--" then "<script" keep it open past its
+                                      ;     </script> warns; a <template> may not hold a
+                                      ;     <template>, <script>, <style>, <title>, …;
+                                      ;     a <noscript> is read with scripting on —
+                                      ;     with it off, body content in one (an <img>)
+                                      ;     ends <head> there
                                       ; e.g. {:page-b {:en "<p>Thanks!</p>" :zh-Hans ""}}
 
          ;; Phase 4 Task E1a: the blog identity (vdoing's blogger, social,

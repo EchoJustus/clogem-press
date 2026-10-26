@@ -3651,7 +3651,11 @@ their own findings. Item 19 onward are corrections.
     whitespace, comments, whole `<script>`, `<style>`, `<noscript>` and `<template>` blocks, and
     `<link>` and `<meta>` tags (a quoted value may hold a `>`), so a `<div>`, an `<img>`, an end tag,
     bare text, a comment, block or tag that never closes, a `<title>` or a `<base>` warns, naming the
-    first bad piece as written, and that value is dropped (E1b.1). Every problem is a warning that
+    first bad piece as written, and that value is dropped (E1b.1). The scan follows HTML's tokenizer
+    — the attribute states (an `=` where a name may start begins a name), end tags' attributes, a
+    script's escaped and double-escaped states — with possessive regexes only, so no length of value
+    overflows the stack; a `<template>` holding a `<template>`, a raw-text element or a `<!…>`/`<?…>`
+    warns, and a `<noscript>` is read with scripting on (E1b.2). Every problem is a warning that
     repairs the config (0.2.0's "no effect" warning is gone; so is `htmlModules`'s `:planned`
     status), and the accessors are
     `config/module-slots`, `html-module`, `show-mode`, `module-set?` and `windows?`. The renderer is

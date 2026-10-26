@@ -487,7 +487,18 @@ does — so keep them small. There are none on the 404 page.
 else (a `<div>`, an `<img>`, an end tag such as `</link>`, bare text, a
 `<script>` or comment left open, and also `<title>` or `<base>`, which
 would give a second title or retarget every `#fragment` link) warns and is
-dropped.
+dropped. The check reads the value as a browser's HTML parser does, so a
+tag ends where a browser ends it (a quoted value may hold a `>`, but in
+`<meta ="…">` the quote opens nothing, as `=` starts a value only after an
+attribute name), and a `<script>` in which `<!--` and then `<script`
+appear, which HTML does not end at its `</script>`, counts as left open.
+Two limits: a `<template>` may hold any HTML except another `<template>`,
+an element whose content is not HTML (`<script>`, `<style>`, `<title>`,
+`<textarea>`, …) or a `<!…>` or `<?…>`, which warn; and a `<noscript>` is
+read as a browser with scripting on reads it, as text. With scripting off
+its content is parsed as HTML, so a `<noscript>` holding body content (an
+`<img>` tracking pixel, say) ends `<head>` there, and the rest of the head
+lands in `<body>`.
 
 **The HTML in these slots is trusted and is injected exactly as written —
 never escaped.** It is the owner's own, like `:theme :footer
@@ -864,7 +875,7 @@ repository does that.
 ## Development
 
 ```bash
-bb test                                             # 879 tests / ~62,100 assertions
+bb test                                             # 885 tests / ~62,400 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 

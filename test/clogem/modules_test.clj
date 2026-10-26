@@ -159,6 +159,251 @@
   (head-rejects "<meta name=a></META>" "</META>")
   (head-rejects "</head><p>x</p>" "</head>"))
 
+;; E1b.2: the scan ends every tag and element where a browser does, at any
+;; length
+
+(def ^:private head-bad @#'config/head-bad)
+
+(defn- times [^String s k] (.repeat s (int k)))
+
+(deftest a-long-value-never-overflows-the-stack
+  ;; item 1: the text pattern, `(?:[^<]|<(?!…))*`, recursed once per
+  ;; character, so ~8,000 characters without a `<` threw StackOverflowError
+  ;; and took the config check down with it
+  (doseq [n [20000 1000000]]
+    (testing (str n " characters")
+      (is (= "text \"aaaaaaaaaaaaaaaaaaaa…\"" (head-bad (times "a" n))))
+      (is (= "text \"Lorem ipsum dolor si…\"" (head-bad (times "Lorem ipsum dolor sit amet. " (quot n 28)))))
+      (is (= "text \"< < < < < < < < < <…\"" (head-bad (times "< " (quot n 2)))))
+      (is (nil? (head-bad (times "<meta name=\"a\" content=\"b\">" (quot n 27)))))
+      (is (= "<div>" (head-bad (str (times "<meta name=a>" (quot n 13)) "<div>"))))
+      (is (nil? (head-bad (times "<!---->" (quot n 7)))))
+      (is (nil? (head-bad (str "<!--" (times "-" n) "-->"))))
+      (is (nil? (head-bad (str "<meta content=\"" (times ">" n) "\">"))))
+      (is (nil? (head-bad (str "<meta " (times "a=b " (quot n 4)) ">"))))
+      (is (= "an unclosed <meta>" (head-bad (str "<meta content=\"" (times "x" n)))))
+      (is (nil? (head-bad (str "<script></script " (times "a=\">\" " (quot n 6)) ">"))))
+      (is (nil? (head-bad (str "<script><!--" (times "a-<" (quot n 3)) "</script>"))))
+      (is (nil? (head-bad (str "<script><!--<script>" (times "x-<" (quot n 3)) "--></script>"))))
+      (is (nil? (head-bad (str "<style>" (times "a<" (quot n 2)) "</style>"))))
+      (is (nil? (head-bad (str "<template>" (times "<p a=\"</template>\">x</p>" (quot n 24)) "</template>"))))))
+  (testing "the config check warns, as for a short value"
+    (head-rejects (times "a" 20000) "text \"aaaaaaaaaaaaaaaaaaaa…\"")))
+
+(deftest an-equals-sign-where-a-name-may-start-begins-a-name
+  ;; item 2: `=` starts a value only straight after an attribute name;
+  ;; after the tag name, a value or a `/`, it is the first character of a
+  ;; new name, so the quote after it opens nothing and the `>` ends the tag
+  (doseq [v ["<meta =\"><div>\">" "<meta name=\"x\" =\"><div>\">" "<meta a=\"b\"=\"><div>\">"
+             "<meta a=b =\"><div>\">" "<meta/=\"><div>\">" "<meta a/=\"><div>\">"]]
+    (head-rejects v "<div>"))
+  (testing "after a name, with or without whitespace, `=` starts a value that may hold a `>`"
+    (doseq [v ["<meta a =\"><div>\">" "<meta a = \"x>y\">" "<meta a=\"b\"/c=\"><div>\">"
+               "<meta/a=\"><div>\">" "<meta =a>"]]
+      (is (nil? (head-bad v)) (pr-str v))))
+  (testing "an end tag's attributes are read the same way"
+    (is (nil? (head-bad "<script></script x=\"><div>\">")))
+    (is (= "an unclosed <script>" (head-bad "<script></script x=\"><meta>")))))
+
+(deftest a-double-escaped-script-never-ends-at-its-end-tag
+  ;; item 3: in a script, `<!--` then `<script` double-escapes it: a
+  ;; `</script>` then ends that inner script only, and the outer one goes
+  ;; on until a `-->`
+  (head-rejects "<script><!-- x=\"<script>\"; </script>"
+                (str "an unclosed <script> (after \"<!--\" and \"<script\", HTML does not end it at "
+                     "\"</script>\")"))
+  (is (= "an unclosed <script> (after \"<!--\" and \"<script\", HTML does not end it at \"</script>\")"
+         (head-bad "<script><!--<script></script>-->")))
+  (testing "a `-->` ends the escape, and escaped, a `</script>` still ends the script"
+    (doseq [v ["<script><!--<script>--></script>"
+               "<script><!-- document.write(\"<script></script>\"); --></script>"
+               "<script><!-- <script> </script> </script>" "<script><!-- <scripts> </script>"]]
+      (is (nil? (head-bad v)) (pr-str v)))
+    (is (= "<div>" (head-bad "<script><!--</script><div>")))))
+
+(deftest a-template-holds-html-but-not-a-template
+  ;; item 4: a <template> was read as raw text to its first `</template>`,
+  ;; but its content is HTML: a nested <template> takes that end tag, and a
+  ;; comment hides it
+  (head-rejects "<template><template></template><meta x>" "<template> inside a <template>")
+  (head-rejects "<template><!--</template><!-- -->" "an unclosed <template>")
+  (is (= "<SCRIPT> inside a <template>" (head-bad "<template><SCRIPT>\"</template>\"</SCRIPT></template>")))
+  (is (= "text \"<?x\" inside a <template>" (head-bad "<template><?x</template>-><meta>")))
+  (testing "its comments and quoted values may hold `</template>`"
+    (doseq [v ["<template><div>x</div></template>" "<template><!-- </template> --></template>"
+               "<template><div title=\"</template>\"></div></template>"
+               "<template><a </template>></template>"]]
+      (is (nil? (head-bad v)) (pr-str v)))))
+
+(deftest text-that-does-not-show-is-named-escaped
+  ;; item 5: `str/trim` removed a U+000B, naming it `text ""`
+  (doseq [[v bad] [["\u000b" "text \"\\u000b\""] ["\u00a0" "text \"\\u00a0\""]
+                   ["\ufeff<meta>" "text \"\\ufeff\""] ["<meta>a\u0000" "text \"a\\u0000\""]
+                   ["<meta>tab\tthen\nline" "text \"tab\\tthen\\nline\""]]]
+    (is (= bad (head-bad v)) (pr-str v)))
+  (head-rejects "\u000b" "text \"\\u000b\""))
+
+(def ^:private probe-cases
+  "The E1b.1 probe's cases, and E1b.2's, with what parse5 7.1.2 (an HTML
+  parser to the spec) made of each between a <title> and a <link> in a
+  <head>: whether that <link> stayed in the <head>, the <head> held head
+  content only and the <body> came out whole — with scripting on, then off."
+  [
+   ["<meta content=\"a > b\">" true true]
+   ["<meta content=\"a>b" false false]
+   ["<meta content='a>b" false false]
+   ["<meta content=\"x\"y\">" true true]
+   ["<meta a=>" true true]
+   ["<meta a= >" true true]
+   ["<meta a=" false false]
+   ["<meta a = \"x>y\">" true true]
+   ["<link href=/a/b.css rel=stylesheet>" true true]
+   ["<link href=/a/>" true true]
+   ["<meta data-x='\"'>" true true]
+   ["<meta data-x=\"'\">" true true]
+   ["<meta a\"b=\"c>d\">" true true]
+   ["<meta a\"b>c\">" false false]
+   ["<meta a\"b><div>\">" false false]
+   ["<meta =\"><div>\">" false false]
+   ["<meta name=\"x\" =\"><div>\">" false false]
+   ["<meta a=\"b\"=\"><div>\">" false false]
+   ["<meta a=b =\"><div>\">" false false]
+   ["<meta/=\"><div>\">" false false]
+   ["<meta a=b\"c>" true true]
+   ["<meta <div>>" false false]
+   ["<meta a=`x`>" true true]
+   ["<style>/*<script>*/ a{} </style>" true true]
+   ["<style><script></script></style>" true true]
+   ["<script>var s=\"</script>\";</script>" false false]
+   ["<script>var s=\"<\\/script>\";</script>" true true]
+   ["<script><!-- x=\"<script>\"; </script>" false false]
+   ["<script><!--<script></script>-->" false false]
+   ["<script><!--<script>--></script>" true true]
+   ["<script><!-- document.write(\"<script></script>\"); --></script>" true true]
+   ["<script></script x=\"><div>\">" true true]
+   ["<script></script/>" true true]
+   ["<script></script >" true true]
+   ["<script></scripty></script>" true true]
+   ["<script src=x />" false false]
+   ["<SCRIPT>a</SCRIPT>" true true]
+   ["<ScRiPt>a</sCrIpT>" true true]
+   ["<STYLE>a{}</style>" true true]
+   ["<LINK REL=stylesheet HREF=x>" true true]
+   ["<Meta Charset=utf-8>" true true]
+   ["<noscript><div>x</div></noscript>" true false]
+   ["<noscript><link rel=stylesheet href=x></noscript>" true true]
+   ["<template><div>x</div></template>" true true]
+   ["<template><template></template></template>" true true]
+   ["<template><template></template><meta x>" false false]
+   ["<template><!--</template><!-- -->" false false]
+   ["<template><script>\"</template>\"</script></template>" true true]
+   ["<!---->" true true]
+   ["<!-->" true true]
+   ["<!--->" true true]
+   ["<!-- a --!>" true true]
+   ["<!-- -- > <div> -->" true true]
+   ["<!-- unclosed" false false]
+   ["<![CDATA[x]]>" true true]
+   ["<!DOCTYPE html>" true true]
+   ["<?xml x?>" true true]
+   ["<meta-data>" false false]
+   ["<link rel=a></link>" true true]
+   ["<title>x</title>" false false]
+   ["<base href=/>" false false]
+   ["<noframes>x</noframes>" false false]
+   ["</br>" false false]
+   ["</meta>" true true]
+   ["hi" false false]
+   ["   " true true]
+   ["\t\n\f\r " true true]
+   ["\u00a0" false false]
+   ["\u000b" false false]
+   ["\ufeff<meta>" false false]
+   ["" true true]
+   ["<" false false]
+   ["<meta>&amp;" false false]
+   ["<meta>\u0000" false false]
+   ["<link rel=x><div>" false false]
+   ["<meta><!--a--><meta>text" false false]
+   ["<script></script x=\"><meta>" false false]
+   ["<style></style x=\"><div>\">" true true]
+   ["<script></script x=\">" false false]
+   ["<script><!-- <script> </script> --> </script>" true true]
+   ["<script><!-- <script> </script> </script>" true true]
+   ["<script><!--</script><div>" false false]
+   ["<script><!-- <scripts> </script>" true true]
+   ["<script><!-- <SCRIPT/> </script> --></script>" true true]
+   ["<script><!--> <script> </script>" true true]
+   ["<script><!---> <script> </script>" true true]
+   ["<script><!-- --> <script> </script>" true true]
+   ["<script><!-- --!> <script> </script>" false false]
+   ["<script><!-- <script --> </script>" true true]
+   ["<script><!-<script></script>" true true]
+   ["<script><!-- <script> --> <!-- <script> </script>" false false]
+   ["<script><!-- <script> ---> </script>" true true]
+   ["<script><!-- <script> -- > </script>" false false]
+   ["<script><!-- <script> </script --> </script>" true true]
+   ["<script><!-- <script> </scripty> </script>" false false]
+   ["<script><!-- <script> </script> <script> </script>" false false]
+   ["<script><!--<!-- <script> </script>" false false]
+   ["<script>a<!--b<script>c</script>d-->e</script>" true true]
+   ["<style><!-- <style> </style>" true true]
+   ["<template><!-- </template> --></template>" true true]
+   ["<template><div title=\"</template>\"></div></template>" true true]
+   ["<template><div title=\"</template><div>\"></template>" true true]
+   ["<template></template x=\"><div>\">" true true]
+   ["<template><style></style></template>" true true]
+   ["<template><?x</template>-><meta>" false false]
+   ["<template><a </template>></template>" true true]
+   ["<template><TEMPLATE></TEMPLATE></template>" true true]
+   ["<template><svg><![CDATA[</template><div>" false false]
+   ["<template><p>a<b>c</p></template>" true true]
+   ["<template><table><tr><td>x</table></template>" true true]
+   ["<template></div></template>" true true]
+   ["<template><body><html></template>" true true]
+   ["<template><a href=\"x>y\">z</a></template><meta>" true true]
+   ["<template><div</template>" false false]
+   ["<template><div x=\"</template>" false false]
+   ["<template></template" false false]
+   ["<template><!DOCTYPE html></template>" true true]
+   ["<meta a='b'c>" true true]
+   ["<meta a = = b>" true true]
+   ["<meta a= =\">\"<div>\">" false false]
+   ["<meta =a>" true true]
+   ["<meta a=b/>" true true]
+   ["<link rel=x/ >" true true]
+   ["<meta a=\"b\"/c=\"><div>\">" true true]
+   ["<meta/a=\"><div>\">" true true]
+   ["<meta a/=\"><div>\">" false false]
+   ["<meta a =\"><div>\">" true true]
+   ["<meta a\f=\"x>y\">" true true]
+   ["<meta a\u000b=\"x>y\">" true true]
+   ["<meta" false false]
+   ["<link" false false]
+   ["<meta a=\"b\"" false false]
+   ["<meta a=b" false false]
+   ["<meta / >" true true]
+   ["<meta a / = \"><div>\">" false false]
+   ["a\u000b" false false]
+   ["<meta>hello\u000bworld" false false]
+   ])
+
+(def ^:private rejected-though-safe
+  "Cases a browser reads safely that `head-bad` rejects, erring toward
+  caution: an end tag, a `<!…>` or `<?…>`, and a <template> holding a
+  <template>, a <script> or a <style>."
+  #{"</meta>" "<link rel=a></link>" "<![CDATA[x]]>" "<!DOCTYPE html>" "<?xml x?>"
+    "<template><template></template></template>" "<template><TEMPLATE></TEMPLATE></template>"
+    "<template><script>\"</template>\"</script></template>" "<template><style></style></template>"
+    "<template><!DOCTYPE html></template>"})
+
+(deftest the-probe-cases-agree-with-a-browser
+  ;; `head-bad` reads a <noscript> as a browser with scripting on does
+  ;; (README): `<noscript><div>x</div></noscript>` passes, though with
+  ;; scripting off its <div> would end the <head>
+  (doseq [[v on _off] probe-cases]
+    (is (= (and on (not (rejected-though-safe v))) (nil? (head-bad v))) (pr-str v))))
+
 (deftest vdoing-slot-names-warn-with-the-kebab-spelling
   (let [[_ ds] (load-site {:theme {:html-modules {:homeSidebarB "x"} :pageT "y"}})
         ms (mapv :message (diag/warnings ds))]

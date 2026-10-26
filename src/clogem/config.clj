@@ -1188,53 +1188,129 @@
   {:page-t :page-t-show-mode :page-b :page-b-show-mode})
 
 (def ^:private head-re
-  "What `head-bad` tries at each position. HTML's whitespace is
-  `[\\t\\n\\f\\r ]`; a tag name ends at whitespace, `/` or `>`. In a tag's
-  attributes a `>` ends the tag except inside a quoted value, and only a
-  quote that follows `=` (and any whitespace) opens one, as in HTML's
-  tokenizer."
+  "The regexes behind `head-bad`, after HTML's tokenizer (WHATWG HTML
+  §13.2.5). Whitespace is `[\\t\\n\\f\\r ]`; a tag name ends at whitespace,
+  `/` or `>`. Every repetition is possessive (`*+`, `++`) or a lazy `.*?`,
+  which Java runs as a loop, not by recursion, so no length of value can
+  overflow the stack (a greedy `(?:a|b)*` recursed once per character);
+  and each piece can match only one way, so the scan takes linear time."
   (let [ws    "[\\t\\n\\f\\r ]"
-        end   "(?=[\\t\\n\\f\\r />])"
-        attrs (str "(?:[^>=]|=" ws "*+(?:\"[^\"]*+\"|'[^']*+'|[^\\t\\n\\f\\r >\"'][^\\t\\n\\f\\r >]*+|(?=>)))*+>")
-        block "(script|style|noscript|template)"]
-    {:ws          (re-pattern (str ws "++"))
-     ;; `<!-->` and `<!--->` are empty comments; `--!>` closes one too
-     :comment     #"(?s)<!--(?:-?>|.*?--!?>)"
-     ;; a raw block ends at the first `</name` followed by whitespace, `/` or `>`
-     :block       (re-pattern (str "(?is)<" block end attrs ".*?</\\1(?:[\\t\\n\\f\\r /][^>]*+)?>"))
-     :tag         (re-pattern (str "(?i)<(?:link|meta)" end attrs))
-     :block-start (re-pattern (str "(?i)<" block end))
-     :tag-start   (re-pattern (str "(?i)<(link|meta)" end))
-     :any-tag     #"<(/?)([A-Za-z][^\t\n\f\r />]*)"
-     :text        #"(?s).(?:[^<]|<(?![A-Za-z!?/]))*"}))
+        sep   "[\\t\\n\\f\\r /]"
+        end   "(?=[\\t\\n\\f\\r />]|\\z)"
+        ;; A tag's attributes, up to and with the `>` that ends it, after
+        ;; the tokenizer's attribute states. Where a name may start (after
+        ;; the tag name, a value or a `/`), an `=` is a name's first
+        ;; character; only straight after a name (whitespace allowed) does
+        ;; `=` start a value. A quote opens a value only right after that
+        ;; `=`, and only a quoted value may hold a `>`.
+        name  "[^\\t\\n\\f\\r />][^\\t\\n\\f\\r />=]*+"
+        more  (str "(?:" ws "++|[^\\t\\n\\f\\r />=]++)*+")
+        value "(?:\"[^\"]*+\"|'[^']*+'|[^\\t\\n\\f\\r >\"'][^\\t\\n\\f\\r >]*+)"
+        attrs (str "(?:" sep "*+" name more "(?:/|=" ws "*+" value "))*+"
+                   sep "*+(?:" name more "(?:=" ws "*+)?)?>")
+        start (fn [t] (str "<" t end attrs))
+        ;; an end tag has attributes too: `</script x=">">` ends at its last `>`
+        close (fn [t] (str "</" t "(?=[\\t\\n\\f\\r />])" attrs))
+        ;; `<!-->` and `<!--->` are empty comments; `--!>` closes one too
+        comment "<!--(?:-?>|.*?--!?>)"
+        ;; RAWTEXT: the first `</style` or `</noscript` before whitespace,
+        ;; `/` or `>` ends it
+        raw   (fn [t] (str (start t) "(?:[^<]++|<(?!/" t "[\\t\\n\\f\\r />]))*+" (close t)))
+        ;; Script data: `<!--` escapes it until `-->`. Escaped, a `</script`
+        ;; still ends it, but a `<script` double-escapes it: a `</script>`
+        ;; then only undoes that, and a `-->` ends both
+        sc    "script[\\t\\n\\f\\r />]"
+        data  (str "(?:[^<]++|<(?!/" sc "|!--))*+")
+        esc   (str "(?:[^<-]++|-(?!->)|<(?!/?" sc "))*+")
+        dbl   (str "(?:[^<-]++|-(?!->)|<(?!/" sc "))*+")
+        body  (str data "(?:<!(?=--)" esc "(?:<" sc dbl "</" sc esc ")*+"
+                   "(?:-->" data "|<" sc dbl "-->" data "|(?=</" sc ")))*+")
+        ;; A <template> holds HTML: tags (whose quoted values may hold
+        ;; `</template>`) and comments. Another <template>, an element
+        ;; whose content is not HTML (a <script>, <style>, <title>, …) or
+        ;; a `<!…>` or `<?…>` stops the scan: a browser may not end the
+        ;; outer one where it seems to.
+        deny  (str "(?:template|script|style|title|textarea|xmp|iframe|noembed|noframes|noscript"
+                   "|plaintext)" end)
+        inner (str "(?:[^<]++|<(?![A-Za-z!?/])|" comment "|<(?!" deny ")[A-Za-z][^\\t\\n\\f\\r />]*+" attrs
+                   "|</(?!template[\\t\\n\\f\\r />])[A-Za-z][^\\t\\n\\f\\r />]*+" attrs ")*+")
+        piece (str ws "++|" comment "|" (start "script") body (close "script") "|" (raw "style") "|"
+                   (raw "noscript") "|" (start "template") inner (close "template") "|"
+                   "<(?:link|meta)" end attrs)]
+    {:pieces         (re-pattern (str "(?is)(?:" piece ")*+"))
+     :open           (re-pattern (str "(?i)<(script|style|noscript|template|link|meta)" end))
+     :script-start   (re-pattern (str "(?i)" (start "script")))
+     :script-body    (re-pattern (str "(?is)" body "(?=</" sc ")"))
+     :script-end     (re-pattern (str "(?i)</" sc))
+     :template-start (re-pattern (str "(?i)" (start "template")))
+     :template-body  (re-pattern (str "(?is)" inner))
+     :deny           (re-pattern (str "(?i)<(" deny ")"))
+     :declaration    #"<[!?]|</(?![A-Za-z])"
+     :any-tag        #"<(/?)([A-Za-z][^\t\n\f\r />]*+)"
+     :text           #"(?s).[^<]*+(?:<(?![A-Za-z!?/])[^<]*+)*+"}))
+
+(defn- quoted
+  "`s` in double quotes, as `pr-str` writes it, but with each character
+  that does not show — a control, format or separator character other than
+  a space, such as U+000B or U+FEFF — written as `\\uXXXX`."
+  [s]
+  (str \"
+       (str/replace s #"[\\\"\p{C}\p{Z}]"
+                    (fn [c]
+                      (case c
+                        " " " ", "\\" "\\\\", "\"" "\\\"", "\n" "\\n", "\t" "\\t", "\r" "\\r", "\f" "\\f"
+                        (apply str (map #(format "\\u%04x" (int %)) c)))))
+       \"))
 
 (defn- head-bad
   "The first thing in `s` that is not head content, named as written —
   `<div>`, `</link>`, `text \"hi\"`, `an unclosed <script>` — or nil. `s`
-  is read in order, one piece at a time: whitespace, a comment, a whole
-  `<script>`, `<style>`, `<noscript>` or `<template>` block (its end tag in
-  any case), or a `<link>` or `<meta>` tag. Anything else is bad: another
-  element (a `<title>` would be a second title, a `<base>` would retarget
-  every #fragment link; `<meta-data>` is not `<meta>`), an end tag, text,
-  and a comment, block or tag that never closes, which would swallow the
-  rest of `<head>`."
+  is read in order, one piece at a time, as HTML's tokenizer reads it:
+  whitespace, a comment, a whole `<script>`, `<style>`, `<noscript>` or
+  `<template>` element (its end tag in any case), or a `<link>` or `<meta>`
+  tag. Anything else is bad: another element (a `<title>` would be a
+  second title, a `<base>` would retarget every #fragment link;
+  `<meta-data>` is not `<meta>`), an end tag, text, and a comment, element
+  or tag that never closes, which would swallow the rest of `<head>`. A
+  `<template>` may hold any HTML but what `head-re` lists; a `<noscript>`
+  is read as a browser with scripting on reads it: as text."
   [s]
-  (let [n  (count s)
-        at (fn [k i] (let [m (re-matcher (head-re k) s)]
-                       (.region m (int i) (int n))
-                       (when (.lookingAt m) m)))]
-    (loop [i 0]
-      (when (< i n)
-        (let [ok   (some #(at % i) [:ws :comment :block :tag])
-              open (when-not ok (or (at :block-start i) (at :tag-start i)))
-              tag  (when-not (or ok open) (at :any-tag i))]
-          (cond
-            ok    (recur (.end ok))
-            open  (str "an unclosed <" (.group open 1) ">")
-            (.startsWith ^String s "<!--" (int i)) "an unclosed <!--"
-            tag   (str "<" (.group tag 1) (.group tag 2) ">")
-            :else (let [t (str/trim (.group (at :text i)))]
-                    (str "text " (pr-str (if (> (count t) 20) (str (subs t 0 20) "…") t))))))))))
+  (let [n    (count s)
+        at   (fn [k i] (let [m (re-matcher (head-re k) s)]
+                         (.region m (int i) (int n))
+                         (when (.lookingAt m) m)))
+        from (fn [^String p i] (.startsWith ^String s p (int i)))
+        text (fn [i]
+               (let [g    (.group ^java.util.regex.Matcher (at :text i))
+                     k    (min 20 (count g))
+                     t    (str/replace (subs g 0 k) #"[\t\n\f\r ]+$" "")
+                     more (re-find #"[^\t\n\f\r ]" (subs g k))]
+                 (str "text " (quoted (str t (when more "…"))))))
+        i    (.end ^java.util.regex.Matcher (at :pieces 0))]
+    (when (< i n)
+      (if-let [o (at :open i)]
+        (let [t  (.group o 1)
+              no (str "an unclosed <" t ">")]
+          (case (u/lower t)
+            "script"
+            (let [e (some-> (at :script-start i) .end)
+                  m (re-matcher (head-re :script-end) s)]
+              (if (and e (not (at :script-body e)) (.find m (int e)))
+                (str no " (after \"<!--\" and \"<script\", HTML does not end it at \"</script>\")")
+                no))
+            "template"
+            (let [j (some->> (at :template-start i) .end (at :template-body) .end)
+                  d (when j (at :deny j))]
+              (cond
+                (or (nil? j) (= j n))  no
+                d                      (str "<" (.group d 1) "> inside a <" t ">")
+                (from "<!--" j)        "an unclosed <!--"
+                (at :declaration j)    (str (text j) " inside a <" t ">")
+                :else                  no))
+            no))
+        (if-let [tag (at :any-tag i)]
+          (str "<" (.group tag 1) (.group tag 2) ">")
+          (if (from "<!--" i) "an unclosed <!--" (text i)))))))
 
 (defn- check-html-modules!
   "P4-E1b: `:theme :html-modules`. A slot is a string or a map of language
