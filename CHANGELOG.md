@@ -104,6 +104,19 @@ items, and what the E1a and E2 checks left; tests in
   parenthesis "§4;". Both moved to code comments
   (`no-task-s-help-names-an-internal-round`, over every task).
 
+### Changed (P4 follow-ups)
+
+- **`theme.css` drops E2's redundant `overflow-wrap: anywhere`** on a
+  list row's link (item 14): with `min-width: 0` the link shrinks, and the
+  body's `overflow-wrap: break-word` already breaks a long word. 11,970 →
+  11,965 B gzipped (44,918 → 44,893 B). Nothing renders differently: every
+  row link's line boxes and every page's scroll size were the same, with
+  the declaration and without, on the 214 demo pages with rows at 320, 360
+  and 1280 px and with parity's long words ("Configuration", 40 and 60
+  characters) on the zh-Hans home; full-page screenshots were identical
+  wherever two shots of the same page agreed; `layout`, `modes` (the page
+  styles), `parity` and `overflow` browser tests pass.
+
 ### Documentation (P4 follow-ups)
 
 - **Task D's entry on `:min-bb-version` said `bb.edn` "requires" babashka
@@ -117,6 +130,18 @@ items, and what the E1a and E2 checks left; tests in
   `dist/deploy/.git` file. The code refused both; nothing tested it, and
   a `clean` that checks only `dist/.git` passed every test
   (`clean-refuses-a-marked-directory-with-a-git-below-its-top`).
+- **Back to top at 360 px covers none of the links that now end the page**
+  (item 12, `layout.test.mjs` item 13). The re-pinned check probed only the
+  prev/next links' centres, which back to top covers neither with the
+  mobile placement rule (`@media (max-width: 50rem)`: 16 px from the right,
+  24 from the bottom) nor without it, so it passed with the rule removed.
+  Comparing boxes would not do either: with the rule in place the button
+  still covers the right end of Next's box (about 430 px², 380 without).
+  The check now also scrolls in 4 px steps from there to the page's end and
+  compares the button's rect with every rect of the update bar's and the
+  footer's links: none is covered with the rule, and without it the
+  footer's copyright link is (by 4 px here). The prev/next check keeps its
+  centres and says so.
 - **`parity_test`'s `the-home-s-more-follows-more-article`** (item 13): its
   first `testing` label still said the right bar's More "goes to the
   archives as before"; since the merge with E1a it checks that a simple
