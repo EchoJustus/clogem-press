@@ -146,6 +146,10 @@ items, and what the E1a and E2 checks left; tests in
   first `testing` label still said the right bar's More "goes to the
   archives as before"; since the merge with E1a it checks that a simple
   home's right bar has no update bar, and the label says so.
+- **`dev_round2_test`'s `a-replaced-watched-directory-is-registered-again`**,
+  once seen failing under load (item 15), passed `bb test --pattern
+  dev-round2` 10 times in 10, so it is left as it is; it already waits on
+  each condition (`wait-until`), not on a fixed sleep.
 
 **Support page** (DESIGN.md §7.5): clogem-press's page on the Clogem
 support site, https://echojustus.github.io/clogem-support/clogem-press/,
