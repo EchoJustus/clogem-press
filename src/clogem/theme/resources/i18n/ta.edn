@@ -105,4 +105,8 @@
  ;; Awaiting native review (CHANGELOG, Unreleased, "Needs native review (E1a)").
  :blogger/label               "ஆசிரியர் பற்றி"
  :social/label                "சமூக ஊடக இணைப்புகள்"
- :footer/powered-by           "{{name}} மூலம் இயக்கப்படுகிறது"}
+ :footer/powered-by           "{{name}} மூலம் இயக்கப்படுகிறது"
+
+ ;; Phase 4 Task E1b: the htmlModules windows' close button.
+ ;; Awaiting native review (CHANGELOG, Unreleased, "Needs native review (E1b)").
+ :window/close                "மூடு"}

@@ -382,7 +382,9 @@
       (is (not (re-find #"#[0-9a-fA-F]{3,8}\b" (str/replace css #"(?s)/\*.*?\*/" ""))) "no colour literal")
       (let [print-rules (filter #(= ["print"] (:media %)) (cp/parse css))
             hidden (set (mapcat :selectors (filter #(some (fn [[p v]] (and (= "display" p) (str/starts-with? v "none"))) (:decls %)) print-rules)))]
-        (is (= #{".clogem-blogger" ".clogem-social" ".clogem-body-bg"} hidden))))))
+        ;; P4-E1b (deliberate): every module and window prints nothing
+        (is (= #{".clogem-blogger" ".clogem-social" ".clogem-body-bg"
+                 ".clogem-module" ".clogem-window"} hidden))))))
 
 (deftest the-hero-colour-pairs
   (let [css (slurp theme-css)
@@ -537,7 +539,7 @@
             of (fn [sel] (into {} (for [r rules :when (and (= q (:media r)) (some #{sel} (:selectors r))) [p v] (:decls r)] [p v])))]
         (is (= "block" ((of "#clogem-drawer > .clogem-blogger[hidden]") "display")))
         (is (= "none" ((of ".clogem-blogger--paired") "display")))
-        (is (not-any? #(and (empty? (:media %)) (some (fn [s] (str/includes? s "[hidden]")) (:selectors %))) rules)
+        (is (not-any? #(and (empty? (:media %)) (some (fn [s] (re-find #"clogem-blogger[^ ]*\[hidden\]" s)) (:selectors %))) rules)
             "nowhere else is the hidden card given a display")))))
 
 (deftest no-card-without-a-blogger

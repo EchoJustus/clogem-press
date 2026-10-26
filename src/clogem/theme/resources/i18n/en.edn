@@ -99,4 +99,7 @@
  ;; the footer's credit, {{name}} being the generator's linked name.
  :blogger/label               "About the author"
  :social/label                "Social links"
- :footer/powered-by           "Powered by {{name}}"}
+ :footer/powered-by           "Powered by {{name}}"
+
+ ;; Phase 4 Task E1b: the htmlModules windows' close button.
+ :window/close                "Close"}

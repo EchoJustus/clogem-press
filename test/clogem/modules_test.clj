@@ -7,8 +7,11 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [clogem.cli :as cli]
             [clogem.config :as config]
-            [clogem.diag :as diag]))
+            [clogem.diag :as diag]
+            [clogem.fake-tools :as fake]
+            [clogem.search]))
 
 (defn- load-site
   "Load `edn` as a site.edn from an empty temp dir: [cfg diagnostics]."
@@ -148,3 +151,353 @@
     (is (false? (config/module-set? cfg :head-extra)))
     (is (true? (boolean (config/windows? cfg))))
     (is (false? (boolean (config/windows? (first (load-site {:theme {:html-modules {:page-t "x"}}}))))))))
+
+;; ---------------------------------------------------------------------------
+;; Temp sites
+
+(def ^:private one-lang {:langs {:locales {:zh-Hans nil :zh-Hant nil :ms nil :ta nil}}})
+
+(def ^:private a-toc-article
+  "---\ntitle: T\ndate: \"2026-02-01 00:00:00\"\npermalink: /pages/t00001/\n---\n\n# T\n\n## Alpha\n\nbody\n")
+
+(def ^:private a-post
+  "---\ntitle: P\ndate: \"2026-02-02 00:00:00\"\npermalink: /pages/p00001/\nsidebar: auto\n---\n\n# P\n\nbody\n")
+
+(def ^:private a-catalogue
+  (str "---\ntitle: C\narticle: false\nsidebar: false\npageComponent:\n  name: Catalogue\n"
+       "  data:\n    path: 01.Guide\ndate: \"2026-02-03 00:00:00\"\npermalink: /pages/c00001/\n---\n\nC\n"))
+
+(def ^:private a-custom-page
+  (str "---\ntitle: X\narticle: false\ndate: \"2026-02-04 00:00:00\"\npermalink: /pages/x00001/\n"
+       "---\n\n# X\n\nbody\n"))
+
+(def ^:private files
+  "A home, an article with a tree, a post without one, a catalogue, an
+  `article: false` page, and tags that give category, tag and archive pages."
+  {"index.md" "# Home\n"
+   "01.Guide/01.t.md" (str/replace a-toc-article "title: T\n" "title: T\ntags:\n  - x\n")
+   "01.Guide/02.x.md" a-custom-page
+   "00.Catalogue/01.c.md" a-catalogue
+   "_posts/p.md" a-post})
+
+(defn- build-temp
+  "Build a temp site from `edn` and `files`; {rel-path → html}, plus
+  `:clogem/dist` (every file) and `:clogem/warnings`."
+  [edn files]
+  (let [dir (fs/create-temp-dir {:prefix "clogem-e1b"})]
+    (try
+      (spit (fs/file dir "site.edn") (pr-str (merge {:site {:title "S"} :search {:provider :none}} edn)))
+      (doseq [[rel content] files]
+        (fs/create-dirs (fs/parent (fs/path dir "content" rel)))
+        (spit (fs/file dir "content" rel) content))
+      (let [err (java.io.StringWriter.)
+            [_ ds] (binding [*out* (java.io.StringWriter.) *err* err]
+                     (diag/collecting (cli/build {:site-dir (str dir) :no-write true})))
+            dist (fs/path dir "dist")]
+        (is (empty? (diag/errors ds)) (pr-str (diag/errors ds)))
+        (assoc (into {}
+                     (for [p (fs/glob dist "**.html")]
+                       [(str (fs/relativize dist p)) (slurp (fs/file p))]))
+               :clogem/dist (set (map #(str (fs/relativize dist %)) (fs/glob dist "**")))
+               :clogem/warnings (into (mapv :message (diag/warnings ds))
+                                      (map second (re-seq #"(?m)^warning: (.*)$" (str err))))))
+      (finally (fs/delete-tree dir)))))
+
+(defn- html-pages
+  "Only the pages of `build-temp`'s result."
+  [ps]
+  (into (sorted-map) (filter #(string? (key %))) ps))
+
+(def ^:private every-slot
+  "A marker per slot, so one build shows every placement."
+  (into {} (for [s config/module-slots]
+             [s (if (= :head-extra s)
+                  "<meta name=\"m-head-extra\" content=\"1\">"
+                  (str "<p>m-" (name s) "</p>"))])))
+
+;; ---------------------------------------------------------------------------
+;; Item 2: where each slot goes
+
+(defn- wrapper-re [slot]
+  (re-pattern (str "<div class=\"clogem-module clogem-module--" (name slot) "\"><p>m-" (name slot) "</p></div>")))
+
+(deftest the-home-sidebar-b-is-the-right-bars-last-box
+  (let [ps (build-temp (assoc one-lang :theme {:html-modules every-slot :per-page 1}) files)
+        home (ps "index.html")]
+    (is (re-find #"<section class=\"clogem-module clogem-module--home-sidebar-b\"><p>m-home-sidebar-b</p></section></aside>"
+                 home)
+        "a section, so the box rules apply, and the aside's last child")
+    (is (= 1 (count (re-seq #"clogem-module--home-sidebar-b" home))))
+    (testing "on /page/2/ too — it renders through `home`"
+      (is (str/includes? (ps "page/2/index.html")
+                         "<section class=\"clogem-module clogem-module--home-sidebar-b\"><p>m-home-sidebar-b</p></section></aside>")))
+    (testing "hideRightBar: true — no right bar, so no box"
+      (let [hidden (build-temp (assoc one-lang :theme {:html-modules every-slot})
+                               (assoc files "index.md" "---\nhideRightBar: true\n---\n\n# Home\n"))]
+        (is (not (str/includes? (hidden "index.html") "clogem-module--home-sidebar-b")))))
+    (testing "the home gets no page slot, and no other page gets the home's box"
+      (is (not (str/includes? home "clogem-module--page-t")))
+      (is (not (str/includes? home "clogem-module--page-b")))
+      (doseq [[rel page] (html-pages ps) :when (not (#{"index.html" "page/2/index.html"} rel))]
+        (is (not (str/includes? page "clogem-module--home-sidebar-b")) rel)))))
+
+(deftest the-sidebar-slots-sit-around-the-tree
+  (let [ps (build-temp (assoc one-lang :theme {:html-modules every-slot}) files)
+        article (ps "pages/t00001/index.html")]
+    (is (re-find #"<aside class=\"clogem-sidebar\" id=\"clogem-sidebar\"><div class=\"clogem-module clogem-module--sidebar-t\"><p>m-sidebar-t</p></div><nav"
+                 article)
+        "before the <nav>")
+    (is (re-find #"</nav><div class=\"clogem-module clogem-module--sidebar-b\"><p>m-sidebar-b</p></div></aside>" article)
+        "after it")
+    (testing "only where a tree renders: not on the post, the catalogue, the home or the index pages
+              (the `article: false` page under 01.Guide has a tree, so it has them)"
+      (is (str/includes? (ps "pages/x00001/index.html") "clogem-module--sidebar-t"))
+      (doseq [[rel page] (html-pages ps)
+              :when (not (#{"pages/t00001/index.html" "pages/x00001/index.html"} rel))]
+        (is (not (str/includes? page "clogem-module--sidebar-")) rel)))
+    (testing "no new class contains the clogem-sidebar substring a treeless page is checked for"
+      (is (not (str/includes? (ps "pages/p00001/index.html") "clogem-sidebar"))))))
+
+(deftest the-page-slots-sit-around-the-content
+  (let [ps (build-temp (assoc one-lang :theme {:html-modules every-slot}) files)]
+    (testing "an article: page-t after the variant bar and before .clogem-content, page-b after </article>"
+      (let [a (ps "pages/t00001/index.html")]
+        (is (re-find #"<div class=\"clogem-module clogem-module--page-t\"><p>m-page-t</p></div><div class=\"clogem-content\"" a))
+        (is (re-find #"</article><div class=\"clogem-module clogem-module--page-b\"><p>m-page-b</p></div>" a))))
+    (testing "a post without a tree has them too"
+      (let [p (ps "pages/p00001/index.html")]
+        (is (re-find (wrapper-re :page-t) p))
+        (is (re-find (wrapper-re :page-b) p))))
+    (testing "a catalogue: page-t after the grid, inside the article; page-b after it"
+      (let [c (ps "pages/c00001/index.html")]
+        (is (re-find #"</div><div class=\"clogem-module clogem-module--page-t\"><p>m-page-t</p></div></article>" c))
+        (is (re-find #"</article><div class=\"clogem-module clogem-module--page-b\"><p>m-page-b</p></div>" c))))
+    (testing "an `article: false` page has them (its show-mode is :all)"
+      (is (re-find (wrapper-re :page-t) (ps "pages/x00001/index.html"))))
+    (testing "never on the home, the index pages, the archives or 404.html"
+      (doseq [[rel page] (html-pages ps)
+              :when (not (re-find #"^pages/" rel))]
+        (is (not (str/includes? page "clogem-module--page-")) rel))
+      (is (some #(re-find #"^(categories|tags|archives)/" %) (keys (html-pages ps))))
+      (is (contains? (html-pages ps) "404.html")))))
+
+(deftest the-show-mode-matrix
+  (doseq [[mode article? catalogue? custom?] [[nil true true true]
+                                              [:all true true true] ["all" true true true]
+                                              [:article true false false] ["article" true false false]
+                                              [:custom false true true] ["custom" false true true]]]
+    (let [ps (build-temp (assoc one-lang :theme {:html-modules (cond-> {:page-t "<p>m-page-t</p>"
+                                                                        :page-b "<p>m-page-b</p>"}
+                                                                 mode (assoc :page-t-show-mode mode
+                                                                             :page-b-show-mode mode))})
+                         files)
+          shown? (fn [rel] (boolean (re-find (wrapper-re :page-t) (ps rel))))
+          shown-b? (fn [rel] (boolean (re-find (wrapper-re :page-b) (ps rel))))]
+      (testing (pr-str mode)
+        (is (= article? (shown? "pages/t00001/index.html")) "an article")
+        (is (= catalogue? (shown? "pages/c00001/index.html")) "a catalogue (article: false)")
+        (is (= custom? (shown? "pages/x00001/index.html")) "an `article: false` page")
+        (is (= article? (shown-b? "pages/t00001/index.html")) "page-b follows its own mode")))))
+
+(deftest languages-and-the-base
+  (let [ps (build-temp {:site {:title "S" :base "/my docs/"}
+                        :langs {:priority [:en :zh-Hans :zh-Hant] :locales {:ms nil :ta nil}}
+                        :search {:provider :none}
+                        :theme {:html-modules {:page-t {:en "<a href=\"{{base}}a/\">en</a>" :zh-Hans ""}}}}
+                       {"index.md" "# Home\n" "01.Guide/01.t.md" a-toc-article
+                        "01.Guide/01.t.zh-Hans.md" (str/replace a-toc-article "title: T" "title: T 简")
+                        "01.Guide/01.t.zh-Hant.md" (str/replace a-toc-article "title: T" "title: T 繁")})]
+    (testing "{{base}} becomes the encoded base"
+      (is (str/includes? (ps "pages/t00001/index.html") "<a href=\"/my%20docs/a/\">en</a>")))
+    (testing "\"\" suppresses it in its own language only"
+      (is (not (str/includes? (ps "zh-Hans/pages/t00001/index.html") "clogem-module"))))
+    (testing "a language the map does not name follows the chain (zh-Hant → en, never zh-Hans)"
+      (is (str/includes? (ps "zh-Hant/pages/t00001/index.html") "<a href=\"/my%20docs/a/\">en</a>")))))
+
+(deftest a-language-off-the-chain-gets-nothing
+  (let [ps (build-temp (assoc one-lang :langs {:priority [:en :zh-Hans] :locales {:zh-Hant nil :ms nil :ta nil}}
+                              :theme {:html-modules {:page-t {:zh-Hans "<p>m-page-t</p>"}}})
+                       {"index.md" "# Home\n" "01.Guide/01.t.md" a-toc-article
+                        "01.Guide/01.t.zh-Hans.md" (str/replace a-toc-article "title: T" "title: T 简")})]
+    (is (re-find (wrapper-re :page-t) (ps "zh-Hans/pages/t00001/index.html")))
+    (is (not (str/includes? (ps "pages/t00001/index.html") "clogem-module"))
+        "en is not on zh-Hans's map, and the chain does not reach it")))
+
+(deftest no-search-means-no-pagefind-attribute
+  (let [ps (build-temp (assoc one-lang :theme {:html-modules every-slot}) files)]
+    (is (some #(str/includes? (val %) "clogem-module") (html-pages ps)))
+    (doseq [[rel page] (html-pages ps)]
+      (is (not (str/includes? page "data-pagefind-")) rel))))
+
+(deftest identity-css-ships-with-any-slot-but-head-extra
+  (let [with-slot (build-temp (assoc one-lang :theme {:html-modules {:page-b "<p>x</p>"}}) files)
+        head-only (build-temp (assoc one-lang :theme {:html-modules {:head-extra "<meta name=a content=b>"}}) files)]
+    (is (contains? (:clogem/dist with-slot) "clogem/css/identity.css"))
+    (is (str/includes? (with-slot "index.html") "css/identity.css"))
+    (is (not (contains? (:clogem/dist head-only) "clogem/css/identity.css")))
+    (is (not (str/includes? (head-only "index.html") "identity.css")))))
+
+;; ---------------------------------------------------------------------------
+;; The demo, rendered with search on (`clogem.render/build!` writes the
+;; pages without running Pagefind)
+
+(defn- build-demo
+  "{:pages {rel → html} :files #{rel}} of the demo, built with `overrides`."
+  [overrides]
+  (let [out (fs/create-temp-dir {:prefix "clogem-e1b-demo"})]
+    (try
+      (let [cfg (first (diag/collecting
+                        (config/load-config "examples/demo-site" nil
+                                            (merge-with merge {:build {:out (str out)}
+                                                               :content {:write-front-matter false}}
+                                                        overrides))))
+            [model _] (diag/collecting (cli/analyse cfg))]
+        (diag/collecting ((requiring-resolve 'clogem.render/build!) cfg model))
+        {:pages (into (sorted-map)
+                      (for [p (fs/glob out "**.html")]
+                        [(str (fs/relativize out p)) (slurp (fs/file p))]))
+         :files (set (map #(str (fs/relativize out %)) (fs/glob out "**")))})
+      (finally (fs/delete-tree out)))))
+
+(deftest with-search-on-every-wrapper-is-ignored-by-pagefind
+  (let [{:keys [pages]} (build-demo {:theme {:html-modules every-slot}})]
+    (is (< 100 (count pages)))
+    (doseq [[rel html] pages
+            :let [wrappers (re-seq #"<(?:div|section) class=\"clogem-module[^\"]*\"[^>]*>" html)]
+            :when (seq wrappers)]
+      (doseq [w wrappers]
+        (is (str/includes? w "data-pagefind-ignore=\"all\"") (str rel ": " w))))
+    (is (some #(str/includes? (val %) "clogem-module--page-t") pages))
+    (testing ":head-extra is raw, with no wrapper and no attribute"
+      (is (str/includes? (pages "index.html") "<meta name=\"m-head-extra\" content=\"1\">")))))
+
+(deftest pagefind-indexes-no-module
+  (if-let [real (System/getenv "CLOGEM_PAGEFIND")]
+    (let [site (fs/create-temp-dir {:prefix "clogem-e1b-pf"})]
+      (try
+        (fs/copy-tree "examples/demo-site" site)
+        (spit (fs/file site "site.edn")
+              (pr-str (assoc-in (clojure.edn/read-string (slurp (fs/file site "site.edn")))
+                                [:theme :html-modules]
+                                {:page-t "<p>zygotic</p>" :page-b "<p>zygotic</p>"})))
+        (binding [diag/*sink* (atom [])
+                  clogem.search/*env* {"CLOGEM_PAGEFIND" real}]
+          (let [out (fs/path site "dist")
+                _ (with-out-str (cli/build {:site-dir (str site) :out (str out) :no-write true}))
+                frags (fake/read-fragments out)]
+            (is (< 20 (count frags)))
+            (doseq [{:keys [url content]} frags]
+              (is (not (str/includes? (str content) "zygotic")) (str url ": the module is not indexed")))
+            (is (some #(str/includes? (str (:content %)) "Pagefind") frags)
+                "the articles' own words still are")))
+        (finally (fs/delete-tree site))))
+    (do (is (nil? (System/getenv "GITHUB_ACTIONS")) "CI sets CLOGEM_PAGEFIND, so this always runs there")
+        (println "pagefind-indexes-no-module: skipped — CLOGEM_PAGEFIND is not set"))))
+
+;; ---------------------------------------------------------------------------
+;; Item 3: :head-extra
+
+(defn- head-of [html] (subs html 0 (str/index-of html "</head>")))
+
+(deftest head-extra-goes-after-pagefind-and-before-custom-css
+  (let [{:keys [pages]} (build-demo {:analytics {:provider :plausible :domain "clogem-demo.example"}
+                                     :theme {:html-modules
+                                             {:head-extra {:en (str "<meta name=\"x-e1b\" content=\"1\">"
+                                                                    "<link rel=\"stylesheet\" href=\"{{base}}extra.css\">")
+                                                           :zh-Hans ""}}}})
+        ;; the page's own language, not its path: the demo has a zh-Hans
+        ;; article at an unprefixed URL. Only zh-Hans sets ""; every other
+        ;; language follows the chain to :en, zh-Hant included (it never
+        ;; passes through zh-Hans)
+        en? (fn [html] (not= "zh-Hans" (second (re-find #"<html [^>]*lang=\"([^\"]+)\"" html))))]
+    (is (< 100 (count pages)))
+    (doseq [[rel html] pages
+            :when (str/includes? html "<header class=\"clogem-navbar\"")
+            :let [head (head-of html)
+                  sheets (map second (re-seq #"<link href=\"([^\"]+)\" rel=\"stylesheet\"" head))]]
+      (if (en? html)
+        (testing rel
+          (is (str/includes? head "<meta name=\"x-e1b\" content=\"1\">"))
+          (is (str/includes? head "<link rel=\"stylesheet\" href=\"/extra.css\">") "{{base}} is replaced")
+          (is (< (str/index-of head "pagefind-component-ui") (str/index-of head "x-e1b"))
+              "after Pagefind's tags")
+          (is (< (str/index-of head "x-e1b") (str/index-of head "overrides/custom.css"))
+              "before the site's own stylesheet"))
+        (testing (str rel ": \"\" suppresses it")
+          (is (not (str/includes? head "x-e1b")))
+          (is (not (str/includes? head "extra.css")))))
+      (is (str/includes? (last sheets) "overrides/custom.css") (str rel ": custom.css is still last"))
+      (is (str/ends-with? head "</script>") (str rel ": the analytics loader is still last in <head>"))
+      (is (re-find #"clogem/js/analytics\.js[^>]*></script>$" head) rel))
+    (testing "a redirect stub has neither"
+      (doseq [[rel html] pages
+              :when (not (str/includes? html "<header class=\"clogem-navbar\""))]
+        (is (not (str/includes? html "x-e1b")) rel)))
+    (testing "the 404 page has it"
+      (is (str/includes? (pages "404.html") "x-e1b")))))
+
+(deftest head-extra-with-body-content-warns-and-is-dropped
+  (let [ps (build-temp (assoc one-lang :theme {:html-modules {:head-extra "<meta name=a><div>x</div>"}}) files)]
+    (is (some #(str/includes? % ":theme :html-modules :head-extra has <div>") (:clogem/warnings ps))
+        (pr-str (:clogem/warnings ps)))
+    (doseq [[rel page] (html-pages ps)]
+      (is (not (str/includes? page "name=a")) rel))))
+
+;; ---------------------------------------------------------------------------
+;; Item 4: the windows
+
+(def ^:private close-re
+  #"<button aria-label=\"([^\"]+)\" class=\"clogem-window__close\" hidden=\"hidden\" title=\"\1\" type=\"button\"><svg[^>]*><use href=\"[^\"]*#x\"(?:/>|></use>)</svg></button>")
+
+(deftest the-windows-come-just-before-back-to-top
+  (let [ps (build-temp (assoc one-lang :theme {:html-modules every-slot}) files)]
+    (doseq [[rel page] (html-pages ps)
+            :when (str/includes? page "<header class=\"clogem-navbar\"")
+            :when (not= rel "404.html")]
+      (is (re-find #"<div class=\"clogem-window clogem-window--lb\">.*<div class=\"clogem-window clogem-window--rb\">.*<button aria-label=\"Back to top\"" page)
+          (str rel ": lb, rb, then back to top"))
+      (is (str/ends-with? page "#arrow-up\"></use></svg></button></body></html>")
+          (str rel ": back to top is still the last child of <body>"))
+      (is (= 2 (count (re-seq close-re page))) rel)
+      (is (str/includes? page "/clogem/js/window.js") rel))
+    (testing "no window and no script on the 404 page"
+      (is (not (str/includes? (ps "404.html") "clogem-window")))
+      (is (not (str/includes? (ps "404.html") "window.js"))))
+    (testing "the close button is named in the page's language"
+      (let [zh (build-temp (assoc one-lang :langs {:priority [:en :zh-Hans] :locales {:zh-Hant nil :ms nil :ta nil}}
+                                  :theme {:html-modules {:window-lb "<p>w</p>"}})
+                           {"index.md" "# Home\n" "index.zh-Hans.md" "# 首页\n"})]
+        (is (= "关闭" (second (re-find close-re (zh "zh-Hans/index.html")))))
+        (is (= "Close" (second (re-find close-re (zh "index.html")))))))))
+
+(deftest with-back-to-top-off-the-windows-end-the-body
+  (let [ps (build-temp (assoc one-lang :theme {:back-to-top false :html-modules {:window-rb "<p>w</p>"}}) files)]
+    (is (str/ends-with? (ps "index.html")
+                        "<div class=\"clogem-module clogem-module--window-rb\"><p>w</p></div></div></body></html>"))))
+
+(deftest window-js-ships-and-is-linked-only-where-a-window-renders
+  (let [per-lang (build-temp (assoc one-lang :langs {:priority [:en :zh-Hans] :locales {:zh-Hant nil :ms nil :ta nil}}
+                                    :theme {:html-modules {:window-lb {:en "<p>w</p>" :zh-Hans ""}}})
+                             {"index.md" "# Home\n" "index.zh-Hans.md" "# 首页\n"
+                              "01.Guide/01.t.md" a-toc-article})]
+    (is (contains? (:clogem/dist per-lang) "clogem/js/window.js"))
+    (doseq [[rel page] (html-pages per-lang)
+            :when (and (str/includes? page "<header class=\"clogem-navbar\"")
+                       ;; the 404 page never has a window (and so no script)
+                       (not= rel "404.html"))]
+      (is (= (not (str/starts-with? rel "zh-Hans/"))
+             (str/includes? page "js/window.js"))
+          (str rel ": linked only where a window renders")))
+    (testing "a module that is not a window ships none"
+      (let [no (build-temp (assoc one-lang :theme {:html-modules {:page-t "<p>x</p>"}}) files)]
+        (is (not (contains? (:clogem/dist no) "clogem/js/window.js")))
+        (is (not-any? #(str/includes? (val %) "window.js") (html-pages no)))))))
+
+(deftest the-window-js-budget
+  (let [f (fs/path "src" "clogem" "theme" "resources" "js" "window.js")
+        bs (fs/read-all-bytes f)
+        out (java.io.ByteArrayOutputStream.)
+        _ (with-open [g (java.util.zip.GZIPOutputStream. out)] (.write g bs))
+        gz (count (.toByteArray out))]
+    (is (<= gz 400) (str "window.js: " gz " bytes gzipped"))
+    (println (format "modules: js/window.js is %d bytes, %d gzipped (budget 400)" (count bs) gz))))

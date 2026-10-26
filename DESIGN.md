@@ -2084,8 +2084,8 @@ order; each builds on A:
 - **F — Analytics, verification, static root** (1 d) (§11.3 items 14, 15). *Done.*
 - **E1 — Blog identity, banner, htmlModules** (2.75 d) (§11.3 item 13), split by the owner in two
   PRs. **E1a — blog identity and the home banner** (1.75 d): *done* — §11.3 item 13 records what was
-  built. **E1b — htmlModules** (the 7 slots and 2 show-modes, the windows): *pending*, on its own
-  branch after E1a merges; `identity.css` and the home right bar leave room for it. *From B2b:* the
+  built. **E1b — htmlModules** (the 7 slots and 2 show-modes, the windows): *done* — §11.3 item 13
+  records what was built. *From B2b:* the
   `sidebar-t`/`sidebar-b` slots go inside `aside.clogem-sidebar`, around its `<nav>`, as vdoing's
   (`Sidebar.vue`), so `nav.js`'s move carries them into the drawer and a collapse hides them; their
   CSS must not depend on where the aside sits (no `.clogem-shell > .clogem-sidebar + …`, no
@@ -3643,7 +3643,32 @@ their own findings. Item 19 onward are corrections.
     fixed `<img>` before back to top, rotated by `js/bodybg.js` (600 B budget) only for two or more
     images and never under reduced motion. `theme.css` took only the always-on rules (+363 B
     gzipped); the opt-in ones are `css/identity.css` (2,048 B budget), shipped and linked only while
-    `config/identity-css?` holds. *E1b — htmlModules — pending.*
+    `config/identity-css?` holds. *E1b — done.* `config/check-html-modules!` reads
+    `:theme :html-modules`: a slot (vdoing's seven, plus clogem-press's own `:head-extra`, §5.3) is a
+    string or a map of language to string (`""` is quiet and suppresses it there), a show-mode is
+    `:all` (the default), `:article` or `:custom` — vdoing's `"article"`/`"custom"` and `"all"` are
+    accepted and stored as keywords — and `:head-extra` is head content only: comments and `<script>`,
+    `<style>`, `<noscript>` and `<template>` blocks are removed, and only `<link>`, `<meta>` and
+    whitespace may remain, so a `<div>`, an `<img>`, bare text, a `<title>` or a `<base>` warns and
+    that value is dropped. Every problem is a warning that repairs the config (0.2.0's "no effect"
+    warning is gone; so is `htmlModules`'s `:planned` status), and the accessors are
+    `config/module-slots`, `html-module`, `show-mode`, `module-set?` and `windows?`. The renderer is
+    `clogem.theme.modules`, which requires `clogem.theme.identity` (for `raw-html`) and never
+    `clogem.theme.layout`: `module` wraps a slot in `div.clogem-module.clogem-module--<slot>` (a
+    `section` for `home-sidebar-b`, so the box rules apply) with `data-pagefind-ignore="all"` while
+    search is on; `page-slot` applies the show-mode against the group's `:article?`, so a catalogue
+    counts as custom here (vdoing reads `article !== false` alone; its generated catalogues carry
+    `article: false`, as the demo's do, so the two agree there). Placement: `home-sidebar-b` last in
+    the home's right bar; `sidebar-t`/`sidebar-b` inside `aside.clogem-sidebar`, around its `<nav>`;
+    `page-t` before `.clogem-content` (a catalogue: after the grid, inside the article) and `page-b`
+    right after `</article>`; `:head-extra` raw in `<head>`, after Pagefind's tags and before
+    `custom.css`, on every `document` page, the 404 included. The windows are `div.clogem-window--lb`
+    and `--rb`, before back to top (which stays last in `<body>`) and never on the 404 page, each
+    with a close button that `js/window.js` (400 B budget, shipped only while `config/windows?`
+    holds) reveals and that hides its window for that page load only; `identity.css` places them
+    (`z-index: 5`, at most 200 px by `min(400px, calc(50vh - 2.5rem))`, `rb` at `right: 4.7rem` to
+    clear back to top, none at ≤ 60rem) and hides every module and window in print. E1b added 447 B
+    gzipped to `identity.css` and nothing to `theme.css`.
 14. **Analytics (F).** A self-hosted loader, with no inline script; never loaded in dev, only on the
     `:site :url` host; DNT/GPC respected by default; providers GA4, Plausible and Umami, default
     `:none`; GA4 gets an opt-in consent default; the docs cover CSP and the site owner's PDPA duty.
@@ -3785,7 +3810,7 @@ their own findings. Item 19 onward are corrections.
     known key within Damerau-Levenshtein 2 — and on a `:planned` key ("planned, not implemented in
     0.2.0"). `config/vdoing-keys` maps vdoing's camelCase spellings (`pageStyle` → `:theme
     :page-style`, `htmlModules`, `bodyBgImg`, `updateBar`, `categoryText`, …) to ours, and names the
-    removed ones. A non-empty `:theme :html-modules` and
+    removed ones. A non-empty `:theme :html-modules` (until E1b; item 13) and
     `:seo :indexnow :enabled true` warn "has no effect in 0.2.0" (an `:analytics :provider` other
     than `:none` did too, until F made it load; item 14). `:comments :mapping :permalink`
     stays silent. A pre-flight build with `:analytics {:provider :ga4 …}`, `:html-modules`,

@@ -14,6 +14,7 @@
             [clogem.i18n :as i18n]
             [clogem.model :as model]
             [clogem.theme.layout :as layout]
+            [clogem.theme.modules :as modules]
             [clogem.theme.parity :as parity]))
 
 (defn- rows
@@ -70,7 +71,12 @@
                  [[:section.clogem-catalogue__card
                    [:h3 (layout/category-label ctx (:title node))]
                    (rows ctx node)]])
-               (map #(card ctx %) dirs)))]
+               (map #(card ctx %) dirs)))
+        ;; P4-E1b: vdoing's pageT — a catalogue has no content div, so it
+        ;; goes after the grid, inside the article
+        (modules/page-slot ctx :page-t)]
+       ;; P4-E1b: vdoing's pageB, right after the article
+       (modules/page-slot ctx :page-b)
        ;; a catalogue page is a leaf of its directory's tree like any other,
        ;; so it has neighbours (D-P2-7: not skipped for being a non-article)
        (parity/page-edit ctx)                          ; Task E2

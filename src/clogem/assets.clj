@@ -105,6 +105,8 @@
     ;; background's rotation, for two or more images
     "css/identity.css" (not (config/identity-css? cfg))
     "js/bodybg.js"     (< (count (config/body-bg-images cfg)) 2)
+    ;; P4-E1b: the windows' close button, only on a site with a window
+    "js/window.js"     (not (config/windows? cfg))
     false))
 
 (def custom-css

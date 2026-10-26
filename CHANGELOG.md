@@ -11,7 +11,8 @@ B2, §11.3 item 1), then Task F — analytics, verification and a static root
 (§11.3 items 14, 15), then Task B2b — the navbar, the mobile drawer and the
 page chrome (the second half of B2, §11.3 item 9, D-P4-9), then Task E2 —
 article-page parity (§11.3 item 16, D-P4-13), then Task E1a — the blog
-identity and the home banner (the first half of §11.3 item 13, D-P4-13).
+identity and the home banner (the first half of §11.3 item 13, D-P4-13),
+then Task E1b — htmlModules (the second half of §11.3 item 13, D-P4-13).
 The version stays 0.2.0. Every article page now ends with an update bar
 by default, as in vdoing (`:theme :update-bar {:show-to-article false}`
 drops it), an article's `titleTag` badge now shows in every list row, and
@@ -25,6 +26,9 @@ buttons and a back-to-top button now appear by default, as in vdoing.
 Likewise for E1a's keys (`:theme :blogger`, `:social`, `:footer`,
 `:banner-bg`, `:body-bg-img*`, `:title-badge*`): a site that set one now
 gets it, and title badges appear by default, as in vdoing.
+A site that set `:theme :html-modules` now gets its HTML injected, in the
+seven vdoing slots and in clogem-press's own `:head-extra`; it used to warn
+that the key had "no effect".
 
 **Support page** (DESIGN.md §7.5): clogem-press's page on the Clogem
 support site, https://echojustus.github.io/clogem-support/clogem-press/,
@@ -350,6 +354,140 @@ after publication, and whenever `en.edn` changes:
 
 Once it is live, the hub's own session links it from the front page's
 clogem-press card and its README's table.
+
+**Task E1b — htmlModules** (§11.3 item 13, second half; D-P4-13):
+
+### Added (E1b)
+
+- **Config** (`clogem.config/check-html-modules!`): `:theme :html-modules`
+  is read. A slot — vdoing's `:home-sidebar-b`, `:sidebar-t`, `:sidebar-b`,
+  `:page-t`, `:page-b`, `:window-lb` and `:window-rb`, plus clogem-press's
+  own `:head-extra` (DESIGN.md §5.3) — is a string of HTML, or a map of
+  language keyword to string; `""` is valid and quiet, and suppresses the
+  slot in that language. A show-mode (`:page-t-show-mode`,
+  `:page-b-show-mode`) is `:all` (the default), `:article` or `:custom`,
+  written as a keyword or as a string (vdoing's `"article"` and `"custom"`,
+  or `"all"`), and is stored as a keyword. `:head-extra` must be head
+  content: comments and `<script>`, `<style>`, `<noscript>` and
+  `<template>` blocks are set aside, and only `<link>`, `<meta>` and
+  whitespace may remain — a `<div>`, an `<img>`, bare text, and also a
+  `<title>` or a `<base>` (a second title; every `#fragment` link
+  retargeted) warns, naming the first bad tag, and that value is dropped.
+  Every other problem is a warning too, and the check repairs the config —
+  it removes a bad slot, uses `:all` for a bad show-mode, and removes
+  `:html-modules` entirely when it is not a map — so the renderers read
+  valid values only. The 10 keys are known keys (a slot's per-language map
+  is user data and is not walked), and vdoing's `homeSidebarB`, `sidebarT`,
+  `sidebarB`, `pageT`, `pageB`, `pageTshowMode`, `pageBshowMode`,
+  `windowLB` and `windowRB` warn with the kebab spelling, at any path.
+  New accessors: `module-slots`, `html-module`, `show-mode`, `module-set?`
+  and `windows?`.
+- **The slots** (`clogem.theme.modules`, a new namespace that requires
+  `clogem.theme.identity` for `raw-html` and never `clogem.theme.layout`).
+  Each is wrapped in `<div class="clogem-module clogem-module--<slot>">` —
+  a `<section>` for `home-sidebar-b`, so the home's box rules apply — which
+  carries `data-pagefind-ignore="all"` while search is on, so a module
+  never lands in a search result. Where each goes: `home-sidebar-b` is the
+  last box of the home's right bar (so none under `hideRightBar: true`);
+  `sidebar-t` and `sidebar-b` sit inside `aside.clogem-sidebar`, around its
+  `<nav>`, which carries them into the mobile drawer and lets a collapse
+  hide them, and render only where a tree does; `page-t` is above
+  `.clogem-content` on an article and after the card grid, inside the
+  article, on a catalogue; `page-b` is right after `</article>`, above the
+  edit link. The page slots never render on the home, an index or
+  pagination page, the archives or the 404 page. Per-language values follow
+  the fallback chain by `contains?` (so zh-Hant does not pass through
+  zh-Hans), and `{{base}}` becomes the encoded base.
+- **The show-modes**: `:all` shows on every article and catalogue page,
+  `:article` only where the page is an article, `:custom` only on the
+  others. clogem-press reads its own `:article?`, so a catalogue page
+  counts as custom; vdoing reads `article !== false` alone, and its
+  generated catalogues carry `article: false`, as the demo's do, so the two
+  agree on those. README says so.
+- **`:head-extra`**: the page language's HTML, as written — unwrapped, with
+  no Pagefind attribute — in every `document` page's `<head>`, after
+  Pagefind's tags and before `overrides/custom.css`, which stays the last
+  stylesheet (the analytics loader stays the last child of `<head>`). It is
+  on the 404 page too, and never on a redirect stub.
+- **The windows** (vdoing's `windowLB` and `windowRB`):
+  `div.clogem-window--lb` and `--rb`, rendered just before back to top,
+  which stays the last child of `<body>`; none on the 404 page. Each holds
+  a close button (the `x` icon, `:window/close`) that is `hidden` until
+  `js/window.js` reveals it; a click hides that window for that page load
+  only, and moves focus to `<body>` if the button had it. The script is
+  deferred, same-origin, 397 B gzipped (budget 400), linked only on a page
+  that renders a window and shipped only while `config/windows?` holds.
+- **CSS** (`css/identity.css`, +447 B gzipped; `theme.css` unchanged): a
+  wrapper is `min-width: 0; max-width: 100%; overflow-x: auto` with
+  0.25rem of padding, which keeps a focus ring out of the clip; the sidebar
+  slots are 0.85rem with a 1rem gap to the tree, by their own class, so
+  nothing depends on where the aside sits; the page slots have a 1rem block
+  margin. A window is `position: fixed; bottom: 0; z-index: 5`, at most
+  200 px wide, its module at most `min(400px, calc(50vh - 2.5rem))` tall
+  and scrolling; `lb` is at `left: 0` and `rb` at `right: 4.7rem`, which
+  clears back to top; there are none at 60rem and below. Print hides every
+  module and every window. `identity.css` is now linked and shipped for any
+  slot other than `:head-extra` as well.
+- **Strings**: `:window/close` in all five languages.
+
+### Changed (E1b)
+
+- `:theme :html-modules` no longer warns ":theme :html-modules has no
+  effect in 0.2.0; nothing is injected.", and `htmlModules` is no longer
+  one of the `:planned` vdoing spellings: **a site that set any slot now
+  gets that HTML injected.** A value that is not a map (0.2.0 accepted
+  `false`, `:none`, `true` and `0`) now warns with the shape it must have
+  instead, and `nil` and `{}` stay quiet, as before.
+- `config.example.edn` documents every slot, both show-modes, the
+  per-language maps and `""`, `{{base}}`, the trust ("injected as written")
+  and the head-only rule.
+
+### Tests (E1b)
+
+- New `test/clogem/modules_test.clj` (25 tests): one per config rule, the
+  8 slots and both show-mode spellings quiet, the vdoing spellings and the
+  unknown-key warnings, the accessors; the placement of every slot on the
+  home (with and without `hideRightBar`, and `/page/2/`), an article with a
+  tree, a post without one, a catalogue, an `article: false` page, the
+  index, category, tag and archive pages and `404.html`; the 3 × 3
+  show-mode matrix in both spellings; `""`, the fallback chain and
+  `{{base}}` under `:site :base "/my docs/"`; `data-pagefind-ignore="all"`
+  on every wrapper with search on and no `data-pagefind-` at all without
+  it; `:head-extra`'s place between Pagefind and `custom.css`, in the
+  page's own language, on the 404 page and on no redirect stub; the windows
+  before back to top (and ending `<body>` under `:back-to-top false`), none
+  on the 404 page, `window.js` linked per language and shipped only with a
+  window, and its 400 B budget printed. With `CLOGEM_PAGEFIND`: a word only
+  a module carries is in no fragment, while the article's own words are.
+- New `test/browser/modules.test.mjs` (76 checks): a temp demo copy with
+  every slot set, built `--no-search --no-highlight` and served through
+  `page.route`. No page overflow at 320 and 360 px with a 480 px element in
+  `page-t`, `sidebar-t` and `home-sidebar-b`, each wrapper scrolling
+  instead; the open drawer drawing `sidebar-t` before the tree; a
+  keyboard-focused link at a wrapper's edge keeping its whole ring inside
+  it; both windows clearing back to top and the page buttons at 1280×800,
+  1344×740, 1440×740 and 1600×740; no client rects at 960 px and rects at
+  961; Enter on a close button reached by Tab hiding that window, keeping
+  the other and leaving focus on `<body>`; no close button and both windows
+  without JS; print drawing neither a module nor a window.
+- Deliberate pin changes. `config_test`: `the-pre-flight-keys-all-warn`
+  loses the `:html-modules` "no effect" message and counts 3 warnings, not
+  4; `vdoing-spellings-name-the-clogem-key` has `htmlModules` no longer
+  planned (still 8 warnings); `a-scalar-html-modules-warns-and-never-
+  crashes` expects the new not-a-map message. `identity_test`:
+  `identity-css-only-when-something-needs-it` gains a module case (true)
+  and a `:head-extra`-only case (false); the print block of `identity.css`
+  now hides `.clogem-module` and `.clogem-window` as well; and
+  `the-drawer-card`'s "nowhere else is the hidden card given a display" now
+  looks at the blogger card's own `[hidden]` selectors, since
+  `.clogem-window__close[hidden]` is a second one. The example config, the
+  demo's `site.edn` and `{:html-modules {}}` stay quiet, and the pins on
+  `clogem-sidebar`, back to top, the analytics loader and `custom.css`
+  being last are unchanged.
+
+### Needs native review (E1b)
+
+- `:window/close`: ms "Tutup", ta "மூடு".
 
 **Task E1a — blog identity and banner** (§11.3 item 13, first half; D-P4-13):
 

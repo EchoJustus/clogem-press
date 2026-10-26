@@ -54,7 +54,32 @@
     width: fit-content; margin-inline: auto; padding: 0.25rem 0.75rem; border-radius: 5px; }
 }
 
+/* P4-E1b: an htmlModules wrapper. The clip keeps a wide module inside its
+ * column; the padding keeps a focus ring (2px at 2px) out of the clip. A
+ * home box's own padding wins over it. The sidebar slots go by their own
+ * class: the aside already pads 1rem */
+.clogem-module { min-width: 0; max-width: 100%; overflow-x: auto; padding: 0.25rem; }
+.clogem-module--sidebar-t { font-size: 0.85rem; margin-bottom: 1rem; }
+.clogem-module--sidebar-b { font-size: 0.85rem; margin-top: 1rem; }
+.clogem-module--page-t, .clogem-module--page-b { margin-block: 1rem; }
+
+/* vdoing's windowLB and windowRB, fixed at the bottom of the viewport;
+ * `rb` clears back to top (2rem + 2.2rem + 0.5rem). A narrow window would
+ * cover the text, so there are none at 60rem and below */
+.clogem-window { position: fixed; bottom: 0; z-index: 5; max-width: 200px; }
+.clogem-window--lb { left: 0; }
+.clogem-window--rb { right: 4.7rem; }
+.clogem-window > .clogem-module { max-height: min(400px, calc(50vh - 2.5rem)); overflow: auto; }
+.clogem-window__close { position: absolute; top: 0; right: 0; width: 1.5rem; height: 1.5rem;
+  padding: 0; border: 0; border-radius: 50%; color: var(--textColor); background: var(--mainBg);
+  cursor: pointer; }
+.clogem-window__close[hidden] { display: none; }
+@media (max-width: 60rem) {
+  .clogem-window { display: none; }
+}
+
 /* print hides all of it; the footer's text lines still print */
 @media print {
-  .clogem-blogger, .clogem-social, .clogem-body-bg { display: none !important; }
+  .clogem-blogger, .clogem-social, .clogem-body-bg,
+  .clogem-module, .clogem-window { display: none !important; }
 }

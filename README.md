@@ -446,6 +446,54 @@ are text — a string or a per-language map — and are escaped.
 The opt-in parts — the card, the links and the background image — are in
 `css/identity.css`, which ships and is linked only while a site uses them.
 
+**htmlModules.** `:theme :html-modules` (vdoing's `htmlModules`) injects the
+owner's own HTML in seven places, plus clogem-press's own `:head-extra`:
+
+| Key | Where it goes |
+|---|---|
+| `:home-sidebar-b` | the last box of the home's right bar (none under `hideRightBar: true`) |
+| `:sidebar-t`, `:sidebar-b` | above and below the sidebar tree, where one renders (so not on a post, a catalogue or the home) |
+| `:page-t` | above an article's content; on a catalogue, after the card grid |
+| `:page-b` | right under the article, above the edit link |
+| `:window-lb`, `:window-rb` | fixed at the bottom left and right of the window |
+| `:head-extra` | every page's `<head>` |
+
+`:page-t-show-mode` and `:page-b-show-mode` (vdoing's `pageTshowMode` and
+`pageBshowMode`) choose where that slot shows: `:all` (the default),
+`:article` (pages whose front matter does not say `article: false`) or
+`:custom` (the others — catalogues, and any `article: false` page).
+vdoing's `"article"` and `"custom"` work too. One difference from vdoing: a
+catalogue page (`pageComponent:`) counts as **custom** here, where vdoing
+reads `article !== false` alone and counts a catalogue without
+`article: false` as an article; vdoing's own generated catalogues carry
+`article: false`, as the demo's do, so the two agree on those.
+
+Each value is a string, or a map by language resolved along the fallback
+chain — `""` suppresses the slot in that language, and a language the map
+does not reach gets nothing. `{{base}}` becomes the site's base, encoded
+and ending in `/`; any other `{{…}}` is left alone. Every slot but
+`:head-extra` is wrapped in a `div` (a `section` for `:home-sidebar-b`) that
+clips sideways rather than widening the page, and that Pagefind ignores, so
+a module never lands in a search result.
+
+The two windows are at most 200 px wide and `min(400px, 50vh - 2.5rem)`
+tall, and show from 60rem (960 px) up. With JavaScript each carries a close
+button that hides it for that page load; without it there is no button and
+the window stays. **A window covers whatever is under it** — as vdoing's
+does — so keep them small. There are none on the 404 page.
+
+`:head-extra` takes head content only: `<link>`, `<meta>`, `<script>`,
+`<style>`, `<noscript>`, `<template>` and comments. Anything else (a
+`<div>`, an `<img>`, bare text, and also `<title>` or `<base>`, which would
+give a second title or retarget every `#fragment` link) warns and is
+dropped.
+
+**The HTML in these slots is trusted and is injected exactly as written —
+never escaped.** It is the owner's own, like `:theme :footer
+:copyright-info`; treat it as code, not content, and never paste in HTML
+you have not read. What the owner's modules load is the owner's choice: the
+generator itself ships no third-party asset.
+
 **Edit link.** `:content :edit-link` (vdoing's `editLinks`, `docsRepo`,
 `docsBranch` and `docsDir`) puts *Edit this page* (`:page/edit`, with a
 pencil) under every article and catalogue page — never under a home or an
@@ -627,7 +675,12 @@ Pagefind needs `worker-src 'self'` and `'wasm-unsafe-eval'` (DESIGN.md §6.8,
 `js/code.js` and `js/nav.js` (the drawer) are same-origin files. A policy without the hash still gets the
 reader's mode: `js/mode.js` (same-origin) applies it, one frame late.
 The blog identity adds no inline script: `js/bodybg.js`, which rotates
-several background images, is same-origin. A `bannerBg: "background: …"`
+several background images, is same-origin, and so is `js/window.js`, which
+reveals the htmlModules windows' close buttons. The theme adds none for
+`:theme :html-modules` either — but the HTML the owner puts in a slot or in
+`:head-extra` is injected as written, so an inline `<script>` or `<style>`
+of their own needs its own hash (or `'unsafe-inline'`) in the policy, and
+anything it loads needs its host in the matching directive. A `bannerBg: "background: …"`
 banner is a `style` attribute, which a policy that restricts styles must
 allow (`style-src-attr 'unsafe-inline'`), and a `data:` image needs
 `img-src data:`; an `https:` image elsewhere needs its host in `img-src`.
@@ -810,7 +863,7 @@ repository does that.
 ## Development
 
 ```bash
-bb test                                             # 849 tests / ~59,300 assertions
+bb test                                             # 874 tests / ~61,800 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 

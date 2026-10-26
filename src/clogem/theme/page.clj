@@ -4,6 +4,7 @@
   (:require [clogem.config :as config]
             [clogem.theme.identity :as identity]
             [clogem.theme.layout :as layout]
+            [clogem.theme.modules :as modules]
             [clogem.theme.parity :as parity]
             [clogem.util :as u]))
 
@@ -32,7 +33,11 @@
          (layout/result-title ctx (:title variant)) (layout/title-tag ctx variant)]
         (layout/article-info ctx group variant)
         (layout/variant-bar ctx)
+        ;; P4-E1b: vdoing's pageT, above the content
+        (modules/page-slot ctx :page-t)
         [:div.clogem-content (layout/search-terms ctx group) content-hiccup]]
+       ;; P4-E1b: vdoing's pageB, right after the article
+       (modules/page-slot ctx :page-b)
        ;; Task E2: vdoing's PageEdit, between the article and PageNav
        (parity/page-edit ctx)
        (layout/prev-next ctx)
