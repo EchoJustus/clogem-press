@@ -319,3 +319,38 @@
                 (str "says what it is: " out))
             (is (not (re-find #"files changed" (str out))) (str out))
             (finally (binding [*out* out *err* out] ((:stop! h))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 5: `bb clean` and a .git below the output directory's top level
+
+(defn- tree
+  "Every file under `dir` → its content."
+  [dir]
+  (into (sorted-map)
+        (for [p (fs/glob dir "**" {:hidden true})
+              :when (fs/regular-file? p)]
+          [(str (fs/relativize dir p)) (slurp (fs/file p))])))
+
+(deftest clean-refuses-a-marked-directory-with-a-git-below-its-top
+  (testing "item 5: the check that `bb clean` never deletes a marked
+            directory holding a .git anywhere below it had no test"
+    (with-site url-site
+      (fn [dir]
+        (let [dist (fs/path dir "dist")]
+          (doseq [[label make!] [["a .git directory two levels down"
+                                  #(do (fs/create-dirs (fs/path dist "deploy" "site" ".git"))
+                                       (spit (fs/file dist "deploy" "site" ".git" "HEAD") "ref: refs/heads/gh-pages\n"))]
+                                 ["a worktree's .git file one level down"
+                                  #(do (fs/create-dirs (fs/path dist "deploy"))
+                                       (spit (fs/file dist "deploy" ".git") "gitdir: ../../.git/worktrees/deploy\n"))]]]
+            (testing label
+              (fs/delete-tree dist)
+              (let [[v out] (run-task #'cli/build dir)]
+                (is (not (instance? Throwable v)) (str out (ex-msg v))))
+              (is (fs/exists? (fs/path dist ".clogem-output")) "marked")
+              (make!)
+              (let [before (tree dist)
+                    [v]    (run-task #'cli/clean dir)]
+                (is (= 1 (:babashka/exit (ex-data v))) (str (ex-msg v)))
+                (is (re-find #"holds a \.git" (str (ex-msg v))))
+                (is (= before (tree dist)) "untouched")))))))))

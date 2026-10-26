@@ -70,6 +70,14 @@ items, and what the E1a and E2 checks left; tests in
   not `(6 files changed)`, the count of the watched roots submitted to
   force it (`the-fallback-s-first-rebuild-says-full-rebuild`).
 
+### Tests (P4 follow-ups)
+
+- **`bb clean` refuses a marked output directory with a `.git` below its
+  top level** (item 5): `dist/deploy/site/.git/` or a worktree's
+  `dist/deploy/.git` file. The code refused both; nothing tested it, and
+  a `clean` that checks only `dist/.git` passed every test
+  (`clean-refuses-a-marked-directory-with-a-git-below-its-top`).
+
 **Support page** (DESIGN.md §7.5): clogem-press's page on the Clogem
 support site, https://echojustus.github.io/clogem-support/clogem-press/,
 built and published as the hub's own pages are. Not part of the generator:
