@@ -754,6 +754,21 @@
             [:link {:rel "alternate" :hreflang t :href (page-url tag)}])
           [[:link {:rel "alternate" :hreflang "x-default" :href (page-url "en")}]]))
 
+(def copyright-holder
+  "The publisher in the footer's copyright notice, in full: never left out,
+  shortened or split (the owner's rule for every Clogem support page,
+  2026-10-26, in clogem-support's CLAUDE.md, \"Footer copyright notices\";
+  DESIGN.md §7.5). A name, so no translation changes it."
+  "EchoJustus (Jiapeng Ji)")
+
+(def ^:private copyright
+  "The footer's first paragraph, the same characters on every page and
+  written here, not in the words: © 2026 EchoJustus (Jiapeng Ji).
+  clogem-press. The year is the page's first publication, fixed, not the
+  build's, so the text stays as the owner gave it. The publisher is one
+  element that doesn't wrap, so a narrow screen never splits the name."
+  [:p "© 2026 " [:span.nw copyright-holder] ". clogem-press."])
+
 (defn- page-body
   "A language's <body>, as hiccup, fully realised (its English-only links
   read *en-note* as they are made)."
@@ -785,6 +800,7 @@
              [:h2 {:id (str id "-title")} title]
              (map block blocks)])]
          [:footer
+          copyright
           [:p (link (:hub page) (:hub footer)) " · " (pieces (:licence footer))]
           [:p (:note footer)]
           (when (:font footer) [:p (pieces (:font footer))])]]]))))

@@ -774,6 +774,36 @@
       (is (str/includes? (str footer) "Eclipse Public License 2.0"))
       (is (str/includes? (str footer) (esc (get-in words [l :footer :note])))))))
 
+(def ^:private copyright-notice
+  "The footer's copyright notice, word for word: the publisher in full, then
+  the product (the owner's rule for every Clogem support page, 2026-10-26,
+  in clogem-support's CLAUDE.md, \"Footer copyright notices\")."
+  "© 2026 EchoJustus (Jiapeng Ji). clogem-press.")
+
+(deftest every-footer-names-the-publisher-in-full
+  (is (= "EchoJustus (Jiapeng Ji)" sp/copyright-holder))
+  (doseq [l langs
+          :let [h       (html l)
+                footer  (str (second (re-find #"(?s)<footer>(.*)</footer>" h)))
+                visible (str/replace footer #"<[^>]*>" "")]]
+    (testing l
+      (testing "the footer opens with the notice, the same characters in every language"
+        (is (= copyright-notice (some-> (re-find #"^<p>(.*?)</p>" footer) second (str/replace #"<[^>]*>" "")))))
+      (testing "once on the page"
+        (is (= 1 (count (re-seq #"©" h)))))
+      (testing "every EchoJustus a reader sees there carries the rest of the name"
+        (is (seq (re-seq #"EchoJustus" visible)))
+        (is (every? #{" (Jiapeng Ji)"} (map second (re-seq #"EchoJustus(.{0,13})" visible))) visible))
+      (testing "on one line: the publisher is one element that doesn't wrap, its text unchanged"
+        (is (str/starts-with? footer "<p>© 2026 <span class=\"nw\">EchoJustus (Jiapeng Ji)</span>. clogem-press.</p>")
+            "the paragraph as built, so nothing else (a break, a hidden span) is in it")
+        (is (str/includes? (style-of h) ".nw{white-space:nowrap}")))))
+  (testing "no translation can change it: the words hold none of it"
+    (doseq [l langs]
+      (is (not (re-find #"©|Jiapeng" (slurp (str "support/i18n/" l ".edn")))) l)))
+  (testing "the rule is written down for the next maintainer"
+    (is (str/includes? (slurp "DESIGN.md") (str "`" copyright-notice "`")))))
+
 (deftest the-footer-credits-the-font
   (doseq [l langs
           :let [footer (str (second (re-find #"(?s)<footer>(.*)</footer>" (html l))))
@@ -964,7 +994,9 @@
       (is (str/includes? text "one rebuild per burst of saves"))))
   (doseq [l langs :let [text (body-text (html l))]]
     (is (str/includes? text "0.2.0") l)
-    (is (not (re-find #"(?i)\b(?:20\d\d|q[1-4]|next (?:week|month)|coming soon)\b" text)) (str l ": no dates promised"))))
+    ;; the footer's copyright year is the page's, not a promise
+    (is (not (re-find #"(?i)\b(?:20\d\d|q[1-4]|next (?:week|month)|coming soon)\b" (str/replace text "© 2026 " "© ")))
+        (str l ": no dates promised"))))
 
 (def ^:private storage-words
   "How the privacy note says each key a built site keeps in its reader's

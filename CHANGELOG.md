@@ -33,11 +33,11 @@ nothing in `src/clogem/` changes, and a built site is unaffected.
 Languages (SP.2): English (the default) at `clogem-press/`; Simplified
 Chinese at `zh-Hans/`; Traditional Chinese, with Taiwan wording, at
 `zh-Hant/`; Brazilian Portuguese at `pt-BR/` (also for `pt`); European
-Spanish at `es-ES/` (also for `es`). Five pages, **178,135 bytes** in all
-(as of SP.7): `index.html` 34,703, `zh-Hant/index.html` 36,080,
-`zh-Hans/index.html` 35,965, `pt-BR/index.html` 35,632, `es-ES/index.html`
-35,755 (each within the 64 KB budget), plus, on the English and Chinese
-pages, the fonts they use (SP.7, below; README).
+Spanish at `es-ES/` (also for `es`). Five pages, **178,520 bytes** in all
+(as of SP.8): `index.html` 34,780, `zh-Hant/index.html` 36,157,
+`zh-Hans/index.html` 36,042, `pt-BR/index.html` 35,709, `es-ES/index.html`
+35,832 (each within the 64 KB budget), plus, on the English and Chinese
+pages, the fonts they use (SP.8 and SP.7, below; README).
 
 ### Added (support page)
 
@@ -130,6 +130,34 @@ pages, the fonts they use (SP.7, below; README).
   page and no claim of Portuguese or Spanish content; CJK fonts and
   spacing; the stand-in publishes all five files and nothing else.
 
+### Changed (SP.8, support page)
+
+- **The footer opens with the copyright notice**, the owner's rule for every
+  Clogem support page (2026-10-26; clogem-support's `CLAUDE.md`, "Footer
+  copyright notices"; DESIGN.md §7.5 item 9): `© 2026 EchoJustus (Jiapeng
+  Ji). clogem-press.`, the same characters on all five pages. The
+  publisher is always `EchoJustus (Jiapeng Ji)`, in full, and never wraps
+  across lines (one `white-space: nowrap` element, its text unchanged). It
+  is written in the generator (`support-page/copyright-holder`), not in
+  `support/i18n/`, so no translation changes it; the year is fixed, the
+  page's first publication. Licence headers in source files, the MIT
+  notices and `LICENSE` are unchanged: the rule covers footers only.
+- **Sizes**: each page grows by 77 bytes, and `wenkai-latin-400` by 120
+  (`©`), to 22,884; the others are unchanged. Five pages, 178,520 bytes:
+  `index.html` 34,780, `zh-Hant/index.html` 36,157, `zh-Hans/index.html`
+  36,042, `pt-BR/index.html` 35,709, `es-ES/index.html` 35,832. A page's
+  download, HTML and fonts, as it opens: English 80,184 (83,600 with the
+  language list open), zh-Hant 202,661, zh-Hans 183,914, pt-BR 35,709,
+  es-ES 35,832.
+- Tests: the notice word for word, first in every footer and once on each
+  page; `copyright-holder`; every `EchoJustus` a reader sees in a footer
+  followed by ` (Jiapeng Ji)`; the publisher's nowrap element; no `©` or
+  `Jiapeng` in `support/i18n/`; DESIGN.md quoting the notice. They failed
+  first. The status check's "no dates promised" now passes over the
+  notice's year, and only that. Chromium (5 languages, 320–1440 px, light
+  and dark, 60 runs): the notice exact, the name on one line, the footer's
+  paragraphs not overlapping, no sideways scroll, no CSP message.
+
 ### Changed (SP.7, support page)
 
 - **LXGW WenKai for English and Chinese only** (the owner, 2026-10-26,
@@ -152,7 +180,8 @@ pages, the fonts they use (SP.7, below; README).
   17,700, `wenkai-sc-400` 87,548, `wenkai-sc-500` 14,920,
   `wenkai-names-500` 3,416 bytes. A page's download, HTML and fonts, as it
   opens: English 79,987 (83,403 with the language list open), zh-Hant
-  202,464, zh-Hans 183,717, pt-BR 35,632, es-ES 35,755.
+  202,464, zh-Hans 183,717, pt-BR 35,632, es-ES 35,755. (SP.8 added the
+  footer's notice: its figures, above, are current.)
 - **"…" in English is the system's**: WenKai draws U+2026 full-width and
   centred, as Chinese sets it; the Latin subsets' `unicode-range` leaves it
   out, and Chinese text keeps WenKai's own.
@@ -189,7 +218,7 @@ pages, the fonts they use (SP.7, below; README).
   beside the pages as `clogem-press/fonts/*.woff2`, the CSP gains
   `font-src 'self'` and nothing else, and subsetting runs `pyftsubset` in
   GitHub Actions with no Python in the repository. (SP.7 narrowed this
-  to English and Chinese; its sizes are current, above and in the README.)
+  to English and Chinese; the current sizes are SP.8's, above, and the README's.)
 - **WenKai TC's emphasis is Medium, not Bold**: v1.530 of WenKai TC has
   Light, Regular and Medium and no Bold.
 - **Subsets by script and weight**, each page declaring only those it uses
