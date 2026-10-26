@@ -127,7 +127,7 @@
             [:p "A security problem, a question about your data, or a legal notice: write to "
              [:a "mailto:EchoJustus.Studio@outlook.com?subject=clogem-press" "EchoJustus.Studio@outlook.com"] "."]]}
 
-  ;; draft: the owner approves the wording before publication
+  ;; approved by the owner (2026-10-26): a change to it needs their approval again
   {:id     "privacy"
    :title  "Privacy"
    :blocks [[:h3 "This page"]

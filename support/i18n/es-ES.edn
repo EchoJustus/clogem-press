@@ -101,7 +101,7 @@
             [:p "Un problema de seguridad, una pregunta sobre tus datos o un aviso legal: escribe a "
              [:a "mailto:EchoJustus.Studio@outlook.com?subject=clogem-press" "EchoJustus.Studio@outlook.com"] "."]]}
 
-  ;; draft: the owner approves the wording before publication
+  ;; approved by the owner (2026-10-26): a change to it needs their approval again
   {:id     "privacy"
    :title  "Privacidad"
    :blocks [[:h3 "Esta página"]

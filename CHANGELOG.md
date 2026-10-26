@@ -80,9 +80,9 @@ pages, the fonts they use (SP.8 and SP.7, below; README).
   names the generator's own content languages (English, Simplified and
   Traditional Chinese, Malay, Tamil), and none suggests it supports
   Portuguese or Spanish content.
-- The privacy section is a **draft for the owner**, who approves its
-  wording before the first publication (the translations mirror the
-  English text fact for fact, and change when it changes): the page (no cookies, no script,
+- The privacy section's wording is **the owner's**, approved on
+  2026-10-26 (the translations mirror the English text fact for fact, and
+  change when it changes): the page (no cookies, no script,
   nothing from other sites; GitHub Pages' own logs), the generator (runs
   locally, sends nothing; downloads Chroma, Pagefind and the fswatcher pod
   from their GitHub releases only when first needed or on `bb fetch-tool`,
@@ -129,6 +129,19 @@ pages, the fonts they use (SP.8 and SP.7, below; README).
   Spanish and *tú*); the generator's five content languages named on every
   page and no claim of Portuguese or Spanish content; CJK fonts and
   spacing; the stand-in publishes all five files and nothing else.
+
+### Changed (SP.9, support page)
+
+- **The privacy note is approved** (the owner, 2026-10-26): each
+  `support/i18n/*.edn` now marks the section as the approved wording,
+  which changes only with the owner's approval, and the test checks that
+  mark in place of the draft's. The page's words are unchanged.
+- **The footer's year stays 2026** (the owner: "all 2026"), not the build's.
+- **The deploy key is set up** (the owner, 2026-10-26), so the first push
+  to `main` that touches the page publishes it. The one-time steps no
+  longer say a key may not be shared: GitHub takes a public key as a
+  deploy key on one repository only, and a key of its own is best, so that
+  each can be revoked alone.
 
 ### Changed (SP.8, support page)
 
@@ -322,16 +335,18 @@ after publication, and whenever `en.edn` changes:
 - `support/i18n/pt-BR.edn`: Brazilian Portuguese.
 - `support/i18n/es-ES.edn`: Spanish of Spain, *tú*.
 
-### The owner's one-time steps (support page)
+### The owner's one-time steps (support page; done on 2026-10-26)
 
 1. `ssh-keygen -t ed25519 -N "" -C "clogem-press support page" -f clogem-support-deploy`.
 2. The public half to EchoJustus/clogem-support, **Settings > Deploy
-   keys**, with **Allow write access** (a key of its own: Wmark Pro's is
-   already there, and GitHub allows a key on one repository only).
+   keys**, with **Allow write access** (GitHub takes a public key as a
+   deploy key on one repository only; a key of its own can be revoked
+   alone).
 3. The private half as the Actions secret `CLOGEM_SUPPORT_DEPLOY_KEY` here,
    then delete the local copy.
-4. Approve the privacy note's wording before the first publication (leave
-   the secret unset until then); the four translations follow it.
+4. Approve the privacy note's wording before the first publication: once
+   the secret is set, the next push to `main` that touches the page
+   publishes it. The four translations follow it.
 
 Once it is live, the hub's own session links it from the front page's
 clogem-press card and its README's table.
