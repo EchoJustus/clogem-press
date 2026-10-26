@@ -8,6 +8,7 @@
             [clojure.edn]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [clogem.assets :as assets]
             [clogem.config :as config]
             [clogem.diag :as diag]))
 
@@ -74,6 +75,21 @@
     (let [[_ ws] (warnings-of (-> (clojure.edn/read-string (slurp f))
                                   (assoc-in [:build :out] "dist")))]
       (is (= [] ws) f))))
+
+(deftest the-example-says-when-the-files-ship
+  (testing "G.1 item 3: js/search-all.js and css/search-all.css ship with the
+            key on under :provider :pagefind only (assets/skip? asks
+            config/cross-language?), and config.example.edn says so"
+    (let [skip? @#'assets/skip?
+          flat (str/replace (slurp "config.example.edn") #"\s*\n\s*;+\s*" " ")
+          old-claim? (str/includes? flat "ship whenever this is true")
+          says-pagefind? (str/includes? flat (str "js/search-all.js and css/search-all.css ship when this"
+                                                  " is true and :provider is :pagefind (so not under --no-search)"))]
+      (doseq [f ["js/search-all.js" "css/search-all.css"]]
+        (is (false? (skip? {:search {:provider :pagefind :cross-language true}} f)) f)
+        (is (true? (skip? {:search {:provider :none :cross-language true}} f)) f))
+      (is (not old-claim?) "not \"whenever this is true\": :provider :none ships neither")
+      (is says-pagefind? "the example names :provider :pagefind"))))
 
 ;; ---------------------------------------------------------------------------
 ;; 3 and 4. The two files G ships

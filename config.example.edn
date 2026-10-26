@@ -288,10 +288,12 @@
                              ; language has no indexed pages gets no checkbox:
                              ; Pagefind already searches the largest index
                              ; there. js/search-all.js and css/search-all.css
-                             ; ship whenever this is true — a site with the key
-                             ; on and only one indexed language ships them
-                             ; unlinked. Nothing is merged, and no other index
-                             ; downloaded, until a reader ticks the box.
+                             ; ship when this is true and :provider is
+                             ; :pagefind (so not under --no-search) — a site
+                             ; with the key on and only one indexed language
+                             ; ships them unlinked. Nothing is merged, and no
+                             ; other index downloaded, until a reader ticks
+                             ; the box.
 
  ;; ----------------------------------------------------------- highlight ----
  ;; §11.3 item 10: code blocks are highlighted by Chroma at build time — ON BY

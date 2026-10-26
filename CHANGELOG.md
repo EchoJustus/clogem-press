@@ -488,6 +488,48 @@ clogem-press card and its README's table.
   temp build under `--base /clogem-demo/`, served with `bb serve`, gives
   `/clogem-demo/pages/cjk001/`.
 
+### Fixed (G.1)
+
+- **A merged index that fails to load no longer breaks the ticked
+  search** (item 1). Pagefind 1.5.2's Component UI awaits each
+  `mergeIndex` in turn with no isolation, so one other language's
+  `pf_meta` answering 404 (a partial or stale deploy) or a dropped request
+  left every ticked search at "Searching for …" with no results, the
+  reader's own language included — and with `"1"` stored, every later
+  page opened ticked and broken. The named instance has no `error` event
+  for this (it fires only when `pagefind.js` itself fails to import), but
+  its `triggerLoad()` rejects while a merge cannot load, and each search
+  retries the load: `js/search-all.js` now listens for the instance's
+  `loading` event, and when its load rejects, that page falls back to the
+  default instance — its components swapped back, the box unticked there,
+  the typed term carried over and focus kept in the input (or on the
+  box). The stored choice is left as it is, since a later page may load.
+  `search-all.test.mjs`: with `"1"` stored and the zh-Hans `pf_meta`
+  routed to 404, and again with every foreign `pf_meta` aborted,
+  `pagefind` finds `/pages/e19a7c/` on the English home, the box ends
+  unticked, storage is still `"1"`, the term is kept and focus is in the
+  input (14 checks; the search and untick checks failed on `b35ca17`).
+- **A dialog opened before `js/search-all.js` runs keeps its search**
+  (item 2). With `"1"` stored, the start-up swap put the named instance's
+  empty input in place of one the reader had already typed in: the term
+  and results were lost and focus dropped to `<body>` with the dialog
+  open. The start-up path and the checkbox now share one swap, which
+  carries the term over and, when focus was in the outgoing components,
+  moves it to the incoming input. `search-all.test.mjs` holds the
+  script's response back (`page.route`), opens the dialog and types
+  `pagefind`, then releases it: the box is ticked, the term and
+  `/pages/e19a7c/` survive, and focus is on the input in the open dialog
+  (7 checks; the term, results and focus checks failed on `b35ca17`).
+- **`config.example.edn` says when the two files ship** (item 3): with
+  the key on *and* `:provider :pagefind`, so not under `--no-search`, as
+  `assets/skip?` decides through `config/cross-language?`; it said
+  "whenever this is true". `search_all_test.clj`
+  `the-example-says-when-the-files-ship` checks `skip?` both ways and the
+  sentence (failed on `b35ca17`).
+- `js/search-all.js` is 1,935 B gzipped (it was 1,844; budget 2,048,
+  unchanged): the header comment is shorter. `bb test`: 870 tests
+  (README's count).
+
 ### Needs native review (G)
 
 Machine-made, to be read by a native speaker:

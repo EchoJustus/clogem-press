@@ -1427,13 +1427,20 @@ Verified against Pagefind's docs **and source** ([research/12](research/12-i18n-
   never builds one: a modal subtree built in JS and then connected initialises its header twice (two
   close buttons at ≤ 640px). The choice is each reader's, remembered as `clogem-search-all` (`"1"`,
   removed when unticked; blocked storage means off). The default instance never merges, so a
-  reader who never ticks the box fetches no other index. A page whose own language has no indexed
-  pages gets no checkbox and searches Pagefind's fallback, the largest index, as before (on a tie,
-  which one is not knowable at build time: `pagefind-entry.json`'s key order changes between
-  builds). `css/search-all.css` (budget 512 B) lays the row out and widens the filter's wrapper,
-  which Pagefind centres its menu on at ≤ 640px, so the menu stays inside a 320 px screen. Merged
-  indexes stem with the page's own language (above). The demo turns it on, and CI's browser job
-  covers it (`test/browser/search-all.test.mjs`, D-P4-18).
+  reader who never ticks the box fetches no other index. The Component UI's `__doLoad__` awaits
+  each `mergeIndex` in turn with no isolation, and a merge whose `pf_meta` fails (404, aborted)
+  fails the whole load and every search on that instance, with no `error` event (that one fires
+  only when `pagefind.js` fails to import). `triggerLoad()` does reject, and each search retries
+  it, so the script listens for the instance's `loading` event and, when the load rejects, falls
+  back to the default instance for that page (G.1): the box unticked there, the term and focus
+  kept, the stored choice left for later pages. A stored choice applied after the reader has
+  already typed (the script is deferred) carries the term over the same way. A page whose own
+  language has no indexed pages gets no checkbox and searches Pagefind's fallback, the largest
+  index, as before (on a tie, which one is not knowable at build time: `pagefind-entry.json`'s key
+  order changes between builds). `css/search-all.css` (budget 512 B) lays the row out and widens
+  the filter's wrapper, which Pagefind centres its menu on at ≤ 640px, so the menu stays inside a
+  320 px screen. Merged indexes stem with the page's own language (above). The demo turns it on,
+  and CI's browser job covers it (`test/browser/search-all.test.mjs`, D-P4-18).
 
 ### 6.8 Indexes, comments, and which title is shown
 

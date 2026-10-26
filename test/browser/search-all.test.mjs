@@ -11,8 +11,11 @@
 // grow no second dialog; the language filter narrows to one language; the
 // row and its filter menu fit a 320 px screen; the box is reachable and
 // usable from the keyboard; blocked storage leaves it working, off; no
-// request under `pagefind/` fails and no result href is absolute; and
-// print hides the row. One more part builds a temp copy under
+// request under `pagefind/` fails and no result href is absolute; print
+// hides the row; a merged index that fails to load (a 404, or aborted)
+// falls back to the page's own language, unticked for that page with the
+// stored choice kept; and a dialog opened and typed in before this script
+// runs keeps its term, results and focus. One more part builds a temp copy under
 // `--base /clogem-demo/` and serves it with `bb serve`, to show the merge
 // URLs carry the base; it skips, saying so, without `bb` or
 // CLOGEM_PAGEFIND.
@@ -307,6 +310,75 @@ export default async function (t) {
   }
 
   // --------------------------------------------------------------- 10
+  // A merged index that fails to load (G.1 item 1): Pagefind 1.5.2 awaits
+  // each merge in turn, so one bad pf_meta failed the whole ticked search.
+  // The page falls back to its own language for this load: the search
+  // finds the reader's own page, the box ends unticked, the term and focus
+  // stay in the input, and the stored choice is kept for later pages.
+  // t.newPage, not page(): these requests fail on purpose.
+  {
+    const cases = [
+      ['one foreign pf_meta answers 404', /\/pagefind\/pagefind\.zh-hans_[^/]*\.pf_meta/, (r) => r.fulfill({ status: 404, body: 'gone' })],
+      ['every foreign pf_meta is aborted', /\/pagefind\/pagefind\.(zh-hans|zh-hant|ms|ta)_[^/]*\.pf_meta/, (r) => r.abort()],
+    ];
+    for (const [label, re, answer] of cases) {
+      const p = await t.newPage();
+      await p.addInitScript(() => { try { localStorage.setItem('clogem-search-all', '1'); } catch (e) { /* ignore */ } });
+      let hit = 0;
+      await p.route(re, (r) => { hit++; return answer(r); });
+      await openSearch(p, t.baseURL);
+      t.check(await box(p).isChecked(), `${label}: with "1" stored it opens ticked`);
+      await field(p).fill('pagefind');
+      await p.waitForFunction(() => document.querySelectorAll('pagefind-results a').length > 0, null, { timeout: 10000 })
+        .catch(() => {});
+      await sleep(500);
+      const found = await hrefs(p);
+      t.check(hit > 0, `${label}: the failing request was made (${hit})`);
+      t.check(found.includes('/pages/e19a7c/'),
+              `${label}: the search still finds the reader's own page: ${(await summary(p).innerText()).trim()} ${found.slice(0, 3).join(', ')}`);
+      t.check(!(await box(p).isChecked()), `${label}: the box ends unticked for this page`);
+      t.check((await p.evaluate(() => localStorage.getItem('clogem-search-all'))) === '1',
+              `${label}: the stored choice is kept`);
+      t.check((await field(p).inputValue()) === 'pagefind', `${label}: the typed term is kept`);
+      t.check(await p.evaluate(() => { const a = document.activeElement;
+        return !!(a && a.tagName === 'INPUT' && a.type !== 'checkbox' && a.closest('pagefind-modal')); }),
+              `${label}: focus stays in the search input`);
+    }
+  }
+
+  // --------------------------------------------------------------- 11
+  // The dialog opened, and a term typed, before js/search-all.js runs, with
+  // "1" stored (G.1 item 2): the term and the results survive the swap,
+  // and focus stays in the dialog, on the input.
+  {
+    const p = await page();
+    await p.addInitScript(() => { try { localStorage.setItem('clogem-search-all', '1'); } catch (e) { /* ignore */ } });
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    await p.route(/\/js\/search-all\.js/, async (r) => { await gate; await r.continue(); });
+    // deferred scripts hold DOMContentLoaded back, so wait for the commit only
+    await p.goto(t.baseURL, { waitUntil: 'commit' });
+    await p.waitForFunction(() => window.PagefindComponents && customElements.get('pagefind-modal'), null, { timeout: 15000 });
+    await p.click('pagefind-modal-trigger button');
+    await p.waitForSelector('pagefind-modal input');
+    await search(p, 'pagefind');
+    t.check(await p.locator('.clogem-search-all').count() === 0, 'held back: the row is not drawn yet');
+    t.check((await hrefs(p)).includes('/pages/e19a7c/'), 'held back: the default search has found the page');
+    release();
+    await p.waitForSelector('.clogem-search-all', { timeout: 10000 });
+    await sleep(SETTLE);
+    t.check(await box(p).isChecked(), 'released: the stored choice ticks the box');
+    t.check((await field(p).inputValue()) === 'pagefind', 'released: the typed term carries over');
+    const found = await hrefs(p);
+    absolute.push(...found.filter((h) => /^https?:/.test(h)));
+    t.check(found.includes('/pages/e19a7c/'), `released: the results survive: ${found.slice(0, 3).join(', ')}`);
+    t.check(await p.evaluate(() => { const a = document.activeElement;
+      return !!(a && a.tagName === 'INPUT' && a.type !== 'checkbox' && a.closest('pagefind-modal')); }),
+            `released: focus is in the dialog, on the input (${await p.evaluate(() => document.activeElement && document.activeElement.tagName)})`);
+    t.check(await p.evaluate(() => !!document.querySelector('pagefind-modal dialog[open]')), 'released: the dialog is still open');
+  }
+
+  // --------------------------------------------------------------- 12
   t.check(failed.length === 0, `no request under pagefind/ failed: ${failed.slice(0, 3).join(', ')}`);
   t.check(absolute.length === 0, `no result href left the site: ${absolute.slice(0, 3).join(', ')}`);
 }

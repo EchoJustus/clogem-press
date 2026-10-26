@@ -1,18 +1,15 @@
 /* clogem-press — "Search all languages" (§6.7, §11.3 item 17, D-P4-17).
- * Opt-in per site (`:search {:cross-language true}`) and per reader: off
- * until the box is ticked, remembered as `clogem-search-all`. A SECOND,
- * named instance merges the other languages at indexWeight 0.001, and the
- * rendered modal's four components are swapped for its own while the box
- * is ticked; the default instance never merges, so a reader who never
- * ticks it downloads no other index. Three facts of Pagefind 1.5.2 shape
- * this: a merge the primary's basePath starts with is skipped silently,
- * so the URLs are absolute — and then `baseUrl` is needed, or merged
- * hrefs come back absolute too; `language` must be Pagefind's own key,
- * the LOWERCASED <html lang>, or findIndex falls back to the largest
- * index; and a modal subtree built in JS and then connected initialises
- * its header twice (two close buttons at <= 640px), so this augments the
- * modal the page rendered and never builds one. Deferred, after
- * pagefind-component-ui.js and js/search.js.
+ * Off until the reader ticks the box; remembered as `clogem-search-all`.
+ * While ticked, the rendered modal's four components are swapped for those
+ * of a named instance that merges the other languages at indexWeight
+ * 0.001; the default instance never merges. Pagefind 1.5.2: a merge the
+ * primary's basePath starts with is skipped, so the URLs are absolute and
+ * need `baseUrl`; `language` is the lowercased <html lang>, or findIndex
+ * falls back to the largest index; a modal built in JS draws two close
+ * buttons, so the rendered one is augmented; and one merge that fails to
+ * load fails the instance's load (no "error" event), so the page then
+ * falls back to the default instance, keeping the stored choice.
+ * Deferred, after pagefind-component-ui.js and js/search.js.
  */
 (function () {
   "use strict";
@@ -79,14 +76,35 @@
 
   function field(el) { return el && el.querySelector("input"); }
 
+  // swap in one instance's components, carrying the term over; focus in
+  // the outgoing ones moves to the incoming input
   function show(on) {
     var from = on ? theirs : ours, to = on ? ours : theirs;
+    var was = field(from[0]), term = was ? was.value : "", a = document.activeElement;
+    var held = from.some(function (e) { return e && e.contains(a); });
     for (var i = 0; i < from.length; i++) {
       if (from[i] && from[i].parentNode) from[i].replaceWith(to[i]);
     }
     if (on) row.appendChild(drop);
     else if (drop.parentNode) drop.parentNode.removeChild(drop);
+    var now = field(to[0]);
+    if (now) {
+      now.value = term;
+      if (held) now.focus();
+    }
+    if (term) (on ? all : pf.getInstanceManager().getInstance("default")).triggerSearch(term);
   }
+
+  // every search of ours awaits the instance's load, which rejects while a
+  // merge cannot load (and is retried by the next search)
+  all.on("loading", function () {
+    all.triggerLoad().then(null, function () {
+      if (box.checked) {
+        box.checked = false;
+        show(false);
+      }
+    });
+  });
 
   function stored() {
     try { return localStorage.getItem(KEY) === "1"; } catch (e) { return false; }
@@ -99,16 +117,8 @@
   }
 
   box.addEventListener("change", function () {
-    var on = box.checked;
-    var was = field(on ? theirs[0] : ours[0]);
-    var term = was ? was.value : "";
-    show(on);
-    var now = field(on ? ours[0] : theirs[0]);
-    if (now) now.value = term;
-    if (term) {
-      (on ? all : pf.getInstanceManager().getInstance("default")).triggerSearch(term);
-    }
-    remember(on);
+    show(box.checked);
+    remember(box.checked);
     box.focus();
   });
 

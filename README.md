@@ -297,7 +297,9 @@ Pagefind searches its largest index, as it already does. Each language's
 pages are matched with that language's word segmentation, but the query is
 stemmed by the page's language (DESIGN.md §6.7): a Tamil page searches the
 English pages with the Tamil stemmer, and a Malay page, which has none,
-stems nothing. `--no-search` drops it with the rest of search, and print
+stems nothing. If another language's index cannot be loaded, that page
+searches its own language, unticked, and the choice stays stored for the
+next page. `--no-search` drops it with the rest of search, and print
 hides it.
 
 **Page styles.** `:theme :page-style` is vdoing's `pageStyle`. `:card` (the
@@ -832,7 +834,7 @@ repository does that.
 ## Development
 
 ```bash
-bb test                                             # 869 tests / ~60,000 assertions
+bb test                                             # 870 tests / ~60,000 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 
