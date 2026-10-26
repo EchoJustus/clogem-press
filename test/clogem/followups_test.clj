@@ -354,3 +354,30 @@
                 (is (= 1 (:babashka/exit (ex-data v))) (str (ex-msg v)))
                 (is (re-find #"holds a \.git" (str (ex-msg v))))
                 (is (= before (tree dist)) "untouched")))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 6: the hint for a site.edn `:build :out` outside the site
+
+(deftest an-out-outside-the-site-gets-a-hint-that-helps
+  (testing "item 6: an explicit `:build {:out \"dist\"}` with `dist` a link
+            out of the site is refused, and the hint recommended \"the
+            default dist\" — the folder refused"
+    (with-site url-site
+      (fn [dir]
+        (let [www (fs/create-temp-dir {:prefix "clogem-fuwww"})]
+          (try
+            (fs/create-sym-link (fs/path dir "dist") www)
+            (doseq [out ["dist" (str www) "../elsewhere"]]
+              (testing out
+                (spit (fs/file dir "site.edn") (pr-str (assoc url-site :build {:out out})))
+                (let [[v printed] (run-task #'cli/build dir)
+                      msg (str (ex-msg v) printed)]
+                  (is (re-find #"outside the site directory" msg) msg)
+                  (is (not (re-find #"such as the default" msg)) (str "no advice to use what was refused: " msg))
+                  (is (re-find #"remove :build :out from site\.edn" msg) msg)
+                  (is (re-find #"--out" msg) msg))))
+            (testing "the other refusals keep their hint"
+              (spit (fs/file dir "site.edn") (pr-str (assoc url-site :build {:out "content"})))
+              (let [[v printed] (run-task #'cli/build dir)]
+                (is (re-find #"such as the default \"dist\"" (str (ex-msg v) printed)))))
+            (finally (fs/delete-tree www))))))))

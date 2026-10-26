@@ -70,6 +70,21 @@ items, and what the E1a and E2 checks left; tests in
   not `(6 files changed)`, the count of the watched roots submitted to
   force it (`the-fallback-s-first-rebuild-says-full-rebuild`).
 
+- **A `:build :out` in `site.edn` outside the site directory gets a hint
+  that helps** (item 6). With `:build {:out "dist"}` and `dist` a link out
+  of the site, the hint recommended "a directory of its own, such as the
+  default \"dist\"" — the folder refused. It now says a value in
+  `site.edn` must stay inside the site, and to build elsewhere, through a
+  link or `../dist`, to remove `:build :out` from `site.edn` (the default
+  `dist` may be a link) or pass `--out`; the other refusals keep their
+  hint (`an-out-outside-the-site-gets-a-hint-that-helps`).
+
+### Documentation (P4 follow-ups)
+
+- **Task D's entry on `:min-bb-version` said `bb.edn` "requires" babashka
+  1.13.219** (item 7). babashka only warns about an older version and runs
+  the task anyway; the entry now says so.
+
 ### Tests (P4 follow-ups)
 
 - **`bb clean` refuses a marked output directory with a `.git` below its
@@ -1562,9 +1577,10 @@ clogem-press card and its README's table.
   the address `--host` resolves to, however it is spelled (`127.1`,
   `127.0.0.2`, `::1`, `localhost`), and the URL printed is always
   answered. With any other `--host` there is no check.
-- **`bb.edn` requires babashka 1.13.219 or later** (`:min-bb-version`; it
-  said 1.13.0, which no one tested). CI runs the tests and the browser
-  tests under 1.13.219 and the latest release (P4-D.4).
+- **`bb.edn` asks for babashka 1.13.219 or later** (`:min-bb-version`; it
+  said 1.13.0, which no one tested). An older babashka prints a warning
+  and runs the task anyway: babashka does not refuse it. CI runs the tests
+  and the browser tests under 1.13.219 and the latest release (P4-D.4).
 - **`permalinks.edn` is written only when it changes.** It was rewritten,
   byte for byte the same, on every build.
 - **A missing UI string key warns once per key and language, in `build`
