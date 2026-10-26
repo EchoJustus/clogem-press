@@ -83,6 +83,7 @@
 
 (defn- html "A built page, or \"\" if the build didn't write it." [lang] (get-in built [:html lang] ""))
 (defn- style-of [html] (second (re-find #"(?s)<style>(.*?)</style>" html)))
+(defn- without-faces [style] (str/replace (str style) #"@font-face\{[^}]*\}\n?" ""))
 (def ^:private style (style-of (html "en")))
 
 (defn- sha256-base64 [^String s]
@@ -151,12 +152,16 @@
 (deftest every-head-is-the-hubs
   (doseq [l langs :let [h (html l) {:keys [title description]} (words l)]]
     (testing l
-      (testing "the CSP allows the one style by its hash, and data: images, nothing else"
-        (is (= style (style-of h)) "one stylesheet, the same on every page")
+      (testing "the CSP allows the one style by its hash, data: images and the site's own fonts, nothing else"
+        (is (= (without-faces style) (without-faces (style-of h)))
+            "one stylesheet; only its @font-face rules, the page's fonts and their paths, differ")
         (let [content (some-> (re-find #"<meta content=\"([^\"]*)\" http-equiv=\"Content-Security-Policy\">" h) second unescape)]
-          (is (= (str "default-src 'none'; style-src 'sha256-" (some-> style sha256-base64) "'; "
-                      "img-src data:; base-uri 'none'; form-action 'none'")
-                 content))))
+          (is (= (str "default-src 'none'; style-src 'sha256-" (some-> (style-of h) sha256-base64) "'; "
+                      "img-src data:; font-src 'self'; base-uri 'none'; form-action 'none'")
+                 content))
+          (is (not (str/includes? (str content) "script-src")))
+          (is (not (re-find #"https?:|\*|//" (str content))) "no other origin")
+          (is (= ["font-src 'self'"] (re-seq #"font-src[^;]*" (str content))) "fonts from the site alone, never data:")))
       (doseq [tag [(str "<html lang=\"" l "\">")
                    "<meta content=\"no-referrer\" name=\"referrer\">"
                    "<meta content=\"light dark\" name=\"color-scheme\">"
@@ -207,7 +212,8 @@
       (is (not (re-find #"<link [^>]*rel=\"stylesheet\"" h)))
       (is (= #{"canonical" "icon" "alternate"} (set (map second (re-seq #"<link [^>]*rel=\"([^\"]+)\"" h)))))
       (is (not (str/includes? (str s) "@import")))
-      (is (not (re-find #"(?i)url\(\s*['\"]?(?!data:|#)" (str s))) "url( only to data: or #")
+      (is (not (re-find #"(?i)url\(\s*['\"]?(?!data:|#|(?:\.\./)?fonts/[a-z0-9-]+\.woff2\))" (str s)))
+          "url( only to data:, # or the site's own fonts/")
       (doseq [tag ["iframe" "embed" "object" "video" "audio" "source" "form" "base" "frame" "portal"]]
         (is (not (re-find (re-pattern (str "(?i)<" tag "\\b")) h)) tag))
       (testing "every outside address is a plain link, or a <link> to one of the five pages"
@@ -411,8 +417,10 @@
       (is (str/includes? style "font:400 1rem/1.65 var(--text-font)"))
       (is (str/includes? style "h1,h2,h3{font-family:var(--heading-font)"))
       (is (re-find #"\.langs a\{[^}]*font-family:var\(--text-font\)" style) "a switcher label in another script gets its own fonts"))
-    (testing "no font is bundled"
-      (is (not (re-find #"@font-face" style))))
+    (testing "WenKai ahead of them in the text stack, never in the headings"
+      (is (re-find #":lang\(zh-Hans\)\{--text-font:\"LXGW WenKai\"," style))
+      (is (re-find #":lang\(zh-Hant\)\{--text-font:\"LXGW WenKai TC\"," style))
+      (is (not (re-find #"--heading-font:[^;}]*WenKai" style))))
     (testing "no letter-spacing on CJK: the eyebrow, the chips and the headings"
       (is (str/includes? style ":is(.eyebrow,.chip,h1,h2):lang(zh){letter-spacing:0}")))))
 
@@ -551,6 +559,68 @@
       (is (contains? (lists "wenkai-sc-500") (cp "龘")))
       (is (not-any? #(contains? % (cp "Ѫ")) (vals lists)) "code")
       (is (not-any? #(contains? % (cp "Ж")) (vals lists)) "a card's title, an <h3>"))))
+
+(defn- faces
+  "A style's @font-face rules, as maps of their descriptors."
+  [style]
+  (for [[_ body] (re-seq #"@font-face\{([^}]*)\}" (str style))]
+    (into {} (for [d (str/split body #";(?=[a-z-]+:)")
+                   :let [[k v] (str/split d #":" 2)]]
+               [k v]))))
+
+(deftest every-page-declares-its-fonts
+  (doseq [l langs
+          :let [h (html l) fs (faces (style-of h)) prefix (if (= l "en") "" "../")
+                used (set (for [[lang medium? text] (text-runs h) cp (cps text) :when (>= cp 0x20)]
+                            (subset-of l lang medium? cp)))]]
+    (testing l
+      (testing "an @font-face for each subset the page's text uses, and no other"
+        (is (= used (set (for [f fs] (second (re-find #"fonts/([a-z0-9-]+)\.woff2" (str (f "src")))))))))
+      (doseq [f fs
+              :let [id (second (re-find #"fonts/([a-z0-9-]+)\.woff2" (str (f "src"))))
+                    {:keys [font weight]} (get-in plan [:subsets id])]]
+        (testing id
+          (is (= (str "url(" prefix "fonts/" id ".woff2) format(\"woff2\")") (f "src")) "relative to the page's folder")
+          (is (= (str "\"" (get-in plan [:fonts font :family]) "\"") (f "font-family")))
+          (is (= (str weight) (f "font-weight")))
+          (is (= "normal" (f "font-style")))
+          (is (= "swap" (f "font-display")))
+          (is (= (cond (= font :wenkai-tc)          "U+0-10FFFF"
+                       (str/includes? id "latin")  "U+0-2E7F"
+                       :else                       "U+2E80-10FFFF")
+                 (f "unicode-range"))))))))
+
+(defn- rule
+  "The declarations of the style's rule for exactly `selector`."
+  [selector]
+  (some->> (re-find (re-pattern (str "(?:^|[}\n])" (java.util.regex.Pattern/quote selector) "\\{([^}]*)\\}")) style) second))
+
+(deftest text-is-wenkai-headings-and-code-are-not
+  (testing "the text stack starts with WenKai (WenKai TC for Traditional Chinese); the system stacks stay after it"
+    (is (re-find #":root\{--text-font:\"LXGW WenKai\",\"Segoe UI Variable Text\"" style))
+    (is (re-find #":lang\(zh-Hant\)\{--text-font:\"LXGW WenKai TC\",\"Segoe UI Variable Text\"[^;]*\"PingFang TC\"" style))
+    (is (str/includes? (rule "body") "font:400 1rem/1.65 var(--text-font)")))
+  (testing "body text, the chips, the buttons, the switchers, the jump links and the footer inherit it"
+    (doseq [sel [".chip" ".button" ".eyebrow" ".theme label" ".langs summary" ".jump a" "footer" "strong" ".lead" ".sub"]]
+      (is (not (re-find #"font-family|font:" (str (rule sel)))) sel))
+    (is (str/includes? (rule ".langs a") "font-family:var(--text-font)") "a name in another script takes its own language's font"))
+  (testing "emphasis is Medium, which both fonts have; nothing asks for a weight without a face (no faux bold)"
+    (doseq [sel ["strong" ".chip" ".button" ".eyebrow" ".theme label" ".langs summary" ".langs a" ".jump a"]]
+      (is (str/includes? (str (rule sel)) "font-weight:500") sel))
+    (let [weights (for [[_ sel decls] (re-seq #"([^{}]+)\{([^{}]*font(?:-weight)?:[^{}]*)\}" style)
+                        :when (not (re-matches #"h1|h2|h3|h1,h2,h3|section>h3|\.card h3" (str/trim sel)))
+                        [_ w] (re-seq #"(?:font-weight:|font:)(\d+)" decls)]
+                    [sel w])]
+      (is (seq weights))
+      (is (every? #{"400" "500"} (map second weights)) (pr-str weights))))
+  (testing "the headings keep the system's heading stack"
+    (is (str/includes? style "h1,h2,h3{font-family:var(--heading-font)"))
+    (is (re-find #":root\{--text-font:[^}]*;--heading-font:\"Segoe UI Variable Display\"" style)))
+  (testing "code and pre stay monospace"
+    (is (= "font-family:ui-monospace,\"Cascadia Code\",\"SF Mono\",Menlo,Consolas,monospace;font-size:.9em" (rule "code,pre"))))
+  (testing "zh-Hant's page is in WenKai TC; the others in WenKai"
+    (doseq [l langs :let [fams (set (map #(% "font-family") (faces (style-of (html l)))))]]
+      (is (contains? fams (if (= l "zh-Hant") "\"LXGW WenKai TC\"" "\"LXGW WenKai\"")) l))))
 
 ;; ---------------------------------------------------------------------------
 ;; Contrast: WCAG AA in both themes

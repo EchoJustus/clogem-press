@@ -129,6 +129,12 @@ the 64 KB budget).
   page and no claim of Portuguese or Spanish content; CJK fonts and
   spacing; the stand-in publishes all five files and nothing else.
 
+### Changed (SP.6, support page)
+
+- **Text is set in LXGW WenKai (霞鹜文楷)**, all of it but headings and
+  code, in English, Chinese, Portuguese and Spanish; the zh-Hant page in
+  LXGW WenKai TC. Five pages, **176,581 bytes** in all, plus the fonts they use.
+
 ### Fixed (SP.5, support page)
 
 - **The name keeps one line.** From 480 px up "clogem-press" no longer

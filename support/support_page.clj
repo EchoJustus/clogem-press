@@ -458,28 +458,56 @@
   "\"Segoe UI Variable Text\",\"Segoe UI\",system-ui,-apple-system,BlinkMacSystemFont,Roboto,\"Helvetica Neue\",Arial")
 
 (def ^:private cjk-fonts
-  "The systems' own CJK fonts (no font is bundled), after the Latin ones and
-  ahead of the generic family, by :lang()."
+  "The systems' own CJK fonts, after the Latin ones and ahead of the
+  generic family, by :lang(): the fallback while WenKai loads, and for a
+  character it lacks."
   {"zh-Hans" "\"PingFang SC\",\"Microsoft YaHei\",\"Noto Sans CJK SC\",\"Source Han Sans SC\""
    "zh-Hant" "\"PingFang TC\",\"Microsoft JhengHei\",\"Noto Sans CJK TC\",\"Source Han Sans TC\""})
 
 (defn- font-stacks
-  "--text-font and --heading-font, with `cjk` (or nothing) before sans-serif."
-  [cjk]
+  "--text-font, `family` (WenKai) first, and --heading-font, the system's
+  alone; each with `cjk` (or nothing) before sans-serif."
+  [family cjk]
   (let [with (fn [latin] (str latin (when cjk (str "," cjk)) ",sans-serif"))]
-    (str "--text-font:" (with text-font) ";--heading-font:" (with heading-font))))
+    (str "--text-font:\"" family "\"," (with text-font) ";--heading-font:" (with heading-font))))
+
+(defn- family [plan lang] (get-in plan [:fonts (font-of plan lang) :family]))
+
+(defn- unicode-range
+  "A subset's unicode-range: WenKai's Latin below cjk-from, its Chinese from
+  there up (one of each per weight on a page); WenKai TC's one file per
+  weight carries both."
+  [{:keys [font]} id]
+  (cond (= font :wenkai-tc)          "U+0-10FFFF"
+        (str/includes? id "-latin-") (str "U+0-" (format "%X" (dec cjk-from)))
+        :else                        (str "U+" (format "%X" cjk-from) "-10FFFF")))
+
+(defn- font-faces
+  "The @font-face rules for `subsets` (ids), the files beside the pages in
+  clogem-press/fonts/, by a path relative to `tag`'s page: without the font
+  step there are no files, and the system fonts show."
+  [plan tag subsets]
+  (for [id (sort subsets)
+        :let [{:keys [font weight] :as sub} (get-in plan [:subsets id])]]
+    (str "@font-face{font-family:\"" (get-in plan [:fonts font :family]) "\";font-style:normal;font-weight:" weight
+         ";font-display:swap;src:url(" (if (= tag "en") "" "../") "fonts/" id ".woff2) format(\"woff2\");"
+         "unicode-range:" (unicode-range sub id) "}")))
 
 (defn css
-  "The page's one stylesheet. The theme follows the system, or the switcher:
+  "The page's one stylesheet, with the @font-face rules for `subsets`, the
+  ones `tag`'s page uses. The theme follows the system, or the switcher:
   three radio buttons read by :has() on the root, so it takes no script;
   without a script or a cookie the choice isn't remembered, and the page
-  opens on Auto."
-  []
-  (let [dark-decls (str "color-scheme:dark;" (decls dark) ";" shadow-dark)
+  opens on Auto. Text is in WenKai at Regular (400) and Medium (500) only,
+  the faces there are; headings and code keep the system's fonts."
+  [tag subsets]
+  (let [plan       (font-plan)
+        dark-decls (str "color-scheme:dark;" (decls dark) ";" shadow-dark)
         rule       (str "linear-gradient(90deg," (:light jade) "," (:hue jade) " 55%," (:deep jade) ")")]
     (str/join
      "\n"
      (concat
+      (font-faces plan tag subsets)
       (for [t colour-tokens]
         (str "@property " t "{syntax:\"<color>\";inherits:true;initial-value:transparent}"))
       [(str ":root{color-scheme:light dark;" (decls light) ";" shadow-light ";"
@@ -487,9 +515,9 @@
        (str "@media (prefers-color-scheme:dark){:root:not(:has(#theme-light:checked)){" dark-decls "}}")
        (str ":root:has(#theme-dark:checked){" dark-decls "}")
        ":root:has(#theme-light:checked){color-scheme:light}"
-       (str ":root{" (font-stacks nil) "}")
+       (str ":root{" (font-stacks (family plan "en") nil) "}")
        ;; on any element, so a switcher label in another script gets its fonts
-       (str/join (for [[tag cjk] cjk-fonts] (str ":lang(" tag "){" (font-stacks cjk) "}")))
+       (str/join (for [[lang cjk] cjk-fonts] (str ":lang(" lang "){" (font-stacks (family plan lang) cjk) "}")))
        "*,*::before{box-sizing:border-box}"
        "html{-webkit-text-size-adjust:100%;text-size-adjust:100%}"
        (str "body{margin:0;min-height:100vh;color:var(--text);background:"
@@ -504,6 +532,8 @@
        ":is(.eyebrow,.chip,h1,h2):lang(zh){letter-spacing:0}"
        "body:lang(zh){line-height:1.8}"
        ".en-note{color:var(--muted);font-size:.9em}"
+       ;; Medium, not the browser's bold: WenKai has no Bold to give it
+       "strong{font-weight:500}"
        "code,pre{font-family:ui-monospace,\"Cascadia Code\",\"SF Mono\",Menlo,Consolas,monospace;font-size:.9em}"
        ;; the header
        ;; one column that may shrink below its content's width, so nothing in
@@ -517,7 +547,7 @@
        ;; and the brand's subtitle the rest.
        ".brand{flex:1 1 min-content;display:flex;align-items:center;gap:clamp(.9rem,2.5vw,1.25rem);min-width:0}"
        ".mark{flex:none;display:block;width:clamp(3.75rem,10vw,5.5rem);height:auto}"
-       ".eyebrow{margin:0 0 .2rem;font-size:.78rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--chip-ink)}"
+       ".eyebrow{margin:0 0 .2rem;font-size:.78rem;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--chip-ink)}"
        "h1{margin:0;font-size:clamp(1.85rem,5.2vw,3.3rem);line-height:1.05;letter-spacing:-.025em;font-weight:700;overflow-wrap:anywhere}"
        ;; the name keeps one line, never broken after its hyphen, from 480 px
        ;; up; below, it may break rather than widen the page
@@ -533,7 +563,7 @@
        ".tools{flex:999 1 min-content;min-width:0;max-width:max-content;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:.6rem;margin-inline-start:auto}"
        ;; the language switcher: a <details> dropdown of plain links, the current one marked
        (str ".langs summary{display:inline-flex;align-items:center;gap:.4rem;padding:calc(.42rem + 3px) .95rem;border:1px solid var(--control);"
-            "border-radius:999px;background:var(--surface);box-shadow:var(--shadow);font-size:.86rem;font-weight:650;cursor:pointer;list-style:none}")
+            "border-radius:999px;background:var(--surface);box-shadow:var(--shadow);font-size:.86rem;font-weight:500;cursor:pointer;list-style:none}")
        ".langs{position:relative}"
        ".langs summary::-webkit-details-marker{display:none}"
        ".langs summary:hover{border-color:var(--focus)}"
@@ -544,7 +574,7 @@
        (str ".langs ul{position:absolute;z-index:2;top:calc(100% + .4rem);inset-inline-end:0;min-width:12rem;max-width:calc(100vw - 2rem);"
             "margin:0;padding:.35rem;list-style:none;background:var(--surface);border:1px solid var(--control);border-radius:1rem;box-shadow:var(--shadow)}")
        (str ".langs a{display:block;padding:.45rem .8rem;border-radius:.65rem;"
-            "font-family:var(--text-font);font-size:.9rem;font-weight:600;color:var(--text);text-decoration:none}")
+            "font-family:var(--text-font);font-size:.9rem;font-weight:500;color:var(--text);text-decoration:none}")
        ".langs a:hover{color:var(--link);text-decoration:underline}"
        ".langs a[aria-current=page]{background:var(--chip);color:var(--chip-ink)}"
        ;; the theme switcher: radios as a segmented control
@@ -553,7 +583,7 @@
        ".vh,.theme legend{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}"
        ".theme input{position:absolute;width:1px;height:1px;margin:0;opacity:0}"
        (str ".theme label{display:inline-flex;align-items:center;gap:.4rem;padding:.42rem .85rem;border-radius:999px;"
-            "font-size:.86rem;font-weight:650;color:var(--muted);cursor:pointer;transition:background-color .2s ease,color .2s ease}")
+            "font-size:.86rem;font-weight:500;color:var(--muted);cursor:pointer;transition:background-color .2s ease,color .2s ease}")
        ".theme label:hover{color:var(--text)}"
        ".theme input:checked+label{background:var(--chip);color:var(--chip-ink)}"
        ".theme input:focus-visible+label{outline:3px solid var(--focus);outline-offset:2px}"
@@ -566,7 +596,7 @@
        ;; the jump links
        ".jump ul{display:flex;flex-wrap:wrap;gap:.6rem;margin:0;padding:0;list-style:none}"
        (str ".jump a{display:inline-block;padding:.5rem 1.05rem;border-radius:999px;border:1px solid var(--control);"
-            "background:var(--surface);color:var(--text);font-weight:600;font-size:.92rem;text-decoration:none;box-shadow:var(--shadow)}")
+            "background:var(--surface);color:var(--text);font-weight:500;font-size:.92rem;text-decoration:none;box-shadow:var(--shadow)}")
        ".jump a:hover{border-color:var(--focus);color:var(--link)}"
        ;; the sections
        "main{display:grid;gap:clamp(3.25rem,8vw,5rem);margin-top:clamp(3rem,7vw,4.5rem)}"
@@ -591,11 +621,11 @@
             "background:var(--surface);border:1px solid var(--border);border-radius:1.2rem;box-shadow:var(--shadow)}")
        (str ".card::before{content:\"\";position:absolute;inset:0 0 auto 0;height:4px;background:" rule "}")
        (str ".chip{align-self:flex-start;padding:.26rem .66rem;border-radius:999px;background:var(--chip);color:var(--chip-ink);"
-            "font-size:.72rem;font-weight:700;letter-spacing:.11em;text-transform:uppercase}")
+            "font-size:.72rem;font-weight:500;letter-spacing:.11em;text-transform:uppercase}")
        ".card h3{margin:.15rem 0 0;font-size:1.1rem;line-height:1.3}"
        ".card p{margin:0 0 .5rem;color:var(--muted)}"
        (str ".button{align-self:flex-start;margin-top:auto;display:inline-flex;align-items:center;gap:.45rem;padding:.5rem 1rem;"
-            "border:1px solid var(--control);border-radius:999px;background:var(--chip);color:var(--chip-ink);font-weight:650;font-size:.95rem;text-decoration:none}")
+            "border:1px solid var(--control);border-radius:999px;background:var(--chip);color:var(--chip-ink);font-weight:500;font-size:.95rem;text-decoration:none}")
        ".button:hover{background:var(--chip-ink);border-color:var(--chip-ink);color:var(--surface)}"
        ".button span{transition:transform .2s ease}"
        ".button:hover span{transform:translateX(3px)}"
@@ -615,12 +645,13 @@
               "h2::after,.rule{background:#000}.card,pre{break-inside:avoid}}"))]))))
 
 (defn csp
-  "Nothing but the page's own style (by the SHA-256 of `style`) and data:
-  images (the icon and the favicon)."
+  "Nothing but the page's own style (by the SHA-256 of `style`), data:
+  images (the icon and the favicon) and fonts from the site itself
+  (clogem-press/fonts/)."
   [style]
   (let [digest (.digest (MessageDigest/getInstance "SHA-256") (.getBytes ^String style StandardCharsets/UTF_8))]
     (str "default-src 'none'; style-src 'sha256-" (.encodeToString (Base64/getEncoder) digest) "'; "
-         "img-src data:; base-uri 'none'; form-action 'none'")))
+         "img-src data:; font-src 'self'; base-uri 'none'; form-action 'none'")))
 
 ;; ---------------------------------------------------------------------------
 ;; The page
@@ -709,7 +740,8 @@
   "A language's page, as one string; `pages` is {tag words}, for the
   switcher."
   [pages tag svg]
-  (let [style (css)
+  (let [body  (page-body pages tag svg)
+        style (css tag (keys (page-glyphs (font-plan) tag body)))
         icon  (data-uri svg)
         page  (get pages tag)]
     (str
@@ -731,7 +763,7 @@
         (alternates)
         [:link {:rel "icon" :type "image/svg+xml" :href icon}]
         [:style (h/raw style)]]
-       (page-body pages tag svg)]))))
+       body]))))
 
 (defn glyph-lists
   "{subset id text}: every character each subset must hold, over the five
