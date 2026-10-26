@@ -1796,7 +1796,7 @@ Decisions:
    are: a Babashka script with the hiccup2 built into bb (`support/support_page.clj`, `bb
    support-page`), its words in `support/i18n/*.edn`, one self-contained `index.html` per language with no JavaScript,
    no cookies and nothing loaded from other sites, a Content-Security-Policy that allows only its one
-   style (by SHA-256), `data:` images and, since SP.6, fonts from the site itself (item 8), the hub's no-script theme switcher (three radio buttons read
+   style (by SHA-256), `data:` images and, since SP.6, on the English and Chinese pages, fonts from the site itself (item 8), the hub's no-script theme switcher (three radio buttons read
    with `:has()`). The theme in `src/clogem/theme/` runs scripts the hub forbids (the mode script,
    `nav.js`, Pagefind) and would bring a site's whole asset tree for one page, so it is not used. The
    generator stays out of `src/clogem/` and shares no code with the site generator; the parts adapted
@@ -1862,9 +1862,10 @@ Decisions:
      the email address stay as they are. Links to pages in English only carry `hreflang="en"` and a
      short note on the other pages; issues and discussions are open to any of the page's languages,
      and replies may come in English.
-   - **Type.** Text in LXGW WenKai since SP.6 (item 8, which replaces "no bundled font"); the
-     systems' CJK fonts stay in the stacks by `:lang()`, after WenKai and ahead of the generic
-     family, and CJK text has no letter-spacing.
+   - **Type.** English and Chinese text in LXGW WenKai since SP.6, Portuguese and Spanish in the
+     system's fonts since SP.7 (item 8, which replaces "no bundled font"); the systems' CJK fonts
+     stay in the stacks by `:lang()`, after WenKai and ahead of the generic family, and CJK text
+     has no letter-spacing.
    - **Native review.** The four translations are listed in the CHANGELOG for a native speaker's
      review before or soon after publication.
 4. **Six sections, in this order** (ours, pinned by `support_page_test`): what clogem-press is; what it
@@ -1889,12 +1890,27 @@ Decisions:
    row as on the hub; under 30rem the theme switcher drops its icons and tightens, so Portuguese's
    and Spanish's labels keep one line. Inline code of up to 24 characters keeps one line
    (`bb dev`); longer code, a path, may break.
-8. **Text in LXGW WenKai (霞鹜文楷)** (owner, 2026-10-26; it replaces "no bundled font"). All text
-   that is not a heading is set in LXGW WenKai, a kai-style face derived from Fontworks' Klee One
-   with its own Latin, in all five languages; headings (`h1`–`h3`) keep the system heading stack
-   and `code`/`pre` the monospace one. The owner's decisions:
+8. **Text in LXGW WenKai (霞鹜文楷), for English and Chinese** (owner, 2026-10-26; it replaces "no
+   bundled font"). On the en, zh-Hant and zh-Hans pages all text that is not a heading is set in
+   LXGW WenKai, a kai-style face derived from Fontworks' Klee One with its own Latin; headings
+   (`h1`–`h3`) keep the system heading stack and `code`/`pre` the monospace one. The owner's
+   decisions:
+   - **English and Chinese only** (after reviewing PR #17, SP.7): "Use LXGW WenKai only for Chinese
+     and English. For Traditional Chinese, also use LXGW WenKai directly; there is no need to
+     switch to the TC version. Spanish and Portuguese have many cases of missing characters,
+     fallback issues, or accent marks not displayed, so switch back to the original font that
+     displays them properly." So zh-Hant takes the main WenKai's own Traditional glyphs (the
+     `:zh-Hant :wenkai` switch SP.6 left in the plan, now the only way: WenKai TC is gone from the
+     plan, the font step and the licences). pt-BR and es-ES are back on the hub's text and heading
+     stacks and the system fonts' weights (700 for the eyebrow, the chips and `<strong>`, 650–600
+     for the controls), with no `@font-face`, no font file and the hub's CSP without `font-src`;
+     their footers credit no font. Portuguese and Spanish words on the other pages, the dropdown's
+     names, take the system's stack by `:lang(pt)` and `:lang(es)` (which match `pt-BR` and
+     `es-ES` too), so no accented letter outside English is ever drawn in WenKai. The plan names
+     the WenKai pages (`:pages` in `support/fonts.edn`).
    - **The files are published beside the pages**, as `clogem-press/fonts/*.woff2` on the hub's
-     `gh-pages`, never embedded in a page. The CSP gains `font-src 'self'` and nothing else.
+     `gh-pages`, never embedded in a page. The WenKai pages' CSP gains `font-src 'self'` and
+     nothing else.
    - **Subsetting runs `pyftsubset` (fontTools) in GitHub Actions; the repository holds no Python
      for it** (no `.py`, no `requirements*.txt`; the site's two CI checkers in `.github/scripts/`
      predate this). `support/fonts.sh` (bash) installs fontTools and brotli into a venv with
@@ -1905,44 +1921,40 @@ Decisions:
      the system font. No rule asks for a weight with no face, so nothing is faux-bold.
 
    Ours, within those:
-   - **zh-Hant is set in LXGW WenKai TC**, the project's own Traditional Chinese edition. Its
-     emphasis is **TC Medium (500)**: v1.530 of WenKai TC ships Light, Regular and Medium and *no*
-     Bold (the brief expected Regular and Bold; the release's assets and the files'
-     `usWeightClass` say otherwise), so the zh-Hant page uses the same weights as the others.
-   - **The glyph-form caveat.** WenKai TC draws inherited forms (傳承字形, after 一點字坊's
-     standardisation document), not Taiwan's Ministry of Education standard forms, and merges some
-     variant code points into one shape: 為 is drawn as 爲 (the page's 會成為側邊欄 shows 爲), 真 as
-     眞, 緒 as 緖. It is listed for native review (CHANGELOG). **The switch:** set `:zh-Hant` in
-     `support/fonts.edn` from `:wenkai-tc` to `:wenkai`; the zh-Hant page then takes the main
-     WenKai's own Traditional glyphs, from the `wenkai-hant-*` subsets already in the plan, and
-     nothing else changes.
    - **Subsets by script and weight, shared across pages, each page declaring only its own.**
-     `wenkai-latin-400/500` (U+0–2E7F) for the en, pt-BR, es-ES and zh-Hans pages;
-     `wenkai-sc-400/500` (U+2E80 up) for zh-Hans; `wenkai-tc-400/500` (the zh-Hant page's Latin and
-     Chinese in one file per weight); and, for the switcher's names in another script,
-     `wenkai-names-500` (简体中文) and `wenkai-tc-names-500` (繁體中文), a few glyphs each, which a
-     browser fetches only when the dropdown is opened. Every language's text is in its own font
-     wherever it sits (`:lang()` rules, the Latin languages' too). `font-display: swap`, so text
-     shows at once in the system font and changes when WenKai arrives.
+     `wenkai-latin-400/500` (U+0–2E7F, without U+2026) for the three WenKai pages, built from the
+     English page and the Latin of the Chinese pages only; `wenkai-sc-400/500` and
+     `wenkai-hant-400/500` (U+2026 and U+2E80 up), each Chinese page's own Chinese, the other
+     script's dropdown name included; and `wenkai-names-500` (U+2E80 up), the English page's
+     繁體中文 and 简体中文, a few glyphs a browser fetches only when the dropdown is opened. English
+     text is in its own stack wherever it sits (`:lang(en)`). `font-display: swap`, so text shows
+     at once in the system font and changes when WenKai arrives.
+   - **"…" in English is the system's.** WenKai draws U+2026 full-width and vertically centred, as
+     Chinese sets it; in English it should sit on the baseline. The Latin subsets' `unicode-range`
+     leaves it out, so the system's font draws it; Chinese text takes WenKai's own from its page's
+     Chinese subset.
+   - **Sizes** (v1.530, SP.7): Latin 22,764 and 22,520 bytes; zh-Hant 103,400 and 17,700; zh-Hans
+     87,548 and 14,920; the names 3,416. A page as it opens, HTML and fonts: English 79,987 bytes
+     (83,403 with the list open), zh-Hant 202,464, zh-Hans 183,717; pt-BR 35,632 and es-ES 35,755,
+     the HTML alone. Each subset's cap in the plan is about twice its size.
    - **The character lists come from the generator.** `bb support-page` writes
      `dist-support/glyphs/<subset>.txt` (outside `clogem-press/`, never published): every character
      the pages set in that subset, read from the page's body as the stylesheet sets it (headings
      and code out; the Medium lists only what is Medium; the chips' and eyebrow's capitals, which
-     `text-transform` makes); the Latin and zh-Hant lists always add printable ASCII.
+     `text-transform` makes); the Latin lists always add printable ASCII.
      `support/fonts.sh` cuts each subset from its list, fails if the subset's cmap misses a
      character of it, fails a subset over its cap (`support/fonts.edn`, set from measurement), and
      copies each font's `OFL.txt` beside the subsets (OFL condition 2).
-   - **Pins in one place**, `support/fonts.edn`: each font's tag (v1.530), each TTF's release URL
-     and SHA-256, each `OFL.txt` at that tag (from `raw.githubusercontent.com`) and its SHA-256;
+   - **Pins in one place**, `support/fonts.edn`: the font's tag (v1.530), each TTF's release URL
+     and SHA-256, its `OFL.txt` at that tag (from `raw.githubusercontent.com`) and its SHA-256;
      `bb support-fonts` prints them as lines for the script, which checks every file with
-     `sha256sum -c` on every run.
-   - **Licences and names.** Both fonts are SIL OFL 1.1. LXGW WenKai reserves the names 霞鹜, 霞鶩,
+     `sha256sum -c` on every run. The script needs Python 3.12 or 3.13 (the pinned brotli wheels'),
+     and says so before `pip` would report a hash mismatch as tampering.
+   - **Licence and names.** LXGW WenKai is SIL OFL 1.1. It reserves the names 霞鹜, 霞鶩,
      落霞孤鹜, 落霞孤鶩 and LXGW, with an additional permission to keep them in subsets or WOFF2
      conversions "solely for web font delivery", not offered as installable fonts: ours are that,
-     so they keep their names. WenKai TC's `OFL.txt` declares no Reserved Font Name (its README
-     says why, and asks derivatives to avoid those names; a web subset is not a derivative font
-     offered under a name). Every name record, copyright and licence included, stays in each
-     subset. The page's footer credits the font, linking its repository (WenKai TC on zh-Hant).
+     so they keep their names. Every name record, copyright and licence included, stays in each
+     subset. The three WenKai pages' footers credit the font, linking its repository.
    - **No font without the font step.** `bb support-page` alone builds working pages: the
      `@font-face` URLs are relative (`fonts/…` from English, `../fonts/…` from the others, so each
      page's style and CSP hash are its own), and without the files the system fonts show.
