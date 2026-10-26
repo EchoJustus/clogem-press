@@ -11,7 +11,8 @@ B2, §11.3 item 1), then Task F — analytics, verification and a static root
 (§11.3 items 14, 15), then Task B2b — the navbar, the mobile drawer and the
 page chrome (the second half of B2, §11.3 item 9, D-P4-9), then Task E2 —
 article-page parity (§11.3 item 16, D-P4-13), then Task E1a — the blog
-identity and the home banner (the first half of §11.3 item 13, D-P4-13).
+identity and the home banner (the first half of §11.3 item 13, D-P4-13),
+then Task G — cross-language search (§11.3 item 17, D-P4-17, D-P4-18).
 The version stays 0.2.0. Every article page now ends with an update bar
 by default, as in vdoing (`:theme :update-bar {:show-to-article false}`
 drops it), an article's `titleTag` badge now shows in every list row, and
@@ -24,7 +25,10 @@ Likewise a site that set any of the five keys 0.2.0 listed as planned —
 buttons and a back-to-top button now appear by default, as in vdoing.
 Likewise for E1a's keys (`:theme :blogger`, `:social`, `:footer`,
 `:banner-bg`, `:body-bg-img*`, `:title-badge*`): a site that set one now
-gets it, and title badges appear by default, as in vdoing.
+gets it, and title badges appear by default, as in vdoing. And a site that
+set `:search :cross-language true` (0.2.0 warned that it was planned and
+had no effect) now gets a "Search all languages" checkbox in its search
+dialog, off for each reader until they tick it.
 
 **Support page** (DESIGN.md §7.5): clogem-press's page on the Clogem
 support site, https://echojustus.github.io/clogem-support/clogem-press/,
@@ -34,9 +38,10 @@ Languages (SP.2): English (the default) at `clogem-press/`; Simplified
 Chinese at `zh-Hans/`; Traditional Chinese, with Taiwan wording, at
 `zh-Hant/`; Brazilian Portuguese at `pt-BR/` (also for `pt`); European
 Spanish at `es-ES/` (also for `es`). Five pages, **179,039 bytes** in all
-(as of SP.8): `index.html` 34,804, `zh-Hant/index.html` 36,181,
-`zh-Hans/index.html` 36,066, `pt-BR/index.html` 35,733, `es-ES/index.html`
-35,856 (each within the 64 KB budget), plus, on the English and Chinese
+(as of Task G's privacy clause, below; 178,640 as of SP.8): `index.html`
+34,880, `zh-Hant/index.html` 36,259, `zh-Hans/index.html` 36,144,
+`pt-BR/index.html` 35,820, `es-ES/index.html` 35,936 (each within the
+64 KB budget), plus, on the English and Chinese
 pages, the fonts they use (SP.8 and SP.7, below; README).
 
 ### Added (support page)
@@ -362,7 +367,6 @@ clogem-press card and its README's table.
   anything else is one warning naming it, repaired to false, so no site
   that built before starts failing. `true` under `:provider :none` (what
   `--no-search` sets) says nothing and does nothing.
-
 - **Merge data on the page** (`clogem.search/indexed-langs`,
   `merge-data`; `render/page-map`, `theme/layout`): a page that offers the
   checkbox carries `data-clogem-merge` on its `<pagefind-config>` — the
@@ -406,6 +410,25 @@ clogem-press card and its README's table.
 
 - `config.example.edn` documents `:cross-language` and drops "deferred to
   Phase 4 (D-P3-11)".
+- **The demo turns the feature on** (`examples/demo-site/site.edn`:
+  `:search {:provider :pagefind :cross-language true}`), so CI's browser
+  job covers it (D-P4-18); its `doctor` is unchanged at one warning.
+  CI's `--no-search` step greps for `js/search-all.js` and
+  `css/search-all.css` too.
+- **DESIGN** §6.7 records what was built and four more facts of the 1.5.2
+  bundle, re-read in `pagefind.js` and `pagefind-worker.js`: a merge's
+  `language` must be Pagefind's lowercased key, or `findIndex` silently
+  falls back to the largest index; each index segments the query by its
+  own language; an absolute merge path gives absolute result URLs unless
+  `baseUrl` is passed (the worker has no `document`, so the same-origin
+  strip never runs there); and the language filter is `mergeFilter`. §8,
+  §10 and §11.3 items 17 and 18 mark cross-language search done, with
+  the 0.3.0 release the next, separate step; §11.2 item 43 points to it.
+- **README**: a *Cross-language search* paragraph in Theme; the CSP
+  paragraph names `js/search-all.js` (same-origin; merges need nothing
+  beyond Pagefind's `worker-src 'self'` and `'wasm-unsafe-eval'`); the
+  support page's approval step says the new clause awaits the owner; the
+  test count.
 - **The support page's privacy note** now says a site keeps **up to four**
   things in its reader's browser, the fourth being the cross-language
   search choice on a site that offers it, in all five languages
@@ -425,31 +448,28 @@ clogem-press card and its README's table.
   key absent, false, or true under `:provider :none` gives a byte-identical
   `dist/`; the head's order; `404.html`; `check_search.clj`'s `<body>`
   regex still matches; and, with `CLOGEM_PAGEFIND`, each page's keys plus
-  its own equal `pagefind-entry.json`'s.
-- `test/clogem/search_all_test.clj`: the two files' gzip budgets, printed
-  as `nav.js`'s are; no `innerHTML` and no modal built in JS; the stored
-  key written the way `support_page_test`'s scan reads it, with every
-  access wrapped; the dropdown-wrapper rule and no colour of its own; the
-  row hidden in print by `theme.css`'s `.clogem-search` rule; the string
-  in all five languages. `support_page_test.clj`'s
-  `the-privacy-note-names-every-stored-key` now pins four keys, and
-  `the-privacy-note-keeps-to-what-clogem-press-stores` the new openings;
-  the first failed as soon as `js/search-all.js` existed, and passed with
-  the note.
-- `test/clogem/search_all_test.clj` (new): `"yes"`, `1` and `:true` each
-  give exactly one warning and leave the feature off; nil and false are
-  silent; `:cross-language true` draws no "planned" warning;
-  `:crossLanguage`'s hint lists `:cross-language` among the options; the
-  example config and the demo stay quiet. `config_test.clj`'s
+  its own equal `pagefind-entry.json`'s. The head's order is held on a
+  build that has `overrides/custom.css` and an analytics loader, so
+  "custom.css the last stylesheet, analytics last of all" is checked, not
+  assumed.
+- `test/clogem/search_all_test.clj` (new): the two files' gzip budgets,
+  printed as `nav.js`'s are; no `innerHTML` and no modal built in JS; the
+  stored key written the way `support_page_test`'s scan reads it, with
+  every access wrapped; the dropdown-wrapper rule and no colour of its
+  own; the row hidden in print by `theme.css`'s `.clogem-search` rule; the
+  string in all five languages. The same file holds item 1's config
+  tests: `"yes"`, `1` and `:true` each give exactly one warning and leave
+  the feature off; nil and false are silent; `:cross-language true` draws
+  no "planned" warning; `:crossLanguage`'s hint lists `:cross-language`
+  among the options; the example config and the demo stay quiet. `config_test.clj`'s
   `a-new-key-is-registered-in-one-place` now uses a synthetic `:zz-test`
   key (`with-redefs`), so it no longer depends on which real key is still
   planned. Each failed first on `f44fcf6`.
+- `support_page_test.clj`'s `the-privacy-note-names-every-stored-key` now
+  pins four keys, and `the-privacy-note-keeps-to-what-clogem-press-stores`
+  the new openings; the first failed as soon as `js/search-all.js`
+  existed, and passed with the note.
 
-- **The demo turns the feature on** (`examples/demo-site/site.edn`:
-  `:search {:provider :pagefind :cross-language true}`), so CI's browser
-  job covers it (D-P4-18); its `doctor` is unchanged at one warning.
-  CI's `--no-search` step greps for `js/search-all.js` and
-  `css/search-all.css` too.
 - `test/browser/search-all.test.mjs` (new, 45 checks): the English home
   finds no `百分号` unticked and fetches only the English `pf_meta`;
   ticking it finds `/pages/cjk001/`, stores `"1"` and survives a reload,

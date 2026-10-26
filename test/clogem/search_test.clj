@@ -1062,29 +1062,37 @@
             "and the feature itself does change the output (the mutant guard)")))))
 
 (deftest the-head-keeps-its-order
-  (with-markup
-    (fn [out]
-      (doseq [parts [[] ["ms"] ["zh-Hant" "pages" "t00001"]]
-              :let [h (apply html out parts)
-                    head (subs h 0 (str/index-of h "</head>"))
-                    at (fn [re] (let [m (re-find re head)] (when m (str/index-of head m))))
-                    pf-css (at #"pagefind-component-ui\.css")
-                    all-css (at #"css/search-all\.css")
-                    pf-js (at #"pagefind-component-ui\.js")
-                    search-js (at #"js/search\.js")
-                    all-js (at #"js/search-all\.js")
-                    custom (at #"overrides/custom\.css")
-                    analytics (at #"js/analytics\.js")]]
-        (testing (pr-str parts)
-          (is (< pf-css all-css pf-js all-js)
-              "Pagefind's CSS, search-all.css, Pagefind's module, search-all.js")
-          (is (= (= ["ms"] (vec parts)) (some? search-js))
-              "js/search.js only where clogem-press supplies the strings")
-          (when search-js (is (< pf-js search-js all-js)
-                              "search-all.js last: it augments the modal search.js creates"))
-          (is (nil? custom) "this fixture has no overrides/custom.css")
-          (is (nil? analytics) "nor analytics"))))
-    x-lang))
+  (testing "with a site stylesheet and an analytics loader, so the two
+            pins at the end of <head> are really there to keep"
+    (with-site five-langs {}
+      (fn [dir out]
+        (let [bin (fake/fake-pagefind! (fs/path dir "bin"))]
+          (fs/create-dirs (fs/path dir "overrides"))
+          (spit (fs/file dir "overrides" "custom.css") "body { margin: 0; }\n")
+          (spit (fs/file dir "site.edn")
+                (pr-str (pagefind-site bin (merge x-lang {:analytics {:provider :ga4 :id "G-ABC123"}}))))
+          (build! dir out)
+          (doseq [parts [[] ["ms"] ["zh-Hant" "pages" "t00001"]]
+                  :let [h (apply html out parts)
+                        head (subs h 0 (str/index-of h "</head>"))
+                        at (fn [re] (let [m (re-find re head)] (when m (str/index-of head m))))
+                        pf-css (at #"pagefind-component-ui\.css")
+                        all-css (at #"css/search-all\.css")
+                        pf-js (at #"pagefind-component-ui\.js")
+                        search-js (at #"js/search\.js")
+                        all-js (at #"js/search-all\.js")
+                        sheets (map second (re-seq #"<link href=\"([^\"]+)\" rel=\"stylesheet\"" head))]]
+            (testing (pr-str parts)
+              (is (< pf-css all-css pf-js all-js)
+                  "Pagefind's CSS, search-all.css, Pagefind's module, search-all.js")
+              (is (= (= ["ms"] (vec parts)) (some? search-js))
+                  "js/search.js only where clogem-press supplies the strings")
+              (when search-js (is (< pf-js search-js all-js)
+                                  "search-all.js after it: it augments the modal search.js creates"))
+              (is (str/starts-with? (str (last sheets)) "/clogem/overrides/custom.css?v=")
+                  (str "custom.css is still the last stylesheet: " (pr-str sheets)))
+              (is (re-find #"<script [^>]*src=\"/clogem/js/analytics\.js\?v=[^\"]+\"[^>]*></script>$" head)
+                  "and the analytics loader still last of all"))))))))
 
 (deftest the-merged-keys-are-the-real-indexs-keys
   (if-let [real (System/getenv "CLOGEM_PAGEFIND")]
