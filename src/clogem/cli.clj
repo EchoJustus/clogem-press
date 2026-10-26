@@ -252,7 +252,9 @@
   fetch-tool
   "Fetch, sha256-verify and cache a binary tool this site pins — Pagefind
   by default, or `--tool chroma` / `--tool fswatcher` — and print its path
-  (§4; what CI exports as CLOGEM_PAGEFIND)."
+  (what CI exports as CLOGEM_PAGEFIND)."
+  ;; DESIGN.md §4. `bb fetch-tool --help` prints the docstring's first
+  ;; paragraph, so it names no section or fix round (P4 follow-ups item 9)
   [opts]
   (let [id   (str/lower-case (str (or (:tool opts) "pagefind")))
         tool (get tools/descriptors (keyword id))
@@ -337,7 +339,9 @@
   clean
   "Remove the output directory: only one a build marked as its own
   (`.clogem-output`), and never one holding a `.git` (a deploy worktree);
-  either is refused, saying how to clean it (P4-D.4 item 3)."
+  either is refused, saying how to clean it."
+  ;; P4-D.4 item 3. `bb clean --help` prints the docstring's first
+  ;; paragraph, so it names no fix round (P4 follow-ups item 9)
   [opts]
   (let [cfg  (load-cfg! opts)
         out  (config/out-dir cfg)
@@ -430,15 +434,54 @@
          (bcli/format-opts {:spec (get-in m [:org.babashka/cli :spec])})
          "\n")))
 
+(defn- option-name
+  "How `k`, an option key babashka.cli parsed with value `x`, was most
+  likely written: `-x` for one letter, `--no-k` for false, else `--k`."
+  [k x]
+  (cond (= 1 (count (name k))) (str "-" (name k))
+        (false? x)             (str "--no-" (name k))
+        :else                  (str "--" (name k))))
+
+(defn unknown-options
+  "The options in `opts` that the task var `v`'s spec does not define, as
+  written on the command line (`option-name`), sorted. `--help` and `-h`
+  are every task's; namespaced keys are the generator's own (`bb dev`
+  passes `:clogem/dev?` to `build`)."
+  [v opts]
+  (let [known (into #{:help :h} (keys (get-in (meta v) [:org.babashka/cli :spec])))]
+    (sort (for [[k x] opts
+                :when (and (keyword? k) (nil? (namespace k)) (not (known k)))]
+            (option-name k x)))))
+
+(defn- warn-unknown-options!
+  "One line on stderr for each option of a command line that `v` does not
+  define, naming it and the task's options (P4 follow-ups item 10): a typo
+  such as `--prot` was silently ignored. A warning, not an error, so a
+  script that passes one keeps working. Not for `bb dev`'s own calls of
+  `build`, which carry dev's options and `:clogem/dev?`."
+  [v opts]
+  (when-not (:clogem/dev? opts)
+    (when-let [unknown (seq (unknown-options v opts))]
+      (let [task  (str/replace (str (:name (meta v))) #"-cmd$" "")
+            valid (concat (map #(str "--" (name %)) (keys (get-in (meta v) [:org.babashka/cli :spec])))
+                          ["--help"])]
+        (binding [*out* *err*]
+          (doseq [o unknown]
+            (println (str "clogem-press: bb " task ": unknown option " o " (ignored); its options are "
+                          (str/join ", " valid) "."))))))))
+
 (defn with-help
   "Wrap the task function `f` of the var `v`: on `--help` or `-h` it prints
   `help-text` and returns nil, before anything else runs. No task read its
-  options' `:help`, so `bb clean --help` deleted the output directory."
+  options' `:help`, so `bb clean --help` deleted the output directory.
+  Otherwise an option `v` does not define is warned about, and ignored
+  (`warn-unknown-options!`)."
   [f v]
   (fn [opts]
     (if (or (:help opts) (:h opts))
       (print (help-text v))
-      (f opts))))
+      (do (warn-unknown-options! v opts)
+          (f opts)))))
 
 (def ^:private tasks
   "Every task bb.edn runs, each wrapped once by `with-help`."

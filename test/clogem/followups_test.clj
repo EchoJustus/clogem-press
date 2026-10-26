@@ -417,3 +417,66 @@
                         :let [want (str enc (when (str/ends-with? link "/") prefix) want)
                               got  (second (re-find (re-pattern (str "href=\"([^\"]*)\">N" i "<")) html))]]
                   (is (= want got) (str page ": " link)))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 9: --help without internal references
+
+(def ^:private internal-reference
+  "A fix round (`D.4`, `P4-D.4`, `E1a.1`, `round 3`), a round's item
+  (`item 3`) or a bare DESIGN.md section (`§4`)."
+  #"\b(?:P\d+-)?[A-F]\d*[a-z]?\.\d+\b|(?i)\bround \d|\bitem \d|§\s*\d")
+
+(deftest no-task-s-help-names-an-internal-round
+  (testing "item 9: `bb clean --help` said \"(P4-D.4 item 3)\" and
+            `bb fetch-tool --help` \"(§4; …)\""
+    (doseq [v [#'cli/build #'cli/dev #'cli/serve #'cli/doctor #'cli/clean #'cli/fm-fix
+               #'cli/fetch-tool #'cli/test-cmd]]
+      (let [help (cli/help-text v)]
+        (is (not (re-find internal-reference help)) (str (:name (meta v)) ":\n" help))))
+    (testing "the pattern finds what it should"
+      (doseq [s ["(P4-D.4 item 3)" "D.4" "E1a.1" "round 3" "§4"]]
+        (is (re-find internal-reference s) s)))))
+
+;; ---------------------------------------------------------------------------
+;; Item 10: unknown command-line options
+
+(deftest an-unknown-option-is-a-warning-naming-it-and-the-task-s-options
+  (testing "item 10: `bb build --prot 1` built as if nothing was wrong"
+    (with-site url-site
+      (fn [dir]
+        (let [[v out] (run-task #'cli/build dir "--prot" "1" "-x" "--no-foo" "--no-write")]
+          (is (not (instance? Throwable v)) (str "still runs: " out (ex-msg v)))
+          (is (fs/exists? (fs/path dir "dist" "index.html")) "and builds")
+          (doseq [o ["--prot" "-x" "--no-foo"]]
+            (is (re-find (re-pattern (str "clogem-press: bb build: unknown option " o " \\(ignored\\); its options are "
+                                          "--site-dir, .*--no-write, .*--help\\."))
+                         out)
+                (str o ": " out)))
+          (is (= 3 (count (re-seq #"unknown option" out))) "one line each")
+          (is (not (re-find #"unknown option --(?:site-dir|no-write|out)\b" out))))
+        (testing "known options, aliases and --help say nothing"
+          (let [[_ out] (run-task #'cli/build dir "-o" "dist" "--no-write" "--no-search")]
+            (is (not (str/includes? out "unknown option")) out))
+          (let [[_ out] (run-task #'cli/clean dir "-h")]
+            (is (not (str/includes? out "unknown option")) out)))
+        (testing "dev's own rebuilds, which pass dev's options to build, say nothing"
+          (let [out (java.io.StringWriter.)
+                h   (binding [*out* out *err* out]
+                      (dev/start-dev! (assoc (parse #'cli/dev ["--poll" "--no-write" "--no-search" "--interval" "100"])
+                                             :site-dir (str dir))
+                                      {:run-server! (fn [& _] (fn [& _] nil))
+                                       :poll-watch! (fn [& _] nil)
+                                       :notify! (fn [_]) :notify-error! (fn [_])}))]
+            (try
+              (is (str/includes? (str out) "rebuilt in") (str out))
+              (is (not (str/includes? (str out) "unknown option")) (str out))
+              (finally (binding [*out* out *err* out] ((:stop! h)))))))
+        (testing "through bb.edn, as a script runs it: a warning, and exit 0"
+          (let [bb  (or (-> (java.lang.ProcessHandle/current) .info .command (.orElse nil)) "bb")
+                p   (-> (ProcessBuilder. [bb "--config" (str (fs/absolutize "bb.edn")) "clean" "--bogus"])
+                        (.directory (fs/file dir))
+                        (.redirectErrorStream true)
+                        (.start))
+                out (slurp (.getInputStream p))]
+            (is (zero? (.waitFor p)) out)
+            (is (str/includes? out "clogem-press: bb clean: unknown option --bogus (ignored)") out)))))))

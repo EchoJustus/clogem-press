@@ -91,6 +91,19 @@ items, and what the E1a and E2 checks left; tests in
   `/文档/`, `/my docs/` and pre-encoded forms, with and without the slash,
   under `/` and `/my docs/`, on an English and a Chinese page).
 
+- **An unknown command-line option is a warning** (item 10), one line on
+  stderr for each, naming it and the task's options — `clogem-press: bb
+  build: unknown option --prot (ignored); its options are --site-dir, …,
+  --help.` — and the task runs as before: it was silently ignored, and an
+  error would break scripts that pass one. `bb dev`'s own rebuilds, which
+  hand `build` dev's options, say nothing
+  (`an-unknown-option-is-a-warning-naming-it-and-the-task-s-options`, in
+  process and through `bb.edn`).
+- **`--help` names no fix round or design section** (item 9): `bb clean
+  --help` ended "(P4-D.4 item 3)" and `bb fetch-tool --help` began its
+  parenthesis "§4;". Both moved to code comments
+  (`no-task-s-help-names-an-internal-round`, over every task).
+
 ### Documentation (P4 follow-ups)
 
 - **Task D's entry on `:min-bb-version` said `bb.edn` "requires" babashka
@@ -104,6 +117,10 @@ items, and what the E1a and E2 checks left; tests in
   `dist/deploy/.git` file. The code refused both; nothing tested it, and
   a `clean` that checks only `dist/.git` passed every test
   (`clean-refuses-a-marked-directory-with-a-git-below-its-top`).
+- **`parity_test`'s `the-home-s-more-follows-more-article`** (item 13): its
+  first `testing` label still said the right bar's More "goes to the
+  archives as before"; since the merge with E1a it checks that a simple
+  home's right bar has no update bar, and the label says so.
 
 **Support page** (DESIGN.md §7.5): clogem-press's page on the Clogem
 support site, https://echojustus.github.io/clogem-support/clogem-press/,
