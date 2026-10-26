@@ -33,10 +33,11 @@ nothing in `src/clogem/` changes, and a built site is unaffected.
 Languages (SP.2): English (the default) at `clogem-press/`; Simplified
 Chinese at `zh-Hans/`; Traditional Chinese, with Taiwan wording, at
 `zh-Hant/`; Brazilian Portuguese at `pt-BR/` (also for `pt`); European
-Spanish at `es-ES/` (also for `es`). Five pages, **172,483 bytes** in all:
-`index.html` 33,172, `zh-Hans/index.html` 34,237, `zh-Hant/index.html`
-34,348, `pt-BR/index.html` 34,827, `es-ES/index.html` 34,951 (each within
-the 64 KB budget).
+Spanish at `es-ES/` (also for `es`). Five pages, **178,640 bytes** in all
+(as of SP.8): `index.html` 34,804, `zh-Hant/index.html` 36,181,
+`zh-Hans/index.html` 36,066, `pt-BR/index.html` 35,733, `es-ES/index.html`
+35,856 (each within the 64 KB budget), plus, on the English and Chinese
+pages, the fonts they use (SP.8 and SP.7, below; README).
 
 ### Added (support page)
 
@@ -79,9 +80,9 @@ the 64 KB budget).
   names the generator's own content languages (English, Simplified and
   Traditional Chinese, Malay, Tamil), and none suggests it supports
   Portuguese or Spanish content.
-- The privacy section is a **draft for the owner**, who approves its
-  wording before the first publication (the translations mirror the
-  English text fact for fact, and change when it changes): the page (no cookies, no script,
+- The privacy section's wording is **the owner's**, approved on
+  2026-10-26 (the translations mirror the English text fact for fact, and
+  change when it changes): the page (no cookies, no script,
   nothing from other sites; GitHub Pages' own logs), the generator (runs
   locally, sends nothing; downloads Chroma, Pagefind and the fswatcher pod
   from their GitHub releases only when first needed or on `bb fetch-tool`,
@@ -129,6 +130,96 @@ the 64 KB budget).
   page and no claim of Portuguese or Spanish content; CJK fonts and
   spacing; the stand-in publishes all five files and nothing else.
 
+### Changed (SP.9, support page)
+
+- **The privacy note is approved** (the owner, 2026-10-26): each
+  `support/i18n/*.edn` now marks the section as the approved wording,
+  which changes only with the owner's approval, and the test checks that
+  mark in place of the draft's. The page's words are unchanged.
+- **The footer's year stays 2026** (the owner: "all 2026"), not the build's.
+- **The deploy key is set up** (the owner, 2026-10-26), so the first push
+  to `main` that touches the page publishes it. The one-time steps no
+  longer say a key may not be shared: GitHub takes a public key as a
+  deploy key on one repository only, and a key of its own is best, so that
+  each can be revoked alone.
+
+### Changed (SP.8, support page)
+
+- **The footer opens with the copyright notice**, the owner's rule for every
+  Clogem support page (2026-10-26; clogem-support's `CLAUDE.md`, "Footer
+  copyright notices"; DESIGN.md §7.5 item 9): `© 2026 EchoJustus (Jiapeng
+  Ji). clogem-press.`, the same characters on all five pages. The
+  publisher is always `EchoJustus (Jiapeng Ji)`, in full, and never wraps
+  across lines (one `white-space: nowrap` element, its text unchanged; the
+  product's name too, so it never breaks at its hyphen). It is written in
+  the generator (`support-page/copyright-holder`), not in `support/i18n/`,
+  so no translation changes it; the year is fixed, the page's first
+  publication. Licence headers in source files, the MIT
+  notices and `LICENSE` are unchanged: the rule covers footers only.
+- **Sizes**: each page grows by 101 bytes, and `wenkai-latin-400` by 120
+  (`©`), to 22,884; the others are unchanged. Five pages, 178,640 bytes:
+  `index.html` 34,804, `zh-Hant/index.html` 36,181, `zh-Hans/index.html`
+  36,066, `pt-BR/index.html` 35,733, `es-ES/index.html` 35,856. A page's
+  download, HTML and fonts, as it opens: English 80,208 (83,624 with the
+  language list open), zh-Hant 202,685, zh-Hans 183,938, pt-BR 35,733,
+  es-ES 35,856.
+- Tests: the notice word for word, first in every footer and once on each
+  page; `copyright-holder`; every `EchoJustus` a reader sees in a footer
+  followed by ` (Jiapeng Ji)`; the paragraph as built, with its two nowrap
+  elements; no `©` or `Jiapeng` in `support/i18n/`; DESIGN.md quoting the
+  notice. They failed first. The status check's "no dates promised" now passes over the
+  notice's year, and only that. Chromium (5 languages, 320–1440 px, light
+  and dark, 60 runs): the notice exact, the name on one line, the footer's
+  paragraphs not overlapping, no sideways scroll, no CSP message.
+
+### Changed (SP.7, support page)
+
+- **LXGW WenKai for English and Chinese only** (the owner, 2026-10-26,
+  after reviewing PR #17; DESIGN.md §7.5 item 8). The en, zh-Hant and
+  zh-Hans pages keep their text in WenKai, Regular and Medium; **zh-Hant
+  now uses the main LXGW WenKai**, its own Traditional glyphs, not WenKai
+  TC, which is gone from `support/fonts.edn`, `support/fonts.sh`'s
+  downloads and the published licences (`OFL-LXGW-WenKai-TC.txt`).
+- **pt-BR and es-ES are back in the system fonts** they had before SP.6,
+  the hub's text and heading stacks and its weights: WenKai lacked or
+  misplaced accents there. They declare no `@font-face`, load no font
+  file, credit no font, and their CSP is the hub's, without `font-src`.
+  Portuguese and Spanish words on the other pages (the dropdown's
+  "Português (Brasil)", "Español (España)") take the system's stack by
+  `:lang(pt)` and `:lang(es)`.
+- **The subsets**: Latin (from the English page and the Latin of the
+  Chinese pages only), each Chinese page's own Chinese, and `wenkai-names-500`
+  on the English page alone. Sizes (v1.530): `wenkai-latin-400` 22,764,
+  `wenkai-latin-500` 22,520, `wenkai-hant-400` 103,400, `wenkai-hant-500`
+  17,700, `wenkai-sc-400` 87,548, `wenkai-sc-500` 14,920,
+  `wenkai-names-500` 3,416 bytes. A page's download, HTML and fonts, as it
+  opens: English 79,987 (83,403 with the language list open), zh-Hant
+  202,464, zh-Hans 183,717, pt-BR 35,632, es-ES 35,755. (SP.8 added the
+  footer's notice: its figures, above, are current.)
+- **"…" in English is the system's**: WenKai draws U+2026 full-width and
+  centred, as Chinese sets it; the Latin subsets' `unicode-range` leaves it
+  out, and Chinese text keeps WenKai's own.
+- **The Chinese leads no longer end on 言。 alone** (at 1024–1440 px):
+  `text-wrap: pretty`, and a `:lang(zh)` measure of 40rem for a browser
+  without it.
+- **`support/fonts.sh` checks the Python version** first: brotli's pinned
+  wheels are CPython 3.12's and 3.13's, and on another version pip's hash
+  error read as tampering. It now stops with "the font step needs Python
+  3.12 or 3.13; found X.Y". CI stays on ubuntu-24.04's 3.12.
+- **The privacy draft** says, on the three WenKai pages, that the page's
+  fonts come from this same site; pt-BR and es-ES, which load none, are
+  unchanged. Still a draft for the owner's approval.
+- Tests: pt-BR and es-ES with no `@font-face`, font URL, WenKai or
+  `font-src`, and the system weights; en, zh-Hant and zh-Hans in the main
+  WenKai, with no TC in the plan, the generator or the font step; the
+  `:lang(pt)`/`:lang(es)` rule and the dropdown's `lang`s; no list holding
+  Portuguese or Spanish text, no Latin list holding U+2026; the Python
+  check; the privacy clause; the lead's wrapping. Each failed first.
+  Chromium (5 languages, 360 and 1280 px, light and dark): pt-BR and es-ES
+  request no font file; the others load WenKai and no TC file; the
+  dropdown's pt and es names are the system's; "…" sits on the baseline;
+  no CSP message, no sideways scroll.
+
 ### Changed (SP.6, support page)
 
 - **Text is set in LXGW WenKai (霞鹜文楷)**, all of it but headings and
@@ -140,8 +231,8 @@ the 64 KB budget).
   decisions of 2026-10-26 (DESIGN.md §7.5 item 8): the files are published
   beside the pages as `clogem-press/fonts/*.woff2`, the CSP gains
   `font-src 'self'` and nothing else, and subsetting runs `pyftsubset` in
-  GitHub Actions with no Python in the repository. Five pages, **178,647 bytes** in all, plus the fonts they use:
-  80,838–220,060 bytes per page as it opens, HTML and fonts (README).
+  GitHub Actions with no Python in the repository. (SP.7 narrowed this
+  to English and Chinese; the current sizes are SP.8's, above, and the README's.)
 - **WenKai TC's emphasis is Medium, not Bold**: v1.530 of WenKai TC has
   Light, Regular and Medium and no Bold.
 - **Subsets by script and weight**, each page declaring only those it uses
@@ -243,24 +334,19 @@ after publication, and whenever `en.edn` changes:
   punctuation.
 - `support/i18n/pt-BR.edn`: Brazilian Portuguese.
 - `support/i18n/es-ES.edn`: Spanish of Spain, *tú*.
-- **The zh-Hant page's typeface** (SP.6): LXGW WenKai TC draws inherited
-  glyph forms (傳承字形), not Taiwan's Ministry of Education standard forms,
-  and merges some variant code points into one shape (為 is drawn as 爲,
-  真 as 眞, 緒 as 緖; the page's 會成為側邊欄 shows 爲). A Taiwanese reader
-  should judge it from the screenshots; if it reads wrong, `:zh-Hant
-  :wenkai` in `support/fonts.edn` switches the page to the main LXGW
-  WenKai's own Traditional glyphs (DESIGN.md §7.5 item 8).
 
-### The owner's one-time steps (support page)
+### The owner's one-time steps (support page; done on 2026-10-26)
 
 1. `ssh-keygen -t ed25519 -N "" -C "clogem-press support page" -f clogem-support-deploy`.
 2. The public half to EchoJustus/clogem-support, **Settings > Deploy
-   keys**, with **Allow write access** (a key of its own: Wmark Pro's is
-   already there, and GitHub allows a key on one repository only).
+   keys**, with **Allow write access** (GitHub takes a public key as a
+   deploy key on one repository only; a key of its own can be revoked
+   alone).
 3. The private half as the Actions secret `CLOGEM_SUPPORT_DEPLOY_KEY` here,
    then delete the local copy.
-4. Approve the privacy note's wording before the first publication (leave
-   the secret unset until then); the four translations follow it.
+4. Approve the privacy note's wording before the first publication: once
+   the secret is set, the next push to `main` that touches the page
+   publishes it. The four translations follow it.
 
 Once it is live, the hub's own session links it from the front page's
 clogem-press card and its README's table.

@@ -148,7 +148,7 @@
                        args))
     [(str where ": unknown block " (pr-str tag) " (:p, :ul, :pre, :h3 or :cards)")]))
 
-(declare font-plan font-of)
+(declare font-plan wenkai-page?)
 
 (defn check-page
   "A language's words' problems, in words."
@@ -170,10 +170,13 @@
      [":theme needs :legend, and :system, :light and :dark as [label title]"])
    (when-not (and (text? (:hub footer)) (text? (:note footer))) [":footer needs :hub and :note"])
    (pieces-problems ":footer :licence" (:licence footer))
-   (pieces-problems ":footer :font" (:font footer))
-   (let [repo (get-in (font-plan) [:fonts (font-of (font-plan) tag) :repo])]
-     (when-not (some #(and (vector? %) (= [:a repo] (take 2 %))) (:font footer))
-       [(str ":footer :font must link " repo ", the font its page is set in")]))
+   (if (wenkai-page? (font-plan) tag)
+     (let [repo (get-in (font-plan) [:fonts :wenkai :repo])]
+       (concat (pieces-problems ":footer :font" (:font footer))
+               (when-not (some #(and (vector? %) (= [:a repo] (take 2 %))) (:font footer))
+                 [(str ":footer :font must link " repo ", the font its page is set in")])))
+     (when (contains? footer :font)
+       [":footer :font must go: this page is in the system's fonts, and credits none"]))
    (when-not (seq sections) [":sections must list at least one section"])
    (when (and (seq sections) (not (apply distinct? (map :id sections))))
      [":sections must each have their own :id"])
@@ -212,7 +215,8 @@
   [page]
   (into {"its keys"     (set (keys (dissoc page :en-note :url)))
          ":theme's keys" (set (keys (:theme page)))
-         ":footer"       [(set (keys (:footer page))) (fixed (get-in page [:footer :licence]))]
+         ;; :font only where the page is set in WenKai (check-page)
+         ":footer"       [(set (keys (dissoc (:footer page) :font))) (fixed (get-in page [:footer :licence]))]
          ":hub and :name" (select-keys page [:hub :name])
          "its sections"  (mapv :id (:sections page))}
         (for [{:keys [id blocks] :as s} (:sections page)]
@@ -310,13 +314,14 @@
        (.encodeToString (Base64/getEncoder) (.getBytes ^String svg StandardCharsets/UTF_8))))
 
 ;; ---------------------------------------------------------------------------
-;; The fonts: LXGW WenKai for all text but headings and code (support/fonts.edn,
-;; the plan), in subsets cut by support/fonts.sh from the character lists
-;; the build writes
+;; The fonts: LXGW WenKai for all text but headings and code on the English
+;; and Chinese pages (support/fonts.edn, the plan), in subsets cut by
+;; support/fonts.sh from the character lists the build writes; the
+;; Portuguese and Spanish pages, and those languages' words anywhere, keep
+;; the system's fonts
 
 (defn font-plan
-  "support/fonts.edn: the fonts' pins, the zh-Hant page's font and the
-  subsets."
+  "support/fonts.edn: the font's pins, the pages set in it and the subsets."
   []
   (edn/read-string (slurp (str (fs/path here "fonts.edn")))))
 
@@ -343,30 +348,44 @@
 
 (defn print-font-plan [] (run! println (font-plan-lines)))
 
-(defn font-of
-  "The font text in language `lang` is set in: the plan's :zh-Hant for
-  Traditional Chinese, LXGW WenKai for the rest."
-  [plan lang]
-  (if (= lang "zh-Hant") (:zh-Hant plan) :wenkai))
+(defn wenkai-page?
+  "Whether `tag`'s page sets its text in WenKai (the plan's :pages)."
+  [plan tag]
+  (boolean (some #{tag} (:pages plan))))
+
+(defn- wenkai-lang?
+  "Whether text in language `lang` is set in WenKai on a WenKai page:
+  English and Chinese, not Portuguese or Spanish (their accents)."
+  [lang]
+  (boolean (re-matches #"(?:en|zh)(?:-.*)?" (str lang))))
 
 (def cjk-from
-  "Code points from here up are a font's Chinese subset, below it its
-  Latin (with punctuation, arrows and the like); the unicode-ranges split there."
+  "Code points from here up are a page's Chinese subset, below it the Latin
+  one (with punctuation, arrows and the like); the unicode-ranges split there."
   0x2E80)
+
+(def ellipsis
+  "…, which WenKai draws centred, as Chinese sets it: English leaves it to
+  the system's font (it is outside the Latin subsets' unicode-range), and
+  Chinese text takes it from its page's Chinese subset."
+  0x2026)
 
 (defn subset-id
   "The subset that sets code point `cp` of a run in language `lang`, at
-  `weight`, on `page`'s page. A page's own language's text is in its own
-  subsets; another language's, which is only the switcher's name for it,
-  in a small list of its own, so a reader downloads a few glyphs for it,
-  not that language's page."
+  `weight`, on `page`'s page, or nil when the system's font sets it: a
+  page not in WenKai, Portuguese or Spanish words, English's …. A Chinese
+  page's Chinese, either script's, is in its own subsets; the English
+  page's, which is only the switcher's names, in a small list of its own,
+  so a reader downloads a few glyphs for it, not a Chinese page's."
   [plan page lang weight cp]
-  (let [font (font-of plan lang)]
-    (cond (= font :wenkai-tc)                      (str "wenkai-tc-" (when-not (= page "zh-Hant") "names-") weight)
-          (< cp cjk-from)                          (str "wenkai-latin-" weight)
-          (= page "zh-Hans")                       (str "wenkai-sc-" weight)
-          (and (= page "zh-Hant") (= lang page))   (str "wenkai-hant-" weight)
-          :else                                    (str "wenkai-names-" weight))))
+  (let [zh? (str/starts-with? (str lang) "zh")]
+    (cond (not (and (wenkai-page? plan page) (wenkai-lang? lang))) nil
+          (= cp ellipsis)                (when (and zh? (not= page "en"))
+                                           (str (if (= page "zh-Hans") "wenkai-sc-" "wenkai-hant-") weight))
+          (< cp cjk-from)                (str "wenkai-latin-" weight)
+          (= page "zh-Hans")             (str "wenkai-sc-" weight)
+          (= page "zh-Hant")             (str "wenkai-hant-" weight)
+          :else                          (str "wenkai-names-" weight))))
 
 (defn- tag-classes
   "A hiccup tag's element name and classes: :p.eyebrow is [\"p\" #{\"eyebrow\"}]."
@@ -410,21 +429,24 @@
 (defn- code-points [^String s] (.toArray (.codePoints s)))
 
 (def ^:private always
-  "Printable ASCII: always in the Latin subsets and the zh-Hant page's, so
-  a small change of wording doesn't drop a glyph."
+  "Printable ASCII: always in the Latin subsets, so a small change of
+  wording doesn't drop a glyph."
   (set (range 0x20 0x7F)))
 
-(defn- always-ascii? [id] (re-matches #"wenkai-(?:latin|tc|hant)-\d+" id))
+(defn- always-ascii? [id] (re-matches #"wenkai-latin-\d+" id))
 
 (defn page-glyphs
   "{subset id #{code points}} for a page's body: what it sets in which
-  subset (without the ASCII every Latin subset carries)."
+  subset (without the ASCII every Latin subset carries); empty for a page
+  in the system's fonts."
   [plan page body]
   (apply merge-with into {}
          (for [[lang weight text] (runs body {:lang page :in #{} :medium? false})
                cp (code-points text)
-               :when (>= cp 0x20)]
-           {(subset-id plan page lang weight cp) #{cp}})))
+               :when (>= cp 0x20)
+               :let [id (subset-id plan page lang weight cp)]
+               :when id]
+           {id #{cp}})))
 
 ;; ---------------------------------------------------------------------------
 ;; The look: the hub's quiet ground, with clogem-press's jade as the accent
@@ -468,28 +490,33 @@
 
 (def ^:private cjk-fonts
   "The systems' own CJK fonts, after the Latin ones and ahead of the
-  generic family, by :lang(): the fallback while WenKai loads, and for a
-  character it lacks."
+  generic family, by :lang(): on a WenKai page the fallback while WenKai
+  loads, and for a character it lacks; on the others, the CJK fonts."
   {"zh-Hans" "\"PingFang SC\",\"Microsoft YaHei\",\"Noto Sans CJK SC\",\"Source Han Sans SC\""
    "zh-Hant" "\"PingFang TC\",\"Microsoft JhengHei\",\"Noto Sans CJK TC\",\"Source Han Sans TC\""})
 
 (defn- font-stacks
-  "--text-font, `family` (WenKai) first, and --heading-font, the system's
-  alone; each with `cjk` (or nothing) before sans-serif."
+  "--text-font, `family` (WenKai, or nil for the system's alone) first, and
+  --heading-font, the system's alone; each with `cjk` (or nothing) before
+  sans-serif."
   [family cjk]
   (let [with (fn [latin] (str latin (when cjk (str "," cjk)) ",sans-serif"))]
-    (str "--text-font:\"" family "\"," (with text-font) ";--heading-font:" (with heading-font))))
+    (str "--text-font:" (when family (str "\"" family "\",")) (with text-font) ";--heading-font:" (with heading-font))))
 
-(defn- family [plan lang] (get-in plan [:fonts (font-of plan lang) :family]))
+(def ^:private system-langs
+  "The languages whose words keep the system's fonts on every page, by
+  :lang(), which matches pt-BR and pt alike."
+  ["pt" "es"])
 
 (defn- unicode-range
-  "A subset's unicode-range: WenKai's Latin below cjk-from, its Chinese from
-  there up (one of each per weight on a page); WenKai TC's one file per
-  weight carries both."
-  [{:keys [font]} id]
-  (cond (= font :wenkai-tc)          "U+0-10FFFF"
-        (str/includes? id "-latin-") (str "U+0-" (format "%X" (dec cjk-from)))
-        :else                        (str "U+" (format "%X" cjk-from) "-10FFFF")))
+  "A subset's unicode-range: the Latin ones below cjk-from, without English's
+  …; the Chinese pages' Chinese from there up, with Chinese's …; the
+  English page's Chinese names from there up."
+  [id]
+  (let [cjk (str "U+" (format "%X" cjk-from) "-10FFFF")]
+    (cond (str/includes? id "-latin-") (format "U+0-%X,U+%X-%X" (dec ellipsis) (inc ellipsis) (dec cjk-from))
+          (str/includes? id "-names-") cjk
+          :else                        (format "U+%X,%s" ellipsis cjk))))
 
 (defn- font-faces
   "The @font-face rules for `subsets` (ids), the files beside the pages in
@@ -497,20 +524,26 @@
   step there are no files, and the system fonts show."
   [plan tag subsets]
   (for [id (sort subsets)
-        :let [{:keys [font weight] :as sub} (get-in plan [:subsets id])]]
+        :let [{:keys [font weight]} (get-in plan [:subsets id])]]
     (str "@font-face{font-family:\"" (get-in plan [:fonts font :family]) "\";font-style:normal;font-weight:" weight
          ";font-display:swap;src:url(" (if (= tag "en") "" "../") "fonts/" id ".woff2) format(\"woff2\");"
-         "unicode-range:" (unicode-range sub id) "}")))
+         "unicode-range:" (unicode-range id) "}")))
 
 (defn css
   "The page's one stylesheet, with the @font-face rules for `subsets`, the
   ones `tag`'s page uses. The theme follows the system, or the switcher:
   three radio buttons read by :has() on the root, so it takes no script;
   without a script or a cookie the choice isn't remembered, and the page
-  opens on Auto. Text is in WenKai at Regular (400) and Medium (500) only,
-  the faces there are; headings and code keep the system's fonts."
+  opens on Auto. On a WenKai page, English and Chinese text is in WenKai at
+  Regular (400) and Medium (500) only, the faces there are; Portuguese and
+  Spanish words, headings and code keep the system's fonts. A page in the
+  system's fonts (pt-BR, es-ES) declares none, and takes the system's
+  weights back: 500 would be Regular in most of them."
   [tag subsets]
   (let [plan       (font-plan)
+        wenkai     (when (wenkai-page? plan tag) (get-in plan [:fonts :wenkai :family]))
+        ;; emphasis: WenKai's Medium, or the weight the system's fonts had
+        w          (fn [system] (if wenkai "500" system))
         dark-decls (str "color-scheme:dark;" (decls dark) ";" shadow-dark)
         rule       (str "linear-gradient(90deg," (:light jade) "," (:hue jade) " 55%," (:deep jade) ")")]
     (str/join
@@ -524,12 +557,14 @@
        (str "@media (prefers-color-scheme:dark){:root:not(:has(#theme-light:checked)){" dark-decls "}}")
        (str ":root:has(#theme-dark:checked){" dark-decls "}")
        ":root:has(#theme-light:checked){color-scheme:light}"
-       (str ":root{" (font-stacks (family plan "en") nil) "}")
+       (str ":root{" (font-stacks wenkai nil) "}")
        ;; on any element, so a switcher label in another language gets its
-       ;; own fonts, not the page's (the Latin ones too: on the zh-Hant page
-       ;; "Português" would otherwise inherit WenKai TC's stack)
-       (str (str/join "," (for [t tags :when (not (cjk-fonts t))] (str ":lang(" t ")"))) "{" (font-stacks (family plan "en") nil) "}")
-       (str/join (for [[lang cjk] cjk-fonts] (str ":lang(" lang "){" (font-stacks (family plan lang) cjk) "}")))
+       ;; own fonts, not the page's: "English" on a Chinese page has no CJK
+       ;; fallback, "Português" and "Español" never WenKai (it lacks or
+       ;; misplaces their accents)
+       (str ":lang(en){" (font-stacks wenkai nil) "}")
+       (str/join (for [[lang cjk] cjk-fonts] (str ":lang(" lang "){" (font-stacks wenkai cjk) "}")))
+       (str (str/join "," (for [l system-langs] (str ":lang(" l ")"))) "{" (font-stacks nil nil) "}")
        "*,*::before{box-sizing:border-box}"
        "html{-webkit-text-size-adjust:100%;text-size-adjust:100%}"
        (str "body{margin:0;min-height:100vh;color:var(--text);background:"
@@ -545,7 +580,7 @@
        "body:lang(zh){line-height:1.8}"
        ".en-note{color:var(--muted);font-size:.9em}"
        ;; Medium, not the browser's bold: WenKai has no Bold to give it
-       "strong{font-weight:500}"
+       (str "strong{font-weight:" (w "700") "}")
        "code,pre{font-family:ui-monospace,\"Cascadia Code\",\"SF Mono\",Menlo,Consolas,monospace;font-size:.9em}"
        ;; the header
        ;; one column that may shrink below its content's width, so nothing in
@@ -559,14 +594,18 @@
        ;; and the brand's subtitle the rest.
        ".brand{flex:1 1 min-content;display:flex;align-items:center;gap:clamp(.9rem,2.5vw,1.25rem);min-width:0}"
        ".mark{flex:none;display:block;width:clamp(3.75rem,10vw,5.5rem);height:auto}"
-       ".eyebrow{margin:0 0 .2rem;font-size:.78rem;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--chip-ink)}"
+       (str ".eyebrow{margin:0 0 .2rem;font-size:.78rem;font-weight:" (w "700") ";letter-spacing:.16em;text-transform:uppercase;color:var(--chip-ink)}")
        "h1{margin:0;font-size:clamp(1.85rem,5.2vw,3.3rem);line-height:1.05;letter-spacing:-.025em;font-weight:700;overflow-wrap:anywhere}"
        ;; the name keeps one line, never broken after its hyphen, from 480 px
        ;; up; below, it may break rather than widen the page
        "@media (min-width:30rem){h1{white-space:nowrap}}"
        ".sub{margin:.35rem 0 0;font-size:1.08rem;color:var(--muted)}"
        (str ".rule{width:min(11rem,40%);height:3px;border-radius:3px;background:" rule "}")
-       ".lead{margin:0;max-width:42rem;font-size:1.15rem;color:var(--muted)}"
+       ;; no last line of one character (the Chinese leads ended on 言。 alone
+       ;; at 1024 to 1440 px): text-wrap:pretty, and for a browser without
+       ;; it a Chinese measure whose last line holds more
+       ".lead{margin:0;max-width:42rem;font-size:1.15rem;color:var(--muted);text-wrap:pretty}"
+       ".lead:lang(zh){max-width:40rem}"
        ;; the switchers, at the end of the top row (and of the screen, when it
        ;; wraps), the language last: at the end edge, which is the content
        ;; box's, so its dropdown hangs from it under its own button and never
@@ -575,7 +614,7 @@
        ".tools{flex:999 1 min-content;min-width:0;max-width:max-content;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:.6rem;margin-inline-start:auto}"
        ;; the language switcher: a <details> dropdown of plain links, the current one marked
        (str ".langs summary{display:inline-flex;align-items:center;gap:.4rem;padding:calc(.42rem + 3px) .95rem;border:1px solid var(--control);"
-            "border-radius:999px;background:var(--surface);box-shadow:var(--shadow);font-size:.86rem;font-weight:500;cursor:pointer;list-style:none}")
+            "border-radius:999px;background:var(--surface);box-shadow:var(--shadow);font-size:.86rem;font-weight:" (w "650") ";cursor:pointer;list-style:none}")
        ".langs{position:relative}"
        ".langs summary::-webkit-details-marker{display:none}"
        ".langs summary:hover{border-color:var(--focus)}"
@@ -586,7 +625,7 @@
        (str ".langs ul{position:absolute;z-index:2;top:calc(100% + .4rem);inset-inline-end:0;min-width:12rem;max-width:calc(100vw - 2rem);"
             "margin:0;padding:.35rem;list-style:none;background:var(--surface);border:1px solid var(--control);border-radius:1rem;box-shadow:var(--shadow)}")
        (str ".langs a{display:block;padding:.45rem .8rem;border-radius:.65rem;"
-            "font-family:var(--text-font);font-size:.9rem;font-weight:500;color:var(--text);text-decoration:none}")
+            "font-family:var(--text-font);font-size:.9rem;font-weight:" (w "600") ";color:var(--text);text-decoration:none}")
        ".langs a:hover{color:var(--link);text-decoration:underline}"
        ".langs a[aria-current=page]{background:var(--chip);color:var(--chip-ink)}"
        ;; the theme switcher: radios as a segmented control
@@ -595,7 +634,7 @@
        ".vh,.theme legend{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}"
        ".theme input{position:absolute;width:1px;height:1px;margin:0;opacity:0}"
        (str ".theme label{display:inline-flex;align-items:center;gap:.4rem;padding:.42rem .85rem;border-radius:999px;"
-            "font-size:.86rem;font-weight:500;color:var(--muted);cursor:pointer;transition:background-color .2s ease,color .2s ease}")
+            "font-size:.86rem;font-weight:" (w "650") ";color:var(--muted);cursor:pointer;transition:background-color .2s ease,color .2s ease}")
        ".theme label:hover{color:var(--text)}"
        ".theme input:checked+label{background:var(--chip);color:var(--chip-ink)}"
        ".theme input:focus-visible+label{outline:3px solid var(--focus);outline-offset:2px}"
@@ -608,7 +647,7 @@
        ;; the jump links
        ".jump ul{display:flex;flex-wrap:wrap;gap:.6rem;margin:0;padding:0;list-style:none}"
        (str ".jump a{display:inline-block;padding:.5rem 1.05rem;border-radius:999px;border:1px solid var(--control);"
-            "background:var(--surface);color:var(--text);font-weight:500;font-size:.92rem;text-decoration:none;box-shadow:var(--shadow)}")
+            "background:var(--surface);color:var(--text);font-weight:" (w "600") ";font-size:.92rem;text-decoration:none;box-shadow:var(--shadow)}")
        ".jump a:hover{border-color:var(--focus);color:var(--link)}"
        ;; the sections
        "main{display:grid;gap:clamp(3.25rem,8vw,5rem);margin-top:clamp(3rem,7vw,4.5rem)}"
@@ -633,11 +672,11 @@
             "background:var(--surface);border:1px solid var(--border);border-radius:1.2rem;box-shadow:var(--shadow)}")
        (str ".card::before{content:\"\";position:absolute;inset:0 0 auto 0;height:4px;background:" rule "}")
        (str ".chip{align-self:flex-start;padding:.26rem .66rem;border-radius:999px;background:var(--chip);color:var(--chip-ink);"
-            "font-size:.72rem;font-weight:500;letter-spacing:.11em;text-transform:uppercase}")
+            "font-size:.72rem;font-weight:" (w "700") ";letter-spacing:.11em;text-transform:uppercase}")
        ".card h3{margin:.15rem 0 0;font-size:1.1rem;line-height:1.3}"
        ".card p{margin:0 0 .5rem;color:var(--muted)}"
        (str ".button{align-self:flex-start;margin-top:auto;display:inline-flex;align-items:center;gap:.45rem;padding:.5rem 1rem;"
-            "border:1px solid var(--control);border-radius:999px;background:var(--chip);color:var(--chip-ink);font-weight:500;font-size:.95rem;text-decoration:none}")
+            "border:1px solid var(--control);border-radius:999px;background:var(--chip);color:var(--chip-ink);font-weight:" (w "650") ";font-size:.95rem;text-decoration:none}")
        ".button:hover{background:var(--chip-ink);border-color:var(--chip-ink);color:var(--surface)}"
        ".button span{transition:transform .2s ease}"
        ".button:hover span{transform:translateX(3px)}"
@@ -658,12 +697,13 @@
 
 (defn csp
   "Nothing but the page's own style (by the SHA-256 of `style`), data:
-  images (the icon and the favicon) and fonts from the site itself
-  (clogem-press/fonts/)."
-  [style]
+  images (the icon and the favicon) and, when `fonts?` (a WenKai page),
+  fonts from the site itself (clogem-press/fonts/): the hub's policy, with
+  font-src only where a font is loaded."
+  [style fonts?]
   (let [digest (.digest (MessageDigest/getInstance "SHA-256") (.getBytes ^String style StandardCharsets/UTF_8))]
     (str "default-src 'none'; style-src 'sha256-" (.encodeToString (Base64/getEncoder) digest) "'; "
-         "img-src data:; font-src 'self'; base-uri 'none'; form-action 'none'")))
+         "img-src data:; " (when fonts? "font-src 'self'; ") "base-uri 'none'; form-action 'none'")))
 
 ;; ---------------------------------------------------------------------------
 ;; The page
@@ -714,6 +754,22 @@
             [:link {:rel "alternate" :hreflang t :href (page-url tag)}])
           [[:link {:rel "alternate" :hreflang "x-default" :href (page-url "en")}]]))
 
+(def copyright-holder
+  "The publisher in the footer's copyright notice, in full: never left out,
+  shortened or split (the owner's rule for every Clogem support page,
+  2026-10-26, in clogem-support's CLAUDE.md, \"Footer copyright notices\";
+  DESIGN.md §7.5). A name, so no translation changes it."
+  "EchoJustus (Jiapeng Ji)")
+
+(def ^:private copyright
+  "The footer's first paragraph, the same characters on every page and
+  written here, not in the words: © 2026 EchoJustus (Jiapeng Ji).
+  clogem-press. The year is the page's first publication, fixed, not the
+  build's, so the text stays as the owner gave it. The publisher and the
+  product are each one element that doesn't wrap, so a narrow screen never
+  splits the name, or the product's at its hyphen."
+  [:p "© 2026 " [:span.nw copyright-holder] ". " [:span.nw "clogem-press"] "."])
+
 (defn- page-body
   "A language's <body>, as hiccup, fully realised (its English-only links
   read *en-note* as they are made)."
@@ -745,9 +801,10 @@
              [:h2 {:id (str id "-title")} title]
              (map block blocks)])]
          [:footer
+          copyright
           [:p (link (:hub page) (:hub footer)) " · " (pieces (:licence footer))]
           [:p (:note footer)]
-          [:p (pieces (:font footer))]]]]))))
+          (when (:font footer) [:p (pieces (:font footer))])]]]))))
 
 (defn page-html
   "A language's page, as one string; `pages` is {tag words}, for the
@@ -765,7 +822,7 @@
        [:head
         [:meta {:charset "utf-8"}]
         [:meta {:name "viewport" :content "width=device-width, initial-scale=1"}]
-        [:meta {:http-equiv "Content-Security-Policy" :content (csp style)}]
+        [:meta {:http-equiv "Content-Security-Policy" :content (csp style (wenkai-page? (font-plan) tag))}]
         [:meta {:name "referrer" :content "no-referrer"}]
         [:meta {:name "color-scheme" :content "light dark"}]
         [:meta {:name "theme-color" :media "(prefers-color-scheme: light)" :content "#F4F6F9"}]

@@ -648,23 +648,23 @@ clogem-press's page on the Clogem support site,
 what it does today, how to start, where to ask, and a privacy note, in five
 languages. Each page is built as the hub's own pages are (one file: no JavaScript,
 no cookies, nothing loaded from other sites, a Content-Security-Policy
-that allows only its own style, `data:` images and the site's own fonts, light and dark after the
+that allows only its own style, `data:` images and, on the pages set in LXGW WenKai, the site's own fonts, light and dark after the
 system or a no-script switcher), and lives outside the generator, in
 `support/` ([DESIGN.md §7.5](DESIGN.md#75-the-support-page)).
 
 ```bash
 bb support-page                # dist-support/clogem-press/, five pages (--out DIR elsewhere)
-support/fonts.sh               # then their fonts, into dist-support/clogem-press/fonts/ (Python 3, below)
+support/fonts.sh               # then their fonts, into dist-support/clogem-press/fonts/ (Python 3.12 or 3.13, below)
 bb test --pattern support-page # the pages' rules and the workflow's publishing step
 ```
 
 | Language | Address | Built file | Size |
 | --- | --- | --- | --- |
-| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 34,526 bytes |
-| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 35,736 bytes |
-| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 35,793 bytes |
-| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 36,234 bytes |
-| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 36,358 bytes |
+| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 34,804 bytes |
+| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 36,181 bytes |
+| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 36,066 bytes |
+| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 35,733 bytes |
+| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 35,856 bytes |
 
 - **The words** are `support/i18n/<tag>.edn`, one file per language:
   `en.edn` (English, which was `support/page.edn`), `zh-Hant.edn`,
@@ -697,19 +697,24 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
   translate it (`:url` is its own page's address, `:lang-name` its name in
   itself, `:lang-label` its word for "Language", `:en-note` the note after an English-only link), add its tag to
   `langs` in `test/clogem/support_page_test.clj`, and add its row above.
-- **The font**: all text that is not a heading is set in
-  [LXGW WenKai](https://github.com/lxgw/LxgwWenKai) (霞鹜文楷), the zh-Hant
-  page in [LXGW WenKai TC](https://github.com/lxgw/LxgwWenkaiTC) (霞鶩文楷 TC),
-  both v1.530, Regular (400) and Medium (500, for `<strong>`, the chips, the
-  buttons, the eyebrow and the switchers); headings keep the system's font
-  and code the monospace one. The system fonts stay behind WenKai in each
-  stack (`font-display: swap`). WenKai TC draws inherited glyph forms and
-  merges some variants (為 as 爲, 真 as 眞); `:zh-Hant :wenkai` in
-  `support/fonts.edn` switches the zh-Hant page to the main WenKai's own
-  Traditional glyphs (DESIGN.md §7.5 item 8).
-- **Where the font files come from**: `support/fonts.edn` pins each font's
-  release tag, each TTF's URL on `github.com/lxgw/…` and its SHA-256, and each
-  repository's `OFL.txt`; `bb support-fonts` prints the plan as lines.
+- **The font**: on the English, Traditional Chinese and Simplified Chinese
+  pages, all text that is not a heading is set in
+  [LXGW WenKai](https://github.com/lxgw/LxgwWenKai) (霞鹜文楷), v1.530, Regular
+  (400) and Medium (500, for `<strong>`, the chips, the buttons, the eyebrow
+  and the switchers); zh-Hant takes the main WenKai's own Traditional
+  glyphs. Headings keep the system's font and code the monospace one; the
+  system fonts stay behind WenKai in each stack (`font-display: swap`). In
+  English, "…" is left to the system's font (WenKai draws it centred, as
+  Chinese sets it). **The Portuguese and Spanish pages keep the system's
+  fonts** (the hub's text and heading stacks), declare no `@font-face`,
+  load no font file and have no `font-src` in their CSP; Portuguese and
+  Spanish words on the other pages (the dropdown's names) take the
+  system's stack by `:lang(pt)` and `:lang(es)`, so no accented letter
+  outside English is drawn in WenKai (the owner's decision, 2026-10-26:
+  DESIGN.md §7.5 item 8).
+- **Where the font files come from**: `support/fonts.edn` pins the font's
+  release tag, each TTF's URL on `github.com/lxgw/…` and its SHA-256, and the
+  repository's `OFL.txt`, and names the pages set in it; `bb support-fonts` prints the plan as lines.
   `bb support-page` writes each subset's characters to
   `dist-support/glyphs/<subset>.txt` (never published), read from the pages
   as the stylesheet sets them. **The font step**, `support/fonts.sh`,
@@ -720,11 +725,13 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
   copies the licences beside the subsets. CI runs it on every push (the
   `support-fonts` job, whose artifact is the built folder) and the publishing
   workflow before it publishes. The repository holds no Python for it.
-- **To run it locally** you need Python 3 with `venv`, `curl` and
-  `sha256sum`: `bb support-page && support/fonts.sh`. It makes its venv in
+- **To run it locally** you need Python 3.12 or 3.13 as `python3`, with
+  `venv` (fontTools' and brotli's pinned wheels are those versions'; on any
+  other the step stops with "the font step needs Python 3.12 or 3.13; found
+  X.Y"), `curl` and `sha256sum`: `bb support-page && support/fonts.sh`. It makes its venv in
   `$TMPDIR` (`CLOGEM_FONT_VENV` to change it) and its downloads cache in
   `~/.cache/clogem-press/fonts` (`CLOGEM_FONT_CACHE`), both outside the
-  repository; about 82 MB is downloaded once. To preview, serve the folder
+  repository; about 52 MB is downloaded once. To preview, serve the folder
   above the pages: `cd dist-support && python3 -m http.server`, then open
   `http://localhost:8000/clogem-press/`. Without the font step the pages
   still work, in the system fonts (the font requests 404, unseen).
@@ -733,26 +740,35 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
 
   | Subset | Used by | Size |
   | --- | --- | --- |
-  | `wenkai-latin-400` | en, zh-Hans, pt-BR, es-ES | 23,360 bytes |
-  | `wenkai-latin-500` | every page (on zh-Hant, the dropdown's Latin names) | 22,952 bytes |
+  | `wenkai-latin-400` | en, zh-Hant, zh-Hans | 22,884 bytes |
+  | `wenkai-latin-500` | en, zh-Hant, zh-Hans | 22,520 bytes |
+  | `wenkai-hant-400` | zh-Hant | 103,400 bytes |
+  | `wenkai-hant-500` | zh-Hant | 17,700 bytes |
   | `wenkai-sc-400` | zh-Hans | 87,548 bytes |
-  | `wenkai-sc-500` | zh-Hans | 13,880 bytes |
-  | `wenkai-tc-400` | zh-Hant | 142,332 bytes |
-  | `wenkai-tc-500` | zh-Hant | 41,992 bytes |
-  | `wenkai-names-500` | the others' dropdown (简体中文) | 2,304 bytes |
-  | `wenkai-tc-names-500` | the others' dropdown (繁體中文) | 3,076 bytes |
+  | `wenkai-sc-500` | zh-Hans | 14,920 bytes |
+  | `wenkai-names-500` | en's dropdown (繁體中文, 简体中文) | 3,416 bytes |
 
-  A page's download, HTML and fonts, when it opens and with the language
-  list opened: English 80,838 / 86,218 bytes; pt-BR 82,546 / 87,926; es-ES
-  82,670 / 88,050; zh-Hans 183,533 / 186,609; zh-Hant 220,060 / 245,316.
-- **The licences**: both fonts are under the SIL Open Font License 1.1;
-  their `OFL.txt`, from the same tag, are published beside the subsets as
-  `fonts/OFL-LXGW-WenKai.txt` and `fonts/OFL-LXGW-WenKai-TC.txt`, and each
-  subset keeps the font's copyright and licence records. LXGW WenKai's
-  licence lets its reserved names stay in subsets made solely for web
-  delivery; WenKai TC's reserves none. Each page's footer credits its font.
+  The Latin lists are built from the English page and the Latin of the
+  Chinese pages only (product names, commands and the like); each Chinese
+  page's list holds its own Chinese, the other script's dropdown name
+  included. A page's download, HTML and fonts, when it opens and with the
+  language list opened: English 80,208 / 83,624 bytes; zh-Hant 202,685
+  (both); zh-Hans 183,938 (both); pt-BR 35,733 and es-ES 35,856, the HTML
+  alone.
+- **The licence**: LXGW WenKai is under the SIL Open Font License 1.1; its
+  `OFL.txt`, from the same tag, is published beside the subsets as
+  `fonts/OFL-LXGW-WenKai.txt`, and each subset keeps the font's copyright
+  and licence records. Its licence lets its reserved names stay in subsets
+  made solely for web delivery. The footers of the three pages set in it
+  credit it; pt-BR's and es-ES's credit no font.
+- **The footer** opens with the copyright notice, the same characters in
+  every language: `© 2026 EchoJustus (Jiapeng Ji). clogem-press.` It is the
+  owner's rule for every Clogem support page (2026-10-26): the publisher
+  always in full, the product's name after it (DESIGN.md §7.5 item 9). It
+  is written in `support/support_page.clj` (`copyright-holder`), not in the
+  words, so no translation changes it.
 - **The built pages** go to `dist-support/` (ignored): built HTML is never
-  committed. They are **178,647 bytes** in all; each page is within the
+  committed. They are **178,640 bytes** in all; each page is within the
   64 KB budget `bb test` holds it to.
 - **Publishing:** `.github/workflows/support-page.yml`, on pushes to `main`
   that touch `support/`, its test, the workflow or `bb.edn`, and by hand
@@ -768,21 +784,24 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
   it hasn't changed. Without the deploy key it builds the page and stops
   with a notice, successfully.
 
-**The owner's one-time steps:**
+**The owner's one-time steps** (done on 2026-10-26; kept here for replacing
+the key):
 1. Make an SSH key pair for this repository alone:
    `ssh-keygen -t ed25519 -N "" -C "clogem-press support page" -f clogem-support-deploy`.
 2. Add the public half (`clogem-support-deploy.pub`) to
    EchoJustus/clogem-support under **Settings > Deploy keys**, with
-   **Allow write access**. It must be a key of its own: GitHub allows a
-   deploy key on one repository only, and Wmark Pro's key is already there.
+   **Allow write access**. GitHub takes a public key as a deploy key on one
+   repository only; a key of its own is best, so that each can be revoked
+   alone.
 3. Add the private half (`clogem-support-deploy`) as an Actions secret
    named `CLOGEM_SUPPORT_DEPLOY_KEY` in this repository (**Settings >
-   Secrets and variables > Actions**), then delete the local copy.
+   Secrets and variables > Actions**): the whole file, with no passphrase.
+   Then delete the local copy.
 4. Approve the privacy note's wording (`support/i18n/en.edn`, the
-   `privacy` section, marked as a draft; the four translations mirror it
-   fact for fact, and change when it changes) before the first publication. The first
-   run after step 3 publishes the page, so leave the secret unset until
-   then.
+   `privacy` section; the four translations mirror it fact for fact, and
+   change when it changes) before the first publication: once the secret
+   is set, the next push to `main` that touches the page publishes it.
+   The owner approved it on 2026-10-26, and each file marks it so.
 
 **When it's live:** the hub's own session adds the link on its front page's
 clogem-press card and a row in its README's table. Nothing in this
@@ -791,7 +810,7 @@ repository does that.
 ## Development
 
 ```bash
-bb test                                             # 846 tests / ~62,900 assertions
+bb test                                             # 849 tests / ~59,300 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 
