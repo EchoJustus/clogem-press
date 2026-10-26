@@ -49,8 +49,9 @@
 
 (def langs
   "The page's languages, in the switcher's order (DESIGN.md §7.5): English
-  first, the default."
-  ["en" "zh-Hans" "zh-Hant" "pt-BR" "es-ES"])
+  first, the default; Traditional Chinese before Simplified (the owner's
+  order, SP.6)."
+  ["en" "zh-Hant" "zh-Hans" "pt-BR" "es-ES"])
 
 (def base "https://echojustus.github.io/clogem-support/clogem-press/")
 (defn- url-of [lang] (if (= lang "en") base (str base lang "/")))
@@ -168,7 +169,7 @@
       (is (>= (count description) 50) "a description")
       (testing "the alternates: all five, and pt, es and x-default, absolute, each a built page"
         (let [alts (for [[_ href lang] (re-seq #"<link href=\"([^\"]*)\" hreflang=\"([^\"]*)\" rel=\"alternate\">" h)] [lang href])]
-          (is (= [["en" (url-of "en")] ["zh-Hans" (url-of "zh-Hans")] ["zh-Hant" (url-of "zh-Hant")]
+          (is (= [["en" (url-of "en")] ["zh-Hant" (url-of "zh-Hant")] ["zh-Hans" (url-of "zh-Hans")]
                   ["pt-BR" (url-of "pt-BR")] ["pt" (url-of "pt-BR")] ["es-ES" (url-of "es-ES")] ["es" (url-of "es-ES")]
                   ["x-default" (url-of "en")]]
                  alts))
@@ -312,6 +313,8 @@
             (is (every? #(and (str/includes? % "aria-hidden=\"true\"") (str/includes? % "focusable=\"false\"")) svgs)))
           (is (not (re-find #"<a[ >]" (str summary))))))
       (let [links (for [[_ a text] (re-seq #"<a ([^>]*)>([^<]*)</a>" (str nav))] (assoc (attrs a) :text (unescape text)))]
+        (testing "the owner's order (SP.6): English, Traditional Chinese, Simplified Chinese, Portuguese, Spanish"
+          (is (= ["en" "zh-Hant" "zh-Hans" "pt-BR" "es-ES"] (map #(get % "hreflang") links))))
         (testing "all five, in order, each named in its own language and marked as such"
           (is (= langs (map #(get % "hreflang") links)))
           (is (= langs (map #(get % "lang") links)))

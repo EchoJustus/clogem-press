@@ -32,7 +32,7 @@
 # publishes its own folder there from its own repository; this workflow
 # owns clogem-press/ alone. It tests and builds the page in its five
 # languages (`bb support-page`, from support/i18n/: English at clogem-press/,
-# the others in zh-Hans/, zh-Hant/, pt-BR/ and es-ES/ inside it), clones
+# the others in zh-Hant/, zh-Hans/, pt-BR/ and es-ES/ inside it), clones
 # gh-pages over SSH with a deploy key of its own, replaces clogem-press/ with
 # the built folder, stages that path and nothing else, and pushes
 # without force. If someone else published at the same moment, it starts

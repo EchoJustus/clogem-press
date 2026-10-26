@@ -660,21 +660,23 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
 | Language | Address | Built file | Size |
 | --- | --- | --- | --- |
 | English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 33,343 bytes |
-| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 34,420 bytes |
 | 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 34,531 bytes |
+| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 34,420 bytes |
 | Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 35,033 bytes |
 | Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 35,156 bytes |
 
 - **The words** are `support/i18n/<tag>.edn`, one file per language:
-  `en.edn` (English, which was `support/page.edn`), `zh-Hans.edn`,
-  `zh-Hant.edn`, `pt-BR.edn` and `es-ES.edn`, all of one shape (`en.edn`'s
+  `en.edn` (English, which was `support/page.edn`), `zh-Hant.edn`,
+  `zh-Hans.edn`, `pt-BR.edn` and `es-ES.edn`, all of one shape (`en.edn`'s
   header describes it). The generator, `support/support_page.clj`, adds
   markup only. The icon is `support/clogem-press.svg`, the v3 48-unit
   master, embedded as a `data:` URI in the header and as the favicon.
 - **The languages** are offered by a dropdown in each page's header, beside
   the theme switcher: a `<details>` whose summary shows a globe, the current
   language's name and a chevron, and whose panel lists the five as plain
-  links. Five links laid out flat crowded the header; a `<details>` folds
+  links, in this order: English, 繁體中文, 简体中文, Português (Brasil),
+  Español (España) (the table's, `support-page/languages`; Traditional
+  Chinese before Simplified is the owner's order). Five links laid out flat crowded the header; a `<details>` folds
   them away with no script, since the browser opens and closes it (click,
   Enter or Space). Without a script it does not close on Escape or on a
   click outside; a second click on the summary closes it. They are also offered and by `hreflang` alternates in each `<head>` (the

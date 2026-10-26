@@ -29,7 +29,7 @@
   "clogem-press's page on the Clogem support site,
   https://echojustus.github.io/clogem-support/clogem-press/ (DESIGN.md §7.5),
   in five languages: English there, the others in folders inside it named
-  by their BCP 47 tags (zh-Hans/, zh-Hant/, pt-BR/, es-ES/).
+  by their BCP 47 tags (zh-Hant/, zh-Hans/, pt-BR/, es-ES/).
 
     bb support-page                 writes dist-support/clogem-press/
     bb support-page --out DIR       writes DIR/clogem-press/
@@ -63,8 +63,9 @@
 
 (def languages
   "The page's languages, in the switcher's order: English, the default,
-  first. :also is a wider tag the page is offered for too (hreflang)."
-  [{:tag "en"} {:tag "zh-Hans"} {:tag "zh-Hant"} {:tag "pt-BR" :also "pt"} {:tag "es-ES" :also "es"}])
+  first, then Traditional Chinese before Simplified (the owner's order,
+  SP.6). :also is a wider tag the page is offered for too (hreflang)."
+  [{:tag "en"} {:tag "zh-Hant"} {:tag "zh-Hans"} {:tag "pt-BR" :also "pt"} {:tag "es-ES" :also "es"}])
 
 (def tags (mapv :tag languages))
 
