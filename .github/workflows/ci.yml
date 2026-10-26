@@ -351,6 +351,33 @@ jobs:
   # D-P4-18: Playwright over the built demo. Nothing in test/browser/ ships;
   # the job builds the demo exactly as `test` does, serves it on loopback
   # and runs every test/browser/*.test.mjs (test/browser/README.md).
+  # The support page with its fonts (support/fonts.sh: pinned downloads,
+  # pip-installed fontTools, pyftsubset), on every push as the tests are, so
+  # the font step is proven before it reaches main and support-page.yml. The
+  # built folder, the pages and fonts/, is the run's artifact, for a preview
+  # (`python3 -m http.server` in a folder holding it as clogem-press/). It
+  # holds no secret and publishes nothing; its actions are pinned by commit.
+  support-fonts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: DeLaGuardo/setup-clojure@6d46099eae24853c33c0482f2bb54edf4f1a4c74 # 13.7.0
+        with: { bb: latest }
+      - run: bb support-page
+      - name: Cache the fonts' downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/clogem-press/fonts
+          key: support-fonts-${{ hashFiles('support/fonts.edn') }}
+      - run: support/fonts.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: support-page-preview
+          path: dist-support/clogem-press/
+          if-no-files-found: error
+          retention-days: 14
+
   browser:
     runs-on: ubuntu-latest
     strategy:
