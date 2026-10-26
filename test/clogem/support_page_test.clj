@@ -794,8 +794,8 @@
       (testing "every EchoJustus a reader sees there carries the rest of the name"
         (is (seq (re-seq #"EchoJustus" visible)))
         (is (every? #{" (Jiapeng Ji)"} (map second (re-seq #"EchoJustus(.{0,13})" visible))) visible))
-      (testing "on one line: the publisher is one element that doesn't wrap, its text unchanged"
-        (is (str/starts-with? footer "<p>© 2026 <span class=\"nw\">EchoJustus (Jiapeng Ji)</span>. clogem-press.</p>")
+      (testing "on one line: the publisher and the product are each one element that doesn't wrap, their text unchanged"
+        (is (str/starts-with? footer "<p>© 2026 <span class=\"nw\">EchoJustus (Jiapeng Ji)</span>. <span class=\"nw\">clogem-press</span>.</p>")
             "the paragraph as built, so nothing else (a break, a hidden span) is in it")
         (is (str/includes? (style-of h) ".nw{white-space:nowrap}")))))
   (testing "no translation can change it: the words hold none of it"

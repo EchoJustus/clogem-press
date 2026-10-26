@@ -765,9 +765,10 @@
   "The footer's first paragraph, the same characters on every page and
   written here, not in the words: © 2026 EchoJustus (Jiapeng Ji).
   clogem-press. The year is the page's first publication, fixed, not the
-  build's, so the text stays as the owner gave it. The publisher is one
-  element that doesn't wrap, so a narrow screen never splits the name."
-  [:p "© 2026 " [:span.nw copyright-holder] ". clogem-press."])
+  build's, so the text stays as the owner gave it. The publisher and the
+  product are each one element that doesn't wrap, so a narrow screen never
+  splits the name, or the product's at its hyphen."
+  [:p "© 2026 " [:span.nw copyright-holder] ". " [:span.nw "clogem-press"] "."])
 
 (defn- page-body
   "A language's <body>, as hiccup, fully realised (its English-only links

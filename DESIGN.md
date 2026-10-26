@@ -1934,8 +1934,8 @@ Decisions:
      leaves it out, so the system's font draws it; Chinese text takes WenKai's own from its page's
      Chinese subset.
    - **Sizes** (v1.530, SP.8): Latin 22,884 and 22,520 bytes; zh-Hant 103,400 and 17,700; zh-Hans
-     87,548 and 14,920; the names 3,416. A page as it opens, HTML and fonts: English 80,184 bytes
-     (83,600 with the list open), zh-Hant 202,661, zh-Hans 183,914; pt-BR 35,709 and es-ES 35,832,
+     87,548 and 14,920; the names 3,416. A page as it opens, HTML and fonts: English 80,208 bytes
+     (83,624 with the list open), zh-Hant 202,685, zh-Hans 183,938; pt-BR 35,733 and es-ES 35,856,
      the HTML alone. Each subset's cap in the plan is about twice its size.
    - **The character lists come from the generator.** `bb support-page` writes
      `dist-support/glyphs/<subset>.txt` (outside `clogem-press/`, never published): every character
@@ -1978,7 +1978,8 @@ Decisions:
    - **The year is fixed**, 2026, the page's first publication, not the build's (the hub prints
      the build's year), so the text stays exactly as the owner gave it and its test needs no clock.
    - **The name never wraps**: the publisher is one `.nw` element (`white-space: nowrap`), its text
-     unchanged (no U+00A0 in it); the rest of the notice may wrap. It is the footer's first
+     unchanged (no U+00A0 in it), and so is the product's name, which would otherwise break at its
+     hyphen on a 320 px screen; the notice may wrap only between them. It is the footer's first
      paragraph, as on the hub; on the WenKai pages it is in WenKai, and `©` is in
      `wenkai-latin-400`.
    - `support_page_test` pins it word for word on every page, once each, every `EchoJustus` in a
