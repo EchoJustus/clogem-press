@@ -660,11 +660,11 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
 
 | Language | Address | Built file | Size |
 | --- | --- | --- | --- |
-| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 34,804 bytes |
-| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 36,181 bytes |
-| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 36,066 bytes |
-| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 35,733 bytes |
-| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 35,856 bytes |
+| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 34,880 bytes |
+| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 36,259 bytes |
+| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 36,144 bytes |
+| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 35,820 bytes |
+| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 35,936 bytes |
 
 - **The words** are `support/i18n/<tag>.edn`, one file per language:
   `en.edn` (English, which was `support/page.edn`), `zh-Hant.edn`,
@@ -768,7 +768,7 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
   is written in `support/support_page.clj` (`copyright-holder`), not in the
   words, so no translation changes it.
 - **The built pages** go to `dist-support/` (ignored): built HTML is never
-  committed. They are **178,640 bytes** in all; each page is within the
+  committed. They are **179,039 bytes** in all; each page is within the
   64 KB budget `bb test` holds it to.
 - **Publishing:** `.github/workflows/support-page.yml`, on pushes to `main`
   that touch `support/`, its test, the workflow or `bb.edn`, and by hand

@@ -33,7 +33,7 @@ nothing in `src/clogem/` changes, and a built site is unaffected.
 Languages (SP.2): English (the default) at `clogem-press/`; Simplified
 Chinese at `zh-Hans/`; Traditional Chinese, with Taiwan wording, at
 `zh-Hant/`; Brazilian Portuguese at `pt-BR/` (also for `pt`); European
-Spanish at `es-ES/` (also for `es`). Five pages, **178,640 bytes** in all
+Spanish at `es-ES/` (also for `es`). Five pages, **179,039 bytes** in all
 (as of SP.8): `index.html` 34,804, `zh-Hant/index.html` 36,181,
 `zh-Hans/index.html` 36,066, `pt-BR/index.html` 35,733, `es-ES/index.html`
 35,856 (each within the 64 KB budget), plus, on the English and Chinese
@@ -363,13 +363,55 @@ clogem-press card and its README's table.
   that built before starts failing. `true` under `:provider :none` (what
   `--no-search` sets) says nothing and does nothing.
 
+- **`js/search-all.js`** (new, 1,844 B gzipped; budget 2,048): the
+  checkbox row inside the search dialog, built from elements and text
+  nodes (no `innerHTML`), and a second, named Pagefind instance
+  (`clogem-all`) that merges the other languages' indexes at query time —
+  absolute merge URLs with `baseUrl`, Pagefind's own lowercased language
+  keys, `indexWeight` 0.001 and a `clogem-language` `mergeFilter` per
+  index. Ticking the box swaps the rendered modal's input, summary,
+  results and keyboard hints for that instance's and adds a language
+  filter; unticking swaps them back. The typed term carries over, focus
+  stays on the checkbox, and the choice is remembered as
+  `clogem-search-all` (`"1"`, removed when unticked; every storage access
+  in a try/catch, blocked storage meaning off). The default instance
+  never merges, so a reader who never ticks the box downloads no other
+  index.
+- **`css/search-all.css`** (new, 368 B gzipped; budget 512): the row's
+  layout, and the full-width dropdown wrapper that keeps Pagefind's filter
+  menu inside the viewport at 320 px (its own rules carry (3,0,0), hence
+  one `!important`). Colours are Pagefind's `--pf-*`, which the theme
+  already maps, so dark and read follow; print hides the row with
+  `.clogem-search`. `theme.css` is untouched (11,970 B gzipped, as before).
+- **`:nav/search-all`** ("Search all languages") in all five theme i18n
+  files; the filter's label reuses `:nav/language`.
+- Both files ship only where `:search :cross-language` is true
+  (`assets/skip?`).
+
 ### Changed (G)
 
 - `config.example.edn` documents `:cross-language` and drops "deferred to
   Phase 4 (D-P3-11)".
+- **The support page's privacy note** now says a site keeps **up to four**
+  things in its reader's browser, the fourth being the cross-language
+  search choice on a site that offers it, in all five languages
+  (`support/i18n/*.edn`). **The new clause awaits the owner's approval**
+  (below); the approval mark stays where it is. DESIGN §7.5 item 5 lists
+  `clogem-search-all`. The rebuilt pages are 34,880 / 36,259 / 36,144 /
+  35,820 / 35,936 bytes, 179,039 in all (README, above).
 
 ### Tests (G)
 
+- `test/clogem/search_all_test.clj`: the two files' gzip budgets, printed
+  as `nav.js`'s are; no `innerHTML` and no modal built in JS; the stored
+  key written the way `support_page_test`'s scan reads it, with every
+  access wrapped; the dropdown-wrapper rule and no colour of its own; the
+  row hidden in print by `theme.css`'s `.clogem-search` rule; the string
+  in all five languages. `support_page_test.clj`'s
+  `the-privacy-note-names-every-stored-key` now pins four keys, and
+  `the-privacy-note-keeps-to-what-clogem-press-stores` the new openings;
+  the first failed as soon as `js/search-all.js` existed, and passed with
+  the note.
 - `test/clogem/search_all_test.clj` (new): `"yes"`, `1` and `:true` each
   give exactly one warning and leave the feature off; nil and false are
   silent; `:cross-language true` draws no "planned" warning;
@@ -378,6 +420,41 @@ clogem-press card and its README's table.
   `a-new-key-is-registered-in-one-place` now uses a synthetic `:zz-test`
   key (`with-redefs`), so it no longer depends on which real key is still
   planned. Each failed first on `f44fcf6`.
+
+### Needs native review (G)
+
+Machine-made, to be read by a native speaker:
+
+- `:nav/search-all` in `src/clogem/theme/resources/i18n/ms.edn`
+  ("Cari dalam semua bahasa") and `ta.edn`
+  ("எல்லா மொழிகளிலும் தேடு"), marked in each file.
+- The support page's new privacy clause in `support/i18n/zh-Hans.edn`,
+  `zh-Hant.edn`, `pt-BR.edn` and `es-ES.edn` (the sentences below).
+
+### Needs the owner's approval (G)
+
+The privacy note's wording is the owner's (DESIGN §7.5 item 5), and a push
+to `main` that touches `support/**` publishes the page — so this must not
+merge before they approve these five sentences. Each replaces the "three
+things" sentence in its file; the rest of the paragraph is unchanged.
+
+- **en**: "Of its own, a site keeps up to four things in its reader's
+  browser (the colour mode they chose, the language they chose, which
+  “also available in …” language banners they dismissed, and, on a site
+  that offers it, whether they chose to search all languages) and sends
+  none of them anywhere; …"
+- **zh-Hans**:
+  "网站本身最多会在读者的浏览器中保存四样东西（读者选择的配色模式、选择的语言、读者关闭了哪些“也有其他语言版本”的语言提示条，以及在提供此选项的网站上，读者是否选择搜索所有语言），并且…"
+- **zh-Hant**:
+  "網站本身最多會在讀者的瀏覽器中儲存四樣東西（讀者選擇的色彩模式、選擇的語言、讀者關閉了哪些「也有其他語言版本」的語言提示列，以及在提供此選項的網站上，讀者是否選擇搜尋所有語言），並且…"
+- **pt-BR**: "Por conta própria, um site guarda até quatro coisas no
+  navegador do leitor (o modo de cor escolhido, o idioma escolhido, quais
+  avisos de idioma “também disponível em…” o leitor fechou e, em um site
+  que oferece essa opção, se escolheu pesquisar em todos os idiomas) e…"
+- **es-ES**: "Por sí mismo, un sitio guarda hasta cuatro cosas en el
+  navegador del lector (el modo de color elegido, el idioma elegido, qué
+  avisos de idioma «también disponible en…» ha cerrado el lector y, en un
+  sitio que lo ofrezca, si ha elegido buscar en todos los idiomas) y…"
 
 **Task E1a — blog identity and banner** (§11.3 item 13, first half; D-P4-13):
 

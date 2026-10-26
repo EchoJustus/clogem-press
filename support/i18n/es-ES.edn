@@ -101,6 +101,7 @@
             [:p "Un problema de seguridad, una pregunta sobre tus datos o un aviso legal: escribe a "
              [:a "mailto:EchoJustus.Studio@outlook.com?subject=clogem-press" "EchoJustus.Studio@outlook.com"] "."]]}
 
+  ;; Task G: the clogem-search-all clause awaits the owner's approval
   ;; approved by the owner (2026-10-26): a change to it needs their approval again
   {:id     "privacy"
    :title  "Privacidad"
@@ -120,7 +121,7 @@
              "), así que solo ocurre una vez. La configuración de un sitio puede, en cambio, indicar otro origen y otro hash para una herramienta. Una copia ya instalada, indicada en la configuración del sitio o en "
              [:code "CLOGEM_CHROMA"] ", " [:code "CLOGEM_PAGEFIND"] " o " [:code "CLOGEM_FSWATCHER"] ", nunca se descarga."]
             [:h3 "Los sitios que generas"]
-            [:p "Un sitio generado con clogem-press es una carpeta de archivos que publicas donde quieras. De forma predeterminada no hace ninguna petición a otro sitio. Solo la hace cuando su propietario activa los comentarios de giscus o la analítica (Google Analytics 4, Plausible o Umami), o indica un logotipo o una imagen como una dirección de otro sitio. Las etiquetas de verificación de consolas de búsqueda, si el propietario las añade, son líneas de la página que no cargan nada. Por sí mismo, un sitio guarda tres cosas en el navegador del lector (el modo de color elegido, el idioma elegido y qué avisos de idioma «también disponible en…» ha cerrado el lector) y no envía nada de ello a ninguna parte; los comentarios de giscus y la analítica, cuando su propietario los activa, guardan sus propios datos según sus propias condiciones."]]}
+            [:p "Un sitio generado con clogem-press es una carpeta de archivos que publicas donde quieras. De forma predeterminada no hace ninguna petición a otro sitio. Solo la hace cuando su propietario activa los comentarios de giscus o la analítica (Google Analytics 4, Plausible o Umami), o indica un logotipo o una imagen como una dirección de otro sitio. Las etiquetas de verificación de consolas de búsqueda, si el propietario las añade, son líneas de la página que no cargan nada. Por sí mismo, un sitio guarda hasta cuatro cosas en el navegador del lector (el modo de color elegido, el idioma elegido, qué avisos de idioma «también disponible en…» ha cerrado el lector y, en un sitio que lo ofrezca, si ha elegido buscar en todos los idiomas) y no envía nada de ello a ninguna parte; los comentarios de giscus y la analítica, cuando su propietario los activa, guardan sus propios datos según sus propias condiciones."]]}
 
   {:id     "source"
    :title  "Licencia y código fuente"

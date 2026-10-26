@@ -1879,8 +1879,10 @@ Decisions:
    owner's approval again. The translations mirror the English text fact for fact, and change when
    it changes.
    It names every key a built site keeps in its reader's browser (`clogem-mode`, `clogem-lang`,
-   `clogem-banner-dismissed`); `support_page_test` reads the theme's code for `localStorage` keys
-   and fails on one the note doesn't cover.
+   `clogem-banner-dismissed`, and, since Task G, `clogem-search-all`); `support_page_test` reads
+   the theme's code for `localStorage` keys and fails on one the note doesn't cover. *Task G
+   (§11.3 item 17):* "three things" became "up to four", the fourth being the reader's
+   cross-language search choice, on a site that offers it — **awaiting the owner's approval.**
 6. **The controls' borders are solid, `#6B8A80` light and `#64847A` dark** (`--control`), heavier
    than the hub's faint card borders, on purpose: WCAG 1.4.11 asks 3:1 for a control's boundary
    against what is around it; these measure at least 3.48:1 in light (on the page's ground) and

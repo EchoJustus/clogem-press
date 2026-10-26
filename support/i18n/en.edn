@@ -127,6 +127,7 @@
             [:p "A security problem, a question about your data, or a legal notice: write to "
              [:a "mailto:EchoJustus.Studio@outlook.com?subject=clogem-press" "EchoJustus.Studio@outlook.com"] "."]]}
 
+  ;; Task G: the clogem-search-all clause awaits the owner's approval
   ;; approved by the owner (2026-10-26): a change to it needs their approval again
   {:id     "privacy"
    :title  "Privacy"
@@ -146,7 +147,7 @@
              "), so it happens once. A site's config can instead name its own source and hash for a tool. A copy already installed, named in the site's config or in "
              [:code "CLOGEM_CHROMA"] ", " [:code "CLOGEM_PAGEFIND"] " or " [:code "CLOGEM_FSWATCHER"] ", is never downloaded."]
             [:h3 "The sites you build"]
-            [:p "A site built with clogem-press is a folder of files that you publish where you choose. Out of the box it makes no request to another site. It does so only when its owner turns on giscus comments or analytics (Google Analytics 4, Plausible or Umami), or gives a logo or an image as an address on another site. Search-console verification tags, if the owner adds them, are lines in the page that load nothing. Of its own, a site keeps three things in its reader's browser (the colour mode they chose, the language they chose, and which “also available in …” language banners they dismissed) and sends none of them anywhere; giscus comments and analytics, when its owner turns them on, keep their own data under their own terms."]]}
+            [:p "A site built with clogem-press is a folder of files that you publish where you choose. Out of the box it makes no request to another site. It does so only when its owner turns on giscus comments or analytics (Google Analytics 4, Plausible or Umami), or gives a logo or an image as an address on another site. Search-console verification tags, if the owner adds them, are lines in the page that load nothing. Of its own, a site keeps up to four things in its reader's browser (the colour mode they chose, the language they chose, which “also available in …” language banners they dismissed, and, on a site that offers it, whether they chose to search all languages) and sends none of them anywhere; giscus comments and analytics, when its owner turns them on, keep their own data under their own terms."]]}
 
   {:id     "source"
    :title  "Licence and source"
