@@ -1,0 +1,73 @@
+;; Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).
+;;
+;; The support page's fonts (DESIGN.md §7.5; README, "Support page"): the
+;; one place their pins live. `bb support-fonts` prints them as lines for
+;; support/fonts.sh, which downloads each file, checks its SHA-256, cuts
+;; the subsets below from it with pyftsubset and publishes them, with the
+;; licences, as clogem-press/fonts/. support-page/font-plan reads this file;
+;; test/clogem/support_page_test.clj checks it.
+;;
+;; :fonts      each font: its family name in the pages' CSS, its repository,
+;;             the release tag, and per weight the release's TTF (:url, its
+;;             SHA-256); :licence is the repository's OFL.txt at that tag,
+;;             published beside the subsets as :as (OFL condition 2).
+;;             Both fonts are SIL OFL 1.1, derived from Fontworks' Klee One.
+;;             Only Regular (400) and Medium (500) are used: neither font
+;;             has a face between or above them that the page needs, and
+;;             the CSS never asks for another weight (no faux bold).
+;; :zh-Hant    the zh-Hant page's font. :wenkai-tc is LXGW WenKai TC, the
+;;             project's Traditional Chinese edition, in inherited glyph
+;;             forms (傳承字形), with some variant code points merged into
+;;             one shape (為 drawn as 爲, 真 as 眞). Set it to :wenkai for
+;;             the main LXGW WenKai's own Traditional glyphs instead: the
+;;             zh-Hant page's Chinese then comes from the wenkai-hant-*
+;;             subsets below, and nothing else changes (DESIGN.md §7.5).
+;; :subsets    each subset the pages may use, by id (the file is
+;;             fonts/<id>.woff2, its character list dist-support/glyphs/<id>.txt):
+;;             the font and weight it is cut from, and its size cap in bytes,
+;;             set from measurement (README, "Support page"); fonts.sh fails
+;;             a subset over its cap.
+{:fonts
+ {:wenkai
+  {:family  "LXGW WenKai"
+   :repo    "https://github.com/lxgw/LxgwWenKai"
+   :tag     "v1.530"
+   :faces   {400 {:url    "https://github.com/lxgw/LxgwWenKai/releases/download/v1.530/LXGWWenKai-Regular.ttf"
+                  :sha256 "2d73eea94ad808999d90c0000c239a84a33b09d4bc6ab6c5b8bbf1eda8a7fc8b"}
+             500 {:url    "https://github.com/lxgw/LxgwWenKai/releases/download/v1.530/LXGWWenKai-Medium.ttf"
+                  :sha256 "f4b8a34d1f838fe411540cb7c97b1c384ac9738a876c4104500bc42508b2312a"}}
+   :licence {:url    "https://raw.githubusercontent.com/lxgw/LxgwWenKai/v1.530/OFL.txt"
+             :sha256 "1a25e35da1031c6c3436fde545bb9cb5aca954e9873afe510c834b8b79bd21a0"
+             :as     "OFL-LXGW-WenKai.txt"}}
+  :wenkai-tc
+  {:family  "LXGW WenKai TC"
+   :repo    "https://github.com/lxgw/LxgwWenkaiTC"
+   :tag     "v1.530"
+   ;; v1.530 ships Light, Regular and Medium; there is no Bold
+   :faces   {400 {:url    "https://github.com/lxgw/LxgwWenkaiTC/releases/download/v1.530/LXGWWenKaiTC-Regular.ttf"
+                  :sha256 "6662480a3f95b4a90c80b189c679617a48adce3a505118a6af63ce5a482b83fa"}
+             500 {:url    "https://github.com/lxgw/LxgwWenkaiTC/releases/download/v1.530/LXGWWenKaiTC-Medium.ttf"
+                  :sha256 "649efd8516f42d36eacc05480d5dbd2713fb28fbd2bbee8ea76fc40875045c49"}}
+   :licence {:url    "https://raw.githubusercontent.com/lxgw/LxgwWenkaiTC/v1.530/OFL.txt"
+             :sha256 "1a13783bf4337242834b60309cdcdbeb566ae3f923576fdbba8b78db9d174def"
+             :as     "OFL-LXGW-WenKai-TC.txt"}}}
+
+ :zh-Hant :wenkai-tc
+
+ :subsets
+ {;; Latin (below U+2E80) for every page whose text is in LXGW WenKai
+  "wenkai-latin-400"    {:font :wenkai    :weight 400 :cap 40960}
+  "wenkai-latin-500"    {:font :wenkai    :weight 500 :cap 40960}
+  ;; the zh-Hans page's Chinese
+  "wenkai-sc-400"       {:font :wenkai    :weight 400 :cap 1048576}
+  "wenkai-sc-500"       {:font :wenkai    :weight 500 :cap 307200}
+  ;; the other pages' Chinese in LXGW WenKai: the switcher's 简体中文
+  "wenkai-names-500"    {:font :wenkai    :weight 500 :cap 40960}
+  ;; the zh-Hant page, Latin and Chinese, in LXGW WenKai TC
+  "wenkai-tc-400"       {:font :wenkai-tc :weight 400 :cap 1048576}
+  "wenkai-tc-500"       {:font :wenkai-tc :weight 500 :cap 307200}
+  ;; the other pages' LXGW WenKai TC: the switcher's 繁體中文
+  "wenkai-tc-names-500" {:font :wenkai-tc :weight 500 :cap 40960}
+  ;; the zh-Hant page's Chinese when :zh-Hant is :wenkai
+  "wenkai-hant-400"     {:font :wenkai    :weight 400 :cap 1048576}
+  "wenkai-hant-500"     {:font :wenkai    :weight 500 :cap 307200}}}

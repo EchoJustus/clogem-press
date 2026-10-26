@@ -40,4 +40,7 @@
   support-page {:doc "Build the support page, in five languages, to dist-support/clogem-press/ (support/i18n/; README, Support page)."
                 :requires ([support-page])
                 :task (apply support-page/-main *command-line-args*)}
+  support-fonts {:doc "Print the support page's font plan (support/fonts.edn) as lines for support/fonts.sh."
+                 :requires ([support-page])
+                 :task (support-page/print-font-plan)}
   test    {:doc "Run the test suite."                          :task (exec 'clogem.cli/test-cmd)}}}

@@ -46,6 +46,7 @@
   (:require [babashka.fs :as fs]
             [clojure.edn :as edn]
             [clojure.string :as str]
+            [clojure.walk :as walk]
             [hiccup2.core :as h])
   (:import (java.nio.charset StandardCharsets)
            (java.security MessageDigest)
@@ -303,6 +304,120 @@
        (.encodeToString (Base64/getEncoder) (.getBytes ^String svg StandardCharsets/UTF_8))))
 
 ;; ---------------------------------------------------------------------------
+;; The fonts: LXGW WenKai for all text but headings and code (support/fonts.edn,
+;; the plan), in subsets cut by support/fonts.sh from the character lists
+;; the build writes
+
+(defn font-plan
+  "support/fonts.edn: the fonts' pins, the zh-Hant page's font and the
+  subsets."
+  []
+  (edn/read-string (slurp (str (fs/path here "fonts.edn")))))
+
+(defn- source-name
+  "A pinned file's name in fonts.sh's cache: its repository, tag and file."
+  [{:keys [repo tag]} url]
+  (str (last (str/split repo #"/")) "-" tag "-" (last (str/split url #"/"))))
+
+(defn font-plan-lines
+  "The plan as lines for support/fonts.sh (`bb support-fonts`):
+    font <cached name> <url> <sha256>
+    licence <cached name> <url> <sha256> <published name>
+    subset <id> <cached name of its face> <cap in bytes>"
+  ([] (font-plan-lines (font-plan)))
+  ([{:keys [fonts subsets]}]
+   (concat
+    (for [[_ f] (sort fonts), [_ {:keys [url sha256]}] (sort (:faces f))]
+      (str/join " " ["font" (source-name f url) url sha256]))
+    (for [[_ {{:keys [url sha256 as]} :licence :as f}] (sort fonts)]
+      (str/join " " ["licence" (source-name f url) url sha256 as]))
+    (for [[id {:keys [font weight cap]}] (sort subsets)
+          :let [f (get fonts font)]]
+      (str/join " " ["subset" id (source-name f (get-in f [:faces weight :url])) cap])))))
+
+(defn print-font-plan [] (run! println (font-plan-lines)))
+
+(defn font-of
+  "The font text in language `lang` is set in: the plan's :zh-Hant for
+  Traditional Chinese, LXGW WenKai for the rest."
+  [plan lang]
+  (if (= lang "zh-Hant") (:zh-Hant plan) :wenkai))
+
+(def cjk-from
+  "Code points from here up are a font's Chinese subset, below it its
+  Latin (with punctuation, arrows and the like); the unicode-ranges split there."
+  0x2E80)
+
+(defn subset-id
+  "The subset that sets code point `cp` of a run in language `lang`, at
+  `weight`, on `page`'s page. A page's own language's text is in its own
+  subsets; another language's, which is only the switcher's name for it,
+  in a small list of its own, so a reader downloads a few glyphs for it,
+  not that language's page."
+  [plan page lang weight cp]
+  (let [font (font-of plan lang)]
+    (cond (= font :wenkai-tc)                      (str "wenkai-tc-" (when-not (= page "zh-Hant") "names-") weight)
+          (< cp cjk-from)                          (str "wenkai-latin-" weight)
+          (= page "zh-Hans")                       (str "wenkai-sc-" weight)
+          (and (= page "zh-Hant") (= lang page))   (str "wenkai-hant-" weight)
+          :else                                    (str "wenkai-names-" weight))))
+
+(defn- tag-classes
+  "A hiccup tag's element name and classes: :p.eyebrow is [\"p\" #{\"eyebrow\"}]."
+  [k]
+  (let [[t & cs] (str/split (name k) #"\.")] [t (set cs)]))
+
+(def ^:private not-in-wenkai
+  "Elements whose text keeps the system's fonts (headings, code), or isn't
+  text a reader sees."
+  #{"h1" "h2" "h3" "code" "pre" "head" "title" "style" "svg"})
+
+(defn- runs
+  "[lang weight text] for each run of `node`'s text set in WenKai, as the
+  stylesheet sets it: Medium (500) for <strong>, the chips, the buttons,
+  the eyebrow, the theme switcher's labels, the language summary and its
+  links and the jump links; Regular (400) for the rest."
+  [node {:keys [lang medium? in] :as ctx}]
+  (cond
+    (string? node) [[lang (if medium? 500 400) node]]
+    (vector? node) (let [[t & more] node
+                         [tag cls]  (tag-classes t)
+                         attrs      (when (map? (first more)) (first more))
+                         kids       (if attrs (rest more) more)
+                         in'        (cond-> in
+                                      (cls "theme") (conj :theme)
+                                      (cls "langs") (conj :langs)
+                                      (cls "jump")  (conj :jump))
+                         ctx'       {:lang    (or (:lang attrs) lang)
+                                     :in      in'
+                                     :medium? (boolean (or medium? (= tag "strong") (some cls ["chip" "button" "eyebrow"])
+                                                           (and (= tag "label") (in :theme))
+                                                           (and (= tag "summary") (in :langs))
+                                                           (and (= tag "a") (or (in :langs) (in :jump)))))}]
+                     (when-not (not-in-wenkai tag) (mapcat #(runs % ctx') kids)))
+    (seq? node)    (mapcat #(runs % ctx) node)
+    :else          nil))
+
+(defn- code-points [^String s] (.toArray (.codePoints s)))
+
+(def ^:private always
+  "Printable ASCII: always in the Latin subsets and the zh-Hant page's, so
+  a small change of wording doesn't drop a glyph."
+  (set (range 0x20 0x7F)))
+
+(defn- always-ascii? [id] (re-matches #"wenkai-(?:latin|tc|hant)-\d+" id))
+
+(defn page-glyphs
+  "{subset id #{code points}} for a page's body: what it sets in which
+  subset (without the ASCII every Latin subset carries)."
+  [plan page body]
+  (apply merge-with into {}
+         (for [[lang weight text] (runs body {:lang page :in #{} :medium? false})
+               cp (code-points text)
+               :when (>= cp 0x20)]
+           {(subset-id plan page lang weight cp) #{cp}})))
+
+;; ---------------------------------------------------------------------------
 ;; The look: the hub's quiet ground, with clogem-press's jade as the accent
 
 (def jade
@@ -556,57 +671,79 @@
             [:link {:rel "alternate" :hreflang t :href (page-url tag)}])
           [[:link {:rel "alternate" :hreflang "x-default" :href (page-url "en")}]]))
 
+(defn- page-body
+  "A language's <body>, as hiccup, fully realised (its English-only links
+  read *en-note* as they are made)."
+  [pages tag svg]
+  (let [icon (data-uri svg)
+        page (get pages tag)
+        {:keys [sections theme footer]} page]
+    (binding [*en-note* (when (not= tag "en") (:en-note page))]
+      (walk/postwalk
+       identity
+       [:body
+        [:div.page
+         [:header.hero
+          [:div.top
+           [:div.brand
+            [:img.mark {:src icon :alt (:icon-alt page) :width "48" :height "48"}]
+            [:div
+             [:p.eyebrow (:eyebrow page)]
+             [:h1 (:name page)]
+             [:p.sub (:subtitle page)]]]
+           [:div.tools (theme-switcher theme) (language-switcher pages tag)]]
+          [:div.rule]
+          [:p.lead (:lead page)]
+          [:nav.jump {:aria-label (:jump-label page)}
+           [:ul (for [{:keys [id title]} sections] [:li [:a {:href (str "#" id)} title]])]]]
+         [:main
+          (for [{:keys [id title blocks]} sections]
+            [:section {:id id :aria-labelledby (str id "-title")}
+             [:h2 {:id (str id "-title")} title]
+             (map block blocks)])]
+         [:footer
+          [:p (link (:hub page) (:hub footer)) " · " (pieces (:licence footer))]
+          [:p (:note footer)]]]]))))
+
 (defn page-html
   "A language's page, as one string; `pages` is {tag words}, for the
   switcher."
   [pages tag svg]
   (let [style (css)
         icon  (data-uri svg)
-        page  (get pages tag)
-        {:keys [sections theme footer]} page]
-    (binding [*en-note* (when (not= tag "en") (:en-note page))]
-      (str
-       "<!doctype html>\n"
-       (h/html
-        {:mode :html}
-        [:html {:lang tag}
-         [:head
-          [:meta {:charset "utf-8"}]
-          [:meta {:name "viewport" :content "width=device-width, initial-scale=1"}]
-          [:meta {:http-equiv "Content-Security-Policy" :content (csp style)}]
-          [:meta {:name "referrer" :content "no-referrer"}]
-          [:meta {:name "color-scheme" :content "light dark"}]
-          [:meta {:name "theme-color" :media "(prefers-color-scheme: light)" :content "#F4F6F9"}]
-          [:meta {:name "theme-color" :media "(prefers-color-scheme: dark)" :content "#0D1016"}]
-          [:title (:title page)]
-          [:meta {:name "description" :content (:description page)}]
-          [:link {:rel "canonical" :href (page-url tag)}]
-          (alternates)
-          [:link {:rel "icon" :type "image/svg+xml" :href icon}]
-          [:style (h/raw style)]]
-         [:body
-          [:div.page
-           [:header.hero
-            [:div.top
-             [:div.brand
-              [:img.mark {:src icon :alt (:icon-alt page) :width "48" :height "48"}]
-              [:div
-               [:p.eyebrow (:eyebrow page)]
-               [:h1 (:name page)]
-               [:p.sub (:subtitle page)]]]
-             [:div.tools (theme-switcher theme) (language-switcher pages tag)]]
-            [:div.rule]
-            [:p.lead (:lead page)]
-            [:nav.jump {:aria-label (:jump-label page)}
-             [:ul (for [{:keys [id title]} sections] [:li [:a {:href (str "#" id)} title]])]]]
-           [:main
-            (for [{:keys [id title blocks]} sections]
-              [:section {:id id :aria-labelledby (str id "-title")}
-               [:h2 {:id (str id "-title")} title]
-               (map block blocks)])]
-           [:footer
-            [:p (link (:hub page) (:hub footer)) " · " (pieces (:licence footer))]
-            [:p (:note footer)]]]]])))))
+        page  (get pages tag)]
+    (str
+     "<!doctype html>\n"
+     (h/html
+      {:mode :html}
+      [:html {:lang tag}
+       [:head
+        [:meta {:charset "utf-8"}]
+        [:meta {:name "viewport" :content "width=device-width, initial-scale=1"}]
+        [:meta {:http-equiv "Content-Security-Policy" :content (csp style)}]
+        [:meta {:name "referrer" :content "no-referrer"}]
+        [:meta {:name "color-scheme" :content "light dark"}]
+        [:meta {:name "theme-color" :media "(prefers-color-scheme: light)" :content "#F4F6F9"}]
+        [:meta {:name "theme-color" :media "(prefers-color-scheme: dark)" :content "#0D1016"}]
+        [:title (:title page)]
+        [:meta {:name "description" :content (:description page)}]
+        [:link {:rel "canonical" :href (page-url tag)}]
+        (alternates)
+        [:link {:rel "icon" :type "image/svg+xml" :href icon}]
+        [:style (h/raw style)]]
+       (page-body pages tag svg)]))))
+
+(defn glyph-lists
+  "{subset id text}: every character each subset must hold, over the five
+  pages, in code-point order; the Latin subsets and the zh-Hant page's
+  with printable ASCII too. support/fonts.sh cuts each subset from these."
+  ([pages svg] (glyph-lists (font-plan) pages svg))
+  ([plan pages svg]
+   (into (sorted-map)
+         (for [[id cps] (apply merge-with into {} (for [t tags] (page-glyphs plan t (page-body pages t svg))))]
+           [id (let [sb (StringBuilder.)]
+                 (doseq [cp (sort (cond-> cps (always-ascii? id) (into always)))] (.appendCodePoint sb (int cp)))
+                 (str sb))]))))
 
 (defn build!
   "Writes `out`/clogem-press/: the five pages and nothing else (the folder
@@ -630,6 +767,12 @@
       (doseq [{:keys [file html]} built]
         (fs/create-dirs (fs/parent file))
         (spit file html))
+      ;; the character lists, beside clogem-press/ so they're never published
+      (let [gdir (fs/file out "glyphs")]
+        (fs/delete-tree gdir)
+        (fs/create-dirs gdir)
+        (doseq [[id text] (glyph-lists pages svg)]
+          (spit (fs/file gdir (str id ".txt")) text)))
       (mapv #(dissoc % :html) built))))
 
 (defn -main [& args]
@@ -640,4 +783,5 @@
         built (build! out)]
     (doseq [{:keys [file bytes]} built]
       (println (str "Wrote " file " (" bytes " bytes, budget " budget ")")))
+    (println (str "Wrote the fonts' character lists to " (fs/file out "glyphs") "/ (support/fonts.sh cuts the subsets from them)"))
     (println (str (count built) " pages, " (reduce + (map :bytes built)) " bytes in all"))))

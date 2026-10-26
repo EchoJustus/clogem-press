@@ -76,7 +76,9 @@
         {:result result
          :files  (set (for [f (fs/glob root "**") :when (fs/regular-file? f)]
                         (str/replace (str (fs/relativize root f)) "\\" "/")))
-         :html   (into {} (for [l langs :let [f (fs/file root (path-of l))] :when (fs/exists? f)] [l (slurp f)]))})
+         :html   (into {} (for [l langs :let [f (fs/file root (path-of l))] :when (fs/exists? f)] [l (slurp f)]))
+         :glyphs (into {} (for [f (fs/glob (fs/path dir "glyphs") "*.txt")]
+                            [(str/replace (str (fs/file-name f)) #"\.txt$" "") (slurp (fs/file f))]))})
       (finally (fs/delete-tree dir)))))
 
 (defn- html "A built page, or \"\" if the build didn't write it." [lang] (get-in built [:html lang] ""))
@@ -413,6 +415,142 @@
       (is (not (re-find #"@font-face" style))))
     (testing "no letter-spacing on CJK: the eyebrow, the chips and the headings"
       (is (str/includes? style ":is(.eyebrow,.chip,h1,h2):lang(zh){letter-spacing:0}")))))
+
+;; ---------------------------------------------------------------------------
+;; The fonts (SP.6): LXGW WenKai for everything but headings and code, LXGW
+;; WenKai TC on the zh-Hant page; the plan (support/fonts.edn) and the
+;; character lists the build writes for support/fonts.sh
+
+(def ^:private plan (edn/read-string (slurp "support/fonts.edn")))
+
+(deftest the-font-plan
+  (testing "two fonts, each pinned: a tag, its release's TTFs on github.com/lxgw/, 64-hex SHA-256s"
+    (is (= #{:wenkai :wenkai-tc} (set (keys (:fonts plan)))))
+    (doseq [[k {:keys [family repo tag faces licence]}] (:fonts plan)]
+      (testing k
+        (is (re-matches #"LXGW WenKai(?: TC)?" family))
+        (is (re-matches #"https://github\.com/lxgw/[A-Za-z]+" repo))
+        (is (re-matches #"v\d+\.\d+" tag))
+        (is (= #{400 500} (set (keys faces))) "Regular and Medium only")
+        (doseq [[w {:keys [url sha256]}] faces]
+          (is (re-matches (re-pattern (str (java.util.regex.Pattern/quote (str repo "/releases/download/" tag "/")) "[A-Za-z-]+\\.ttf")) url) w)
+          (is (re-matches #"[0-9a-f]{64}" sha256) w))
+        (testing "its licence, from the same tag"
+          (is (= (str "https://raw.githubusercontent.com/lxgw/" (subs repo (count "https://github.com/lxgw/")) "/" tag "/OFL.txt") (:url licence)))
+          (is (re-matches #"[0-9a-f]{64}" (:sha256 licence)))))))
+  (testing "the licence files, by name"
+    (is (= {:wenkai "OFL-LXGW-WenKai.txt" :wenkai-tc "OFL-LXGW-WenKai-TC.txt"}
+           (update-vals (:fonts plan) (comp :as :licence)))))
+  (testing "zh-Hant is set in WenKai TC; the main WenKai is one key away"
+    (is (= :wenkai-tc (:zh-Hant plan))))
+  (testing "every subset is cut from a pinned face and has a cap"
+    (doseq [[id {:keys [font weight cap]}] (:subsets plan)]
+      (is (re-matches #"[a-z0-9-]+" id))
+      (is (get-in plan [:fonts font :faces weight]) id)
+      (is (pos-int? cap) id)))
+  (testing "the generator reads this plan"
+    (is (= plan (sp/font-plan))))
+  (testing "`bb support-fonts` prints it as lines for support/fonts.sh"
+    (let [lines (sp/font-plan-lines)
+          by    (group-by first (map #(str/split % #" ") lines))]
+      (is (= 4 (count (by "font"))))
+      (is (every? (fn [[_ n url sha]] (and (re-matches #"[A-Za-z0-9.-]+\.ttf" n) (str/starts-with? url "https://github.com/lxgw/") (re-matches #"[0-9a-f]{64}" sha)))
+                  (by "font")))
+      (is (= #{"OFL-LXGW-WenKai.txt" "OFL-LXGW-WenKai-TC.txt"} (set (map #(nth % 4) (by "licence")))))
+      (is (= (set (keys (:subsets plan))) (set (map second (by "subset")))))
+      (is (every? (fn [[_ _ src cap]] (and ((set (map second (by "font"))) src) (parse-long cap))) (by "subset")))
+      (is (every? #{"font" "licence" "subset"} (keys by))))))
+
+(def ^:private void-tags #{"meta" "link" "img" "input" "br" "hr" "source"})
+
+(defn- text-runs
+  "What each run of a page's visible text is set in, read from the HTML
+  (not through the generator): [lang medium? text], for every text in the
+  body outside headings, code and drawings. Medium: <strong>, the chips,
+  the buttons, the eyebrow, the theme switcher's labels, the language
+  summary and links, and the jump links."
+  [html]
+  (let [body (-> (subs html (str/index-of html "<body>"))
+                 (str/replace #"(?s)<svg.*?</svg>" ""))
+        root {:tag "html" :class #{} :lang (second (re-find #"<html lang=\"([^\"]+)\"" html))}]
+    (loop [[[tok close tag as text] & more] (re-seq #"<(/?)([a-zA-Z][a-zA-Z0-9]*)([^>]*)>|([^<]+)" body)
+           stack [root]
+           out   []]
+      (cond
+        (nil? tok) out
+        text (let [in?    (fn [pred] (some pred stack))
+                   tags   (set (map :tag stack))
+                   has    (fn [tag cls] (in? #(and (= tag (:tag %)) ((:class %) cls))))
+                   medium (boolean (or (tags "strong")
+                                       (in? #(some (:class %) ["chip" "button" "eyebrow"]))
+                                       (and (tags "label") (has "fieldset" "theme"))
+                                       (and (tags "summary") (has "details" "langs"))
+                                       (and (tags "a") (or (has "details" "langs") (has "nav" "jump")))))]
+               (recur more stack
+                      (if (some tags ["h1" "h2" "h3" "code" "pre"])
+                        out
+                        (conj out [(some :lang (rseq stack)) medium (unescape text)]))))
+        (seq close) (recur more (pop stack) out)
+        (void-tags tag) (recur more stack out)
+        :else (let [a (attrs as)]
+                (recur more (conj stack {:tag tag :class (set (str/split (get a "class" "") #" ")) :lang (get a "lang")}) out))))))
+
+(defn- subset-of
+  "The subset a character of a page's text must be in, by the page, the
+  run's language and weight (the plan's :subsets)."
+  [page lang medium? cp]
+  (let [w (if medium? 500 400)]
+    (cond (= lang "zh-Hant")  (str "wenkai-tc-" (when-not (= page "zh-Hant") "names-") w)
+          (< cp 0x2E80)       (str "wenkai-latin-" w)
+          (= page "zh-Hans")  (str "wenkai-sc-" w)
+          :else               (str "wenkai-names-" w))))
+
+(defn- cps [s] (set (.toArray (.codePoints ^String s))))
+(def ^:private ascii (set (range 0x20 0x7F)))
+
+(deftest the-character-lists
+  (let [lists (update-vals (:glyphs built) cps)]
+    (testing "written beside clogem-press/, never inside it, one per subset the pages use, each in the plan"
+      (is (seq lists))
+      (is (every? (set (keys (:subsets plan))) (keys lists)) (pr-str (keys lists)))
+      (is (not-any? #(str/includes? % "glyphs") (:files built))))
+    (testing "every character of each page's text is in the list for its font and weight"
+      (doseq [l langs
+              [lang medium? text] (text-runs (html l))
+              cp (cps text)
+              :when (>= cp 0x20)
+              :let [id (subset-of l lang medium? cp)]]
+        (is (contains? (get lists id) cp) (str l ": " (pr-str (str (char cp))) " (" (if medium? "Medium" "Regular") ", " lang ") in " id))))
+    (testing "and nothing else: no list holds a character no page sets in it, beyond ASCII"
+      (let [used (apply merge-with into (for [l langs [lang medium? text] (text-runs (html l)) cp (cps text) :when (>= cp 0x20)]
+                                          {(subset-of l lang medium? cp) #{cp}}))]
+        (doseq [[id cs] lists]
+          (is (empty? (remove (into ascii (used id)) cs)) id))))
+    (testing "the Latin lists, and the zh-Hant page's, always hold printable ASCII"
+      (doseq [id ["wenkai-latin-400" "wenkai-latin-500" "wenkai-tc-400" "wenkai-tc-500"]]
+        (is (every? (get lists id #{}) ascii) id)))
+    (testing "the Medium lists are small: only what is set in Medium"
+      (is (< (count (lists "wenkai-sc-500")) (/ (count (lists "wenkai-sc-400")) 2)))
+      (is (< (count (lists "wenkai-tc-500")) (/ (count (lists "wenkai-tc-400")) 2))))
+    (testing "the zh-Hant page's text, its Latin too, is in WenKai TC; the others' in WenKai"
+      (is (some #(<= 0x41 % 0x5A) (lists "wenkai-tc-400")))
+      (is (every? #(< % 0x2E80) (lists "wenkai-latin-400"))))
+    (testing "the switcher's 简体中文 and 繁體中文 are small lists of their own on the other pages"
+      (is (= (cps "简体中文") (lists "wenkai-names-500")))
+      (is (= (cps "繁體中文") (lists "wenkai-tc-names-500")))))
+  (testing "a new character lands in its list; one in a heading or code doesn't"
+    (let [pages (-> words
+                    (update-in ["en" :lead] str " ŧ")
+                    (update-in ["zh-Hans" :sections 0 :blocks] conj [:p [:strong "龘"]])
+                    (update-in ["en" :sections 0 :blocks] conj [:p [:code "Ѫ"]])
+                    (update-in ["pt-BR" :sections] conj {:id "extra" :title "x" :blocks [[:cards {:chip "c" :title "Ж" :text ["y"]}]]}))
+          lists (update-vals (sp/glyph-lists pages svg) cps)
+          cp    #(.codePointAt ^String % 0)]
+      (is (contains? (lists "wenkai-latin-400") (cp "ŧ")))
+      (is (not (contains? (cps (get-in built [:glyphs "wenkai-latin-400"] "")) (cp "ŧ"))) "not there before")
+      (is (contains? (lists "wenkai-sc-500") (cp "龘")))
+      (is (not-any? #(contains? % (cp "Ѫ")) (vals lists)) "code")
+      (is (not-any? #(contains? % (cp "Ж")) (vals lists)) "a card's title, an <h3>"))))
 
 ;; ---------------------------------------------------------------------------
 ;; Contrast: WCAG AA in both themes
@@ -809,7 +947,7 @@
 ;; Licences
 
 (deftest every-new-file-says-what-covers-it
-  (doseq [f (concat ["support/support_page.clj" "test/clogem/support_page_test.clj"]
+  (doseq [f (concat ["support/support_page.clj" "test/clogem/support_page_test.clj" "support/fonts.edn"]
                     (for [l langs] (str "support/i18n/" l ".edn")))]
     (is (str/starts-with? (slurp f) ";; Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).\n") f))
   (is (str/starts-with? (slurp ".github/workflows/support-page.yml") "# Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).\n"))
