@@ -216,8 +216,27 @@
                                       ; 400/700 woff2 (~24 KB each, SIL OFL) and
                                       ; links clogem/fonts/tamil.css; :system
                                       ; ships no font bytes at all
-         :html-modules {}             ; raw HTML for vdoing's 7 slots (Phase 4 Task E1b);
-                                      ; anything here warns: no effect in 0.2.0
+         :html-modules {}             ; vdoing's htmlModules (Phase 4 Task E1b): trusted
+                                      ; raw HTML, injected as written — never escaped.
+                                      ; Each slot is a string, or a map by language
+                                      ; following the fallback chain ("" hides it in
+                                      ; that language); {{base}} becomes the site's base
+                                      ; ("/" or "/docs/"). The slots:
+                                      ;   :home-sidebar-b — last box of the home's right bar
+                                      ;   :sidebar-t, :sidebar-b — above / below the tree
+                                      ;   :page-t — above the content (catalogue: after
+                                      ;     the grid); :page-b — below the article
+                                      ;   :page-t-show-mode, :page-b-show-mode — :all
+                                      ;     (default), :article or :custom (pages with
+                                      ;     `article: false`, catalogues); "article" works
+                                      ;   :window-lb, :window-rb — fixed at the window's
+                                      ;     bottom left / right, at most 200 × 400 px,
+                                      ;     from 60rem (960 px), closable with JS
+                                      ;   :head-extra — clogem-press's own: <link>,
+                                      ;     <meta>, <script>, <style>, <noscript> or
+                                      ;     <template> only, added to every page's <head>;
+                                      ;     anything else warns and is dropped
+                                      ; e.g. {:page-b {:en "<p>Thanks!</p>" :zh-Hans ""}}
 
          ;; Phase 4 Task E1a: the blog identity (vdoing's blogger, social,
          ;; footer, bannerBg, bodyBgImg* and titleBadge*). Every bad value

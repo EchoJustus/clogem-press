@@ -441,8 +441,8 @@
   A path segment `:*` matches any key — `[:langs :locales :*]` is every
   locale's map. A map whose path has NO entry here holds user data rather
   than options (`:langs :locales` itself, `:i18n :category-labels`,
-  `:content :extend-frontmatter`, `:theme :html-modules`, a `:sha256` map)
-  and its keys are not checked.
+  `:content :extend-frontmatter`, an htmlModules slot's per-language map,
+  a `:sha256` map) and its keys are not checked.
 
   An unknown key is a WARNING, never an error (`check-keys!`): it names the
   path and suggests the nearest known key. **A change that makes the
@@ -471,7 +471,7 @@
                            :static-dir :ok}
    [:theme]               {:default-mode :ok :page-style :ok :sidebar-open :ok :sidebar-depth :ok
                            :per-page :ok :fonts :ok
-                           ;; read, but a non-empty value has no effect yet (check-no-effect!)
+                           ;; Phase 4 Task E1b (check-html-modules!)
                            :html-modules :ok
                            ;; Phase 4 Task E1 (`check-identity!`)
                            :blogger :ok :social :ok :footer :ok :banner-bg :ok
@@ -493,6 +493,11 @@
    ;; Phase 4 Task E2 (§11.3 item 16, D-P4-13): `check-article-parity!`
    [:content :edit-link]  {:repo :ok :branch :ok :dir :ok}
    [:theme :update-bar]   {:show-to-article :ok :more-article :ok}
+   ;; Phase 4 Task E1b (D-P4-13): the slots; a slot's per-language map is
+   ;; user data, not walked (no `:*` entry)
+   [:theme :html-modules] {:head-extra :ok :home-sidebar-b :ok :sidebar-t :ok :sidebar-b :ok
+                           :page-t :ok :page-b :ok :page-t-show-mode :ok :page-b-show-mode :ok
+                           :window-lb :ok :window-rb :ok}
    [:highlight]           {:provider :ok :line-numbers :ok :copy-button :ok :style :ok :dark-style :ok}
    [:search]              {:provider :ok
                            ;; Phase 4 Task G
@@ -574,7 +579,17 @@
    "author"                  [[:site :author] :ok]
    "nav"                     [[:nav] :ok]
    "search"                  [[:search :provider] :ok]
-   "htmlModules"             [[:theme :html-modules] :planned]
+   "htmlModules"             [[:theme :html-modules] :ok]
+   ;; P4-E1b: vdoing's slot names (types/index.ts), inside htmlModules
+   "homeSidebarB"            [[:theme :html-modules :home-sidebar-b] :ok]
+   "sidebarT"                [[:theme :html-modules :sidebar-t] :ok]
+   "sidebarB"                [[:theme :html-modules :sidebar-b] :ok]
+   "pageT"                   [[:theme :html-modules :page-t] :ok]
+   "pageB"                   [[:theme :html-modules :page-b] :ok]
+   "pageTshowMode"           [[:theme :html-modules :page-t-show-mode] :ok]
+   "pageBshowMode"           [[:theme :html-modules :page-b-show-mode] :ok]
+   "windowLB"                [[:theme :html-modules :window-lb] :ok]
+   "windowRB"                [[:theme :html-modules :window-rb] :ok]
    "bodyBgImg"               [[:theme :body-bg-img] :ok]
    "bodyBgImgOpacity"        [[:theme :body-bg-img-opacity] :ok]
    "bodyBgImgInterval"       [[:theme :body-bg-img-interval] :ok]
@@ -755,14 +770,10 @@
 (defn- check-no-effect!
   "Settings config.example.edn documents whose implementation is still to
   come: set to anything but their default, they warn that they have no
-  effect in this version rather than being silently ignored."
+  effect in this version rather than being silently ignored. Only
+  `:seo :indexnow` is left (htmlModules is P4-E1b's `check-html-modules!`)."
   [cfg]
   (let [v (generator-version)]
-    (when (let [hm (get-in cfg [:theme :html-modules])]
-            ;; 0.2.0 accepted any value, `false` and `:none` included
-            (if (coll? hm) (seq hm) (some? hm)))
-      (diag/warn! nil (str ":theme :html-modules has no effect in " v "; nothing is injected.")
-                  "htmlModules support is planned for Phase 4 (DESIGN.md §8)."))
     (when (true? (get-in cfg [:seo :indexnow :enabled]))
       (diag/warn! nil (str ":seo :indexnow :enabled true has no effect in " v
                            "; nothing is pushed to IndexNow.")
@@ -1160,6 +1171,99 @@
                  (assoc :body-bg-img-opacity opacity :body-bg-img-interval interval
                         :page-style style :title-badge badge)
                  (put :title-badge-icons badge-icons)))))
+
+;; ---------------------------------------------------------------------------
+;; htmlModules (Phase 4 Task E1b, §11.3 item 13, D-P4-13). The owner's raw
+;; HTML is trusted (D-P4-13); what is checked is its shape. Every problem is
+;; a WARNING that drops the value or uses the default: 0.2.0 accepted any
+;; `:html-modules` (and warned it had no effect), so none may start failing.
+;; There is no `defaults` entry: `check-shapes!` would make `false` an error.
+
+(def module-slots
+  "The htmlModules slots: vdoing's seven, in kebab case, and clogem-press's
+  own `:head-extra` (DESIGN.md §5.3)."
+  [:head-extra :home-sidebar-b :sidebar-t :sidebar-b :page-t :page-b :window-lb :window-rb])
+
+(def ^:private show-mode-keys
+  {:page-t :page-t-show-mode :page-b :page-b-show-mode})
+
+(defn- head-bad
+  "The first thing in `s` that is not head content, as a short description
+  — `<div>`, or `text \"hi\"` — or nil. Comments and `<script>`, `<style>`,
+  `<noscript>` and `<template>` blocks are skipped; then only `<link>`,
+  `<meta>` and whitespace may remain (a `<title>` would be a second title,
+  a `<base>` would retarget every #fragment link)."
+  [s]
+  (let [rest (-> s
+                 (str/replace #"(?s)<!--.*?(-->|$)" " ")
+                 (str/replace #"(?is)<(script|style|noscript|template)\b.*?(</\1\s*>|$)" " ")
+                 (str/replace #"(?i)<(link|meta)\b[^>]*>" " "))]
+    (when-not (str/blank? rest)
+      (if-let [[_ tag] (re-find #"</?([A-Za-z][A-Za-z0-9-]*)" rest)]
+        (str "<" (u/lower tag) ">")
+        (let [t (str/trim rest)]
+          (str "text " (pr-str (if (> (count t) 20) (str (subs t 0 20) "…") t))))))))
+
+(defn- check-html-modules!
+  "P4-E1b: `:theme :html-modules`. A slot is a string or a map of language
+  keyword to string (`\"\"` is quiet and suppresses it in that language); a
+  show-mode is :all, :article or :custom, as a keyword or a string; and
+  `:head-extra` is head content only. The check repairs `cfg`, so the
+  renderers (`clogem.theme.modules`) read valid values only. Unknown keys
+  are `check-keys!`'s."
+  [cfg]
+  (let [hint  "See config.example.edn (vdoing's htmlModules)."
+        warn! (fn [msg] (diag/warn! nil msg hint) nil)
+        hm    (get-in cfg [:theme :html-modules])
+        p     (fn [k] (path-str [:theme :html-modules k]))
+        slot  (fn [k v]
+                (cond
+                  (nil? v) nil
+                  (or (string? v)
+                      (and (map? v) (every? keyword? (keys v)) (every? string? (vals v))))
+                  v
+                  :else
+                  (warn! (str (p k) " is " (pr-str v) ", but it must be a string of HTML or a map of "
+                              "language to string, such as {:en \"<p>…</p>\"}; it is ignored."))))
+        head  (fn [v]
+                (let [bad! (fn [lang s]
+                             (when-let [b (head-bad s)]
+                               (warn! (str (p :head-extra) (when lang (str " " lang)) " has " b
+                                           ", but it must be head content only — <link>, <meta>, <script>, "
+                                           "<style>, <noscript>, <template> or a comment; it is ignored."))
+                               b))]
+                  (cond
+                    (string? v) (when-not (bad! nil v) v)
+                    ;; a bad language's value becomes "": suppressed there,
+                    ;; rather than falling back to another language's
+                    (map? v)    (into {} (map (fn [[l s]] [l (if (bad! l s) "" s)])) v)
+                    :else       v)))
+        mode  (fn [k v]
+                (let [m (cond (keyword? v) v
+                              (string? v)  (keyword (u/lower (str/trim v))))]
+                  (cond
+                    (nil? v) nil
+                    (#{:all :article :custom} m) m
+                    :else
+                    (do (warn! (str (p k) " is " (pr-str v) ", but it must be :all, :article or :custom "
+                                    "(vdoing's \"article\" or \"custom\"); using :all."))
+                        :all))))]
+    (cond
+      (or (nil? hm) (and (map? hm) (empty? hm))) cfg
+      (not (map? hm))
+      (do (warn! (str ":theme :html-modules is " (pr-str hm) ", but it must be a map of slots such as "
+                      "{:page-t \"<p>…</p>\"}; nothing is injected."))
+          (update cfg :theme dissoc :html-modules))
+      :else
+      (let [hm' (reduce (fn [m k]
+                          (let [v (some->> (get hm k) (slot k))
+                                v (if (= :head-extra k) (some-> v head) v)]
+                            (if (some? v) (assoc m k v) (dissoc m k))))
+                        hm module-slots)
+            hm' (reduce (fn [m k]
+                          (if-some [v (mode k (get hm k))] (assoc m k v) (dissoc m k)))
+                        hm' (vals show-mode-keys))]
+        (assoc-in cfg [:theme :html-modules] hm')))))
 
 ;; ---------------------------------------------------------------------------
 ;; Article-page parity (Phase 4 Task E2, §11.3 item 16, D-P4-13). Every bad
@@ -1698,6 +1802,8 @@
       check-i18n-comments! check-out-dir! check-no-effect! check-highlight! check-page-chrome!
       ;; Phase 4 Task E1 (P4-E1a)
       check-identity!
+      ;; Task E1b
+      check-html-modules!
       ;; Task E2
       check-article-parity!
       ;; Task F; the static directory after the output directory it must avoid
@@ -1877,15 +1983,43 @@
   (let [v (get-in cfg [:theme :body-bg-img])]
     (when (and (vector? v) (seq v)) v)))
 
+(defn html-module
+  "P4-E1b: an htmlModules slot's value as `check-html-modules!` left it — a
+  string or a per-language map — or nil."
+  [cfg slot]
+  (get-in cfg [:theme :html-modules slot]))
+
+(defn show-mode
+  "P4-E1b: where `:page-t` or `:page-b` shows — :all (the default),
+  :article or :custom (vdoing's pageTshowMode, pageBshowMode)."
+  [cfg slot]
+  (or (get-in cfg [:theme :html-modules (show-mode-keys slot)]) :all))
+
+(defn module-set?
+  "P4-E1b: does `slot` hold any HTML — a non-blank string, or a map with a
+  non-blank value? (A page in a language whose value is \"\" still renders
+  nothing.)"
+  [cfg slot]
+  (let [v (html-module cfg slot)]
+    (boolean (if (map? v)
+               (some #(and (string? %) (not (str/blank? %))) (vals v))
+               (and (string? v) (not (str/blank? v)))))))
+
+(defn windows?
+  "P4-E1b: is either window set? Only then js/window.js ships."
+  [cfg]
+  (or (module-set? cfg :window-lb) (module-set? cfg :window-rb)))
+
 (defn identity-css?
   "P4-E1a: does this site ship and link css/identity.css — the opt-in
   identity rules? Only while something on its pages needs them: a blogger
-  card, social links or a background image (and, in E1b, an htmlModules
-  slot other than :head-extra)."
+  card, social links, a background image, or (P4-E1b) an htmlModules slot
+  other than :head-extra, which is never wrapped."
   [cfg]
   (boolean (or (map? (get-in cfg [:theme :blogger]))
                (seq (get-in cfg [:theme :social :icons]))
-               (body-bg-images cfg))))
+               (body-bg-images cfg)
+               (some #(module-set? cfg %) (remove #{:head-extra} module-slots)))))
 
 (defn edit-link
   "`:content :edit-link` as `check-edit-link!` left it — {:url :branch :dir}

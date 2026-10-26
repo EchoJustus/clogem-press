@@ -268,8 +268,13 @@
       "the footer, the badge and the banner are in theme.css")
   (doseq [theme [{:blogger {:name "J"}}
                  {:social {:icons [{:icon :github :title "G" :link "https://g.example"}]}}
-                 {:body-bg-img "/a.png"}]]
+                 {:body-bg-img "/a.png"}
+                 ;; P4-E1b: a wrapped htmlModules slot
+                 {:html-modules {:page-t "<p>x</p>"}}]]
     (is (true? (config/identity-css? (first (load-site {:theme theme})))) (pr-str theme)))
+  (testing "P4-E1b: :head-extra alone is never wrapped, and a blank slot is unset"
+    (is (false? (config/identity-css? (first (load-site {:theme {:html-modules {:head-extra "<meta name=a>"
+                                                                                 :page-b {:en ""}}}}))))))
   (testing "a dropped value does not count"
     (is (false? (config/identity-css? (first (load-site {:theme {:blogger "me" :social []}})))))))
 
