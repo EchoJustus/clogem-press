@@ -445,6 +445,26 @@ clogem-press card and its README's table.
   key (`with-redefs`), so it no longer depends on which real key is still
   planned. Each failed first on `f44fcf6`.
 
+- **The demo turns the feature on** (`examples/demo-site/site.edn`:
+  `:search {:provider :pagefind :cross-language true}`), so CI's browser
+  job covers it (D-P4-18); its `doctor` is unchanged at one warning.
+  CI's `--no-search` step greps for `js/search-all.js` and
+  `css/search-all.css` too.
+- `test/browser/search-all.test.mjs` (new, 45 checks): the English home
+  finds no `百分号` unticked and fetches only the English `pf_meta`;
+  ticking it finds `/pages/cjk001/`, stores `"1"` and survives a reload,
+  and unticking undoes both. The zh-Hans home's first `permalink` result
+  is `/zh-Hans/pages/relocated/` (the merges' weight). Malay and
+  Traditional Chinese keep their own summary strings in both states, with
+  no nested dialog. The filter's values are the language names, and
+  *Bahasa Melayu* leaves `/pages/1bd8ea/`. At 320 and 360 px, ticked and
+  with the menu open: no overflow, the menu inside the viewport, one
+  close button. Tab reaches the box and Space toggles it, focus staying
+  on it; blocked storage leaves it off and working; no request under
+  `pagefind/` fails, no result href is absolute; print draws no row. A
+  temp build under `--base /clogem-demo/`, served with `bb serve`, gives
+  `/clogem-demo/pages/cjk001/`.
+
 ### Needs native review (G)
 
 Machine-made, to be read by a native speaker:
