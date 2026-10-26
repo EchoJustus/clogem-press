@@ -234,3 +234,88 @@
                 (when (head-drops-body?)
                   (is (= (get-in get [:headers "content-length"]) (get-in head [:headers "content-length"]))
                       "the length of the page as GET sends it, script included"))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 4: the fswatcher pod dies while `bb dev` runs
+
+(defn- pod-processes
+  "The fswatcher pod processes below this one, as ProcessHandles."
+  []
+  (filter (fn [^java.lang.ProcessHandle h]
+            (str/includes? (str (.orElse (.command (.info h)) "")) "fswatcher"))
+          (iterator-seq (.iterator (.descendants (java.lang.ProcessHandle/current))))))
+
+(deftest a-pod-that-dies-falls-back-to-polling-with-one-line
+  (testing "item 4: with the pod killed, dev stopped watching — no
+            fallback to polling — and babashka's pod client printed
+            `ERROR: Pod quit unexpectedly` once per watch"
+    (if-not (System/getenv "CLOGEM_FSWATCHER")
+      (println "a-pod-that-dies-falls-back-to-polling-with-one-line: CLOGEM_FSWATCHER is not set; skipped")
+      (with-site url-site
+        (fn [dir]
+          (doseq [d ["assets" "i18n" "overrides"]] (fs/create-dirs (fs/path dir d)))
+          (let [out    (java.io.StringWriter.)
+                before (set (map #(.pid ^java.lang.ProcessHandle %) (pod-processes)))
+                h      (binding [*out* out *err* out]
+                         (dev/start-dev! {:site-dir (str dir) :port 1888 :no-write true :no-search true :interval 100}
+                                         {:run-server! (fn [& _] (fn [& _] nil))
+                                          :follow-ms 100
+                                          :notify! (fn [_]) :notify-error! (fn [_])}))
+                builds #(count (re-seq #"rebuilt in" (str out)))]
+            (try
+              (is (:pod? h) (str "the pod watches: " out))
+              (let [pods (remove #(before (.pid ^java.lang.ProcessHandle %)) (pod-processes))]
+                (is (= 1 (count pods)) "this dev's pod")
+                (run! #(.destroyForcibly ^java.lang.ProcessHandle %) pods))
+              (is (wait-until #(re-find #"fswatcher pod quit" (str out)) 5000) (str "one line says so: " out))
+              (is (re-find #"fswatcher pod quit; dev polls every 100 ms for the rest of this session" (str out)))
+              (is (wait-until #(re-find #"(?s)fswatcher pod quit.*rebuilt in" (str out)) 5000)
+                  (str "one rebuild once polling starts: " out))
+              (let [b0 (builds)]
+                (spit (fs/file dir "content" "01.Guide" "01.t.md") (str article "\nmore\n"))
+                (is (wait-until #(> (builds) b0) 5000) (str "polling rebuilds: " out)))
+              ;; the pod client's lines wait for the gate, which waits up
+              ;; to `dev/signal-grace-ms` for dev's stop
+              (Thread/sleep (+ 1500 dev/signal-grace-ms))
+              (is (= 1 (count (re-seq #"fswatcher pod quit" (str out)))) (str "said once: " out))
+              (is (not (str/includes? (str out) "Pod quit unexpectedly")) (str "nothing else about it: " out))
+              (finally (binding [*out* out *err* out] ((:stop! h)))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 11: the inotify-limit fallback's first rebuild
+
+(deftest the-fallback-s-first-rebuild-says-full-rebuild
+  (testing "item 11: the rebuild once polling takes over from the pod was
+            reported as `(6 files changed)` — the watched roots, submitted
+            to force it"
+    (with-site url-site
+      (fn [dir]
+        (doseq [d ["assets" "i18n" "overrides"]] (fs/create-dirs (fs/path dir d)))
+        (let [out      (java.io.StringWriter.)
+              cb       (atom nil)
+              started? (atom false)
+              register! (fn [spec]
+                          (when @started? (throw (ex-info "inotify_init1: too many open files" {})))
+                          {:path (:path spec)})
+              pod (fn [_cfg on-change {:keys [specs accept? on-ready]}]
+                    (reset! cb {:on-change on-change :accept? accept?})
+                    (on-ready register! {:unwatch! (fn [_]) :watchers (zipmap (map :path specs) (map register! specs))})
+                    true)
+              h (binding [*out* out *err* out]
+                  (dev/start-dev! {:site-dir (str dir) :port 1888 :no-write true :no-search true :interval 100}
+                                  {:run-server! (fn [& _] (fn [& _] nil))
+                                   :try-pod-watch! pod
+                                   :poll-watch! dev/poll-watch!
+                                   :follow-ms 50
+                                   :notify! (fn [_]) :notify-error! (fn [_])}))]
+          (try
+            (reset! started? true)
+            (let [d (fs/path dir "content" "50.A")]
+              (fs/create-dirs d)
+              (let [{:keys [on-change accept?]} @cb]
+                (when (accept? (str d)) (on-change (with-meta [(str d)] {:type :create})))))
+            (is (wait-until #(str/includes? (str out) "inotify limit is reached") 5000) (str out))
+            (is (wait-until #(re-find #"rebuilt in \d+ ms \(full rebuild\)" (str out)) 5000)
+                (str "says what it is: " out))
+            (is (not (re-find #"files changed" (str out))) (str out))
+            (finally (binding [*out* out *err* out] ((:stop! h))))))))))

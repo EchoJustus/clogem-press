@@ -571,6 +571,13 @@ an explicit `:delay-ms` equal to this section's own debounce instead of acceptin
 default; the budget is sized for registration, which intermittently never returns. See Appendix A
 item 5 for the measurements.
 
+The pod can also die later, while `bb dev` runs (killed, out of memory): its watches die with it,
+silently. dev's follower checks the pod's process on every pass, at least once a second, and when
+it is gone says so in one line, `the fswatcher pod quit; dev polls every … ms for the rest of this
+session`, and polls, with one full rebuild once the poller has its first snapshot — as at the
+inotify limit (Known limitations). babashka's pod client's own `ERROR: Pod quit unexpectedly`,
+which it printed once per watch, is dropped then, as at Ctrl-C (P4 follow-ups).
+
 The one i18n-specific subtlety: editing *one* variant invalidates *all* siblings, because the variant
 bar and the hreflang set are shared. Re-rendering a whole identity group is still a handful of pages,
 so the dev loop stays interactive.

@@ -54,6 +54,21 @@ items, and what the E1a and E2 checks left; tests in
   http-kit sends any body to HEAD and counts `Content-Length` from the body
   it sends, the body is dropped here and the length stays 0
   (`head-reports-the-length-and-sends-no-body`).
+- **A fswatcher pod that dies while `bb dev` runs is followed by polling**
+  (item 4). dev stopped watching — nothing rebuilt again — and babashka's
+  pod client printed `ERROR: Pod quit unexpectedly` once per watch (six
+  lines). dev's follower now checks the pod's process on every pass and,
+  once it is gone, prints one line (`the fswatcher pod quit; dev polls
+  every 500 ms for the rest of this session.`) and polls, with one full
+  rebuild once polling starts, as the inotify-limit fallback does; the
+  pod client's lines are dropped, as at Ctrl-C
+  (`a-pod-that-dies-falls-back-to-polling-with-one-line`, with the real
+  pod, kills it; skipped without `CLOGEM_FSWATCHER`. `dev_round3_test`'s
+  `the-real-pod-quitting-at-ctrl-c-is-not-reported` now expects silence
+  either way).
+- **The polling fallback's first rebuild says `(full rebuild)`** (item 11),
+  not `(6 files changed)`, the count of the watched roots submitted to
+  force it (`the-fallback-s-first-rebuild-says-full-rebuild`).
 
 **Support page** (DESIGN.md §7.5): clogem-press's page on the Clogem
 support site, https://echojustus.github.io/clogem-support/clogem-press/,

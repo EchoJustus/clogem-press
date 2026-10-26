@@ -1377,17 +1377,36 @@
        (flush [] (.flush w)))
      "UTF-8")))
 
+(defn- pod-pids
+  "The pids of this process's children running the pod binary `bin`."
+  [bin]
+  (let [want (str (fs/canonicalize bin))]
+    (set (for [^java.lang.ProcessHandle h (iterator-seq (.iterator (.children (java.lang.ProcessHandle/current))))
+               :when (= want (str (.orElse (.command (.info h)) "")))]
+           (.pid h)))))
+
 (defn load-pod!
   "Fetch the fswatcher pod through `clogem.tools` — the pinned, per-platform
   sha256, cached under XDG, or `CLOGEM_FSWATCHER` / `:tools :fswatcher
   :path` — and load it from that path. Never through the pod registry, which
-  runs whatever it downloads unverified. Returns {:watch :unwatch :pod-id}
-  (`unload-pod!` takes the id), or nil
+  runs whatever it downloads unverified. Returns {:watch :unwatch :pod-id
+  :alive?} (`unload-pod!` takes the id; `alive?`, nil when the pod's
+  process cannot be found, says whether it still runs), or nil
   after one line saying why (offline on the first run, no asset for this
   platform, a hash that does not match): the caller polls."
   [cfg & [stopping?]]
   (try
-    (let [bin (tools/ensure-binary! tools/fswatcher cfg)]
+    (let [bin    (tools/ensure-binary! tools/fswatcher cfg)
+          before (pod-pids bin)
+          proc   (atom nil)
+          ;; dev stopping, or the pod's process gone: the caller says so
+          ;; in one line of its own (P4 follow-ups item 4)
+          quiet? (fn []
+                   (boolean
+                    (when (or stopping? @proc)
+                      (soon? #(or (and stopping? (stopping?))
+                                  (some-> ^java.lang.ProcessHandle @proc .isAlive not))
+                             signal-grace-ms))))]
       ;; `babashka.pods` is required in the ns form on purpose. Resolving it
       ;; lazily — `(requiring-resolve 'babashka.pods/load-pod)` — deadlocks:
       ;; by the time `dev!` reaches this point the http-kit server threads are
@@ -1400,14 +1419,20 @@
       ;; until load-pod has run.
       ;; babashka's pod client prints `ERROR: Pod quit unexpectedly` to the
       ;; `*err*` of this call when the pod's process ends — which the
-      ;; Ctrl-C that stops dev does: dropped then (P4-D.3 item 14)
+      ;; Ctrl-C that stops dev does: dropped then (P4-D.3 item 14), and
+      ;; when the pod dies under a running dev, once for every watch
+      ;; (P4 follow-ups item 4).
       ;; Only the pod client writes there, and only when something failed,
       ;; so waiting for the hook's flag (`stop-caused?`) costs nothing.
-      (let [{:pod/keys [id]} (binding [*err* (gated-writer *err* #(stop-caused? stopping?))]
-                               (pods/load-pod (str bin)))]
+      (let [{:pod/keys [id]} (binding [*err* (gated-writer *err* quiet?)]
+                               (pods/load-pod (str bin)))
+            pid (first (remove before (pod-pids bin)))
+            h   (when pid (.orElse (java.lang.ProcessHandle/of pid) nil))]
+        (reset! proc h)
         {:watch   (requiring-resolve 'pod.babashka.fswatcher/watch)
          :unwatch (requiring-resolve 'pod.babashka.fswatcher/unwatch)
-         :pod-id  id}))
+         :pod-id  id
+         :alive?  (when h #(.isAlive ^java.lang.ProcessHandle h))}))
     (catch Throwable e
       (when-not (stop-caused? stopping?)
         (println (str "clogem-press: the fswatcher pod is unavailable, so dev watches by polling: "
@@ -1422,19 +1447,19 @@
     (deref (future (try (pods/unload-pod id) (catch Throwable _ nil))) 1000 nil)))
 
 (defn try-pod-watch!
-  "Load the fswatcher pod and probe it. Returns {:pod-id} only if it
-  registered *and* delivered an event within the probe window; otherwise
-  false, with the pod unloaded."
+  "Load the fswatcher pod and probe it. Returns {:pod-id :alive?}
+  (`load-pod!`) only if it registered *and* delivered an event within the
+  probe window; otherwise false, with the pod unloaded."
   [cfg on-change & [opts]]
   (if-let [fns (load-pod! cfg (:stopping? opts))]
     (let [ok? (try
-                (probe-watch! cfg on-change (merge (dissoc fns :pod-id) (into {} (remove (comp nil? val)) opts)))
+                (probe-watch! cfg on-change (merge (dissoc fns :pod-id :alive?) (into {} (remove (comp nil? val)) opts)))
                 (catch Throwable e
                   (when-not (stop-caused? (:stopping? opts))
                     (println "clogem-press: fswatcher pod unavailable —" (ex-message e)))
                   false))]
       (if ok?
-        {:pod-id (:pod-id fns)}
+        (select-keys fns [:pod-id :alive?])
         (do (unload-pod! (:pod-id fns)) false)))
     false))
 
@@ -1513,6 +1538,14 @@
                (str/replace "_" "-")
                symbol)))))
 
+(def full-rebuild
+  "What a watcher submits for a rebuild that is not about any one path:
+  the full rebuild once polling has taken over from the pod. Its line says
+  `full rebuild`; it said `(6 files changed)`, counting the watched roots
+  submitted in its place (P4 follow-ups item 11). Not a path any watcher
+  sees."
+  "<full rebuild>")
+
 (defn make-rebuild
   "The dev loop's one rebuild, as a function of the changed paths.
 
@@ -1546,6 +1579,7 @@
           (println (format "clogem-press: rebuilt in %d ms (%s)"
                            (- (System/currentTimeMillis) t0)
                            (cond
+                             (some #{full-rebuild} changed) "full rebuild"
                              (empty? changed)      "initial"
                              (<= (count changed) 3) (str/join ", " (map #(str (fs/file-name %)) changed))
                              :else                 (str (count changed) " files changed"))))
@@ -1836,21 +1870,23 @@
                              (println (format "clogem-press: watching by polling every %d ms" interval))
                              (spawn #(poll* paths interval submit! {:stop?   (fn [] @stopping)
                                                                      :site-fn site-fn}))))
-          ;; the system's inotify limit, reached mid-session: polling from
-          ;; here on, with the pod's watches all released (P4-D.3 item 5).
-          ;; The change that hit the limit, and the rest of its batch, are
-          ;; in the poller's first snapshot, so it never sees them: one
-          ;; full rebuild once that snapshot is taken (P4-D.4 item 6)
+          ;; the system's inotify limit, reached mid-session, or the pod's
+          ;; process gone (P4 follow-ups item 4: dev stopped watching):
+          ;; polling from here on, with the pod's watches all released
+          ;; (P4-D.3 item 5), said in one line. The change that hit the
+          ;; limit, and the rest of its batch, or what changed since the pod
+          ;; died, are in the poller's first snapshot, so it never sees them:
+          ;; one full rebuild once that snapshot is taken (P4-D.4 item 6)
           fall-back-to-polling! (fn [why]
                                   (when-not @stopping
-                                    (println (str "clogem-press: the system's inotify limit is reached (" why
-                                                  "); dev polls every " interval " ms for the rest of this session."))
+                                    (println (str "clogem-press: " why "; dev polls every " interval
+                                                  " ms for the rest of this session."))
                                     (reset! registered {})
                                     (unload-pod! @pod-id)
                                     (spawn #(poll* paths interval submit!
                                                    {:stop?       (fn [] @stopping)
                                                     :site-fn     site-fn
-                                                    :on-baseline (fn [] (submit! (mapv str (paths))))}))))
+                                                    :on-baseline (fn [] (submit! [full-rebuild]))}))))
           ;; pod events: a directory the pod must be told about goes to
           ;; the follower (pod calls never run on the pod's callback
           ;; thread), which registers it and submits it with its files
@@ -1876,44 +1912,49 @@
                                                                               :unwatch!  (or unwatch! (fn [_]))
                                                                               :watchers  watchers}))}))]
       (when (map? pod?) (reset! pod-id (:pod-id pod?)))
-      (if pod?
-        (do (reset! registered (into {} (for [{:keys [path] :as spec} existing]
-                                          [path {:key (file-key path) :spec spec
-                                                 :covers (get startup-covers path)
-                                                 :watcher (get-in @register [:watchers path])}])))
-            (println "clogem-press: watching via fswatcher")
-            (when @register
-              (spawn (fn []
-                       (let [{:keys [register! unwatch!]} @register]
-                         (loop [last-pass (System/currentTimeMillis)]
-                           (let [d     (.poll dirq (long follow-ms) TimeUnit/MILLISECONDS)
-                                 now   (System/currentTimeMillis)
-                                 ;; the full pass runs at least every
-                                 ;; `follow-ms`, events or not (P4-D.3 item 5)
-                                 pass? (or (nil? d) (>= (- now last-pass) follow-ms))]
-                             (when-not @stopping
-                               (let [gave-up?
-                                     (try
-                                       (release-gone! registered unwatch!)
-                                       (let [new (into (if d
-                                                         (register-new-dirs! registered
-                                                                             (remove nil? (cons d (repeatedly (.size dirq) #(.poll dirq))))
-                                                                             register! unwatch!)
-                                                         [])
-                                                       (when pass? (follow-new-paths! @specs registered register! unwatch!)))]
-                                         ;; a recursive registration's files are rescanned;
-                                         ;; a single-file watch's directory — a site.edn
-                                         ;; link's new target — is not (P4-D.3 item 16)
-                                         (when-let [new (seq (filter #(get-in @registered [% :spec :recursive?]) (distinct new)))]
-                                           (submit! (vec (mapcat #(new-dir-batch % (site-fn)) new)))))
-                                       false
-                                       (catch Throwable t
-                                         (if (::exhausted (ex-data t))
-                                           (do (fall-back-to-polling! (or (ex-message t) (str t))) true)
-                                           (do (println "clogem-press: watching failed —" (or (ex-message t) (str t)))
-                                               false))))]
-                                 (when-not gave-up? (recur (if pass? now last-pass))))))))))))
-        (start-polling!))
+      (let [pod-alive? (when (map? pod?) (:alive? pod?))]
+        (if pod?
+          (do (reset! registered (into {} (for [{:keys [path] :as spec} existing]
+                                            [path {:key (file-key path) :spec spec
+                                                   :covers (get startup-covers path)
+                                                   :watcher (get-in @register [:watchers path])}])))
+              (println "clogem-press: watching via fswatcher")
+              (when @register
+                (spawn (fn []
+                         (let [{:keys [register! unwatch!]} @register]
+                           (loop [last-pass (System/currentTimeMillis)]
+                             (let [d     (.poll dirq (long follow-ms) TimeUnit/MILLISECONDS)
+                                   now   (System/currentTimeMillis)
+                                   ;; the full pass runs at least every
+                                   ;; `follow-ms`, events or not (P4-D.3 item 5)
+                                   pass? (or (nil? d) (>= (- now last-pass) follow-ms))]
+                               (when-not @stopping
+                                 (let [gave-up?
+                                       (if (and pod-alive? (not (pod-alive?)))
+                                         (do (fall-back-to-polling! "the fswatcher pod quit") true)
+                                         (try
+                                           (release-gone! registered unwatch!)
+                                           (let [new (into (if d
+                                                             (register-new-dirs! registered
+                                                                                 (remove nil? (cons d (repeatedly (.size dirq) #(.poll dirq))))
+                                                                                 register! unwatch!)
+                                                             [])
+                                                           (when pass? (follow-new-paths! @specs registered register! unwatch!)))]
+                                             ;; a recursive registration's files are rescanned;
+                                             ;; a single-file watch's directory — a site.edn
+                                             ;; link's new target — is not (P4-D.3 item 16)
+                                             (when-let [new (seq (filter #(get-in @registered [% :spec :recursive?]) (distinct new)))]
+                                               (submit! (vec (mapcat #(new-dir-batch % (site-fn)) new)))))
+                                           false
+                                           (catch Throwable t
+                                             (if (::exhausted (ex-data t))
+                                               (do (fall-back-to-polling! (str "the system's inotify limit is reached ("
+                                                                               (or (ex-message t) (str t)) ")"))
+                                                   true)
+                                               (do (println "clogem-press: watching failed —" (or (ex-message t) (str t)))
+                                                   false)))))]
+                                   (when-not gave-up? (recur (if pass? now last-pass))))))))))))
+          (start-polling!)))
       {:stop!   stop!
        :state   state
        :cfg-ref cfg-ref
