@@ -363,6 +363,20 @@ clogem-press card and its README's table.
   that built before starts failing. `true` under `:provider :none` (what
   `--no-search` sets) says nothing and does nothing.
 
+- **Merge data on the page** (`clogem.search/indexed-langs`,
+  `merge-data`; `render/page-map`, `theme/layout`): a page that offers the
+  checkbox carries `data-clogem-merge` on its `<pagefind-config>` — the
+  encoded base (so `base + "pagefind/"` is the element's own
+  `bundle-path`), its own language's label, the two labels the row shows,
+  and the OTHER indexed languages as {Pagefind key, label} in
+  `:langs :priority` order. "Indexed" is the languages with an article
+  variant, which is exactly what carries `data-pagefind-body`. No
+  attribute where the page's own language has no indexed pages (there
+  Pagefind already falls back to the largest index) or where no other
+  language has any. The data is computed once per language, beside the
+  search UI strings, so articles, homes, indexes and `404.html` all get
+  it; `css/search-all.css` follows Pagefind's stylesheet in the head and
+  `js/search-all.js` follows `js/search.js`.
 - **`js/search-all.js`** (new, 1,844 B gzipped; budget 2,048): the
   checkbox row inside the search dialog, built from elements and text
   nodes (no `innerHTML`), and a second, named Pagefind instance
@@ -402,6 +416,16 @@ clogem-press card and its README's table.
 
 ### Tests (G)
 
+- `search_test.clj`'s Task G section, on the five-language fixture: each
+  page's attribute parses back to its own label plus the other four
+  languages' lowercased keys, in priority order; `base` + `pagefind/`
+  equals `bundle-path` under `--base /x/` and `/文/`; with no `ms`
+  variant, `ms` pages carry nothing and the others exclude `ms`; with one
+  indexed language nothing is emitted (though both files still ship); the
+  key absent, false, or true under `:provider :none` gives a byte-identical
+  `dist/`; the head's order; `404.html`; `check_search.clj`'s `<body>`
+  regex still matches; and, with `CLOGEM_PAGEFIND`, each page's keys plus
+  its own equal `pagefind-entry.json`'s.
 - `test/clogem/search_all_test.clj`: the two files' gzip budgets, printed
   as `nav.js`'s are; no `innerHTML` and no modal built in JS; the stored
   key written the way `support_page_test`'s scan reads it, with every

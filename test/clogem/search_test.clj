@@ -940,3 +940,163 @@
     (do (is (nil? (System/getenv "GITHUB_ACTIONS"))
             "CI must set CLOGEM_PAGEFIND, so this test always runs there")
         (println "the-real-pagefind-indexes-words-not-chrome: skipped — CLOGEM_PAGEFIND is not set"))))
+
+;; ---------------------------------------------------------------------------
+;; Cross-language search (Task G, §11.3 item 17, D-P4-17)
+
+(def ^:private x-lang
+  "The site map that turns the checkbox on."
+  {:search {:cross-language true}})
+
+(defn- merge-attr
+  "The page's `data-clogem-merge`, parsed, or nil."
+  [html]
+  (some-> (second (re-find #"data-clogem-merge=\"([^\"]*)\"" html))
+          (str/replace "&quot;" "\"")
+          (json/parse-string false)))
+
+(defn- bundle-attr [html]
+  (second (re-find #"<pagefind-config bundle-path=\"([^\"]*)\"" html)))
+
+(deftest every-page-carries-the-other-indexed-languages
+  (with-markup
+    (fn [out]
+      (doseq [[parts own others]
+              [[[]                        "English"       ["zh-hans" "zh-hant" "ms" "ta"]]
+               [["zh-Hans"]               "简体中文"       ["en" "zh-hant" "ms" "ta"]]
+               [["zh-Hant" "pages" "t00001"] "繁體中文"    ["en" "zh-hans" "ms" "ta"]]
+               [["ms"]                    "Bahasa Melayu" ["en" "zh-hans" "zh-hant" "ta"]]
+               [["ta" "pages" "t00001"]   "தமிழ்"          ["en" "zh-hans" "zh-hant" "ms"]]
+               [["tags"]                  "English"       ["zh-hans" "zh-hant" "ms" "ta"]]]
+              :let [d (merge-attr (apply html out parts))]]
+        (testing (pr-str parts)
+          (is (= own (get d "own")) "its own language's label, the endonym the switcher shows")
+          (is (= others (map #(get % "key") (get d "langs")))
+              "Pagefind's own keys, lowercased, in :langs :priority order, never its own")
+          (is (= ["English" "简体中文" "繁體中文" "Bahasa Melayu" "தமிழ்"]
+                 (sort-by #(.indexOf ["English" "简体中文" "繁體中文" "Bahasa Melayu" "தமிழ்"] %)
+                          (conj (mapv #(get % "label") (get d "langs")) own))))))
+      (testing "the strings are the page's own"
+        (is (= "Search all languages" (get (merge-attr (html out)) "label")))
+        (is (= "Language" (get (merge-attr (html out)) "filter")))
+        (is (= "搜尋所有語言" (get (merge-attr (html out "zh-Hant")) "label")))
+        (is (= "Cari dalam semua bahasa" (get (merge-attr (html out "ms")) "label")))
+        (is (= "Bahasa" (get (merge-attr (html out "ms")) "filter"))))
+      (testing "the 404 page carries it too (Task E2 builds it from the same ctx)"
+        (is (= "English" (get (merge-attr (slurp (fs/file out "404.html"))) "own"))))
+      (testing "<pagefind-config> is still the first element in <body>, as
+                check_search.clj's regex reads it"
+        (doseq [parts [[] ["ms"] ["pages" "t00001"]]
+                :let [h (apply html out parts)]]
+          (is (re-find #"<body[^>]*><pagefind-config bundle-path=\"/pagefind/\"[^>]* lang=\"" h)
+              (pr-str parts))))
+      (testing "and no page's merge JSON carries a `>` that would end the tag"
+        (doseq [f (fs/glob out "**.html")]
+          (is (not (re-find #"data-clogem-merge=\"[^\"]*>" (slurp (fs/file f)))) (str f)))))
+    x-lang))
+
+(deftest base-plus-pagefind-is-the-bundle-path
+  (doseq [base ["/x/" "/文/"]]
+    (with-markup
+      (fn [out]
+        (doseq [parts [[] ["zh-Hans"] ["ta" "pages" "t00001"]]
+                :let [h (apply html out parts)
+                      d (merge-attr h)]]
+          (is (= (bundle-attr h) (str (get d "base") "pagefind/"))
+              (str base " " (pr-str parts)))))
+      (assoc-in x-lang [:site :base] base))))
+
+(deftest a-language-with-no-indexed-pages-gets-no-checkbox
+  (testing "`ms` has no article variant here: its pages search Pagefind's
+            fallback (the largest index), as they do today, and no other
+            page offers to merge an index that does not exist"
+    (with-site (dissoc five-langs "01.Guide/01.t.ms.md") {}
+      (fn [dir out]
+        (let [bin (fake/fake-pagefind! (fs/path dir "bin"))]
+          (spit (fs/file dir "site.edn") (pr-str (pagefind-site bin x-lang)))
+          (build! dir out)
+          (is (nil? (merge-attr (html out "ms"))) "the ms home")
+          (is (nil? (merge-attr (html out "ms" "categories"))))
+          (doseq [parts [[] ["zh-Hans"] ["zh-Hant"] ["ta"]]
+                  :let [d (merge-attr (apply html out parts))]]
+            (is (some? d) (pr-str parts))
+            (is (not (some #{"ms"} (map #(get % "key") (get d "langs")))) (pr-str parts))))))))
+
+(deftest one-indexed-language-offers-nothing
+  (testing "nothing to merge: no attribute, no stylesheet, no script"
+    (with-site {"01.Guide/01.t.md" article} {}
+      (fn [dir out]
+        (let [bin (fake/fake-pagefind! (fs/path dir "bin"))]
+          (spit (fs/file dir "site.edn") (pr-str (pagefind-site bin x-lang)))
+          (build! dir out)
+          (doseq [f (fs/glob out "**.html")
+                  :let [h (slurp (fs/file f))]]
+            (is (not (str/includes? h "data-clogem-merge")) (str f))
+            (is (not (str/includes? h "search-all")) (str f)))
+          (testing "the files ship all the same: `skip?` sees only the config"
+            (is (fs/exists? (fs/path out "clogem" "js" "search-all.js")))
+            (is (fs/exists? (fs/path out "clogem" "css" "search-all.css")))))))))
+
+(defn- tree-bytes [out]
+  (into (sorted-map)
+        (for [p (fs/glob out "**") :when (fs/regular-file? p)]
+          [(str (fs/relativize out p)) (vec (fs/read-all-bytes p))])))
+
+(deftest a-site-that-does-not-ask-for-it-builds-the-same-bytes
+  (with-site five-langs {}
+    (fn [dir out]
+      (let [bin (fake/fake-pagefind! (fs/path dir "bin"))
+            build-with (fn [more sub]
+                         (let [o (fs/path dir sub)]
+                           (spit (fs/file dir "site.edn") (pr-str (pagefind-site bin more)))
+                           (build! dir o)
+                           (tree-bytes o)))
+            none (fn [more] (merge-with merge {:search {:provider :none}} more))]
+        (is (= (build-with nil "a") (build-with {:search {:cross-language false}} "b"))
+            "the key absent and the key false")
+        (is (= (build-with nil "a2") (build-with {:search {:cross-language nil}} "c"))
+            "and nil")
+        (is (= (build-with (none nil) "d") (build-with (none {:search {:cross-language true}}) "e"))
+            "`true` under :provider :none — what --no-search sets — builds the same bytes")
+        (is (not= (build-with nil "f") (build-with x-lang "g"))
+            "and the feature itself does change the output (the mutant guard)")))))
+
+(deftest the-head-keeps-its-order
+  (with-markup
+    (fn [out]
+      (doseq [parts [[] ["ms"] ["zh-Hant" "pages" "t00001"]]
+              :let [h (apply html out parts)
+                    head (subs h 0 (str/index-of h "</head>"))
+                    at (fn [re] (let [m (re-find re head)] (when m (str/index-of head m))))
+                    pf-css (at #"pagefind-component-ui\.css")
+                    all-css (at #"css/search-all\.css")
+                    pf-js (at #"pagefind-component-ui\.js")
+                    search-js (at #"js/search\.js")
+                    all-js (at #"js/search-all\.js")
+                    custom (at #"overrides/custom\.css")
+                    analytics (at #"js/analytics\.js")]]
+        (testing (pr-str parts)
+          (is (< pf-css all-css pf-js all-js)
+              "Pagefind's CSS, search-all.css, Pagefind's module, search-all.js")
+          (is (= (= ["ms"] (vec parts)) (some? search-js))
+              "js/search.js only where clogem-press supplies the strings")
+          (when search-js (is (< pf-js search-js all-js)
+                              "search-all.js last: it augments the modal search.js creates"))
+          (is (nil? custom) "this fixture has no overrides/custom.css")
+          (is (nil? analytics) "nor analytics"))))
+    x-lang))
+
+(deftest the-merged-keys-are-the-real-indexs-keys
+  (if-let [real (System/getenv "CLOGEM_PAGEFIND")]
+    (with-site five-langs (merge-with merge url-site {:search {:provider :pagefind}} x-lang)
+      (fn [dir out]
+        (build! dir out)
+        (let [entry (json/parse-string (slurp (fs/file out "pagefind" "pagefind-entry.json")) true)
+              keys* (set (map name (keys (:languages entry))))]
+          (is (= #{"en" "zh-hans" "zh-hant" "ms" "ta"} keys*))
+          (doseq [[parts own] [[[] "en"] [["zh-Hans"] "zh-hans"] [["zh-Hant"] "zh-hant"]
+                               [["ms"] "ms"] [["ta"] "ta"]]
+                  :let [d (merge-attr (apply html out parts))]]
+            (is (= keys* (conj (set (map #(get % "key") (get d "langs"))) own))
+                (str (pr-str parts) ": the page's merge keys plus its own are the index's"))))))
+    (println "the-merged-keys-are-the-real-indexs-keys: skipped — CLOGEM_PAGEFIND is not set")))
