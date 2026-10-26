@@ -1061,11 +1061,36 @@
     (testing "every action pinned by commit"
       (let [uses (map second (re-seq #"uses:\s*(\S+)" text))]
         (is (= #{"actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-                 "DeLaGuardo/setup-clojure@6d46099eae24853c33c0482f2bb54edf4f1a4c74"}
+                 "DeLaGuardo/setup-clojure@6d46099eae24853c33c0482f2bb54edf4f1a4c74"
+                 "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
+                 "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+                 "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333"}
                (set uses)))))
-    (testing "tests the page, then builds it"
-      (is (some #(= "bb test --pattern support-page" (:run %)) (get-in wf [:jobs :publish :steps])))
-      (is (some #(= "bb support-page" (:run %)) (get-in wf [:jobs :publish :steps]))))
+    (testing "two jobs: build, with no secret, then publish (SP.6)"
+      (is (= #{:build :publish} (set (keys (:jobs wf)))))
+      (is (= "build" (get-in wf [:jobs :publish :needs])))
+      (is (not (str/includes? (yaml/generate-string (get-in wf [:jobs :build])) "secrets.")) "build holds no secret")
+      (is (false? (get-in (first (get-in wf [:jobs :build :steps])) [:with :persist-credentials])) "nor the checkout's token"))
+    (testing "build tests the page, builds it, cuts its fonts and hands on the folder"
+      (let [runs (keep :run (get-in wf [:jobs :build :steps]))]
+        (is (= ["bb test --pattern support-page" "bb support-page" "support/fonts.sh"] runs)))
+      (let [up (some #(when (str/starts-with? (str (:uses %)) "actions/upload-artifact@") %) (get-in wf [:jobs :build :steps]))
+            down (some #(when (str/starts-with? (str (:uses %)) "actions/download-artifact@") %) (get-in wf [:jobs :publish :steps]))]
+        (is (= "dist-support/clogem-press/" (get-in up [:with :path])))
+        (is (= "error" (get-in up [:with :if-no-files-found])))
+        (is (= (get-in up [:with :name]) (get-in down [:with :name])))
+        (is (= "dist-support/clogem-press" (get-in down [:with :path])))))
+    (testing "the fonts' downloads are cached by their pins"
+      (let [c (some #(when (str/starts-with? (str (:uses %)) "actions/cache@") %) (get-in wf [:jobs :build :steps]))]
+        (is (= "~/.cache/clogem-press/fonts" (get-in c [:with :path])))
+        (is (str/includes? (str (get-in c [:with :key])) "hashFiles('support/fonts.edn')"))))
+    (testing "publish runs no third-party code: no checkout, no pip, no font download, no pyftsubset"
+      (let [pub (yaml/generate-string (get-in wf [:jobs :publish]))]
+        (doseq [x [#"\bpip3?\b" #"pyftsubset" #"(?m)^\s*(?:run:\s*)?(?:\./)?support/fonts\.sh" #"lxgw" #"python" #"actions/checkout" #"setup-clojure" #"\bbb "]]
+          (is (not (re-find x pub)) (str x)))
+        (is (= #{"actions/download-artifact"} (set (keep #(some-> (:uses %) (str/split #"@") first) (get-in wf [:jobs :publish :steps])))))))
+    (testing "publishes the fonts with the pages, and refuses a folder without them"
+      (is (re-find #"ls dist-support/clogem-press/fonts/\*\.woff2[^\n]*\|\|\s*\{[^\n]*::error::[^\n]*exit 1" run)))
     (testing "replaces clogem-press/ with the whole built folder"
       (is (re-find #"rm -rf pages/clogem-press\n\s*mkdir -p pages/clogem-press\n\s*cp -R dist-support/clogem-press/\. pages/clogem-press/ \|\| exit 1\n" run)))
     (testing "stages clogem-press/ alone and never forces"
@@ -1091,6 +1116,7 @@
     (testing "the key: from env only, never echoed, pinned host keys"
       (is (not (re-find #"set -x|set -[a-wyz]*x|xtrace" text)))
       (is (= ["${{ secrets.CLOGEM_SUPPORT_DEPLOY_KEY }}"] (re-seq #"\$\{\{\s*secrets\.[^}]*\}\}" text)))
+      (is (= 1 (count (re-seq #"secrets\." text))) "secrets. once, in publish's step")
       (is (= "${{ secrets.CLOGEM_SUPPORT_DEPLOY_KEY }}" (get-in (step "publish") [:env :DEPLOY_KEY])))
       (is (not (re-find #"(?:echo|printf)[^\n]*\$\{?DEPLOY_KEY" (str/replace run #"printf '%s\\n' \"\$DEPLOY_KEY\" > \"\$key\"" ""))))
       (is (str/includes? run "printf '%s\\n' \"$DEPLOY_KEY\" > \"$key\"") "written to the key file only")
@@ -1108,6 +1134,52 @@
                   "ssh-rsa"             "SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s"}
                  (into {} (for [l lines] [(second (str/split l #" ")) (fp l)]))))
           (is (every? #(str/starts-with? % "github.com ") lines)))))))
+
+(deftest the-font-step
+  (let [sh (slurp "support/fonts.sh")]
+    (testing "bash, strict, with the notice"
+      (is (str/starts-with? sh "#!/usr/bin/env bash\n# Copyright (c) 2026 clogem-press contributors. EPL-2.0 (see LICENSE).\n"))
+      (is (re-find #"(?m)^set -euo pipefail$" sh))
+      (is (fs/executable? "support/fonts.sh")))
+    (testing "the plan from the generator; downloads over https only, each checked against its SHA-256"
+      (is (str/includes? sh "support-fonts)"))
+      (is (str/includes? sh "curl --fail --location --proto '=https'"))
+      (is (str/includes? sh "sha256sum -c")))
+    (testing "fontTools and brotli pinned by version and hash, from a here-document, into a venv"
+      (is (str/includes? sh "--require-hashes --no-deps"))
+      (is (str/includes? sh "-r /dev/stdin << 'EOF'"))
+      (is (re-find #"fonttools==\d+\.\d+\.\d+ \\\n(?:\s+--hash=sha256:[0-9a-f]{64}(?: \\)?\n)+" sh))
+      (is (re-find #"brotli==\d+\.\d+\.\d+ \\\n(?:\s+--hash=sha256:[0-9a-f]{64}(?: \\)?\n)+" sh))
+      (is (str/includes? sh "python3 -m venv")))
+    (testing "pyftsubset per list, as WOFF2, keeping layout features and names"
+      (doseq [o ["--text-file=" "--flavor=woff2" "--layout-features='*'" "--desubroutinize" "--name-IDs='*'"]]
+        (is (str/includes? sh o) o)))
+    (testing "a coverage check, the licences, the size caps"
+      (is (re-find #"getBestCmap\(\)" sh))
+      (is (str/includes? sh "does not cover its list"))
+      (is (str/includes? sh "cp \"$cache/$name\" \"$fonts/$as\""))
+      (is (str/includes? sh "over its cap")))))
+
+(deftest no-python-in-the-repository
+  (let [files (str/split-lines (:out (p/shell {:out :string} "git" "ls-files")))]
+    (is (seq files))
+    ;; the site's two CI checkers predate the support page and its fonts
+    (is (= #{".github/scripts/check_giscus.py" ".github/scripts/check_seo.py"} (set (filter #(str/ends-with? % ".py") files)))
+        "no .py file for the fonts: pyftsubset and the coverage check run from support/fonts.sh")
+    (is (not-any? #(str/starts-with? % "support/") (filter #(re-find #"\.py[a-z]?$" %) files)))
+    (is (not-any? #(re-find #"(?:^|/)requirements[^/]*\.txt$" %) files) "no requirements file")))
+
+(deftest ci-cuts-the-fonts-on-every-push
+  (let [ci   (yaml/parse-string (slurp ".github/workflows/ci.yml"))
+        job  (get-in ci [:jobs :support-fonts])
+        text (yaml/generate-string job)]
+    (is (some? job))
+    (is (= ["bb support-page" "support/fonts.sh"] (keep :run (:steps job))))
+    (is (not (str/includes? text "secrets.")) "no secret")
+    (is (false? (get-in (first (:steps job)) [:with :persist-credentials])))
+    (is (every? #(re-matches #"[A-Za-z-]+/[A-Za-z-]+@[0-9a-f]{40}" %) (keep :uses (:steps job))) "every action pinned by commit")
+    (let [up (some #(when (str/starts-with? (str (:uses %)) "actions/upload-artifact@") %) (:steps job))]
+      (is (= "dist-support/clogem-press/" (get-in up [:with :path])) "the built folder, pages and fonts, as the run's artifact"))))
 
 (defn- git! [dir & args]
   (let [r (apply p/shell {:dir (str dir) :out :string :err :string :continue true}
@@ -1135,6 +1207,12 @@
     (git! seed "commit" "--quiet" "-m" "The front page and Wmark Pro")
     (git! seed "push" "--quiet" remote "gh-pages")
     (sp/build! (str (fs/path work "dist-support")))
+    ;; what support/fonts.sh adds; the real subsetting needs Python, so a
+    ;; stand-in: a few bytes with WOFF2's signature, and the licences
+    (let [fonts (fs/file work "dist-support" "clogem-press" "fonts")]
+      (fs/create-dirs fonts)
+      (spit (fs/file fonts "wenkai-latin-400.woff2") "wOF2 a stand-in")
+      (spit (fs/file fonts "OFL-LXGW-WenKai.txt") "Copyright LXGW. SIL Open Font License 1.1\n"))
     {:root root :remote remote :seed seed :work work}))
 
 (defn- publish!
@@ -1161,8 +1239,11 @@
     (testing "the first publication adds the five pages, and nothing else changes"
       (let [r (publish! s)]
         (is (zero? (:exit r)) (str (:out r) (:err r)))
-        (is (= (into #{"index.html" "404.html" ".nojekyll" "wmark-pro/index.html"} (for [l langs] (str "clogem-press/" (path-of l))))
+        (is (= (into #{"index.html" "404.html" ".nojekyll" "wmark-pro/index.html"
+                       "clogem-press/fonts/wenkai-latin-400.woff2" "clogem-press/fonts/OFL-LXGW-WenKai.txt"}
+                     (for [l langs] (str "clogem-press/" (path-of l))))
                (tree remote)))
+        (is (= "wOF2 a stand-in" (show remote "clogem-press/fonts/wenkai-latin-400.woff2")) "the fonts, beside the pages")
         (is (= theirs (others)) "the root files and wmark-pro/ byte for byte")
         (is (= before (git! remote "rev-parse" "gh-pages~1")) "one commit, on top of the branch")
         (doseq [l langs]
@@ -1197,6 +1278,15 @@
           (is (str/includes? (show remote "clogem-press/index.html") "newer")))))
     (testing "the key file is gone afterwards"
       (is (empty? (fs/glob (fs/path (:root s) "runner-temp") "*key*"))))))
+
+(deftest a-folder-without-its-fonts-is-not-published
+  (let [{:keys [remote work] :as s} (stand-in!)
+        before (git! remote "rev-parse" "gh-pages")]
+    (fs/delete-tree (fs/file work "dist-support" "clogem-press" "fonts"))
+    (let [r (publish! s)]
+      (is (not (zero? (:exit r))))
+      (is (re-find #"::error::[^\n]*fonts" (:out r)) (:out r))
+      (is (= before (git! remote "rev-parse" "gh-pages"))))))
 
 (deftest without-the-secret-the-page-is-built-but-not-published
   (let [{:keys [remote] :as s} (stand-in!)
