@@ -133,7 +133,44 @@ the 64 KB budget).
 
 - **Text is set in LXGW WenKai (霞鹜文楷)**, all of it but headings and
   code, in English, Chinese, Portuguese and Spanish; the zh-Hant page in
-  LXGW WenKai TC. Five pages, **178,647 bytes** in all, plus the fonts they use.
+  LXGW WenKai TC (霞鶩文楷 TC). Both v1.530, Regular and Medium (emphasis:
+  `<strong>`, the chips, the buttons, the eyebrow, the switchers, the jump
+  links); headings keep the system font, code the monospace one, and the
+  system stacks stay behind WenKai (`font-display: swap`). The owner's
+  decisions of 2026-10-26 (DESIGN.md §7.5 item 8): the files are published
+  beside the pages as `clogem-press/fonts/*.woff2`, the CSP gains
+  `font-src 'self'` and nothing else, and subsetting runs `pyftsubset` in
+  GitHub Actions with no Python in the repository. Five pages, **178,647 bytes** in all, plus the fonts they use:
+  80,838–220,060 bytes per page as it opens, HTML and fonts (README).
+- **WenKai TC's emphasis is Medium, not Bold**: v1.530 of WenKai TC has
+  Light, Regular and Medium and no Bold.
+- **Subsets by script and weight**, each page declaring only those it uses
+  (`unicode-range`, paths relative to its folder, so each page's CSP hash
+  is its own): Latin, Simplified and Traditional, Regular and Medium, and
+  two small ones for the switcher's 简体中文 and 繁體中文 on the other pages.
+  `bb support-page` writes their character lists to `dist-support/glyphs/`;
+  `bb support-fonts` prints the pins in `support/fonts.edn`.
+- **`support/fonts.sh`**, the font step: pinned, hash-checked downloads
+  (cached), fontTools 4.66.1 and brotli 1.2.0 installed by hash, one
+  `pyftsubset` per list, a coverage check, the licences beside the
+  subsets, size caps. Without it the pages still work, in the system fonts.
+- **The workflow is two jobs**: `build` (no secret: tests, page, fonts,
+  artifact) and `publish` (`needs: build`: the artifact and the same SSH
+  publishing loop; no checkout, pip or font download). It refuses a folder
+  without fonts. CI gains `support-fonts`, which runs the font step on
+  every push and keeps the folder as an artifact.
+- **The language order** is English, 繁體中文, 简体中文, Português (Brasil),
+  Español (España), in the dropdown and the `hreflang` alternates.
+- **The footer credits the font** in each language, linking its repository.
+- Tests: the plan's pins; the character lists against the pages' text,
+  read from the HTML; each page's `@font-face` rules; WenKai for text, the
+  system for headings and code, Medium for emphasis, no weight without a
+  face; the CSP; the workflows' jobs, secrets and pins; the font step's
+  options; no Python added; the order; the stand-in publishing the fonts;
+  the credit. Each failed first. Chromium (5 languages, 360 and 1280 px,
+  light and dark) found two gaps, now fixed and tested: the switcher's
+  Latin names inherited WenKai TC on the zh-Hant page, and the chips'
+  capitals (pt-BR's Ó, Ç) were missing from their list.
 
 ### Fixed (SP.5, support page)
 
@@ -206,6 +243,13 @@ after publication, and whenever `en.edn` changes:
   punctuation.
 - `support/i18n/pt-BR.edn`: Brazilian Portuguese.
 - `support/i18n/es-ES.edn`: Spanish of Spain, *tú*.
+- **The zh-Hant page's typeface** (SP.6): LXGW WenKai TC draws inherited
+  glyph forms (傳承字形), not Taiwan's Ministry of Education standard forms,
+  and merges some variant code points into one shape (為 is drawn as 爲,
+  真 as 眞, 緒 as 緖; the page's 會成為側邊欄 shows 爲). A Taiwanese reader
+  should judge it from the screenshots; if it reads wrong, `:zh-Hant
+  :wenkai` in `support/fonts.edn` switches the page to the main LXGW
+  WenKai's own Traditional glyphs (DESIGN.md §7.5 item 8).
 
 ### The owner's one-time steps (support page)
 

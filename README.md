@@ -646,14 +646,15 @@ provider's own hosts are needed:
 clogem-press's page on the Clogem support site,
 **https://echojustus.github.io/clogem-support/clogem-press/**: what it is,
 what it does today, how to start, where to ask, and a privacy note, in five
-languages. Each page is built as the hub's own pages are (one self-contained file: no JavaScript,
+languages. Each page is built as the hub's own pages are (one file: no JavaScript,
 no cookies, nothing loaded from other sites, a Content-Security-Policy
-that allows only its own style and `data:` images, light and dark after the
+that allows only its own style, `data:` images and the site's own fonts, light and dark after the
 system or a no-script switcher), and lives outside the generator, in
 `support/` ([DESIGN.md §7.5](DESIGN.md#75-the-support-page)).
 
 ```bash
 bb support-page                # dist-support/clogem-press/, five pages (--out DIR elsewhere)
+support/fonts.sh               # then their fonts, into dist-support/clogem-press/fonts/ (Python 3, below)
 bb test --pattern support-page # the pages' rules and the workflow's publishing step
 ```
 
@@ -696,15 +697,71 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
   translate it (`:url` is its own page's address, `:lang-name` its name in
   itself, `:lang-label` its word for "Language", `:en-note` the note after an English-only link), add its tag to
   `langs` in `test/clogem/support_page_test.clj`, and add its row above.
+- **The font**: all text that is not a heading is set in
+  [LXGW WenKai](https://github.com/lxgw/LxgwWenKai) (霞鹜文楷), the zh-Hant
+  page in [LXGW WenKai TC](https://github.com/lxgw/LxgwWenkaiTC) (霞鶩文楷 TC),
+  both v1.530, Regular (400) and Medium (500, for `<strong>`, the chips, the
+  buttons, the eyebrow and the switchers); headings keep the system's font
+  and code the monospace one. The system fonts stay behind WenKai in each
+  stack (`font-display: swap`). WenKai TC draws inherited glyph forms and
+  merges some variants (為 as 爲, 真 as 眞); `:zh-Hant :wenkai` in
+  `support/fonts.edn` switches the zh-Hant page to the main WenKai's own
+  Traditional glyphs (DESIGN.md §7.5 item 8).
+- **Where the font files come from**: `support/fonts.edn` pins each font's
+  release tag, each TTF's URL on `github.com/lxgw/…` and its SHA-256, and each
+  repository's `OFL.txt`; `bb support-fonts` prints the plan as lines.
+  `bb support-page` writes each subset's characters to
+  `dist-support/glyphs/<subset>.txt` (never published), read from the pages
+  as the stylesheet sets them. **The font step**, `support/fonts.sh`,
+  downloads each file (cached in `~/.cache/clogem-press/fonts`) and checks its
+  SHA-256, installs fontTools 4.66.1 and brotli 1.2.0 by hash into a venv
+  outside the repository, cuts each subset with `pyftsubset` as WOFF2, checks
+  that every listed character is in it and that it is within its cap, and
+  copies the licences beside the subsets. CI runs it on every push (the
+  `support-fonts` job, whose artifact is the built folder) and the publishing
+  workflow before it publishes. The repository holds no Python for it.
+- **To run it locally** you need Python 3 with `venv`, `curl` and
+  `sha256sum`: `bb support-page && support/fonts.sh`. It makes its venv in
+  `$TMPDIR` (`CLOGEM_FONT_VENV` to change it) and its downloads cache in
+  `~/.cache/clogem-press/fonts` (`CLOGEM_FONT_CACHE`), both outside the
+  repository; about 82 MB is downloaded once. To preview, serve the folder
+  above the pages: `cd dist-support && python3 -m http.server`, then open
+  `http://localhost:8000/clogem-press/`. Without the font step the pages
+  still work, in the system fonts (the font requests 404, unseen).
+- **The fonts' sizes** (v1.530, `support/fonts.sh`'s report; each subset's cap
+  in `support/fonts.edn`):
+
+  | Subset | Used by | Size |
+  | --- | --- | --- |
+  | `wenkai-latin-400` | en, zh-Hans, pt-BR, es-ES | 23,360 bytes |
+  | `wenkai-latin-500` | every page (on zh-Hant, the dropdown's Latin names) | 22,952 bytes |
+  | `wenkai-sc-400` | zh-Hans | 87,548 bytes |
+  | `wenkai-sc-500` | zh-Hans | 13,880 bytes |
+  | `wenkai-tc-400` | zh-Hant | 142,332 bytes |
+  | `wenkai-tc-500` | zh-Hant | 41,992 bytes |
+  | `wenkai-names-500` | the others' dropdown (简体中文) | 2,304 bytes |
+  | `wenkai-tc-names-500` | the others' dropdown (繁體中文) | 3,076 bytes |
+
+  A page's download, HTML and fonts, when it opens and with the language
+  list opened: English 80,838 / 86,218 bytes; pt-BR 82,546 / 87,926; es-ES
+  82,670 / 88,050; zh-Hans 183,533 / 186,609; zh-Hant 220,060 / 245,316.
+- **The licences**: both fonts are under the SIL Open Font License 1.1;
+  their `OFL.txt`, from the same tag, are published beside the subsets as
+  `fonts/OFL-LXGW-WenKai.txt` and `fonts/OFL-LXGW-WenKai-TC.txt`, and each
+  subset keeps the font's copyright and licence records. LXGW WenKai's
+  licence lets its reserved names stay in subsets made solely for web
+  delivery; WenKai TC's reserves none. Each page's footer credits its font.
 - **The built pages** go to `dist-support/` (ignored): built HTML is never
   committed. They are **178,647 bytes** in all; each page is within the
   64 KB budget `bb test` holds it to.
 - **Publishing:** `.github/workflows/support-page.yml`, on pushes to `main`
   that touch `support/`, its test, the workflow or `bb.edn`, and by hand
   (**Actions > support-page > Run workflow**); never on pull requests. It
-  tests and builds the pages, clones clogem-support's `gh-pages` over SSH
+  runs as two jobs: `build`, with no secret, tests and builds the pages, runs
+  the font step and uploads the folder; `publish`, after it, takes that
+  folder (it checks out and installs nothing), clones clogem-support's `gh-pages` over SSH
   with a deploy key, replaces `clogem-press/` with the built folder (all
-  five pages) and stages that folder alone,
+  five pages and `fonts/`; it refuses a folder without fonts) and stages that folder alone,
   and pushes without force, starting again from a fresh clone (3 attempts)
   if someone else published at the same moment. The push starts a Pages
   build; the job then waits up to 10 minutes for the live page and warns if
@@ -734,7 +791,7 @@ repository does that.
 ## Development
 
 ```bash
-bb test                                             # 837 tests / ~53,000 assertions
+bb test                                             # 846 tests / ~62,900 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 
