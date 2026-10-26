@@ -824,8 +824,8 @@ the key):
    is set, the next push to `main` that touches the page publishes it.
    The owner approved it on 2026-10-26, and each file marks it so. Task G's
    clause about cross-language search (`clogem-search-all`, the fourth
-   thing a site may keep) awaits their approval, and merging it publishes
-   the page (CHANGELOG, *Needs the owner's approval (G)*).
+   thing a site may keep) was approved on 2026-10-26 too (CHANGELOG,
+   *Approved by the owner (G)*).
 
 **When it's live:** the hub's own session adds the link on its front page's
 clogem-press card and a row in its README's table. Nothing in this

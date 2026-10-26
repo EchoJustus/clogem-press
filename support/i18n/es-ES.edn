@@ -101,7 +101,7 @@
             [:p "Un problema de seguridad, una pregunta sobre tus datos o un aviso legal: escribe a "
              [:a "mailto:EchoJustus.Studio@outlook.com?subject=clogem-press" "EchoJustus.Studio@outlook.com"] "."]]}
 
-  ;; Task G: the clogem-search-all clause awaits the owner's approval
+  ;; Task G: the clogem-search-all clause was approved by the owner on 2026-10-26 (PR #19)
   ;; approved by the owner (2026-10-26): a change to it needs their approval again
   {:id     "privacy"
    :title  "Privacidad"

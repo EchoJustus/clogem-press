@@ -427,13 +427,14 @@ clogem-press card and its README's table.
 - **README**: a *Cross-language search* paragraph in Theme; the CSP
   paragraph names `js/search-all.js` (same-origin; merges need nothing
   beyond Pagefind's `worker-src 'self'` and `'wasm-unsafe-eval'`); the
-  support page's approval step says the new clause awaits the owner; the
+  support page's approval step records the owner's approval of the new
+  clause; the
   test count.
 - **The support page's privacy note** now says a site keeps **up to four**
   things in its reader's browser, the fourth being the cross-language
   search choice on a site that offers it, in all five languages
-  (`support/i18n/*.edn`). **The new clause awaits the owner's approval**
-  (below); the approval mark stays where it is. DESIGN §7.5 item 5 lists
+  (`support/i18n/*.edn`). **The owner approved the new clause on
+  2026-10-26** (below); the approval mark stays where it is. DESIGN §7.5 item 5 lists
   `clogem-search-all`. The rebuilt pages are 34,880 / 36,259 / 36,144 /
   35,820 / 35,936 bytes, 179,039 in all (README, above).
 
@@ -540,11 +541,11 @@ Machine-made, to be read by a native speaker:
 - The support page's new privacy clause in `support/i18n/zh-Hans.edn`,
   `zh-Hant.edn`, `pt-BR.edn` and `es-ES.edn` (the sentences below).
 
-### Needs the owner's approval (G)
+### Approved by the owner (G)
 
-The privacy note's wording is the owner's (DESIGN §7.5 item 5), and a push
-to `main` that touches `support/**` publishes the page — so this must not
-merge before they approve these five sentences. Each replaces the "three
+The privacy note's wording is the owner's (DESIGN §7.5 item 5). The owner
+approved these five sentences on 2026-10-26 (PR #19); a push to `main` that
+touches `support/**` publishes the page. Each replaces the "three
 things" sentence in its file; the rest of the paragraph is unchanged.
 
 - **en**: "Of its own, a site keeps up to four things in its reader's
