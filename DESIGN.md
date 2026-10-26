@@ -1933,9 +1933,9 @@ Decisions:
      Chinese sets it; in English it should sit on the baseline. The Latin subsets' `unicode-range`
      leaves it out, so the system's font draws it; Chinese text takes WenKai's own from its page's
      Chinese subset.
-   - **Sizes** (v1.530, SP.7): Latin 22,764 and 22,520 bytes; zh-Hant 103,400 and 17,700; zh-Hans
-     87,548 and 14,920; the names 3,416. A page as it opens, HTML and fonts: English 79,987 bytes
-     (83,403 with the list open), zh-Hant 202,464, zh-Hans 183,717; pt-BR 35,632 and es-ES 35,755,
+   - **Sizes** (v1.530, SP.8): Latin 22,884 and 22,520 bytes; zh-Hant 103,400 and 17,700; zh-Hans
+     87,548 and 14,920; the names 3,416. A page as it opens, HTML and fonts: English 80,184 bytes
+     (83,600 with the list open), zh-Hant 202,661, zh-Hans 183,914; pt-BR 35,709 and es-ES 35,832,
      the HTML alone. Each subset's cap in the plan is about twice its size.
    - **The character lists come from the generator.** `bb support-page` writes
      `dist-support/glyphs/<subset>.txt` (outside `clogem-press/`, never published): every character
@@ -1963,6 +1963,26 @@ Decisions:
      and `publish` (`needs: build`; downloads it and runs the same secret check and SSH publishing
      loop; no checkout, no `pip`, no font download). It refuses a folder without `fonts/`. CI's
      `support-fonts` job runs the font step on every push and keeps the folder as an artifact.
+9. **The footer's copyright notice, the same on every page** (owner, 2026-10-26: the rule for every
+   Clogem support page, in clogem-support's `CLAUDE.md`, "Footer copyright notices",
+   EchoJustus/clogem-support#14). Every footer opens with
+   `© 2026 EchoJustus (Jiapeng Ji). clogem-press.` The publisher is always
+   `EchoJustus (Jiapeng Ji)`, in full: the part in parentheses is never left out, shortened or split
+   from the name. A product's own page may add the product's name after it, as this one does; the
+   hub's pages name the publisher alone. The rule covers footers only: the licence headers in
+   source files ("Copyright (c) 2026 clogem-press contributors"), the MIT notices kept with the
+   code adapted from the hub, and `LICENSE` are a separate matter, and unchanged. Ours, within it:
+   - **Written in the generator, not in the words** (`support-page/copyright-holder` and the
+     paragraph beside it), so no translation can change a character of it; `support/i18n/` holds
+     no `©`.
+   - **The year is fixed**, 2026, the page's first publication, not the build's (the hub prints
+     the build's year), so the text stays exactly as the owner gave it and its test needs no clock.
+   - **The name never wraps**: the publisher is one `.nw` element (`white-space: nowrap`), its text
+     unchanged (no U+00A0 in it); the rest of the notice may wrap. It is the footer's first
+     paragraph, as on the hub; on the WenKai pages it is in WenKai, and `©` is in
+     `wenkai-latin-400`.
+   - `support_page_test` pins it word for word on every page, once each, every `EchoJustus` in a
+     footer followed by ` (Jiapeng Ji)`, and this item's quotation of it.
 
 ---
 

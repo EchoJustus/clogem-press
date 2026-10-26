@@ -660,11 +660,11 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
 
 | Language | Address | Built file | Size |
 | --- | --- | --- | --- |
-| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 34,703 bytes |
-| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 36,080 bytes |
-| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 35,965 bytes |
-| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 35,632 bytes |
-| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 35,755 bytes |
+| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 34,780 bytes |
+| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 36,157 bytes |
+| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 36,042 bytes |
+| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 35,709 bytes |
+| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 35,832 bytes |
 
 - **The words** are `support/i18n/<tag>.edn`, one file per language:
   `en.edn` (English, which was `support/page.edn`), `zh-Hant.edn`,
@@ -740,7 +740,7 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
 
   | Subset | Used by | Size |
   | --- | --- | --- |
-  | `wenkai-latin-400` | en, zh-Hant, zh-Hans | 22,764 bytes |
+  | `wenkai-latin-400` | en, zh-Hant, zh-Hans | 22,884 bytes |
   | `wenkai-latin-500` | en, zh-Hant, zh-Hans | 22,520 bytes |
   | `wenkai-hant-400` | zh-Hant | 103,400 bytes |
   | `wenkai-hant-500` | zh-Hant | 17,700 bytes |
@@ -752,8 +752,8 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
   Chinese pages only (product names, commands and the like); each Chinese
   page's list holds its own Chinese, the other script's dropdown name
   included. A page's download, HTML and fonts, when it opens and with the
-  language list opened: English 79,987 / 83,403 bytes; zh-Hant 202,464
-  (both); zh-Hans 183,717 (both); pt-BR 35,632 and es-ES 35,755, the HTML
+  language list opened: English 80,184 / 83,600 bytes; zh-Hant 202,661
+  (both); zh-Hans 183,914 (both); pt-BR 35,709 and es-ES 35,832, the HTML
   alone.
 - **The licence**: LXGW WenKai is under the SIL Open Font License 1.1; its
   `OFL.txt`, from the same tag, is published beside the subsets as
@@ -761,8 +761,14 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
   and licence records. Its licence lets its reserved names stay in subsets
   made solely for web delivery. The footers of the three pages set in it
   credit it; pt-BR's and es-ES's credit no font.
+- **The footer** opens with the copyright notice, the same characters in
+  every language: `© 2026 EchoJustus (Jiapeng Ji). clogem-press.` It is the
+  owner's rule for every Clogem support page (2026-10-26): the publisher
+  always in full, the product's name after it (DESIGN.md §7.5 item 9). It
+  is written in `support/support_page.clj` (`copyright-holder`), not in the
+  words, so no translation changes it.
 - **The built pages** go to `dist-support/` (ignored): built HTML is never
-  committed. They are **178,135 bytes** in all; each page is within the
+  committed. They are **178,520 bytes** in all; each page is within the
   64 KB budget `bb test` holds it to.
 - **Publishing:** `.github/workflows/support-page.yml`, on pushes to `main`
   that touch `support/`, its test, the workflow or `bb.edn`, and by hand
