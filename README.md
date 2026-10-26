@@ -483,9 +483,10 @@ the window stays. **A window covers whatever is under it** — as vdoing's
 does — so keep them small. There are none on the 404 page.
 
 `:head-extra` takes head content only: `<link>`, `<meta>`, `<script>`,
-`<style>`, `<noscript>`, `<template>` and comments. Anything else (a
-`<div>`, an `<img>`, bare text, and also `<title>` or `<base>`, which would
-give a second title or retarget every `#fragment` link) warns and is
+`<style>`, `<noscript>`, `<template>` and comments, each closed. Anything
+else (a `<div>`, an `<img>`, an end tag such as `</link>`, bare text, a
+`<script>` or comment left open, and also `<title>` or `<base>`, which
+would give a second title or retarget every `#fragment` link) warns and is
 dropped.
 
 **The HTML in these slots is trusted and is injected exactly as written —
@@ -863,7 +864,7 @@ repository does that.
 ## Development
 
 ```bash
-bb test                                             # 874 tests / ~61,900 assertions
+bb test                                             # 879 tests / ~62,100 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 

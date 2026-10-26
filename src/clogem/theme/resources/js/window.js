@@ -7,7 +7,6 @@
     c.addEventListener("click", function () {
       var b = document.body, had = document.activeElement === c;
       c.parentNode.hidden = true;
-      // focus stays on <body>, the next Tab starting at the top
       if (had) { b.tabIndex = -1; b.focus({ preventScroll: true }); b.removeAttribute("tabindex"); }
     });
   });

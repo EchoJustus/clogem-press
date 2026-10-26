@@ -1187,22 +1187,54 @@
 (def ^:private show-mode-keys
   {:page-t :page-t-show-mode :page-b :page-b-show-mode})
 
+(def ^:private head-re
+  "What `head-bad` tries at each position. HTML's whitespace is
+  `[\\t\\n\\f\\r ]`; a tag name ends at whitespace, `/` or `>`. In a tag's
+  attributes a `>` ends the tag except inside a quoted value, and only a
+  quote that follows `=` (and any whitespace) opens one, as in HTML's
+  tokenizer."
+  (let [ws    "[\\t\\n\\f\\r ]"
+        end   "(?=[\\t\\n\\f\\r />])"
+        attrs (str "(?:[^>=]|=" ws "*+(?:\"[^\"]*+\"|'[^']*+'|[^\\t\\n\\f\\r >\"'][^\\t\\n\\f\\r >]*+|(?=>)))*+>")
+        block "(script|style|noscript|template)"]
+    {:ws          (re-pattern (str ws "++"))
+     ;; `<!-->` and `<!--->` are empty comments; `--!>` closes one too
+     :comment     #"(?s)<!--(?:-?>|.*?--!?>)"
+     ;; a raw block ends at the first `</name` followed by whitespace, `/` or `>`
+     :block       (re-pattern (str "(?is)<" block end attrs ".*?</\\1(?:[\\t\\n\\f\\r /][^>]*+)?>"))
+     :tag         (re-pattern (str "(?i)<(?:link|meta)" end attrs))
+     :block-start (re-pattern (str "(?i)<" block end))
+     :tag-start   (re-pattern (str "(?i)<(link|meta)" end))
+     :any-tag     #"<(/?)([A-Za-z][^\t\n\f\r />]*)"
+     :text        #"(?s).(?:[^<]|<(?![A-Za-z!?/]))*"}))
+
 (defn- head-bad
-  "The first thing in `s` that is not head content, as a short description
-  — `<div>`, or `text \"hi\"` — or nil. Comments and `<script>`, `<style>`,
-  `<noscript>` and `<template>` blocks are skipped; then only `<link>`,
-  `<meta>` and whitespace may remain (a `<title>` would be a second title,
-  a `<base>` would retarget every #fragment link)."
+  "The first thing in `s` that is not head content, named as written —
+  `<div>`, `</link>`, `text \"hi\"`, `an unclosed <script>` — or nil. `s`
+  is read in order, one piece at a time: whitespace, a comment, a whole
+  `<script>`, `<style>`, `<noscript>` or `<template>` block (its end tag in
+  any case), or a `<link>` or `<meta>` tag. Anything else is bad: another
+  element (a `<title>` would be a second title, a `<base>` would retarget
+  every #fragment link; `<meta-data>` is not `<meta>`), an end tag, text,
+  and a comment, block or tag that never closes, which would swallow the
+  rest of `<head>`."
   [s]
-  (let [rest (-> s
-                 (str/replace #"(?s)<!--.*?(-->|$)" " ")
-                 (str/replace #"(?is)<(script|style|noscript|template)\b.*?(</\1\s*>|$)" " ")
-                 (str/replace #"(?i)<(link|meta)\b[^>]*>" " "))]
-    (when-not (str/blank? rest)
-      (if-let [[_ tag] (re-find #"</?([A-Za-z][A-Za-z0-9-]*)" rest)]
-        (str "<" (u/lower tag) ">")
-        (let [t (str/trim rest)]
-          (str "text " (pr-str (if (> (count t) 20) (str (subs t 0 20) "…") t))))))))
+  (let [n  (count s)
+        at (fn [k i] (let [m (re-matcher (head-re k) s)]
+                       (.region m (int i) (int n))
+                       (when (.lookingAt m) m)))]
+    (loop [i 0]
+      (when (< i n)
+        (let [ok   (some #(at % i) [:ws :comment :block :tag])
+              open (when-not ok (or (at :block-start i) (at :tag-start i)))
+              tag  (when-not (or ok open) (at :any-tag i))]
+          (cond
+            ok    (recur (.end ok))
+            open  (str "an unclosed <" (.group open 1) ">")
+            (.startsWith ^String s "<!--" (int i)) "an unclosed <!--"
+            tag   (str "<" (.group tag 1) (.group tag 2) ">")
+            :else (let [t (str/trim (.group (at :text i)))]
+                    (str "text " (pr-str (if (> (count t) 20) (str (subs t 0 20) "…") t))))))))))
 
 (defn- check-html-modules!
   "P4-E1b: `:theme :html-modules`. A slot is a string or a map of language

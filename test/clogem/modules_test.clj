@@ -82,34 +82,82 @@
           (pr-str v))
       (is (= :all (:page-t-show-mode out))))))
 
+(defn- head-rejects
+  "Assert that the :head-extra string `v` warns once, naming `bad`, and is
+  removed while the other slots stay."
+  [v bad]
+  (let [[out ws] (modules-of {:head-extra v :page-t "<p>kept</p>"})]
+    (is (= [[(str ":theme :html-modules :head-extra has " bad ", but it must be head content only — "
+                  "<link>, <meta>, <script>, <style>, <noscript>, <template> or a comment; it is ignored.")
+             hint]]
+           ws)
+        (pr-str v))
+    (is (= {:page-t "<p>kept</p>"} out) (pr-str v))))
+
 (deftest head-extra-is-head-content-only
   (testing "links, metas, scripts, styles, noscript, templates and comments pass, in any case"
     (doseq [v ["<link rel=\"stylesheet\" href=\"{{base}}x.css\">\n<META name=a content=b>"
+               "<LINK rel=a><META name=b>" "<link rel=a /><meta name=b/>"
                "<script>document.write('<div>')</script><style>p{}</style>"
+               "<script>var x = '</div>';</script>" "<Script>x</sCrIpT >"
                "<SCRIPT src=\"/a.js\"></SCRIPT><noscript><img src=x></noscript>"
+               "<noscript><link></noscript>" "<template><body></template>"
                "<!-- <div> --><template><div></div></template>"
                "" "   "]]
       (let [[out ws] (modules-of {:head-extra v})]
         (is (= [] ws) (pr-str v))
         (is (= v (:head-extra out))))))
-  (testing "anything else warns, naming the first bad tag, and is removed"
+  (testing "anything else warns, naming the first bad tag as written, and is removed"
     (doseq [[v bad] [["<meta name=a><div>x</div>" "<div>"]
                      ["<img src=x.png>" "<img>"]
-                     ["<TITLE>Two</TITLE>" "<title>"]
+                     ["<TITLE>Two</TITLE>" "<TITLE>"]
                      ["<base href=\"/x/\">" "<base>"]
                      ["hello <meta name=a>" "text \"hello\""]]]
-      (let [[out ws] (modules-of {:head-extra v :page-t "<p>kept</p>"})]
-        (is (= [[(str ":theme :html-modules :head-extra has " bad ", but it must be head content only — "
-                      "<link>, <meta>, <script>, <style>, <noscript>, <template> or a comment; it is ignored.")
-                 hint]]
-               ws)
-            (pr-str v))
-        (is (= {:page-t "<p>kept</p>"} out)))))
+      (head-rejects v bad)))
   (testing "in a per-language map, only that language's value is dropped: it becomes \"\""
     (let [[out ws] (modules-of {:head-extra {:en "<div>" :zh-Hans "<meta name=a>"}})]
       (is (= {:head-extra {:en "" :zh-Hans "<meta name=a>"}} out))
       (is (= 1 (count ws)))
       (is (str/starts-with? (ffirst ws) ":theme :html-modules :head-extra :en has <div>,")))))
+
+;; E1b.1: the value is scanned in order, one piece of head content at a time
+
+(deftest a-quoted-gt-stays-inside-its-tag
+  ;; item 1: `[^>]*` ended a tag at its first `>`, quoted or not, and blamed
+  ;; the text after it
+  (doseq [v ["<meta name=\"description\" content=\"a > b\">"
+             "<link rel=\"preload\" href=\"/a.css\" title=\"a>b\">"
+             "<META content='x>y' name=z/>"
+             "<script src=\"/a.js?a=>\"></script>"]]
+    (let [[out ws] (modules-of {:head-extra v})]
+      (is (= [] ws) (pr-str v))
+      (is (= v (:head-extra out)) (pr-str v))))
+  (testing "a quote or a tag that never closes would swallow the rest of <head>"
+    (head-rejects "<meta name=\"a><link rel=b>" "an unclosed <meta>")
+    (head-rejects "<link rel=a" "an unclosed <link>")))
+
+(deftest a-comment-opener-in-a-script-hides-nothing
+  ;; item 2: comments were stripped before scripts, so a `<!--` in a string
+  ;; swallowed everything after it
+  (head-rejects "<script>var s = '<!--';</script><div>leak</div>" "<div>")
+  (head-rejects "<style>a::after { content: '<!--' }</style><img src=x>" "<img>")
+  (testing "an unclosed comment or block would swallow the rest of <head>"
+    (head-rejects "<meta name=a><!-- <link rel=b>" "an unclosed <!--")
+    (head-rejects "<script>var x = 1;" "an unclosed <script>")
+    (head-rejects "<STYLE>p {}</style" "an unclosed <STYLE>")
+    (head-rejects "<template><meta name=a>" "an unclosed <template>")))
+
+(deftest a-meta-or-link-custom-element-is-not-head-content
+  ;; item 3: `\b` matched before the `-`
+  (head-rejects "<meta-data foo>" "<meta-data>")
+  (head-rejects "<link-preview href=x></link-preview>" "<link-preview>")
+  (head-rejects "<metadata>" "<metadata>"))
+
+(deftest a-closing-tag-is-named-with-its-slash
+  ;; item 4: "has <link>, but it must be head content only — <link>, …"
+  (head-rejects "<link rel=a></link>" "</link>")
+  (head-rejects "<meta name=a></META>" "</META>")
+  (head-rejects "</head><p>x</p>" "</head>"))
 
 (deftest vdoing-slot-names-warn-with-the-kebab-spelling
   (let [[_ ds] (load-site {:theme {:html-modules {:homeSidebarB "x"} :pageT "y"}})
@@ -441,12 +489,26 @@
       (is (str/includes? (last sheets) "overrides/custom.css") (str rel ": custom.css is still last"))
       (is (str/ends-with? head "</script>") (str rel ": the analytics loader is still last in <head>"))
       (is (re-find #"clogem/js/analytics\.js[^>]*></script>$" head) rel))
-    (testing "a redirect stub has neither"
-      (doseq [[rel html] pages
-              :when (not (str/includes? html "<header class=\"clogem-navbar\""))]
-        (is (not (str/includes? html "x-e1b")) rel)))
     (testing "the 404 page has it"
       (is (str/includes? (pages "404.html") "x-e1b")))))
+
+(deftest a-redirect-stub-has-no-head-extra-module-or-window
+  ;; the demo makes no stub (E1b.1 item 5: this was a loop over none);
+  ;; `:i18n :prefix-default? true` makes one per article, at its bare URL
+  (let [{:keys [pages]} (build-demo {:i18n {:prefix-default? true} :theme {:html-modules every-slot}})
+        stubs (filter #(str/includes? (val %) "http-equiv=\"refresh\"") pages)]
+    (is (< 10 (count stubs)) (str (count stubs) " redirect stubs"))
+    (doseq [[rel html] stubs
+            :let [target (second (re-find #"url=/([^\"]*)\"" html))
+                  to (pages (str target "index.html"))]]
+      (is (not (str/includes? html "<header class=\"clogem-navbar\"")) rel)
+      (doseq [s ["m-head-extra" "clogem-module" "clogem-window" "window.js"]]
+        (is (not (str/includes? html s)) (str rel ": " s)))
+      (testing "while the article it redirects to has them"
+        (is (some? to) (str rel " → " target))
+        (is (str/includes? (str to) "<meta name=\"m-head-extra\" content=\"1\">") target)
+        (is (str/includes? (str to) "clogem-module--page-t") target)
+        (is (str/includes? (str to) "/clogem/js/window.js") target)))))
 
 (deftest head-extra-with-body-content-warns-and-is-dropped
   (let [ps (build-temp (assoc one-lang :theme {:html-modules {:head-extra "<meta name=a><div>x</div>"}}) files)]

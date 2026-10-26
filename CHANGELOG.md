@@ -368,11 +368,13 @@ clogem-press card and its README's table.
   `:page-b-show-mode`) is `:all` (the default), `:article` or `:custom`,
   written as a keyword or as a string (vdoing's `"article"` and `"custom"`,
   or `"all"`), and is stored as a keyword. `:head-extra` must be head
-  content: comments and `<script>`, `<style>`, `<noscript>` and
-  `<template>` blocks are set aside, and only `<link>`, `<meta>` and
-  whitespace may remain — a `<div>`, an `<img>`, bare text, and also a
-  `<title>` or a `<base>` (a second title; every `#fragment` link
-  retargeted) warns, naming the first bad tag, and that value is dropped.
+  content, read in order: whitespace, comments, whole `<script>`,
+  `<style>`, `<noscript>` and `<template>` blocks, and `<link>` and
+  `<meta>` tags, whose quoted values may hold a `>`. Anything else — a
+  `<div>`, an `<img>`, an end tag, bare text, a comment, block or tag that
+  never closes, and also a `<title>` or a `<base>` (a second title; every
+  `#fragment` link retargeted) — warns, naming the first bad piece as
+  written, and that value is dropped.
   Every other problem is a warning too, and the check repairs the config —
   it removes a bad slot, uses `:all` for a bad show-mode, and removes
   `:html-modules` entirely when it is not a map — so the renderers read
@@ -415,7 +417,7 @@ clogem-press card and its README's table.
   a close button (the `x` icon, `:window/close`) that is `hidden` until
   `js/window.js` reveals it; a click hides that window for that page load
   only, and moves focus to `<body>` if the button had it. The script is
-  deferred, same-origin, 397 B gzipped (budget 400), linked only on a page
+  deferred, same-origin, 358 B gzipped (budget 400), linked only on a page
   that renders a window and shipped only while `config/windows?` holds.
 - **CSS** (`css/identity.css`, +438 B gzipped; `theme.css` unchanged): a
   wrapper is `min-width: 0; max-width: 100%; overflow-x: auto` with
@@ -444,7 +446,7 @@ clogem-press card and its README's table.
 
 ### Tests (E1b)
 
-- New `test/clogem/modules_test.clj` (25 tests): one per config rule, the
+- New `test/clogem/modules_test.clj` (30 tests): one per config rule, the
   8 slots and both show-mode spellings quiet, the vdoing spellings and the
   unknown-key warnings, the accessors; the placement of every slot on the
   home (with and without `hideRightBar`, and `/page/2/`), an article with a
@@ -454,12 +456,14 @@ clogem-press card and its README's table.
   `{{base}}` under `:site :base "/my docs/"`; `data-pagefind-ignore="all"`
   on every wrapper with search on and no `data-pagefind-` at all without
   it; `:head-extra`'s place between Pagefind and `custom.css`, in the
-  page's own language, on the 404 page and on no redirect stub; the windows
-  right before back to top (and ending `<body>` under `:back-to-top
-  false`), none on the 404 page, `window.js` linked per language and
-  shipped only with a window, and its 400 B budget printed. With
-  `CLOGEM_PAGEFIND`: a word that only `page-t` carries, on an article and a
-  catalogue, is in no fragment, while the article's own words are.
+  page's own language, on the 404 page, and on none of the 21 redirect
+  stubs an `:i18n :prefix-default? true` build makes, which carry no
+  module or window either; the windows right before back to top (and
+  ending `<body>` under `:back-to-top false`), none on the 404 page,
+  `window.js` linked per language and shipped only with a window, and its
+  400 B budget printed. With `CLOGEM_PAGEFIND`: a word that only `page-t`
+  carries, on an article and a catalogue, is in no fragment, while the
+  article's own words are.
 - New `test/browser/modules.test.mjs` (77 checks): a temp demo copy with
   every slot set, built `--no-search --no-highlight` and served through
   `page.route`. No page overflow at 320 and 360 px with a 480 px element in
@@ -485,6 +489,46 @@ clogem-press card and its README's table.
   demo's `site.edn` and `{:html-modules {}}` stay quiet, and the pins on
   `clogem-sidebar`, back to top, the analytics loader and `custom.css`
   being last are unchanged.
+
+### Fixed (E1b.1)
+
+- **`:head-extra`'s head-only check reads the value in order** (items
+  1–4). It stripped comments, then `<script>`, `<style>`, `<noscript>`
+  and `<template>` blocks, then `<link>` and `<meta>` tags, and looked at
+  what was left, which went wrong four ways: a quoted `>` ended a tag, so
+  `<meta name="description" content="a > b">` warned about text `b">` and
+  was dropped; a `<!--` in a script swallowed the rest, so
+  `<script>var s = '<!--';</script><div>leak</div>` passed; `\b` matched
+  before a `-`, so `<meta-data foo>` passed as a `<meta>`; and `<link
+  rel=a></link>` warned that it "has <link>, but it must be head content
+  only — <link>, …", the `/` dropped. Now one scan takes, at each
+  position, whitespace, a whole comment, a whole block (its end tag in any
+  case, spaces allowed before the `>`), or a `<link>` or `<meta>` tag whose
+  name ends at whitespace, `/` or `>` and whose quoted values may hold a
+  `>`. The first anything else is named as written — `</link>`,
+  `<meta-data>`, `<TITLE>`, text "…" — and that value is dropped, as
+  before. A comment, block or tag that never closes would swallow the rest
+  of `<head>`, so it now warns too ("an unclosed <script>"); the check is
+  new in E1b, so nothing on `main` relies on it
+  (`a-quoted-gt-stays-inside-its-tag`,
+  `a-comment-opener-in-a-script-hides-nothing`,
+  `a-meta-or-link-custom-element-is-not-head-content`,
+  `a-closing-tag-is-named-with-its-slash`). `head-extra-is-head-content-only`
+  also accepts `<LINK>`, self-closing tags, `<script>var x = '</div>';</script>`,
+  `<Script>x</sCrIpT >`, `<noscript><link></noscript>` and
+  `<template><body></template>`, and, a deliberate pin change, names
+  `<TITLE>` as written rather than as `<title>`.
+- **The redirect-stub assertion tests something** (item 5). "A redirect
+  stub has neither" looped over the demo's pages without a navbar, and the
+  demo makes no stub, so it ran zero times. The new
+  `a-redirect-stub-has-no-head-extra-module-or-window` builds the demo
+  with every slot and `:i18n :prefix-default? true`, requires more than 10
+  stubs (it makes 21), and checks that none has `:head-extra`, a module, a
+  window or `window.js`, while the article each one redirects to has all
+  four.
+- **`js/window.js` has room to change** (item 6): 358 B gzipped, from 397
+  of its 400 B budget, so a one-line edit no longer broke it. Its inline
+  comment is gone; the two-line header stays, and the budget is unchanged.
 
 ### Needs native review (E1b)
 

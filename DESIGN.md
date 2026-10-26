@@ -3647,11 +3647,13 @@ their own findings. Item 19 onward are corrections.
     `:theme :html-modules`: a slot (vdoing's seven, plus clogem-press's own `:head-extra`, §5.3) is a
     string or a map of language to string (`""` is quiet and suppresses it there), a show-mode is
     `:all` (the default), `:article` or `:custom` — vdoing's `"article"`/`"custom"` and `"all"` are
-    accepted and stored as keywords — and `:head-extra` is head content only: comments and `<script>`,
-    `<style>`, `<noscript>` and `<template>` blocks are removed, and only `<link>`, `<meta>` and
-    whitespace may remain, so a `<div>`, an `<img>`, bare text, a `<title>` or a `<base>` warns and
-    that value is dropped. Every problem is a warning that repairs the config (0.2.0's "no effect"
-    warning is gone; so is `htmlModules`'s `:planned` status), and the accessors are
+    accepted and stored as keywords — and `:head-extra` is head content only, read in order:
+    whitespace, comments, whole `<script>`, `<style>`, `<noscript>` and `<template>` blocks, and
+    `<link>` and `<meta>` tags (a quoted value may hold a `>`), so a `<div>`, an `<img>`, an end tag,
+    bare text, a comment, block or tag that never closes, a `<title>` or a `<base>` warns, naming the
+    first bad piece as written, and that value is dropped (E1b.1). Every problem is a warning that
+    repairs the config (0.2.0's "no effect" warning is gone; so is `htmlModules`'s `:planned`
+    status), and the accessors are
     `config/module-slots`, `html-module`, `show-mode`, `module-set?` and `windows?`. The renderer is
     `clogem.theme.modules`, which requires `clogem.theme.identity` (for `raw-html`) and never
     `clogem.theme.layout`: `module` wraps a slot in `div.clogem-module.clogem-module--<slot>` (a
