@@ -73,11 +73,23 @@ items, and what the E1a and E2 checks left; tests in
 - **A `:build :out` in `site.edn` outside the site directory gets a hint
   that helps** (item 6). With `:build {:out "dist"}` and `dist` a link out
   of the site, the hint recommended "a directory of its own, such as the
-  default \"dist\"" — the folder refused. It now says a value in
+  default "dist"" — the folder refused. It now says a value in
   `site.edn` must stay inside the site, and to build elsewhere, through a
   link or `../dist`, to remove `:build :out` from `site.edn` (the default
   `dist` may be a link) or pass `--out`; the other refusals keep their
   hint (`an-out-outside-the-site-gets-a-hint-that-helps`).
+
+- **A pre-encoded `:nav` link ending in `/` is encoded once** (item 8,
+  pre-existing before Task D). A site-page link such as
+  `/%E6%96%87%E6%A1%A3/` or `/my%20docs/` was percent-encoded whole, so
+  its escapes became `%25E6…` and `%2520`. The page part is now encoded as
+  an owner's href is (`u/url-encode-href`, E1a.1): a valid `%XX` escape is
+  kept and anything else unsafe is encoded once, so `/文档/` and
+  `/%E6%96%87%E6%A1%A3/` give the same href, under any base and language
+  prefix. A link without the slash gets the base only and is appended as
+  written, as since P4-D.4 (`a-pre-encoded-nav-link-is-not-encoded-twice`:
+  `/文档/`, `/my docs/` and pre-encoded forms, with and without the slash,
+  under `/` and `/my docs/`, on an English and a Chinese page).
 
 ### Documentation (P4 follow-ups)
 

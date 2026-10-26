@@ -363,7 +363,10 @@
 
   Where only the base is added, the base is percent-encoded and the link
   appended as written (P4-D.4 item 4): encoding the two together turned a
-  link's `#fragment`, `?query` or `%20` into part of its path."
+  link's `#fragment`, `?query` or `%20` into part of its path. A site page
+  is encoded as an owner's href is (`u/url-encode-href`): a valid `%XX`
+  escape is kept, so `/%E6%96%87%E6%A1%A3/` is not encoded a second time
+  (P4 follow-ups item 8), and everything else unsafe is encoded once."
   [{:keys [cfg lang model] :as ctx} link]
   (let [link      (str link)
         with-base #(str (href ctx (config/base-path cfg)) (str/replace % #"^/+" ""))]
@@ -375,7 +378,8 @@
       ;; a permalink that names nothing: the base only, never a language
       ;; prefix that would invent a URL — doctor reports it
       (re-find #"^/pages/" link) (with-base link)
-      (str/ends-with? link "/") (href ctx (model/site-url cfg lang link))
+      (str/ends-with? link "/") (str (href ctx (model/site-url cfg lang "/"))
+                                     (u/url-encode-href (str/replace (u/clean-url link) #"^/+" "")))
       :else (with-base link))))
 
 (defn- nav-item

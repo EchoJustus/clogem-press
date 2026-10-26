@@ -381,3 +381,39 @@
               (let [[v printed] (run-task #'cli/build dir)]
                 (is (re-find #"such as the default \"dist\"" (str (ex-msg v) printed)))))
             (finally (fs/delete-tree www))))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 8: a pre-encoded :nav link ending in /
+
+(deftest a-pre-encoded-nav-link-is-not-encoded-twice
+  (testing "item 8: a `:nav` link ending in `/` (a site page, given the
+            language prefix) was percent-encoded whole, so
+            `/%E6%96%87%E6%A1%A3/` became `/%25E6%2596…/`; one without the
+            slash gets the base only and is appended as written (P4-D.4
+            item 4)"
+    (doseq [base ["/" "/my docs/"]]
+      (testing base
+        (let [links [["/文档/" "%E6%96%87%E6%A1%A3/"]
+                     ["/%E6%96%87%E6%A1%A3/" "%E6%96%87%E6%A1%A3/"]
+                     ["/%e6%96%87%e6%a1%a3/" "%e6%96%87%e6%a1%a3/"]
+                     ["/my docs/" "my%20docs/"]
+                     ["/my%20docs/" "my%20docs/"]
+                     ["/100%/" "100%25/"]
+                     ;; without the slash: as written
+                     ["/文档" "文档"]
+                     ["/%E6%96%87%E6%A1%A3" "%E6%96%87%E6%A1%A3"]
+                     ["/my%20docs" "my%20docs"]]]
+          (with-site (assoc url-site
+                            :site {:title "S" :url "https://s.example" :base base}
+                            :langs {:default :en :enabled [:en :zh-Hans]}
+                            :nav (vec (map-indexed (fn [i [l]] {:text (str "N" i) :link l}) links)))
+            (fn [dir]
+              (let [[v out] (run-task #'cli/build dir "--no-write")]
+                (is (not (instance? Throwable v)) (str out (ex-msg v))))
+              (let [enc (clogem.util/url-encode-path base)]
+                (doseq [[page prefix] [["index.html" ""] ["zh-Hans/index.html" "zh-Hans/"]]
+                        :let [html (slurp (fs/file dir "dist" page))]
+                        [i [link want]] (map-indexed vector links)
+                        :let [want (str enc (when (str/ends-with? link "/") prefix) want)
+                              got  (second (re-find (re-pattern (str "href=\"([^\"]*)\">N" i "<")) html))]]
+                  (is (= want got) (str page ": " link)))))))))))
