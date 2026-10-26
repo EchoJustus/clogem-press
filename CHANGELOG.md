@@ -448,7 +448,10 @@ clogem-press card and its README's table.
   key absent, false, or true under `:provider :none` gives a byte-identical
   `dist/`; the head's order; `404.html`; `check_search.clj`'s `<body>`
   regex still matches; and, with `CLOGEM_PAGEFIND`, each page's keys plus
-  its own equal `pagefind-entry.json`'s. The head's order is held on a
+  its own equal `pagefind-entry.json`'s (that one passes the binary on, as
+  `the-real-pagefind-indexes-five-languages` does: `with-site` binds
+  `search/*env*` to `{}`, so it had run whatever the tools cache held, and
+  failed on a machine with an empty cache). The head's order is held on a
   build that has `overrides/custom.css` and an analytics loader, so
   "custom.css the last stylesheet, analytics last of all" is checked, not
   assumed.

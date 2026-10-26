@@ -1106,5 +1106,10 @@
                                [["ms"] "ms"] [["ta"] "ta"]]
                   :let [d (merge-attr (apply html out parts))]]
             (is (= keys* (conj (set (map #(get % "key") (get d "langs"))) own))
-                (str (pr-str parts) ": the page's merge keys plus its own are the index's"))))))
-    (println "the-merged-keys-are-the-real-indexs-keys: skipped — CLOGEM_PAGEFIND is not set")))
+                (str (pr-str parts) ": the page's merge keys plus its own are the index's")))))
+      ;; with-site binds search/*env* to {}: without this the build ran
+      ;; whatever the tools cache held, or tried to download Pagefind
+      :env {"CLOGEM_PAGEFIND" real})
+    (do (is (nil? (System/getenv "GITHUB_ACTIONS"))
+            "CI must set CLOGEM_PAGEFIND, so this test always runs there")
+        (println "the-merged-keys-are-the-real-indexs-keys: skipped — CLOGEM_PAGEFIND is not set"))))
