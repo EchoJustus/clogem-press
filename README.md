@@ -774,11 +774,11 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
 
 | Language | Address | Built file | Size |
 | --- | --- | --- | --- |
-| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 34,880 bytes |
-| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 36,259 bytes |
-| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 36,144 bytes |
-| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 35,820 bytes |
-| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 35,936 bytes |
+| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 34,761 bytes |
+| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 36,157 bytes |
+| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 36,036 bytes |
+| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 35,728 bytes |
+| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 35,821 bytes |
 
 - **The words** are `support/i18n/<tag>.edn`, one file per language:
   `en.edn` (English, which was `support/page.edn`), `zh-Hant.edn`,
@@ -856,18 +856,18 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
   | --- | --- | --- |
   | `wenkai-latin-400` | en, zh-Hant, zh-Hans | 22,884 bytes |
   | `wenkai-latin-500` | en, zh-Hant, zh-Hans | 22,520 bytes |
-  | `wenkai-hant-400` | zh-Hant | 103,400 bytes |
-  | `wenkai-hant-500` | zh-Hant | 17,700 bytes |
-  | `wenkai-sc-400` | zh-Hans | 87,548 bytes |
-  | `wenkai-sc-500` | zh-Hans | 14,920 bytes |
+  | `wenkai-hant-400` | zh-Hant | 102,804 bytes |
+  | `wenkai-hant-500` | zh-Hant | 17,088 bytes |
+  | `wenkai-sc-400` | zh-Hans | 86,972 bytes |
+  | `wenkai-sc-500` | zh-Hans | 14,192 bytes |
   | `wenkai-names-500` | en's dropdown (繁體中文, 简体中文) | 3,416 bytes |
 
   The Latin lists are built from the English page and the Latin of the
   Chinese pages only (product names, commands and the like); each Chinese
   page's list holds its own Chinese, the other script's dropdown name
   included. A page's download, HTML and fonts, when it opens and with the
-  language list opened: English 80,208 / 83,624 bytes; zh-Hant 202,685
-  (both); zh-Hans 183,938 (both); pt-BR 35,733 and es-ES 35,856, the HTML
+  language list opened: English 80,165 / 83,581 bytes; zh-Hant 201,453
+  (both); zh-Hans 182,604 (both); pt-BR 35,728 and es-ES 35,821, the HTML
   alone.
 - **The licence**: LXGW WenKai is under the SIL Open Font License 1.1; its
   `OFL.txt`, from the same tag, is published beside the subsets as
@@ -882,7 +882,7 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
   is written in `support/support_page.clj` (`copyright-holder`), not in the
   words, so no translation changes it.
 - **The built pages** go to `dist-support/` (ignored): built HTML is never
-  committed. They are **179,039 bytes** in all; each page is within the
+  committed. They are **178,503 bytes** in all; each page is within the
   64 KB budget `bb test` holds it to.
 - **Publishing:** `.github/workflows/support-page.yml`, on pushes to `main`
   that touch `support/`, its test, the workflow or `bb.edn`, and by hand
@@ -927,7 +927,7 @@ repository does that.
 ## Development
 
 ```bash
-bb test                                             # 932 tests / ~64,100 assertions
+bb test                                             # 932 tests / ~64,000 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 

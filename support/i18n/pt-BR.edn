@@ -45,7 +45,7 @@
 
   {:id     "status"
    :title  "O que ele faz hoje"
-   :blocks [[:p "A versão mais recente é a " [:strong "0.2.0"] ". O trabalho na próxima fase está em andamento no branch main e ainda não foi lançado. O "
+   :blocks [[:p "A versão mais recente é a " [:strong "0.3.0"] ". As mudanças posteriores a ela entram primeiro no branch main, e o "
              [:a "https://github.com/EchoJustus/clogem-press/blob/main/CHANGELOG.md" "histórico de mudanças"]
              " lista cada mudança assim que ela entra."]
             [:cards
@@ -55,11 +55,11 @@
              {:chip  "Lançado · 0.2.0"
               :title "Idiomas e descoberta"
               :text  ["Cinco idiomas com um endereço por artigo, links canonical e hreflang, um feed Atom por idioma, um sitemap, busca com Pagefind com um índice por idioma e comentários opcionais com giscus, com uma conversa por artigo."]}
-             {:chip  "Em andamento"
-              :title "O tema, no branch main"
-              :text  ["Já entrou: modos de cor claro, escuro e de leitura, destaque de código, estilos de página em cartões e em linhas, uma barra de navegação com menu lateral no celular, links de edição e datas da última atualização, uma página 404, o cartão de perfil e o banner da página inicial do blog, tags opcionais de análise de tráfego e de verificação para consoles de busca, e um "
+             {:chip  "Lançado · 0.3.0"
+              :title "O tema"
+              :text  ["Modos de cor claro, escuro e de leitura, destaque de código, estilos de página em cartões e em linhas, uma barra de navegação com menu lateral no celular, links de edição e datas da última atualização, uma página 404, o cartão de perfil e o banner da página inicial do blog, espaços para HTML personalizado, tags opcionais de análise de tráfego e de verificação para consoles de busca, busca opcional entre idiomas e um "
                       [:code "bb dev"]
-                      " mais ágil: uma só recompilação por sequência de salvamentos, erros de compilação mostrados no navegador, o tema recarregado quando muda e o caminho base do site servido como será publicado. Ainda falta nesta fase: espaços para HTML personalizado e busca entre idiomas; depois, a próxima versão."]}]]}
+                      " mais ágil: uma só recompilação por sequência de salvamentos, erros de compilação mostrados no navegador, o tema recarregado quando muda e o caminho base do site servido como será publicado."]}]]}
 
   {:id     "start"
    :title  "Primeiros passos"

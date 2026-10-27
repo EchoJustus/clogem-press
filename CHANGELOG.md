@@ -114,11 +114,12 @@ nothing in `src/clogem/` changes, and a built site is unaffected.
 Languages (SP.2): English (the default) at `clogem-press/`; Simplified
 Chinese at `zh-Hans/`; Traditional Chinese, with Taiwan wording, at
 `zh-Hant/`; Brazilian Portuguese at `pt-BR/` (also for `pt`); European
-Spanish at `es-ES/` (also for `es`). Five pages, **179,039 bytes** in all
-(as of Task G's privacy clause, below; 178,640 as of SP.8): `index.html`
-34,880, `zh-Hant/index.html` 36,259, `zh-Hans/index.html` 36,144,
-`pt-BR/index.html` 35,820, `es-ES/index.html` 35,936 (each within the
-64 KB budget), plus, on the English and Chinese
+Spanish at `es-ES/` (also for `es`). Five pages, **178,503 bytes** in all
+(as of the release's status text, below; 179,039 as of Task G's privacy
+clause; 178,640 as of SP.8): `index.html` 34,761, `zh-Hant/index.html`
+36,157, `zh-Hans/index.html` 36,036, `pt-BR/index.html` 35,728,
+`es-ES/index.html` 35,821 (each within the 64 KB budget), plus, on the
+English and Chinese
 pages, the fonts they use (SP.8 and SP.7, below; README).
 
 ### Added (support page)
@@ -137,7 +138,8 @@ pages, the fonts they use (SP.8 and SP.7, below; README).
   Auto, remembers nothing), with clogem-press's jade as the accent: a darker
   jade for text in light mode, a lighter one in dark, every pair WCAG AA.
   Six sections, in this order: what clogem-press is, what it does today
-  (0.2.0, and Phase 4 as in progress and unreleased), getting started, help
+  (0.2.0, and Phase 4 as in progress and unreleased, until the release's
+  block, below, made it 0.3.0), getting started, help
   and feedback, privacy, licence and source.
 - Five languages (SP.2): the words in `support/i18n/` (`en.edn`, which was
   `support/page.edn`; `zh-Hans.edn`, `zh-Hant.edn`, `pt-BR.edn`,
@@ -314,7 +316,8 @@ pages, the fonts they use (SP.8 and SP.7, below; README).
   beside the pages as `clogem-press/fonts/*.woff2`, the CSP gains
   `font-src 'self'` and nothing else, and subsetting runs `pyftsubset` in
   GitHub Actions with no Python in the repository. (SP.7 narrowed this
-  to English and Chinese; the current sizes are SP.8's, above, and the README's.)
+  to English and Chinese; the current sizes are the README's and this
+  block's opening paragraph's, above.)
 - **WenKai TC's emphasis is Medium, not Bold**: v1.530 of WenKai TC has
   Light, Regular and Medium and no Bold.
 - **Subsets by script and weight**, each page declaring only those it uses
@@ -436,7 +439,8 @@ clogem-press card and its README's table.
 **Release 0.3.0 — the last vdoing keys** (§8's exit criterion, §11.3 item
 22): what an audit of vdoing 1.12.9 (`d77b420`) found unclassified, as the
 owner decided on 2026-10-27 — four small keys implemented, one deferred,
-five marked implicit — then the exit criterion, asserted, and the version:
+five marked implicit, and a nav item's `target` and `rel` dropped — then the
+exit criterion, asserted, the version, and the support page's status:
 
 ### Added (release 0.3.0)
 
@@ -490,6 +494,17 @@ five marked implicit — then the exit criterion, asserted, and the version:
   `config.example.edn`'s IndexNow note.
 - README's status line says Phase 4 is complete (0.3.0); DESIGN §8 marks
   the release done and §11.3 item 22 records it.
+- **The support page's *What it does today*** (`support/i18n/*.edn`, all
+  five languages; DESIGN.md §7.5 item 4; the owner chose to change it in
+  this release): the latest release is 0.3.0, and changes after it land on
+  the main branch first. The third card is *Released · 0.3.0*, "The
+  theme": what Phase 4 built, custom HTML slots and search across
+  languages included. It no longer says Phase 4 is in progress, or what
+  is still to come. The first two cards stay *Released · 0.2.0*; the
+  privacy section is unchanged. The pages are 34,761 / 36,157 / 36,036 /
+  35,728 / 35,821 bytes, 178,503 in all (README), and the Chinese
+  subsets shrink a little (README's font table); merging this
+  republishes them.
 
 ### Tests (release 0.3.0)
 
@@ -517,6 +532,16 @@ five marked implicit — then the exit criterion, asserted, and the version:
   `:planned` any more.
 - `the-version-is-0-3-0`: `version.edn`, and a build's `<meta
   name="generator">` and Atom `<generator version>`.
+- `support_page_test`'s `the-status-follows-the-changelog`: every page's
+  status section names 0.3.0 (and 0.2.0, its first two cards), and none
+  says the theme is in progress or unreleased, in its own language; the
+  no-dates check is kept. It failed on the old words.
+
+### Needs native review (release 0.3.0)
+
+Machine-made, to be read by a native speaker: the support page's new
+status text — the lead and the third card of *What it does today* — in
+`support/i18n/zh-Hans.edn`, `zh-Hant.edn`, `pt-BR.edn` and `es-ES.edn`.
 
 **Task E1b — htmlModules** (§11.3 item 13, second half; D-P4-13):
 

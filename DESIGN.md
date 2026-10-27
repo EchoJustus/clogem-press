@@ -1936,7 +1936,8 @@ Decisions:
    - **Native review.** The four translations are listed in the CHANGELOG for a native speaker's
      review before or soon after publication.
 4. **Six sections, in this order** (ours, pinned by `support_page_test`): what clogem-press is; what it
-   does today (0.2.0 released, Phase 4 in progress and unreleased, following the CHANGELOG, no dates);
+   does today (0.3.0 the latest release, later changes landing on `main` first; a card each for what
+   0.2.0 released and for the theme 0.3.0 released; following the CHANGELOG, no dates);
    getting started; help and feedback (issues and pull requests here, questions and ideas in the hub's
    Discussions, since this repository's are off, and the hub's address for what shouldn't be public);
    privacy; licence and source. No commerce: no store, price, trial or Pro edition.
@@ -2003,10 +2004,11 @@ Decisions:
      Chinese sets it; in English it should sit on the baseline. The Latin subsets' `unicode-range`
      leaves it out, so the system's font draws it; Chinese text takes WenKai's own from its page's
      Chinese subset.
-   - **Sizes** (v1.530, SP.8): Latin 22,884 and 22,520 bytes; zh-Hant 103,400 and 17,700; zh-Hans
-     87,548 and 14,920; the names 3,416. A page as it opens, HTML and fonts: English 80,208 bytes
-     (83,624 with the list open), zh-Hant 202,685, zh-Hans 183,938; pt-BR 35,733 and es-ES 35,856,
-     the HTML alone. Each subset's cap in the plan is about twice its size.
+   - **Sizes** (v1.530, as of 0.3.0's status text; SP.8's are in the CHANGELOG): Latin 22,884 and
+     22,520 bytes; zh-Hant 102,804 and 17,088; zh-Hans 86,972 and 14,192; the names 3,416. A page as
+     it opens, HTML and fonts: English 80,165 bytes (83,581 with the list open), zh-Hant 201,453,
+     zh-Hans 182,604; pt-BR 35,728 and es-ES 35,821, the HTML alone. Each subset's cap in the plan
+     is about twice its size.
    - **The character lists come from the generator.** `bb support-page` writes
      `dist-support/glyphs/<subset>.txt` (outside `clogem-press/`, never published): every character
      the pages set in that subset, read from the page's body as the stylesheet sets it (headings

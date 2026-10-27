@@ -986,14 +986,17 @@
 
 (deftest the-status-follows-the-changelog
   (let [text (body-text (html "en"))]
-    (is (re-find #"(?i)in progress" text))
-    (is (re-find #"(?i)not released|unreleased" text))
     (is (re-find #"(?i)five languages" text))
     (testing "live reload shipped in 0.1.0; Phase 4 made bb dev quicker (SP.4 item 6)"
       (is (not (re-find #"(?i)live-reload" text)))
       (is (str/includes? text "one rebuild per burst of saves"))))
+  (testing "0.3.0 released the theme: every page names it, and none calls the theme unreleased"
+    (doseq [l langs :let [status (body-text (str (section-html (html l) "status")))]]
+      (is (str/includes? status "0.3.0") l)
+      (is (str/includes? status "0.2.0") (str l ": the first two cards are still 0.2.0's"))
+      (is (not (re-find #"(?i)in progress|not released|unreleased|still to come|进行中|未发布|進行中|未發布|尚待完成|em andamento|ainda não foi lançado|ainda falta|en curso|sin publicar|aún no se ha publicado|falta en esta fase" status))
+          (str l ": " (re-find #"(?i).{0,40}(?:in progress|unreleased|未发布|未發布|andamento|en curso|sin publicar).{0,40}" status)))))
   (doseq [l langs :let [text (body-text (html l))]]
-    (is (str/includes? text "0.2.0") l)
     ;; the footer's copyright year is the page's, not a promise
     (is (not (re-find #"(?i)\b(?:20\d\d|q[1-4]|next (?:week|month)|coming soon)\b" (str/replace text "© 2026 " "© ")))
         (str l ": no dates promised"))))
