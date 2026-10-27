@@ -11,16 +11,16 @@ named. The tasks, in the order they landed: Task A — foundations (§11.3
 items 7, 11, 16, 18); Task B1 — colour modes, an accessible palette, the
 mode toggle and icons (items 2–6 and 8); Task C — code highlighting (item
 10); Task D — the dev loop, and its follow-up (item 12); Task B2a — the card
-and line page styles, focus rings and B1's follow-ups (item 9); Task F —
-analytics, verification and a static root (items 14, 15); Task B2b — the
-navbar, the mobile drawer and the page chrome (item 9, D-P4-9); Task E2 —
-article-page parity (item 16, D-P4-13); Task E1a — the blog identity and
-the home banner (item 13, D-P4-13); Task G — cross-language search (item
-17, D-P4-17, D-P4-18); the Phase 4 follow-ups — Task D's known issues and
-what the E1a and E2 checks left; Task E1b — htmlModules (item 13); and the
-release's own block, the last vdoing keys (item 22). The support page, the
-first block below, is a separate tool built from `support/`: it changes
-nothing in the generator or in a built site.
+and line page styles, focus rings and B1's follow-ups (item 1, first half);
+Task F — analytics, verification and a static root (items 14, 15); Task B2b
+— the navbar, the mobile drawer and the page chrome (item 9, D-P4-9); Task
+E2 — article-page parity (item 16, D-P4-13); Task E1a — the blog identity
+and the home banner (item 13, first half; D-P4-13); Task G — cross-language
+search (item 17, D-P4-17, D-P4-18); the Phase 4 follow-ups — Task D's known
+issues and what the E1a and E2 checks left; Task E1b — htmlModules (item 13,
+second half; D-P4-13); and the release's own block, the last vdoing keys
+(item 22). The support page, the first block below, is a separate tool built
+from `support/`: it changes nothing in the generator or in a built site.
 
 A 0.2.0 site gets, without changing anything, what vdoing has on by
 default: page buttons, a back-to-top button, title badges and an update bar
@@ -47,34 +47,54 @@ planned now takes effect.
   `<pre><code>`. A bad `:tools :chroma` pin is now an error, like
   Pagefind's.
 - **On by default, as in vdoing**: page buttons (`:theme :page-button`),
-  back to top (`:back-to-top`), title badges (`:title-badge`) and the
-  update bar under every article (`:update-bar {:show-to-article
-  false}` drops it). The previous and next links, as before, now with
-  `:prev-links` and `:next-links` to drop them site-wide; front matter
-  `prev: true` / `next: true` now shows the usual link instead of warning.
+  back to top (`:back-to-top`; both Task B2b), title badges
+  (`:title-badge`; Task E1a) and the update bar under every article
+  (`:update-bar {:show-to-article false}` drops it; Task E2). The previous
+  and next links, as before, now with `:prev-links` and `:next-links` to
+  drop them site-wide; front matter `prev: true` / `next: true` now shows
+  the usual link instead of warning (the release's own block).
 - **`dist/404.html`** is written by every build (Task E2).
 - **A key 0.2.0 listed as planned now takes effect** — with no change to
   `site.edn`: `:analytics` loads its provider on the deployed site (remove
   it, or set `:provider :none`, to keep it off); `:content :static-dir` is
   copied, and a file in it that collides with the build's own output is an
   error; `:theme :html-modules` is injected; `:theme :page-style :line`,
-  B2b's five page-chrome keys, the E1a identity keys and `:search
+  B2b's five page-chrome keys, E2's `:content :edit-link`, `:theme
+  :last-updated` and `:theme :repo`, the E1a identity keys and `:search
   :cross-language` do what they say.
 - **Warnings, never errors**: an unknown `site.edn` key, or vdoing's
   spelling of one, warns, naming its path and the key to write (Task A);
   an unknown command-line option warns and is ignored (the follow-ups;
-  it was ignored silently).
+  it was ignored silently); a missing UI string key warns in `build` too,
+  once per key and language (Task D; `:i18n {:missing-key :silent}` turns
+  it off).
+- **New errors, before anything is written** (Task A): a directory left in
+  an existing `dist/` where a file now belongs, or a file where a directory
+  now belongs (remove it, or `bb clean`); a permalink with a `.` or `..`
+  segment or a backslash, even `/./tags/`, which 0.2.0 built.
+- **What `assets/` publishes** (Task F): a link whose target is outside
+  the site is skipped, with a warning; editor and OS leftovers (`*.tmp`,
+  `Thumbs.db`, `CNAME~`, …) are no longer copied.
 - **The page**: the mode and page-style classes moved from `<body>` to
   `<html>`, so CSS written as `body.theme-mode-dark` no longer matches
-  (Task B1); the navbar is one row — brand, nav, languages, search, mode —
+  (Task B1); dark mode's page background is lighter than its card,
+  `#22252b`, and the mode button reads `:mode/current`, not `:mode/label`
+  (Task B2a); the navbar is one row — brand, nav, languages, search, mode —
   with a drawer at 50rem and below, and beside a sidebar the TOC shows from
   80rem (Task B2b); the footer reads *Powered by clogem-press* where it
   said `clogem-press 0.2.0`, and the version stays in `<meta
   name="generator">` (Task E1a); site CSS that styled `.clogem-main` or a
   code block's `<pre>` may need adjusting (Tasks B2a, C).
+- **A home with `postList: simple`** no longer shows *Recently updated*,
+  as 0.2.0's always did: its list is the recent articles already (Task
+  E1a).
 - **`bb dev` and `bb serve` listen on 127.0.0.1** (`--host 0.0.0.0`
   restores every interface), and `bb.edn` asks for babashka 1.13.219 or
   later (Task D).
+- **The output directory** (Task D): `:build :out` in `site.edn` is
+  honoured (0.2.0's `--out` default overrode it); a build deletes a file
+  under `dist/clogem/` it did not write; `bb clean` deletes only a
+  directory a build has marked (`.clogem-output`).
 
 ### Known issues
 
@@ -485,15 +505,16 @@ five marked implicit — then the exit criterion, asserted, and the version:
   own, the `DefaultThemeConfig` keys it inherits (@vuepress/types 1.9.5,
   `nav` items' included) and the three it reads that neither declares —
   each with its vdoing file and line: 61 are known where clogem-press reads
-  them (and `config/vdoing-keys` agrees), 14 are implicit, deferred or
-  removed, and 6 sit inside one of those. `vdoing-front-matter-keys` lists
-  the 45 front-matter keys vdoing reads: 42 are read by the clogem source
-  named, and DESIGN §8 lists `navbar: false` and `search: false` as
-  deferred and `sidebar: 'auto'` as removed. `doctor`, on a `site.edn` that
-  sets the 14, names each once. Nothing is `:planned` any more. A `nav`
-  item's `target` and `rel`, declared by @vuepress/types but never read by
-  vdoing (its `NavLink.vue` sets both itself), are left unclassified, and
-  `doctor` names them as unknown nav item options.
+  them (and `config/vdoing-keys` agrees), 16 are implicit, deferred or
+  removed (9, 2 and 5), and 6 sit inside one of those. A `nav` item's
+  `target` and `rel`, declared by @vuepress/types but never read by vdoing
+  (its `NavLink.vue` sets both itself), are among the 5 removed.
+  `vdoing-front-matter-keys` lists the 45 front-matter keys vdoing reads:
+  42 are read by the clogem source named, and DESIGN §8 lists `navbar:
+  false` and `search: false` as deferred and `sidebar: 'auto'` as removed.
+  `doctor`, on a `site.edn` that sets the 16, names each once, and on a
+  `nav` item with `target` and `rel` names both as dropped. Nothing is
+  `:planned` any more.
 - `the-version-is-0-3-0`: `version.edn`, and a build's `<meta
   name="generator">` and Atom `<generator version>`.
 

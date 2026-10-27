@@ -352,9 +352,9 @@
    ;; -- theme-default.ts: a `nav` item, NavItem (l.6-31). vdoing reads
    ;; text, link and items (NavLinks.vue, NavLink.vue) and ariaLabel
    ;; (DropdownLink.vue:76). It never reads target or rel: its NavLink.vue
-   ;; (l.9-19) sets both itself, for external links only. They are not
-   ;; classified; a site.edn that sets one gets the unknown nav item
-   ;; option warning, which names it.
+   ;; (l.9-19) sets both itself, for external links only. The owner dropped
+   ;; both (DESIGN.md §8); a site.edn that sets one on a nav item gets the
+   ;; dropped warning, which names it.
    ["text"              [:nav :* :text]                       "theme-default.ts:10"]
    ["link"              [:nav :* :link]                       "theme-default.ts:14"]
    ["ariaLabel"         [:nav :* :aria-label]                 "theme-default.ts:18"]

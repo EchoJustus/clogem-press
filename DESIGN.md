@@ -3997,15 +3997,15 @@ their own findings. Item 19 onward are corrections.
     from @vuepress/types 1.9.5 (`src/theme-default.ts`, `nav` items' `NavItem` included), and
     `sidebarDepth`, `displayAllHeaders` and `sidebarHoverTriggerOpen`, which vdoing reads and neither
     declares — are each known at their clogem path in `config/known-keys`, with `config/vdoing-keys`
-    agreeing (61), or `:implicit`, `:deferred` or `:dropped` there (14), or inside such a key's value,
-    which `doctor` does not walk (`sidebar`'s `mode` and `collapsable`, `algolia`'s four); no key is
-    `:planned` any more, and §8's lists name every deferred and dropped one. Its 45
+    agreeing (61), or `:implicit`, `:deferred` or `:dropped` there (16: 9, 2 and 5), or inside such
+    a key's value, which `doctor` does not walk (6: `sidebar`'s `mode` and `collapsable`, `algolia`'s
+    four); no key is `:planned` any more, and §8's lists name every deferred and dropped one. Its 45
     front-matter keys are read by the clogem source the test names (42) or listed in §8 as deferred
     (`navbar: false`, `search: false`) or removed (`sidebar: 'auto'`); `categories` is written by
     auto-fill from the primary variant's directory, which the indexes use (§6.2), as vdoing writes it
-    from the path. `doctor`, on a `site.edn` that sets the 14, names each once. `NavItem`'s `target`
+    from the path. `doctor`, on a `site.edn` that sets the 16, names each once. `NavItem`'s `target`
     and `rel`, declared but never read by vdoing (its `NavLink.vue` sets both, for external links),
-    are not classified: `doctor` names them as unknown nav item options. `version.edn` is `0.3.0`,
+    are dropped (§8): on a nav item, `doctor` names each as dropped. `version.edn` is `0.3.0`,
     which a build's `<meta name="generator">` and Atom `<generator>` carry; D-14's `ref: v0.3.0` and
     `:min-version "0.3.0"` hold once the owner tags `v0.3.0`.
 
