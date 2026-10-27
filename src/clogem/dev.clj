@@ -281,27 +281,46 @@
           (search/previous-dirs root))))
 
 (def whole-read-limit
-  "Files smaller than this are read whole into the heap and sent as bytes
-  (P4-D.2 item 6): what is sent was read at once, so a rebuild swapping the
-  file mid-response cannot mix two versions. 1 MB covers every Pagefind
-  file, which are what change under a running dev. A larger file is a
-  plain `File` body, as 0.2.0 served every file (P4-D.4 item 1)."
-  (* 1024 1024))
+  "Files smaller than this are read whole into the heap and sent as bytes;
+  a file of this size or more is mapped (`map-all`). Both happen from one
+  open, BEFORE the response is returned: what is sent is what that open
+  saw, so a rebuild swapping the file mid-response cannot mix two
+  versions (P4-D.2 item 6), and one deleting it cannot turn the response
+  into http-kit's 500, whose body was the file's absolute path (P4
+  follow-ups item 1: a `File` body is opened by http-kit only after the
+  handler returns). 20 MB is http-kit's own threshold for a `File` body
+  (`org.httpkit.HttpUtils/readAll`), so the heap and the mappings are what
+  0.2.0's `File` bodies cost (DESIGN.md Known limitations)."
+  (* 20 1024 1024))
 
 (defn- read-all
   "Every byte of `f`, read through one open channel: a file gone by now
-  throws an `IOException`, before any response exists."
+  throws an `IOException`, before any response exists. The buffer's own
+  array when the file filled it, as it does unless it shrank meanwhile:
+  a copy doubled what a read cost (P4 follow-ups.1)."
   [f]
   (with-open [ch (java.nio.channels.FileChannel/open
                   (fs/path f) (into-array java.nio.file.StandardOpenOption [java.nio.file.StandardOpenOption/READ]))]
     (let [buf (java.nio.ByteBuffer/allocate (int (.size ch)))]
       (while (and (.hasRemaining buf) (pos? (.read ch buf))))
-      (java.util.Arrays/copyOf (.array buf) (.position buf)))))
+      (if (.hasRemaining buf)
+        (java.util.Arrays/copyOf (.array buf) (.position buf))
+        (.array buf)))))
+
+(defn- map-all
+  "`f` mapped read-only through one open channel, closed at once: the
+  mapping outlives the channel, and a deletion, which removes the name and
+  not the file. A file gone by now throws an `IOException`, before any
+  response exists."
+  [f]
+  (with-open [ch (java.nio.channels.FileChannel/open
+                  (fs/path f) (into-array java.nio.file.StandardOpenOption [java.nio.file.StandardOpenOption/READ]))]
+    (.map ch java.nio.channels.FileChannel$MapMode/READ_ONLY 0 (.size ch))))
 
 (def max-file-bytes
-  "The largest file http-kit can send: it reads a `File` body whole, or
-  maps it, as one buffer, so a file of 2 GiB or more fails inside it with
-  a stack trace and a 500 (0.2.0 too). Such a file is refused cleanly
+  "The largest file http-kit can send: it sends a body as one buffer, which
+  holds at most 2 GiB - 1 bytes, so a file of 2 GiB or more cannot be
+  sent (0.2.0: a stack trace and a 500). Such a file is refused cleanly
   (`too-large`); GitHub Pages refuses a published site over 1 GB anyway."
   Integer/MAX_VALUE)
 
@@ -311,32 +330,61 @@
    :body (str "500 Internal Server Error: this file is 2 GiB or more, which the "
               "clogem-press preview server cannot send.\n")})
 
+(def http-kit-drops-head-bodies?
+  "Does the http-kit in this babashka leave the body out of a response to
+  HEAD itself? 2.9.0-beta4 does, in babashka 1.13.220 and later, and it
+  sends the body's `Content-Length`; the 2.8 in 1.13.219 sends the body,
+  which corrupts a keep-alive connection, and counts `Content-Length`
+  from the body it sends, so without one it can only say 0 (P4
+  follow-ups item 2)."
+  (let [[a b c] (map #(or (parse-long %) 0)
+                     (take 3 (str/split (str (System/getProperty "babashka.version")) #"[.-]")))]
+    (and (some? (System/getProperty "babashka.version"))
+         (not (neg? (compare [a b c] [1 13 220]))))))
+
 (defn- file-response
   "Serve `f`: a file renamed or deleted since it was resolved is nil (the
-  caller tries elsewhere), never a 500 naming its path. Under
-  `whole-read-limit` the bytes are read whole; a larger file is a `File`
-  body, as 0.2.0 served it, which http-kit sends with its `Content-Length`
-  to HTTP/1.0 and HTTP/1.1 alike (P4-D.4 item 1); one of `max-file-bytes`
-  or more is `too-large`. A HEAD request gets the headers and no body:
-  the http-kit in babashka 1.13.219 sent a body to HEAD, which corrupts a
-  keep-alive connection. http-kit then says `Content-Length: 0`."
-  [req f inject-reload?]
+  caller tries elsewhere), never a 500 naming its path. The body is read
+  whole, or mapped, from one open before this returns (`whole-read-limit`),
+  and http-kit sends it with its `Content-Length` to HTTP/1.0 and HTTP/1.1
+  alike (P4-D.4 item 1); a file of `max-file-bytes` or more is
+  `too-large`. A HEAD request (`head?`) is answered as GET is, and reads
+  no byte of the file (P4 follow-ups.1: it read a file under 20 MB whole,
+  to drop it): its body is the file mapped, which http-kit takes the
+  length of and drops (`http-kit-drops-head-bodies?`), else none at all
+  (`head-response`). Not on Windows, for a file under `whole-read-limit`:
+  a mapping holds the file against a rebuild's replace until a GC unmaps
+  it (DESIGN.md Known limitations), so it is read there, as before. A
+  page dev injects the reload script into is read where http-kit sends
+  the length: that is its length."
+  [f inject-reload? head?]
   (try
     (let [html?   (= "html" (u-ext f))
           n       (fs/size f)
           headers (cond-> {"Content-Type" (content-type f)}
                     inject-reload? (assoc "Cache-Control" "no-cache"))]
-      (cond
-        (> n max-file-bytes)            too-large
-        (= :head (:request-method req)) {:status 200 :headers headers :body nil}
-        :else
+      (if (> n max-file-bytes)
+        too-large
         {:status 200 :headers headers
          :body (cond
+                 (and head? (not http-kit-drops-head-bodies?)) nil
                  (and html? inject-reload?)
                  (str/replace (slurp (fs/file f)) "</body>" (str reload-script "</body>"))
-                 (< n whole-read-limit) (read-all f)
-                 :else                  (fs/file f))}))
+                 (or (>= n whole-read-limit) (and head? (not (fs/windows?)))) (map-all f)
+                 :else (read-all f))}))
     (catch java.io.IOException _ nil)))
+
+(defn- head-response
+  "`resp`, the answer to `req`, as HEAD gets it: with no body. Where http-kit
+  drops a HEAD's body itself (`http-kit-drops-head-bodies?`) the body is
+  left for it, so `Content-Length` is the length GET sends; elsewhere it is
+  dropped here, and `Content-Length` says 0. Every status alike: a 404 or a
+  500 sent its body to HEAD."
+  [req resp]
+  (if (and (= :head (:request-method req)) (map? resp) (not (::channel? (meta resp)))
+           (not http-kit-drops-head-bodies?))
+    (assoc resp :body nil)
+    resp))
 
 (defn- value [x] (if (fn? x) (x) x))
 
@@ -408,43 +456,47 @@
   `:check-host?` (a loopback bind), a request whose `Host` is not a
   loopback name, or one of `:host-names`, is a 403 (`local-host-header?`): a DNS-rebinding page
   cannot read the site, or the build errors, through a name of its own
-  (P4-D.2 item 17)."
+  (P4-D.2 item 17). A HEAD request is answered as GET is, with no body
+  (`head-response`), whatever the status."
   [root {:keys [inject-reload? base state check-host? host-names] :or {base "/"}}]
   (fn [{:keys [uri headers] :as req}]
-    (try
-      (let [uri  (str uri)
-            base (value base)
-            root (value root)
-            path (decode-path uri)]
-        (cond
-          (and check-host? (not (local-host-header? (get headers "host") (or host-names loopback-names))))
-          wrong-host
+    (head-response
+     req
+     (try
+       (let [uri  (str uri)
+             head? (= :head (:request-method req))
+             base (value base)
+             root (value root)
+             path (decode-path uri)]
+         (cond
+           (and check-host? (not (local-host-header? (get headers "host") (or host-names loopback-names))))
+           wrong-host
 
-          (and inject-reload? (= uri "/__reload"))
-          (sse-handler req state)
+           (and inject-reload? (= uri "/__reload"))
+           (vary-meta (sse-handler req state) assoc ::channel? true)
 
-          (nil? path)
-          {:status 400 :headers {"Content-Type" "text/plain; charset=utf-8"} :body "400 Bad Request\n"}
+           (nil? path)
+           {:status 400 :headers {"Content-Type" "text/plain; charset=utf-8"} :body "400 Bad Request\n"}
 
-          (and (not= "/" base) (or (= path "/") (= (str path "/") base)))
-          {:status 302 :headers {"Location" (.toASCIIString (java.net.URI. nil nil base nil))} :body ""}
+           (and (not= "/" base) (or (= path "/") (= (str path "/") base)))
+           {:status 302 :headers {"Location" (.toASCIIString (java.net.URI. nil nil base nil))} :body ""}
 
-          (and inject-reload? state (not (:ever-ok? @state)) (:error @state) (html-request? uri))
-          {:status 500
-           :headers {"Content-Type" "text/html; charset=utf-8" "Cache-Control" "no-cache"}
-           :body (error-page (:error @state))}
+           (and inject-reload? state (not (:ever-ok? @state)) (:error @state) (html-request? uri))
+           {:status 500
+            :headers {"Content-Type" "text/html; charset=utf-8" "Cache-Control" "no-cache"}
+            :body (error-page (:error @state))}
 
-          :else
-          (let [rel (strip-base base path)]
-            (or (when rel
-                  (or (when-let [f (resolve-path root rel)] (file-response req f inject-reload?))
-                      (when-let [f (pagefind-fallback root rel)] (file-response req f inject-reload?))
-                      ;; Task E2: a miss under the base gets the site's own
-                      ;; 404 page, as a static host serves it
-                      (when-let [f (resolve-path root "/404.html")]
-                        (some-> (file-response req f inject-reload?) (assoc :status 404)))))
-                (not-found base path)))))
-      (catch Throwable _ server-error))))
+           :else
+           (let [rel (strip-base base path)]
+             (or (when rel
+                   (or (when-let [f (resolve-path root rel)] (file-response f inject-reload? head?))
+                       (when-let [f (pagefind-fallback root rel)] (file-response f inject-reload? head?))
+                       ;; Task E2: a miss under the base gets the site's own
+                       ;; 404 page, as a static host serves it
+                       (when-let [f (resolve-path root "/404.html")]
+                         (some-> (file-response f inject-reload? head?) (assoc :status 404)))))
+                 (not-found base path)))))
+       (catch Throwable _ server-error)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Servers
@@ -613,6 +665,17 @@
 ;; ---------------------------------------------------------------------------
 ;; The queue
 
+(def full-rebuild
+  "What a watcher submits for a rebuild that is not about any one path:
+  the full rebuild once polling has taken over from the pod. Its line says
+  `full rebuild`; it said `(6 files changed)`, counting the watched roots
+  submitted in its place (P4 follow-ups item 11). A string, so it queues
+  and sorts with the paths, but a path on no system (a NUL): it is taken
+  out before any path function sees it (`submitter`, `make-rebuild`, dev's
+  own-writes check). `\"<full rebuild>\"`, which Windows cannot parse,
+  failed the build there (P4 follow-ups.1)."
+  "\u0000full rebuild")
+
 (defn editor-temp?
   "Is `p` a file an editor or this program writes on the way to a save —
   never a change to rebuild for? `clogem.util/editor-temp?`, which the
@@ -658,7 +721,7 @@
   dropped, the rest queued for `drain-loop!`."
   [^LinkedBlockingQueue q]
   (fn [paths]
-    (when-let [ps (seq (remove editor-temp? paths))]
+    (when-let [ps (seq (remove #(and (not= full-rebuild %) (editor-temp? %)) paths))]
       (.put q (vec ps)))))
 
 (defn spawn-bound
@@ -1338,17 +1401,36 @@
        (flush [] (.flush w)))
      "UTF-8")))
 
+(defn- pod-pids
+  "The pids of this process's children running the pod binary `bin`."
+  [bin]
+  (let [want (str (fs/canonicalize bin))]
+    (set (for [^java.lang.ProcessHandle h (iterator-seq (.iterator (.children (java.lang.ProcessHandle/current))))
+               :when (= want (str (.orElse (.command (.info h)) "")))]
+           (.pid h)))))
+
 (defn load-pod!
   "Fetch the fswatcher pod through `clogem.tools` — the pinned, per-platform
   sha256, cached under XDG, or `CLOGEM_FSWATCHER` / `:tools :fswatcher
   :path` — and load it from that path. Never through the pod registry, which
-  runs whatever it downloads unverified. Returns {:watch :unwatch :pod-id}
-  (`unload-pod!` takes the id), or nil
+  runs whatever it downloads unverified. Returns {:watch :unwatch :pod-id
+  :alive?} (`unload-pod!` takes the id; `alive?`, nil when the pod's
+  process cannot be found, says whether it still runs), or nil
   after one line saying why (offline on the first run, no asset for this
   platform, a hash that does not match): the caller polls."
   [cfg & [stopping?]]
   (try
-    (let [bin (tools/ensure-binary! tools/fswatcher cfg)]
+    (let [bin    (tools/ensure-binary! tools/fswatcher cfg)
+          before (pod-pids bin)
+          proc   (atom nil)
+          ;; dev stopping, or the pod's process gone: the caller says so
+          ;; in one line of its own (P4 follow-ups item 4)
+          quiet? (fn []
+                   (boolean
+                    (when (or stopping? @proc)
+                      (soon? #(or (and stopping? (stopping?))
+                                  (some-> ^java.lang.ProcessHandle @proc .isAlive not))
+                             signal-grace-ms))))]
       ;; `babashka.pods` is required in the ns form on purpose. Resolving it
       ;; lazily — `(requiring-resolve 'babashka.pods/load-pod)` — deadlocks:
       ;; by the time `dev!` reaches this point the http-kit server threads are
@@ -1361,14 +1443,20 @@
       ;; until load-pod has run.
       ;; babashka's pod client prints `ERROR: Pod quit unexpectedly` to the
       ;; `*err*` of this call when the pod's process ends — which the
-      ;; Ctrl-C that stops dev does: dropped then (P4-D.3 item 14)
+      ;; Ctrl-C that stops dev does: dropped then (P4-D.3 item 14), and
+      ;; when the pod dies under a running dev, once for every watch
+      ;; (P4 follow-ups item 4).
       ;; Only the pod client writes there, and only when something failed,
       ;; so waiting for the hook's flag (`stop-caused?`) costs nothing.
-      (let [{:pod/keys [id]} (binding [*err* (gated-writer *err* #(stop-caused? stopping?))]
-                               (pods/load-pod (str bin)))]
+      (let [{:pod/keys [id]} (binding [*err* (gated-writer *err* quiet?)]
+                               (pods/load-pod (str bin)))
+            pid (first (remove before (pod-pids bin)))
+            h   (when pid (.orElse (java.lang.ProcessHandle/of pid) nil))]
+        (reset! proc h)
         {:watch   (requiring-resolve 'pod.babashka.fswatcher/watch)
          :unwatch (requiring-resolve 'pod.babashka.fswatcher/unwatch)
-         :pod-id  id}))
+         :pod-id  id
+         :alive?  (when h #(.isAlive ^java.lang.ProcessHandle h))}))
     (catch Throwable e
       (when-not (stop-caused? stopping?)
         (println (str "clogem-press: the fswatcher pod is unavailable, so dev watches by polling: "
@@ -1383,19 +1471,19 @@
     (deref (future (try (pods/unload-pod id) (catch Throwable _ nil))) 1000 nil)))
 
 (defn try-pod-watch!
-  "Load the fswatcher pod and probe it. Returns {:pod-id} only if it
-  registered *and* delivered an event within the probe window; otherwise
-  false, with the pod unloaded."
+  "Load the fswatcher pod and probe it. Returns {:pod-id :alive?}
+  (`load-pod!`) only if it registered *and* delivered an event within the
+  probe window; otherwise false, with the pod unloaded."
   [cfg on-change & [opts]]
   (if-let [fns (load-pod! cfg (:stopping? opts))]
     (let [ok? (try
-                (probe-watch! cfg on-change (merge (dissoc fns :pod-id) (into {} (remove (comp nil? val)) opts)))
+                (probe-watch! cfg on-change (merge (dissoc fns :pod-id :alive?) (into {} (remove (comp nil? val)) opts)))
                 (catch Throwable e
                   (when-not (stop-caused? (:stopping? opts))
                     (println "clogem-press: fswatcher pod unavailable —" (ex-message e)))
                   false))]
       (if ok?
-        {:pod-id (:pod-id fns)}
+        (select-keys fns [:pod-id :alive?])
         (do (unload-pod! (:pod-id fns)) false)))
     false))
 
@@ -1492,8 +1580,11 @@
   [{:keys [build out state index! reload-code on-config notify! notify-error! on-reload]
     :or {notify! notify-clients! notify-error! notify-error!}}]
   (fn rebuild! [changed]
-    (let [t0     (System/currentTimeMillis)
-          before (linked-stylesheets (value out))]
+    (let [full?   (boolean (some #{full-rebuild} changed))
+          ;; the marker is no path: out before any path function sees it
+          changed (vec (remove #{full-rebuild} changed))
+          t0      (System/currentTimeMillis)
+          before  (linked-stylesheets (value out))]
       (try
         (when reload-code
           (doseq [ns-sym (theme-namespaces reload-code changed)]
@@ -1502,11 +1593,13 @@
         (let [result  (build)
               after   (linked-stylesheets (value out))
               last-ok? (:last-ok? @state true)
-              kind    (reload-kind changed before after last-ok?)]
+              ;; what changed is not known: never just a stylesheet swap
+              kind    (if full? "reload" (reload-kind changed before after last-ok?))]
           (swap! state assoc :ever-ok? true :last-ok? true :error nil)
           (println (format "clogem-press: rebuilt in %d ms (%s)"
                            (- (System/currentTimeMillis) t0)
                            (cond
+                             full?                 "full rebuild"
                              (empty? changed)      "initial"
                              (<= (count changed) 3) (str/join ", " (map #(str (fs/file-name %)) changed))
                              :else                 (str (count changed) " files changed"))))
@@ -1753,7 +1846,8 @@
         rebuild!  (fn [changed]
                     (.lock build-lock)
                     (try (when-not @stopping
-                           (let [own     (take-own-writes! writes changed (System/currentTimeMillis))
+                           (let [own     (take-own-writes! writes (remove #{full-rebuild} changed)
+                                                           (System/currentTimeMillis))
                                  changed (vec (remove own changed))]
                              ;; a batch of nothing but the last build's own
                              ;; writes is no change at all
@@ -1797,21 +1891,23 @@
                              (println (format "clogem-press: watching by polling every %d ms" interval))
                              (spawn #(poll* paths interval submit! {:stop?   (fn [] @stopping)
                                                                      :site-fn site-fn}))))
-          ;; the system's inotify limit, reached mid-session: polling from
-          ;; here on, with the pod's watches all released (P4-D.3 item 5).
-          ;; The change that hit the limit, and the rest of its batch, are
-          ;; in the poller's first snapshot, so it never sees them: one
-          ;; full rebuild once that snapshot is taken (P4-D.4 item 6)
+          ;; the system's inotify limit, reached mid-session, or the pod's
+          ;; process gone (P4 follow-ups item 4: dev stopped watching):
+          ;; polling from here on, with the pod's watches all released
+          ;; (P4-D.3 item 5), said in one line. The change that hit the
+          ;; limit, and the rest of its batch, or what changed since the pod
+          ;; died, are in the poller's first snapshot, so it never sees them:
+          ;; one full rebuild once that snapshot is taken (P4-D.4 item 6)
           fall-back-to-polling! (fn [why]
                                   (when-not @stopping
-                                    (println (str "clogem-press: the system's inotify limit is reached (" why
-                                                  "); dev polls every " interval " ms for the rest of this session."))
+                                    (println (str "clogem-press: " why "; dev polls every " interval
+                                                  " ms for the rest of this session."))
                                     (reset! registered {})
                                     (unload-pod! @pod-id)
                                     (spawn #(poll* paths interval submit!
                                                    {:stop?       (fn [] @stopping)
                                                     :site-fn     site-fn
-                                                    :on-baseline (fn [] (submit! (mapv str (paths))))}))))
+                                                    :on-baseline (fn [] (submit! [full-rebuild]))}))))
           ;; pod events: a directory the pod must be told about goes to
           ;; the follower (pod calls never run on the pod's callback
           ;; thread), which registers it and submits it with its files
@@ -1837,44 +1933,55 @@
                                                                               :unwatch!  (or unwatch! (fn [_]))
                                                                               :watchers  watchers}))}))]
       (when (map? pod?) (reset! pod-id (:pod-id pod?)))
-      (if pod?
-        (do (reset! registered (into {} (for [{:keys [path] :as spec} existing]
-                                          [path {:key (file-key path) :spec spec
-                                                 :covers (get startup-covers path)
-                                                 :watcher (get-in @register [:watchers path])}])))
-            (println "clogem-press: watching via fswatcher")
-            (when @register
-              (spawn (fn []
-                       (let [{:keys [register! unwatch!]} @register]
-                         (loop [last-pass (System/currentTimeMillis)]
-                           (let [d     (.poll dirq (long follow-ms) TimeUnit/MILLISECONDS)
-                                 now   (System/currentTimeMillis)
-                                 ;; the full pass runs at least every
-                                 ;; `follow-ms`, events or not (P4-D.3 item 5)
-                                 pass? (or (nil? d) (>= (- now last-pass) follow-ms))]
-                             (when-not @stopping
-                               (let [gave-up?
-                                     (try
-                                       (release-gone! registered unwatch!)
-                                       (let [new (into (if d
-                                                         (register-new-dirs! registered
-                                                                             (remove nil? (cons d (repeatedly (.size dirq) #(.poll dirq))))
-                                                                             register! unwatch!)
-                                                         [])
-                                                       (when pass? (follow-new-paths! @specs registered register! unwatch!)))]
-                                         ;; a recursive registration's files are rescanned;
-                                         ;; a single-file watch's directory — a site.edn
-                                         ;; link's new target — is not (P4-D.3 item 16)
-                                         (when-let [new (seq (filter #(get-in @registered [% :spec :recursive?]) (distinct new)))]
-                                           (submit! (vec (mapcat #(new-dir-batch % (site-fn)) new)))))
-                                       false
-                                       (catch Throwable t
-                                         (if (::exhausted (ex-data t))
-                                           (do (fall-back-to-polling! (or (ex-message t) (str t))) true)
-                                           (do (println "clogem-press: watching failed —" (or (ex-message t) (str t)))
-                                               false))))]
-                                 (when-not gave-up? (recur (if pass? now last-pass))))))))))))
-        (start-polling!))
+      (let [pod-alive? (when (map? pod?) (:alive? pod?))]
+        (if pod?
+          (do (reset! registered (into {} (for [{:keys [path] :as spec} existing]
+                                            [path {:key (file-key path) :spec spec
+                                                   :covers (get startup-covers path)
+                                                   :watcher (get-in @register [:watchers path])}])))
+              (println "clogem-press: watching via fswatcher")
+              (when @register
+                (spawn (fn []
+                         (let [{:keys [register! unwatch!]} @register]
+                           (loop [last-pass (System/currentTimeMillis)]
+                             (let [d     (.poll dirq (long follow-ms) TimeUnit/MILLISECONDS)
+                                   now   (System/currentTimeMillis)
+                                   ;; the full pass runs at least every
+                                   ;; `follow-ms`, events or not (P4-D.3 item 5)
+                                   pass? (or (nil? d) (>= (- now last-pass) follow-ms))]
+                               (when-not @stopping
+                                 (let [gave-up?
+                                       (if (and pod-alive? (not (pod-alive?)))
+                                         ;; Ctrl-C signals the pod with dev, and it
+                                         ;; can die before the shutdown hook sets
+                                         ;; `stopping`: wait for that as the pod's
+                                         ;; stderr does (P4 follow-ups.1)
+                                         (do (when-not (soon? (fn [] @stopping) signal-grace-ms)
+                                               (fall-back-to-polling! "the fswatcher pod quit"))
+                                             true)
+                                         (try
+                                           (release-gone! registered unwatch!)
+                                           (let [new (into (if d
+                                                             (register-new-dirs! registered
+                                                                                 (remove nil? (cons d (repeatedly (.size dirq) #(.poll dirq))))
+                                                                                 register! unwatch!)
+                                                             [])
+                                                           (when pass? (follow-new-paths! @specs registered register! unwatch!)))]
+                                             ;; a recursive registration's files are rescanned;
+                                             ;; a single-file watch's directory — a site.edn
+                                             ;; link's new target — is not (P4-D.3 item 16)
+                                             (when-let [new (seq (filter #(get-in @registered [% :spec :recursive?]) (distinct new)))]
+                                               (submit! (vec (mapcat #(new-dir-batch % (site-fn)) new)))))
+                                           false
+                                           (catch Throwable t
+                                             (if (::exhausted (ex-data t))
+                                               (do (fall-back-to-polling! (str "the system's inotify limit is reached ("
+                                                                               (or (ex-message t) (str t)) ")"))
+                                                   true)
+                                               (do (println "clogem-press: watching failed —" (or (ex-message t) (str t)))
+                                                   false)))))]
+                                   (when-not gave-up? (recur (if pass? now last-pass))))))))))))
+          (start-polling!)))
       {:stop!   stop!
        :state   state
        :cfg-ref cfg-ref

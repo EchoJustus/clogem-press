@@ -834,7 +834,7 @@ repository does that.
 ## Development
 
 ```bash
-bb test                                             # 870 tests / ~60,000 assertions
+bb test                                             # 885 tests / ~60,200 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 

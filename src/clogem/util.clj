@@ -325,6 +325,18 @@
   [path]
   (str/join "/" (map url-encode-segment (str/split (str path) #"/" -1))))
 
+(defn url-encode-path-once
+  "`url-encode-path`, keeping each valid `%XX` escape as written: a site
+  page's path the owner wrote (a `:nav` link, `:more-article`) that may
+  already be percent-encoded (P4 follow-ups item 8). `/%E6%96%87%E6%A1%A3/`
+  stays as it is, `/文档/` becomes it, and — unlike `url-encode-href` —
+  `#`, `?` and the sub-delimiters are encoded, as they were before: part of
+  the page's name (the tag page of `C#` is `/tags/c%23/`)."
+  [path]
+  (->> (re-seq #"(?s)%[0-9A-Fa-f]{2}|." (str path))
+       (map #(if (= 3 (count %)) % (percent-encode #"[A-Za-z0-9\-._~/]" %)))
+       (apply str)))
+
 (defn url-encode-href
   "A site path the owner wrote (`/about/#contact`, `/a.png?v=2`,
   `/assets/my%20pic.png`) made safe for an href, keeping its structure

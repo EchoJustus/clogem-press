@@ -1868,8 +1868,16 @@ async function item13(t) {
     // at the page's end they are scrolled out of view
     await page.evaluate(() => scrollTo({ top: document.querySelector('.clogem-prev-next').getBoundingClientRect().bottom + scrollY - innerHeight, behavior: 'instant' }));
     await page.waitForFunction(() => document.querySelector('.clogem-back-to-top').checkVisibility(), null, { timeout: 1000 });
+    // the centres only: back to top does cover the right end of Next's
+    // box, the mobile placement rule or not (P4 follow-ups item 12). What
+    // guards that rule is the offset check above (16 px from the right, 24
+    // from the bottom at 360), which fails without it whatever the fonts.
+    // A probe of the links that end the page, rect against rect, depended
+    // on them both ways: DejaVu Sans's footer line reaches under the button
+    // with the rule in place, and a serif one clears it without the rule
+    // (P4 follow-ups.1)
     const c = await page.evaluate(coveredLinks, '.clogem-prev-next a');
-    t.check(c.checked === 2 && c.out.length === 0, `360, prev/next at the viewport's bottom: back to top covers neither prev/next link (${c.checked} checked; ${c.out.join('; ')})`);
+    t.check(c.checked === 2 && c.out.length === 0, `360, prev/next at the viewport's bottom: back to top covers neither prev/next link's centre (${c.checked} checked; ${c.out.join('; ')})`);
     await page.close();
   }
   {

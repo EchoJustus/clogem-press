@@ -800,13 +800,16 @@
                 ((:watch fns) (str dir) (fn [_]) {})
                 ;; the SIGINT a Ctrl-C sends the whole process group
                 (.destroy ^java.lang.ProcessHandle pid)
-                (if stopping?
-                  ;; P4-D.4 item 2: the gate must have been asked — a
-                  ;; writer that throws on every write is quiet too
-                  (do (is (wait-until #(pos? @asked) 3000) "the pod client wrote, and was gated")
-                      (Thread/sleep 500)
-                      (is (= "" (str err)) "nothing while dev stops"))
-                  (is (wait-until #(str/includes? (str err) "Pod quit unexpectedly") 3000) "said otherwise"))
+                ;; P4-D.4 item 2: the gate must have been asked — a writer
+                ;; that throws on every write is quiet too. Since the P4
+                ;; follow-ups (item 4) a pod gone while dev runs is quiet
+                ;; too: dev's follower says it in one line of its own
+                ;; (followups-test), where the pod client said it once per
+                ;; watch, so this is quiet either way
+                (is (wait-until #(pos? @asked) 3000) "the pod client wrote, and was gated")
+                ;; a gate that says no says it after `dev/signal-grace-ms`
+                (Thread/sleep (+ 500 dev/signal-grace-ms))
+                (is (= "" (str err)) (if stopping? "nothing while dev stops" "nothing of the pod client's"))
                 (dev/unload-pod! (:pod-id fns))))))))))
 
 ;; ---------------------------------------------------------------------------
