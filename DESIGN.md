@@ -2200,7 +2200,8 @@ localized *assets* (mkdocs-static-i18n's `image.fr.png` trick), machine-translat
 translation-staleness tracking (comparing variant mtimes to flag drift), RTL layout support (none of
 en/zh/ms/ta is RTL, so the `:dir` config key is present but exercises only `:ltr`), Jawi script for
 Malay, comment providers other than giscus, and the front-matter keys `navbar: false` and
-`search: false` (added in Phase 4's rebaseline, §11.3 item 1). The `clogem migrate` report names any
+`search: false` (added in Phase 4's rebaseline, §11.3 item 1), with vdoing's site-wide `navbar`
+switch beside the first (release 0.3.0, §11.3 item 22). The `clogem migrate` report names any
 of these it finds in an imported site.
 
 ### Dependencies summary (the entire footprint)

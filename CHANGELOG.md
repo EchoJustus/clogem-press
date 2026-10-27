@@ -362,6 +362,62 @@ after publication, and whenever `en.edn` changes:
 Once it is live, the hub's own session links it from the front page's
 clogem-press card and its README's table.
 
+**Release 0.3.0 — the last vdoing keys** (§8's exit criterion, §11.3 item
+22): what an audit of vdoing 1.12.9 (`d77b420`) found unclassified, as the
+owner decided on 2026-10-27 — four small keys implemented, one deferred,
+five marked implicit:
+
+### Added (release 0.3.0)
+
+- **`:theme :prev-links` / `:next-links`** (vdoing's `prevLinks` /
+  `nextLinks`, `PageNav.vue`): `true` by default, as in vdoing; `false`
+  drops that link — the one at the end of the page and its page button —
+  from every article and catalogue page. A page's own front matter wins
+  whenever it sets one, as in vdoing: `prev: false` hides its link, a
+  permalink or `.md` path links that page, and **`prev: true` / `next:
+  true` now shows the usual neighbour** (it used to warn "front matter
+  prev/next names an unknown page: true"). Both are page-chrome keys
+  (`config/page-chrome-keys`): any other value warns and is repaired to
+  `true`; `prevLinks` and `nextLinks` warn with the kebab spelling.
+- **Front matter `showSidebar: false`** (vdoing's `Layout.vue`) drops the
+  sidebar as `sidebar: false` does: read from the primary variant, it
+  leaves the table of contents in place, and the page gets the
+  single-column shell and no collapse button.
+- **`pageComponent.data.key`** (vdoing's `Catalogue.vue`, `data.path ||
+  data.key`): a Catalogue page names its directory with `data.path` or,
+  when that is absent or blank, `data.key` (`model/catalogue-path`). The
+  warning for neither now says "has no data.path (or data.key)".
+- **A nav item's `:aria-label`** (vdoing's `ariaLabel`, `DropdownLink.vue`):
+  a string or a map by language, like `:text`, rendered as the
+  `aria-label` of the item's dropdown `<summary>` — the control vdoing's
+  dropdown button is — or of its link. A known nav item option, not walked
+  as options; `ariaLabel` warns with the kebab spelling.
+
+### Changed (release 0.3.0)
+
+- vdoing's site-wide **`navbar`** switch is **deferred** past v1 with front
+  matter `navbar: false` (DESIGN.md §8): a `site.edn` that sets it is told
+  so, and that every page shows the navbar.
+- **Implicit** — a `site.edn` that sets one is told what clogem-press does
+  instead and to remove it: `searchPlaceholder` (the i18n string
+  `:search/placeholder`), `locales` and `label` (`:langs :locales` and
+  `i18n/<lang>.edn`), `selectText` (`:nav/language`) and
+  `activeHeaderLinks` (the table of contents always marks the heading
+  being read). `:label` under `:langs :locales <lang>` is still a locale
+  option, and quiet.
+- README (the conventions, page buttons, the navbar, sidebar collapse) and
+  `config.example.edn` document the four keys.
+
+### Tests (release 0.3.0)
+
+- New `test/clogem/release_test.clj`: one test per key above — the two
+  switches on and off, with `prev: true`, `next: true` and a permalink
+  overriding them, and their warnings; `showSidebar: false` beside
+  `sidebar: false`; `data.key` alone, blank `data.path`, and both; a nav
+  link's and a dropdown's label, per language; the `navbar` and the five
+  implicit warnings. Each failed before its change (44 failed assertions in
+  7 tests).
+
 **Task E1b — htmlModules** (§11.3 item 13, second half; D-P4-13):
 
 ### Added (E1b)

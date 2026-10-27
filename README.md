@@ -171,6 +171,10 @@ content/
 - **Hyphenated words are titles, not language tags.** `02.api-design.md` is an
   article titled `api-design`; only confusables (`zh-CN`), one-edit misspellings
   (`zh-Hanz`) and configured-primary-plus-region shapes (`en-us`) are errors.
+- **A catalogue page** — front matter `pageComponent: {name: Catalogue, data:
+  {path: 01.Guide}}` — shows the card grid of that directory instead of its
+  body. vdoing's `data.key` works as `data.path` does; `path` wins when both
+  are set.
 
 `examples/demo-site/` exercises all of it and is built by CI on every push,
 which makes it the executable specification rather than prose that can drift.
@@ -325,7 +329,11 @@ the navbar, which grows taller rather than spill over the page, and keeps
 the languages, search and mode on the row's end. With JavaScript the jump
 offset below follows the navbar's real height (`js/nav.js` measures it);
 without, it assumes one row, so keep the top level short and put the rest
-in a dropdown (`:items`). Every jump to a fragment — a link, the TOC, a
+in a dropdown (`:items`). A nav item's `:aria-label` (vdoing's
+`ariaLabel`; a string or a map by language) names its link, or its
+dropdown, for screen readers. vdoing's `navbar` switch, site-wide or in
+front matter (`navbar: false`), is deferred: every page shows the navbar,
+and a site that sets it in `site.edn` gets a warning. Every jump to a fragment — a link, the TOC, a
 fresh load of `…/#id` — and every focus move by Tab lands 0.75rem below the
 navbar (a `scroll-margin-top` on every element outside the navbar, so an
 `<a name>` target and `scrollIntoView()` too; with JavaScript the navbar's
@@ -387,7 +395,9 @@ reader's choice holds while they stay on the page, across resizes, but it
 is **not kept across pages**: each page starts as `:theme
 :sidebar-collapsed` says (default `false`; vdoing's `sidebarOpen`,
 inverted). The button needs JavaScript; without it the sidebar always
-shows. In the mobile drawer the sidebar always shows.
+shows. In the mobile drawer the sidebar always shows. Front matter
+`sidebar: false`, or vdoing's `showSidebar: false`, on an article's
+primary variant drops its sidebar altogether; the table of contents stays.
 
 **Page buttons.** On by default, as in vdoing (`pageButton`): an article
 or catalogue page with a previous or next page repeats those two links as
@@ -397,6 +407,15 @@ enough for them to cover nothing, and print never shows them. They are
 duplicates for the mouse: screen readers and the keyboard use the
 previous/next links at the end of the article. `:theme :page-button false`
 omits them.
+
+**Previous and next links.** Every article and catalogue page ends with
+links to the previous and next page: in its top directory's sidebar order,
+or, for a post, newer and older. `:theme :prev-links false` drops every
+previous link, and `:theme :next-links false` every next one (vdoing's
+`prevLinks` and `nextLinks`), with their page buttons. A page's own front
+matter wins over both: `prev: false` (or `next: false`) hides its link,
+`prev: true` shows the usual one, and a permalink or a `.md` path
+(`prev: /pages/a1b2c3/`) links that page instead.
 
 **Background patterns.** `:theme :content-bg-style` (vdoing's
 `contentBgStyle`) draws a faint pattern on the column of articles and

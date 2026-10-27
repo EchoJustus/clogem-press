@@ -319,12 +319,21 @@
       (string? pc) {:name pc :data {}}
       :else        nil)))
 
+(defn catalogue-path
+  "A Catalogue page's `data.path`, else its `data.key` — vdoing's
+  `data.path || data.key` (Catalogue.vue, release 0.3.0): a blank path is
+  no path. nil when it has neither."
+  [pc]
+  (or (u/blank->nil (str (get-in pc [:data :path])))
+      (u/blank->nil (str (get-in pc [:data :key])))))
+
 (defn catalogue-dir-key
-  "The dir-key a Catalogue page's `data.path` names: `01.Guide` → \"/01.Guide\",
+  "The dir-key a Catalogue page's `data.path` (or `data.key`,
+  `catalogue-path`) names: `01.Guide` → \"/01.Guide\",
   `01.Guide/10.Basics` → \"/01.Guide/10.Basics\" (D-P2-8: the numbered forms,
   exactly as the directories are spelled). nil when there is no path."
   [pc]
-  (when-let [path (u/blank->nil (str (get-in pc [:data :path])))]
+  (when-let [path (catalogue-path pc)]
     (str "/" (-> path (str/replace #"^[/\\]+|[/\\]+$" "") (str/replace #"\\" "/")))))
 
 

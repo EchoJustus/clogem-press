@@ -327,15 +327,20 @@
 
 (defn- neighbour
   "The prev or next link of an article page: front matter `false` hides it,
-  a permalink or `.md` path overrides the model's order, else
-  `model/neighbours`. The target is the reader's own variant when the
+  `true` is `model/neighbours`' and a permalink or `.md` path overrides the
+  model's order; without one, `:theme :prev-links` / `:next-links` false
+  (vdoing's prevLinks / nextLinks, release 0.3.0) hides it, else
+  `model/neighbours`. The page's own value wins whenever it is set, as in
+  vdoing's PageNav.vue. The target is the reader's own variant when the
   neighbour has one (model/best-variant)."
   [model lang variant group k pl]
   (let [fm-v (get-in variant [:front-matter k])
+        on?  (not (false? (get-in model [:cfg :theme (if (= :prev k) :prev-links :next-links)])))
         g    (cond
                (false? fm-v) nil
+               (true? fm-v)  (get-in model [:articles pl])
                (some? fm-v)  (resolve-target model (:rel-path variant) fm-v)
-               :else         (get-in model [:articles pl]))]
+               on?           (get-in model [:articles pl]))]
     (when g
       (let [vl (model/best-variant g lang)]
         {:href  (model/variant-url (:cfg model) g vl)
@@ -357,13 +362,13 @@
             nil)
 
         (nil? (model/catalogue-dir-key pc))
-        (do (diag/warn! from-path "pageComponent Catalogue has no data.path; rendering the body instead.")
+        (do (diag/warn! from-path "pageComponent Catalogue has no data.path (or data.key); rendering the body instead.")
             nil)
 
         :else
         (or (model/find-dir (:tree model) (model/catalogue-dir-key pc))
             (do (diag/warn! from-path
-                            (str "pageComponent Catalogue path `" (get-in pc [:data :path])
+                            (str "pageComponent Catalogue path `" (model/catalogue-path pc)
                                  "` is not a directory in the content tree; rendering the body instead.")
                             "Use the numbered directory names exactly, e.g. `01.Guide/10.Basics`.")
                 nil))))))
