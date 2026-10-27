@@ -585,10 +585,13 @@
   (testing "known-keys is data: a later task adds a key there and the
             warning goes away"
     (is (= :ok (get-in config/known-keys [[:theme] :page-style])))
-    ;; P4-E1a (deliberate): :blogger is :ok now; Task G's key stays planned
-    (is (= :planned (get-in config/known-keys [[:search] :cross-language])))
-    (with-redefs [config/known-keys (assoc-in config/known-keys [[:search] :cross-language] :ok)]
-      (is (= [] (warning-messages {:search {:provider :none :cross-language true}}))))))
+    ;; Task G: a SYNTHETIC key, so this test no longer depends on which real
+    ;; key is still planned (:cross-language became :ok in G)
+    (with-redefs [config/known-keys (assoc-in config/known-keys [[:search] :zz-test] :planned)]
+      (is (= [":search :zz-test is planned, not implemented in 0.2.0; it has no effect."]
+             (warning-messages {:search {:provider :none :zz-test true}}))))
+    (with-redefs [config/known-keys (assoc-in config/known-keys [[:search] :zz-test] :ok)]
+      (is (= [] (warning-messages {:search {:provider :none :zz-test true}}))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Fix round P4-A.1: config checks

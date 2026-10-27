@@ -285,6 +285,23 @@ every surface, which `bb test` checks against `theme.css` — and links inside
 prose are underlined. Pagefind's search dialog and giscus follow the mode;
 printing uses the light palette and drops the chrome.
 
+**Cross-language search.** Search looks in the page's own language. With
+`:search {:cross-language true}` (off by default) the search dialog also
+offers a *Search all languages* checkbox, unticked for each reader until
+they tick it: then the site's other languages are searched too, ranked
+below the page's own, and a *Language* filter narrows the results to one
+language. The choice is remembered in `localStorage` (`clogem-search-all`),
+and no other language's index is downloaded until the box is ticked. A
+page whose own language has no indexed pages yet shows no checkbox: there
+Pagefind searches its largest index, as it already does. Each language's
+pages are matched with that language's word segmentation, but the query is
+stemmed by the page's language (DESIGN.md §6.7): a Tamil page searches the
+English pages with the Tamil stemmer, and a Malay page, which has none,
+stems nothing. If another language's index cannot be loaded, that page
+searches its own language, unticked, and the choice stays stored for the
+next page. `--no-search` drops it with the rest of search, and print
+hides it.
+
 **Page styles.** `:theme :page-style` is vdoing's `pageStyle`. `:card` (the
 default) draws the main column of every page, the sidebar, and the home page's
 right-bar sections and post cards as cards — the card colour, a small radius
@@ -626,6 +643,10 @@ Pagefind needs `worker-src 'self'` and `'wasm-unsafe-eval'` (DESIGN.md §6.8,
 `<script type="application/json">` data block, which CSP does not govern;
 `js/code.js` and `js/nav.js` (the drawer) are same-origin files. A policy without the hash still gets the
 reader's mode: `js/mode.js` (same-origin) applies it, one frame late.
+Cross-language search adds no inline script either: `js/search-all.js` is
+same-origin, and its merges fetch only the site's own `pagefind/` bundle,
+so they need nothing beyond what Pagefind already needs (`worker-src
+'self'`, `'wasm-unsafe-eval'`).
 The blog identity adds no inline script: `js/bodybg.js`, which rotates
 several background images, is same-origin. A `bannerBg: "background: …"`
 banner is a `style` attribute, which a policy that restricts styles must
@@ -660,11 +681,11 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
 
 | Language | Address | Built file | Size |
 | --- | --- | --- | --- |
-| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 34,804 bytes |
-| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 36,181 bytes |
-| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 36,066 bytes |
-| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 35,733 bytes |
-| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 35,856 bytes |
+| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 34,880 bytes |
+| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 36,259 bytes |
+| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 36,144 bytes |
+| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 35,820 bytes |
+| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 35,936 bytes |
 
 - **The words** are `support/i18n/<tag>.edn`, one file per language:
   `en.edn` (English, which was `support/page.edn`), `zh-Hant.edn`,
@@ -768,7 +789,7 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
   is written in `support/support_page.clj` (`copyright-holder`), not in the
   words, so no translation changes it.
 - **The built pages** go to `dist-support/` (ignored): built HTML is never
-  committed. They are **178,640 bytes** in all; each page is within the
+  committed. They are **179,039 bytes** in all; each page is within the
   64 KB budget `bb test` holds it to.
 - **Publishing:** `.github/workflows/support-page.yml`, on pushes to `main`
   that touch `support/`, its test, the workflow or `bb.edn`, and by hand
@@ -801,7 +822,10 @@ the key):
    `privacy` section; the four translations mirror it fact for fact, and
    change when it changes) before the first publication: once the secret
    is set, the next push to `main` that touches the page publishes it.
-   The owner approved it on 2026-10-26, and each file marks it so.
+   The owner approved it on 2026-10-26, and each file marks it so. Task G's
+   clause about cross-language search (`clogem-search-all`, the fourth
+   thing a site may keep) was approved on 2026-10-26 too (CHANGELOG,
+   *Approved by the owner (G)*).
 
 **When it's live:** the hub's own session adds the link on its front page's
 clogem-press card and a row in its README's table. Nothing in this
@@ -810,7 +834,7 @@ repository does that.
 ## Development
 
 ```bash
-bb test                                             # 849 tests / ~59,300 assertions
+bb test                                             # 870 tests / ~60,000 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 

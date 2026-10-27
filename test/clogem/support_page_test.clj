@@ -1007,7 +1007,12 @@
    "clogem-lang"             {"en" "the language they chose" "zh-Hans" "选择的语言" "zh-Hant" "選擇的語言"
                               "pt-BR" "o idioma escolhido" "es-ES" "el idioma elegido"}
    "clogem-banner-dismissed" {"en" "language banners they dismissed" "zh-Hans" "关闭了哪些" "zh-Hant" "關閉了哪些"
-                              "pt-BR" "o leitor fechou" "es-ES" "ha cerrado el lector"}})
+                              "pt-BR" "o leitor fechou" "es-ES" "ha cerrado el lector"}
+   ;; Task G: the cross-language search checkbox (D-P4-17)
+   "clogem-search-all"       {"en" "whether they chose to search all languages"
+                              "zh-Hans" "是否选择搜索所有语言" "zh-Hant" "是否選擇搜尋所有語言"
+                              "pt-BR" "se escolheu pesquisar em todos os idiomas"
+                              "es-ES" "si ha elegido buscar en todos los idiomas"}})
 
 (defn- theme-storage-keys
   "Every localStorage key the theme names: written as
@@ -1025,7 +1030,7 @@
 
 (deftest the-privacy-note-names-every-stored-key
   ;; it said the mode and the language, not the dismissed banners (SP.4 item 4)
-  (is (= #{"clogem-mode" "clogem-lang" "clogem-banner-dismissed"} (theme-storage-keys))
+  (is (= #{"clogem-mode" "clogem-lang" "clogem-banner-dismissed" "clogem-search-all"} (theme-storage-keys))
       "the scan finds the keys known today")
   (doseq [k (theme-storage-keys)]
     (is (contains? storage-words k) (str k ": a key the privacy note doesn't cover yet; say it in all five, then here")))
@@ -1066,13 +1071,15 @@
 (deftest the-privacy-note-keeps-to-what-clogem-press-stores
   ;; it said a site keeps three things "and only there", but giscus and GA4,
   ;; when turned on, store their own (SP.5 item 3)
-  (doseq [[l own others] [["en" "Of its own, a site keeps three things in its reader's browser"
+  ;; Task G: "three things" became "up to four", the fourth being the
+  ;; cross-language search choice, on a site that offers it
+  (doseq [[l own others] [["en" "Of its own, a site keeps up to four things in its reader's browser"
                            "giscus comments and analytics, when its owner turns them on, keep their own data under their own terms"]
-                          ["zh-Hans" "网站本身会在读者的浏览器中保存三样东西" "giscus 评论和统计分析如果由网站所有者开启，会按照各自的条款保存它们自己的数据"]
-                          ["zh-Hant" "網站本身會在讀者的瀏覽器中儲存三樣東西" "giscus 留言和流量分析如果由網站擁有者開啟，會依照各自的條款儲存它們自己的資料"]
-                          ["pt-BR" "Por conta própria, um site guarda três coisas no navegador do leitor"
+                          ["zh-Hans" "网站本身最多会在读者的浏览器中保存四样东西" "giscus 评论和统计分析如果由网站所有者开启，会按照各自的条款保存它们自己的数据"]
+                          ["zh-Hant" "網站本身最多會在讀者的瀏覽器中儲存四樣東西" "giscus 留言和流量分析如果由網站擁有者開啟，會依照各自的條款儲存它們自己的資料"]
+                          ["pt-BR" "Por conta própria, um site guarda até quatro coisas no navegador do leitor"
                            "os comentários do giscus e a análise, quando o dono os ativa, guardam os próprios dados, sob os próprios termos"]
-                          ["es-ES" "Por sí mismo, un sitio guarda tres cosas en el navegador del lector"
+                          ["es-ES" "Por sí mismo, un sitio guarda hasta cuatro cosas en el navegador del lector"
                            "los comentarios de giscus y la analítica, cuando su propietario los activa, guardan sus propios datos según sus propias condiciones"]]
           :let [text (body-text (str (section-html (html l) "privacy")))]]
     (is (str/includes? text own) l)
