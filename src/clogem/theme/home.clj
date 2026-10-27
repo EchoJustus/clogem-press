@@ -21,6 +21,7 @@
             [clogem.model :as model]
             [clogem.theme.identity :as identity]
             [clogem.theme.layout :as layout]
+            [clogem.theme.modules :as modules]
             [clogem.theme.parity :as parity]
             [clogem.util :as u]))
 
@@ -116,7 +117,9 @@
       (into [:ul.clogem-bar]
             (for [[t ids] (:tags model)]
               [:li [:a {:href (layout/href ctx (layout/index-href ctx :tags t))} (str t)]
-               [:span.clogem-bar__count (count ids)]]))])])
+               [:span.clogem-bar__count (count ids)]]))])
+   ;; P4-E1b: vdoing's homeSidebarB, the right bar's last box
+   (modules/module ctx :home-sidebar-b :section)])
 
 (defn home
   "`ctx` carries :home-fm, :body (hiccup or nil), :ids (this page's slice),

@@ -13,7 +13,8 @@
   the blogger's name and slogan, a link's title — except where D-P4-13
   trusts the owner's raw HTML: the footer's `:copyright-info` (`raw-html`)
   and a `bannerBg` of the form `background: …`, which is the banner's
-  `style` attribute."
+  `style` attribute. `raw-html` also serves the htmlModules slots and
+  `:head-extra` (P4-E1b, `clogem.theme.modules`)."
   (:require [cheshire.core :as json]
             [clojure.string :as str]
             [hiccup2.core :as h]

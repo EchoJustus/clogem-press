@@ -110,4 +110,8 @@
  ;; Awaiting native review (CHANGELOG, Unreleased, "Needs native review (E1a)").
  :blogger/label               "Tentang penulis"
  :social/label                "Pautan sosial"
- :footer/powered-by           "Dikuasakan oleh {{name}}"}
+ :footer/powered-by           "Dikuasakan oleh {{name}}"
+
+ ;; Phase 4 Task E1b: the htmlModules windows' close button.
+ ;; Awaiting native review (CHANGELOG, Unreleased, "Needs native review (E1b)").
+ :window/close                "Tutup"}

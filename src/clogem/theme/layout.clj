@@ -25,6 +25,9 @@
             [clogem.seo :as seo]
             [clogem.theme.icons :as icons]
             [clogem.theme.identity :as identity]
+            ;; P4-E1b: the htmlModules slots. `clogem.theme.modules` never
+            ;; requires this namespace, so the dependency is one-way
+            [clogem.theme.modules :as modules]
             [clogem.util :as u]))
 
 ;; ---------------------------------------------------------------------------
@@ -610,10 +613,13 @@
   [{:keys [cfg group] :as ctx}]
   (when-let [node (sidebar-node-of ctx)]
     [:aside#clogem-sidebar.clogem-sidebar
+     ;; P4-E1b: vdoing's sidebarT and sidebarB, around the tree
+     (modules/module ctx :sidebar-t)
      [:nav {:aria-label (i18n/tr ctx :page/sidebar)}
       (sidebar-node ctx node
                     (not (false? (get-in cfg [:theme :sidebar-open])))
-                    (ancestors-of (:dir-key group)))]]))
+                    (ancestors-of (:dir-key group)))]
+     (modules/module ctx :sidebar-b)]))
 
 (defn sidebar-toggle
   "P4-B2b: the sidebar's collapse button (vdoing's sidebar button), on a
@@ -1182,6 +1188,9 @@
          ;; which on `ms` is what creates the modal this augments
          (when (search-merge-data ctx)
            [:script {:src (asset-href ctx "js/search-all.js") :defer true}])))
+      ;; P4-E1b: `:head-extra` as written, and js/window.js on a page with
+      ;; a window — after Pagefind's tags, before the site's own stylesheet
+      (modules/head ctx)
       ;; D-P4-8: the site's own stylesheet, LAST, after Pagefind's — so a
       ;; rule of the same specificity overrides anything above it
       (when (assets/version cfg assets/custom-css)
@@ -1210,6 +1219,8 @@
          (into body)
          ;; P4-E1a: the background image, fixed behind the page
          (conj (identity/body-bg ctx))
+         ;; P4-E1b: vdoing's windowLB and windowRB, before back to top
+         (into (modules/windows ctx))
          ;; every page built here has the navbar; outside it, which is the
          ;; containing block of anything fixed inside it
          (conj (back-to-top ctx)))]))

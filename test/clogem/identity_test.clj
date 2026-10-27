@@ -268,8 +268,13 @@
       "the footer, the badge and the banner are in theme.css")
   (doseq [theme [{:blogger {:name "J"}}
                  {:social {:icons [{:icon :github :title "G" :link "https://g.example"}]}}
-                 {:body-bg-img "/a.png"}]]
+                 {:body-bg-img "/a.png"}
+                 ;; P4-E1b: a wrapped htmlModules slot
+                 {:html-modules {:page-t "<p>x</p>"}}]]
     (is (true? (config/identity-css? (first (load-site {:theme theme})))) (pr-str theme)))
+  (testing "P4-E1b: :head-extra alone is never wrapped, and a blank slot is unset"
+    (is (false? (config/identity-css? (first (load-site {:theme {:html-modules {:head-extra "<meta name=a>"
+                                                                                 :page-b {:en ""}}}}))))))
   (testing "a dropped value does not count"
     (is (false? (config/identity-css? (first (load-site {:theme {:blogger "me" :social []}})))))))
 
@@ -377,7 +382,9 @@
       (is (not (re-find #"#[0-9a-fA-F]{3,8}\b" (str/replace css #"(?s)/\*.*?\*/" ""))) "no colour literal")
       (let [print-rules (filter #(= ["print"] (:media %)) (cp/parse css))
             hidden (set (mapcat :selectors (filter #(some (fn [[p v]] (and (= "display" p) (str/starts-with? v "none"))) (:decls %)) print-rules)))]
-        (is (= #{".clogem-blogger" ".clogem-social" ".clogem-body-bg"} hidden))))))
+        ;; P4-E1b (deliberate): every module and window prints nothing
+        (is (= #{".clogem-blogger" ".clogem-social" ".clogem-body-bg"
+                 ".clogem-module" ".clogem-window"} hidden))))))
 
 (deftest the-hero-colour-pairs
   (let [css (slurp theme-css)
@@ -532,7 +539,7 @@
             of (fn [sel] (into {} (for [r rules :when (and (= q (:media r)) (some #{sel} (:selectors r))) [p v] (:decls r)] [p v])))]
         (is (= "block" ((of "#clogem-drawer > .clogem-blogger[hidden]") "display")))
         (is (= "none" ((of ".clogem-blogger--paired") "display")))
-        (is (not-any? #(and (empty? (:media %)) (some (fn [s] (str/includes? s "[hidden]")) (:selectors %))) rules)
+        (is (not-any? #(and (empty? (:media %)) (some (fn [s] (re-find #"clogem-blogger[^ ]*\[hidden\]" s)) (:selectors %))) rules)
             "nowhere else is the hidden card given a display")))))
 
 (deftest no-card-without-a-blogger

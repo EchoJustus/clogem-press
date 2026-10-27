@@ -44,6 +44,8 @@
     clogem.identity-test
     ;; Phase 4 Task G
     clogem.search-all-test
+    ;; Phase 4 Task E1b
+    clogem.modules-test
     ;; The support page (support/, DESIGN.md §7.5)
     clogem.support-page-test
     ;; Phase 4's follow-ups

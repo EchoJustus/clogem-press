@@ -14,7 +14,8 @@ article-page parity (§11.3 item 16, D-P4-13), then Task E1a — the blog
 identity and the home banner (the first half of §11.3 item 13, D-P4-13),
 then Task G — cross-language search (§11.3 item 17, D-P4-17, D-P4-18),
 then the Phase 4 follow-ups — Task D's known issues and smaller items, and
-what the E1a and E2 checks left.
+what the E1a and E2 checks left,
+then Task E1b — htmlModules (the second half of §11.3 item 13, D-P4-13).
 The version stays 0.2.0. Every article page now ends with an update bar
 by default, as in vdoing (`:theme :update-bar {:show-to-article false}`
 drops it), an article's `titleTag` badge now shows in every list row, and
@@ -31,6 +32,9 @@ gets it, and title badges appear by default, as in vdoing. And a site that
 set `:search :cross-language true` (0.2.0 warned that it was planned and
 had no effect) now gets a "Search all languages" checkbox in its search
 dialog, off for each reader until they tick it.
+A site that set `:theme :html-modules` now gets its HTML injected, in the
+seven vdoing slots and in clogem-press's own `:head-extra`; it used to warn
+that the key had "no effect".
 
 **Support page** (DESIGN.md §7.5): clogem-press's page on the Clogem
 support site, https://echojustus.github.io/clogem-support/clogem-press/,
@@ -357,6 +361,257 @@ after publication, and whenever `en.edn` changes:
 
 Once it is live, the hub's own session links it from the front page's
 clogem-press card and its README's table.
+
+**Task E1b — htmlModules** (§11.3 item 13, second half; D-P4-13):
+
+### Added (E1b)
+
+- **Config** (`clogem.config/check-html-modules!`): `:theme :html-modules`
+  is read. A slot — vdoing's `:home-sidebar-b`, `:sidebar-t`, `:sidebar-b`,
+  `:page-t`, `:page-b`, `:window-lb` and `:window-rb`, plus clogem-press's
+  own `:head-extra` (DESIGN.md §5.3) — is a string of HTML, or a map of
+  language keyword to string; `""` is valid and quiet, and suppresses the
+  slot in that language. A show-mode (`:page-t-show-mode`,
+  `:page-b-show-mode`) is `:all` (the default), `:article` or `:custom`,
+  written as a keyword or as a string (vdoing's `"article"` and `"custom"`,
+  or `"all"`), and is stored as a keyword. `:head-extra` must be head
+  content, read in order: whitespace, comments, whole `<script>`,
+  `<style>`, `<noscript>` and `<template>` blocks, and `<link>` and
+  `<meta>` tags, whose quoted values may hold a `>`. Anything else — a
+  `<div>`, an `<img>`, an end tag, bare text, a comment, block or tag that
+  never closes, and also a `<title>` or a `<base>` (a second title; every
+  `#fragment` link retargeted) — warns, naming the first bad piece as
+  written, and that value is dropped.
+  Every other problem is a warning too, and the check repairs the config —
+  it removes a bad slot, uses `:all` for a bad show-mode, and removes
+  `:html-modules` entirely when it is not a map — so the renderers read
+  valid values only. The 10 keys are known keys (a slot's per-language map
+  is user data and is not walked), and vdoing's `homeSidebarB`, `sidebarT`,
+  `sidebarB`, `pageT`, `pageB`, `pageTshowMode`, `pageBshowMode`,
+  `windowLB` and `windowRB` warn with the kebab spelling, at any path.
+  New accessors: `module-slots`, `html-module`, `show-mode`, `module-set?`
+  and `windows?`.
+- **The slots** (`clogem.theme.modules`, a new namespace that requires
+  `clogem.theme.identity` for `raw-html` and never `clogem.theme.layout`).
+  Each is wrapped in `<div class="clogem-module clogem-module--<slot>">` —
+  a `<section>` for `home-sidebar-b`, so the home's box rules apply — which
+  carries `data-pagefind-ignore="all"` while search is on, so a module
+  never lands in a search result. Where each goes: `home-sidebar-b` is the
+  last box of the home's right bar (so none under `hideRightBar: true`);
+  `sidebar-t` and `sidebar-b` sit inside `aside.clogem-sidebar`, around its
+  `<nav>`, which carries them into the mobile drawer and lets a collapse
+  hide them, and render only where a tree does; `page-t` is above
+  `.clogem-content` on an article and after the card grid, inside the
+  article, on a catalogue; `page-b` is right after `</article>`, above the
+  edit link. The page slots never render on the home, an index or
+  pagination page, the archives or the 404 page. Per-language values follow
+  the fallback chain by `contains?` (so zh-Hant does not pass through
+  zh-Hans), and `{{base}}` becomes the encoded base.
+- **The show-modes**: `:all` shows on every article and catalogue page,
+  `:article` only where the page is an article, `:custom` only on the
+  others. clogem-press reads its own `:article?`, so a catalogue page
+  counts as custom; vdoing reads `article !== false` alone, and its
+  generated catalogues carry `article: false`, as the demo's do, so the two
+  agree on those. README says so.
+- **`:head-extra`**: the page language's HTML, as written — unwrapped, with
+  no Pagefind attribute — in every `document` page's `<head>`, after
+  Pagefind's tags and before `overrides/custom.css`, which stays the last
+  stylesheet (the analytics loader stays the last child of `<head>`). It is
+  on the 404 page too, and never on a redirect stub.
+- **The windows** (vdoing's `windowLB` and `windowRB`):
+  `div.clogem-window--lb` and `--rb`, rendered just before back to top,
+  which stays the last child of `<body>`; none on the 404 page. Each holds
+  a close button (the `x` icon, `:window/close`) that is `hidden` until
+  `js/window.js` reveals it; a click hides that window for that page load
+  only, and moves focus to `<body>` if the button had it. The script is
+  deferred, same-origin, 358 B gzipped (budget 400), linked only on a page
+  that renders a window and shipped only while `config/windows?` holds.
+- **CSS** (`css/identity.css`, +438 B gzipped; `theme.css` unchanged): a
+  wrapper is `min-width: 0; max-width: 100%; overflow-x: auto` with
+  0.25rem of padding, which keeps a focus ring out of the clip; the sidebar
+  slots are 0.85rem with a 1rem gap to the tree, by their own class, so
+  nothing depends on where the aside sits; the page slots have a 1rem block
+  margin. A window is `position: fixed; bottom: 0; z-index: 5`, at most
+  200 px wide, its module at most `min(400px, calc(50vh - 2.5rem))` tall
+  and scrolling; `lb` is at `left: 0` and `rb` at `right: 4.7rem`, which
+  clears back to top; there are none at 60rem and below. Print hides every
+  module and every window. `identity.css` is now linked and shipped for any
+  slot other than `:head-extra` as well.
+- **Strings**: `:window/close` in all five languages.
+
+### Changed (E1b)
+
+- `:theme :html-modules` no longer warns ":theme :html-modules has no
+  effect in 0.2.0; nothing is injected.", and `htmlModules` is no longer
+  one of the `:planned` vdoing spellings: **a site that set any slot now
+  gets that HTML injected.** A value that is not a map (0.2.0 accepted
+  `false`, `:none`, `true` and `0`) now warns with the shape it must have
+  instead, and `nil` and `{}` stay quiet, as before.
+- `config.example.edn` documents every slot, both show-modes, the
+  per-language maps and `""`, `{{base}}`, the trust ("injected as written")
+  and the head-only rule.
+
+### Tests (E1b)
+
+- New `test/clogem/modules_test.clj` (30 tests): one per config rule, the
+  8 slots and both show-mode spellings quiet, the vdoing spellings and the
+  unknown-key warnings, the accessors; the placement of every slot on the
+  home (with and without `hideRightBar`, and `/page/2/`), an article with a
+  tree, a post without one, a catalogue, an `article: false` page, the
+  index, category, tag and archive pages and `404.html`; the 3 × 3
+  show-mode matrix in both spellings; `""`, the fallback chain and
+  `{{base}}` under `:site :base "/my docs/"`; `data-pagefind-ignore="all"`
+  on every wrapper with search on and no `data-pagefind-` at all without
+  it; `:head-extra`'s place between Pagefind and `custom.css`, in the
+  page's own language, on the 404 page, and on none of the 21 redirect
+  stubs an `:i18n :prefix-default? true` build makes, which carry no
+  module or window either; the windows right before back to top (and
+  ending `<body>` under `:back-to-top false`), none on the 404 page,
+  `window.js` linked per language and shipped only with a window, and its
+  400 B budget printed. With `CLOGEM_PAGEFIND`: a word that only `page-t`
+  carries, on an article and a catalogue, is in no fragment, while the
+  article's own words are.
+- New `test/browser/modules.test.mjs` (77 checks): a temp demo copy with
+  every slot set, built `--no-search --no-highlight` and served through
+  `page.route`. No page overflow at 320 and 360 px with a 480 px element in
+  `page-t`, `sidebar-t` and `home-sidebar-b`, each wrapper scrolling
+  instead; the open drawer drawing `sidebar-t` before the tree; a
+  keyboard-focused link at a wrapper's edge keeping its whole ring inside
+  it; both windows clearing back to top and the page buttons at 1280×800,
+  1344×740, 1440×740 and 1600×740; no client rects at 960 px and rects at
+  961; Enter on a close button reached by Tab hiding that window, keeping
+  the other and leaving focus on `<body>`; no close button and both windows
+  without JS; print drawing neither a module nor a window.
+- Deliberate pin changes. `config_test`: `the-pre-flight-keys-all-warn`
+  loses the `:html-modules` "no effect" message and counts 3 warnings, not
+  4; `vdoing-spellings-name-the-clogem-key` has `htmlModules` no longer
+  planned (still 8 warnings); `a-scalar-html-modules-warns-and-never-
+  crashes` expects the new not-a-map message. `identity_test`:
+  `identity-css-only-when-something-needs-it` gains a module case (true)
+  and a `:head-extra`-only case (false); the print block of `identity.css`
+  now hides `.clogem-module` and `.clogem-window` as well; and
+  `the-drawer-card`'s "nowhere else is the hidden card given a display" now
+  looks at the blogger card's own `[hidden]` selectors, since
+  `.clogem-window__close[hidden]` is a second one. The example config, the
+  demo's `site.edn` and `{:html-modules {}}` stay quiet, and the pins on
+  `clogem-sidebar`, back to top, the analytics loader and `custom.css`
+  being last are unchanged.
+
+### Fixed (E1b.1)
+
+- **`:head-extra`'s head-only check reads the value in order** (items
+  1–4). It stripped comments, then `<script>`, `<style>`, `<noscript>`
+  and `<template>` blocks, then `<link>` and `<meta>` tags, and looked at
+  what was left, which went wrong four ways: a quoted `>` ended a tag, so
+  `<meta name="description" content="a > b">` warned about text `b">` and
+  was dropped; a `<!--` in a script swallowed the rest, so
+  `<script>var s = '<!--';</script><div>leak</div>` passed; `\b` matched
+  before a `-`, so `<meta-data foo>` passed as a `<meta>`; and `<link
+  rel=a></link>` warned that it "has <link>, but it must be head content
+  only — <link>, …", the `/` dropped. Now one scan takes, at each
+  position, whitespace, a whole comment, a whole block (its end tag in any
+  case, spaces allowed before the `>`), or a `<link>` or `<meta>` tag whose
+  name ends at whitespace, `/` or `>` and whose quoted values may hold a
+  `>`. The first anything else is named as written — `</link>`,
+  `<meta-data>`, `<TITLE>`, text "…" — and that value is dropped, as
+  before. A comment, block or tag that never closes would swallow the rest
+  of `<head>`, so it now warns too ("an unclosed <script>"); the check is
+  new in E1b, so nothing on `main` relies on it
+  (`a-quoted-gt-stays-inside-its-tag`,
+  `a-comment-opener-in-a-script-hides-nothing`,
+  `a-meta-or-link-custom-element-is-not-head-content`,
+  `a-closing-tag-is-named-with-its-slash`). `head-extra-is-head-content-only`
+  also accepts `<LINK>`, self-closing tags, `<script>var x = '</div>';</script>`,
+  `<Script>x</sCrIpT >`, `<noscript><link></noscript>` and
+  `<template><body></template>`, and, a deliberate pin change, names
+  `<TITLE>` as written rather than as `<title>`.
+- **The redirect-stub assertion tests something** (item 5). "A redirect
+  stub has neither" looped over the demo's pages without a navbar, and the
+  demo makes no stub, so it ran zero times. The new
+  `a-redirect-stub-has-no-head-extra-module-or-window` builds the demo
+  with every slot and `:i18n :prefix-default? true`, requires more than 10
+  stubs (it makes 21), and checks that none has `:head-extra`, a module, a
+  window or `window.js`, while the article each one redirects to has all
+  four.
+- **`js/window.js` has room to change** (item 6): 358 B gzipped, from 397
+  of its 400 B budget, so a one-line edit no longer broke it. Its inline
+  comment is gone; the two-line header stays, and the budget is unchanged.
+
+### Fixed (E1b.2)
+
+An adversarial probe checked `:head-extra`'s scan against parse5 7.1.2, an
+HTML parser to the spec, with scripting on and off.
+
+- **A long value no longer crashes the config check** (item 1). The text
+  pattern, `(?:[^<]|<(?!…))*`, recursed once per character, so a value of
+  ~8,000 characters without a `<` threw `StackOverflowError` out of
+  `check-html-modules!`. Every repetition in the scan is now possessive
+  (or a lazy `.*?`), which Java runs as a loop, and the whole value is read
+  by one regex: 1–2 MB of text, `<meta>` tags, comments, attributes, a
+  quoted value, a script, a style or a template body each take under
+  350 ms here, and 20,000 characters of text warn like any text
+  (`a-long-value-never-overflows-the-stack`).
+- **An `=` where an attribute name may start begins a name** (item 2), as
+  in HTML's attribute states, so `<meta ="><div>">`, `<meta name="x"
+  ="><div>">`, `<meta a="b"="><div>">`, `<meta a=b ="><div>">` and
+  `<meta/="><div>">` end at their first `>` and name `<div>`; they passed.
+  An end tag's attributes are read the same way, so
+  `<script></script x="><div>">` passes, as in a browser, and
+  `<script></script x="><meta>`, whose quote never closes, warns
+  (`an-equals-sign-where-a-name-may-start-begins-a-name`).
+- **A double-escaped script is left open** (item 3). In a script, `<!--`
+  escapes it and a later `<script` double-escapes it, and then a
+  `</script>` does not end it, so `<script><!-- x="<script>"; </script>`
+  swallowed the page and passed. The scan now follows the script's
+  escaped and double-escaped states, and that value warns as "an unclosed
+  <script> (after "<!--" and "<script", HTML does not end it at
+  "</script>")"; `<script><!--<script>--></script>` and
+  `<script><!-- document.write("<script></script>"); --></script>` pass,
+  the latter newly (`a-double-escaped-script-never-ends-at-its-end-tag`).
+- **A `<template>` is read as HTML** (item 4). It was raw text to its first
+  `</template>`, so `<template><template></template><meta x>` and
+  `<template><!--</template><!-- -->` passed though the outer template
+  never closes. Its content is now read as tags (whose quoted values, and
+  comments, may hold `</template>`) and comments; another `<template>`, an
+  element whose content is not HTML (`<script>`, `<style>`, `<title>`,
+  `<textarea>`, …) or a `<!…>`/`<?…>` in it warns
+  (`a-template-holds-html-but-not-a-template`). A `<noscript>` is still
+  read as a browser with scripting on reads it; README and
+  `config.example.edn` say that with scripting off body content in one
+  (an `<img>` pixel) ends `<head>` there, and that double-escaped scripts
+  warn.
+- **Text that does not show is named readably** (item 5): a value of only
+  U+000B was named `text ""`, since `str/trim` removed it; a control,
+  format or separator character other than a space is now written
+  `\uXXXX`, as in `text "\u000b"` or `text "﻿"`, and only HTML
+  whitespace is trimmed (`text-that-does-not-show-is-named-escaped`).
+- **The probe's cases are a regression set**
+  (`the-probe-cases-agree-with-a-browser`): its 76 cases and 61 more, each
+  with parse5's verdict, pass or warn as a browser has them, except 10
+  that a browser reads safely and the scan still rejects, erring toward
+  caution (an end tag such as `</meta>`, a `<!DOCTYPE>`, `<![CDATA[`, `<?`,
+  and a `<template>` holding a `<template>`, `<script>`, `<style>` or
+  `<!DOCTYPE>`). Each new test fails on E1b.1's scan.
+
+### Needs native review (E1b)
+
+- `:window/close`: ms "Tutup", ta "மூடு".
+### Merged with Task G (E1b)
+
+`main` with Task G (#19) merged in. Five spots held both tasks' lines, and
+each keeps both: this file's intro and blocks (G's sentence first, then
+E1b's; E1b's block above G's), README's test count (re-measured), the
+`skip?` entries in `assets.clj` (`js/window.js`, then G's two files), the
+test runner's namespaces (G's, then E1b's), and the end of `document`'s
+Pagefind block in `layout.clj`: G's `js/search-all.js` tag closes the
+block, then `(modules/head ctx)` follows, so the head runs Pagefind's
+tags, `search-all.js`, `:head-extra`, `window.js`, then `custom.css`.
+Together: 906 tests, 0 failures.
+
+Then `main` with the Phase 4 follow-ups (#20): only this file's intro and
+block order held both (the follow-ups' sentence before E1b's; E1b's block
+above theirs), and README's count is re-measured. Together: 921 tests, 0
+failures.
 
 **Phase 4 follow-ups** (before 0.3.0: Task D's known issues and smaller
 items, and what the E1a and E2 checks left; tests in

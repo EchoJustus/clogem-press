@@ -96,4 +96,7 @@
  ;; the footer's credit, {{name}} being the generator's linked name.
  :blogger/label               "关于作者"
  :social/label                "社交链接"
- :footer/powered-by           "由 {{name}} 驱动"}
+ :footer/powered-by           "由 {{name}} 驱动"
+
+ ;; Phase 4 Task E1b: the htmlModules windows' close button.
+ :window/close                "关闭"}

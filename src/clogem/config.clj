@@ -459,8 +459,8 @@
   A path segment `:*` matches any key — `[:langs :locales :*]` is every
   locale's map. A map whose path has NO entry here holds user data rather
   than options (`:langs :locales` itself, `:i18n :category-labels`,
-  `:content :extend-frontmatter`, `:theme :html-modules`, a `:sha256` map)
-  and its keys are not checked.
+  `:content :extend-frontmatter`, an htmlModules slot's per-language map,
+  a `:sha256` map) and its keys are not checked.
 
   An unknown key is a WARNING, never an error (`check-keys!`): it names the
   path and suggests the nearest known key. **A change that makes the
@@ -489,7 +489,7 @@
                            :static-dir :ok}
    [:theme]               {:default-mode :ok :page-style :ok :sidebar-open :ok :sidebar-depth :ok
                            :per-page :ok :fonts :ok
-                           ;; read, but a non-empty value has no effect yet (check-no-effect!)
+                           ;; Phase 4 Task E1b (check-html-modules!)
                            :html-modules :ok
                            ;; Phase 4 Task E1 (`check-identity!`)
                            :blogger :ok :social :ok :footer :ok :banner-bg :ok
@@ -511,6 +511,11 @@
    ;; Phase 4 Task E2 (§11.3 item 16, D-P4-13): `check-article-parity!`
    [:content :edit-link]  {:repo :ok :branch :ok :dir :ok}
    [:theme :update-bar]   {:show-to-article :ok :more-article :ok}
+   ;; Phase 4 Task E1b (D-P4-13): the slots; a slot's per-language map is
+   ;; user data, not walked (no `:*` entry)
+   [:theme :html-modules] {:head-extra :ok :home-sidebar-b :ok :sidebar-t :ok :sidebar-b :ok
+                           :page-t :ok :page-b :ok :page-t-show-mode :ok :page-b-show-mode :ok
+                           :window-lb :ok :window-rb :ok}
    [:highlight]           {:provider :ok :line-numbers :ok :copy-button :ok :style :ok :dark-style :ok}
    [:search]              {:provider :ok
                            ;; Phase 4 Task G (§11.3 item 17, D-P4-17)
@@ -592,7 +597,17 @@
    "author"                  [[:site :author] :ok]
    "nav"                     [[:nav] :ok]
    "search"                  [[:search :provider] :ok]
-   "htmlModules"             [[:theme :html-modules] :planned]
+   "htmlModules"             [[:theme :html-modules] :ok]
+   ;; P4-E1b: vdoing's slot names (types/index.ts), inside htmlModules
+   "homeSidebarB"            [[:theme :html-modules :home-sidebar-b] :ok]
+   "sidebarT"                [[:theme :html-modules :sidebar-t] :ok]
+   "sidebarB"                [[:theme :html-modules :sidebar-b] :ok]
+   "pageT"                   [[:theme :html-modules :page-t] :ok]
+   "pageB"                   [[:theme :html-modules :page-b] :ok]
+   "pageTshowMode"           [[:theme :html-modules :page-t-show-mode] :ok]
+   "pageBshowMode"           [[:theme :html-modules :page-b-show-mode] :ok]
+   "windowLB"                [[:theme :html-modules :window-lb] :ok]
+   "windowRB"                [[:theme :html-modules :window-rb] :ok]
    "bodyBgImg"               [[:theme :body-bg-img] :ok]
    "bodyBgImgOpacity"        [[:theme :body-bg-img-opacity] :ok]
    "bodyBgImgInterval"       [[:theme :body-bg-img-interval] :ok]
@@ -773,14 +788,10 @@
 (defn- check-no-effect!
   "Settings config.example.edn documents whose implementation is still to
   come: set to anything but their default, they warn that they have no
-  effect in this version rather than being silently ignored."
+  effect in this version rather than being silently ignored. Only
+  `:seo :indexnow` is left (htmlModules is P4-E1b's `check-html-modules!`)."
   [cfg]
   (let [v (generator-version)]
-    (when (let [hm (get-in cfg [:theme :html-modules])]
-            ;; 0.2.0 accepted any value, `false` and `:none` included
-            (if (coll? hm) (seq hm) (some? hm)))
-      (diag/warn! nil (str ":theme :html-modules has no effect in " v "; nothing is injected.")
-                  "htmlModules support is planned for Phase 4 (DESIGN.md §8)."))
     (when (true? (get-in cfg [:seo :indexnow :enabled]))
       (diag/warn! nil (str ":seo :indexnow :enabled true has no effect in " v
                            "; nothing is pushed to IndexNow.")
@@ -1178,6 +1189,207 @@
                  (assoc :body-bg-img-opacity opacity :body-bg-img-interval interval
                         :page-style style :title-badge badge)
                  (put :title-badge-icons badge-icons)))))
+
+;; ---------------------------------------------------------------------------
+;; htmlModules (Phase 4 Task E1b, §11.3 item 13, D-P4-13). The owner's raw
+;; HTML is trusted (D-P4-13); what is checked is its shape. Every problem is
+;; a WARNING that drops the value or uses the default: 0.2.0 accepted any
+;; `:html-modules` (and warned it had no effect), so none may start failing.
+;; There is no `defaults` entry: `check-shapes!` would make `false` an error.
+
+(def module-slots
+  "The htmlModules slots: vdoing's seven, in kebab case, and clogem-press's
+  own `:head-extra` (DESIGN.md §5.3)."
+  [:head-extra :home-sidebar-b :sidebar-t :sidebar-b :page-t :page-b :window-lb :window-rb])
+
+(def ^:private show-mode-keys
+  {:page-t :page-t-show-mode :page-b :page-b-show-mode})
+
+(def ^:private head-re
+  "The regexes behind `head-bad`, after HTML's tokenizer (WHATWG HTML
+  §13.2.5). Whitespace is `[\\t\\n\\f\\r ]`; a tag name ends at whitespace,
+  `/` or `>`. Every repetition is possessive (`*+`, `++`) or a lazy `.*?`,
+  which Java runs as a loop, not by recursion, so no length of value can
+  overflow the stack (a greedy `(?:a|b)*` recursed once per character);
+  and each piece can match only one way, so the scan takes linear time."
+  (let [ws    "[\\t\\n\\f\\r ]"
+        sep   "[\\t\\n\\f\\r /]"
+        end   "(?=[\\t\\n\\f\\r />]|\\z)"
+        ;; A tag's attributes, up to and with the `>` that ends it, after
+        ;; the tokenizer's attribute states. Where a name may start (after
+        ;; the tag name, a value or a `/`), an `=` is a name's first
+        ;; character; only straight after a name (whitespace allowed) does
+        ;; `=` start a value. A quote opens a value only right after that
+        ;; `=`, and only a quoted value may hold a `>`.
+        name  "[^\\t\\n\\f\\r />][^\\t\\n\\f\\r />=]*+"
+        more  (str "(?:" ws "++|[^\\t\\n\\f\\r />=]++)*+")
+        value "(?:\"[^\"]*+\"|'[^']*+'|[^\\t\\n\\f\\r >\"'][^\\t\\n\\f\\r >]*+)"
+        attrs (str "(?:" sep "*+" name more "(?:/|=" ws "*+" value "))*+"
+                   sep "*+(?:" name more "(?:=" ws "*+)?)?>")
+        start (fn [t] (str "<" t end attrs))
+        ;; an end tag has attributes too: `</script x=">">` ends at its last `>`
+        close (fn [t] (str "</" t "(?=[\\t\\n\\f\\r />])" attrs))
+        ;; `<!-->` and `<!--->` are empty comments; `--!>` closes one too
+        comment "<!--(?:-?>|.*?--!?>)"
+        ;; RAWTEXT: the first `</style` or `</noscript` before whitespace,
+        ;; `/` or `>` ends it
+        raw   (fn [t] (str (start t) "(?:[^<]++|<(?!/" t "[\\t\\n\\f\\r />]))*+" (close t)))
+        ;; Script data: `<!--` escapes it until `-->`. Escaped, a `</script`
+        ;; still ends it, but a `<script` double-escapes it: a `</script>`
+        ;; then only undoes that, and a `-->` ends both
+        sc    "script[\\t\\n\\f\\r />]"
+        data  (str "(?:[^<]++|<(?!/" sc "|!--))*+")
+        esc   (str "(?:[^<-]++|-(?!->)|<(?!/?" sc "))*+")
+        dbl   (str "(?:[^<-]++|-(?!->)|<(?!/" sc "))*+")
+        body  (str data "(?:<!(?=--)" esc "(?:<" sc dbl "</" sc esc ")*+"
+                   "(?:-->" data "|<" sc dbl "-->" data "|(?=</" sc ")))*+")
+        ;; A <template> holds HTML: tags (whose quoted values may hold
+        ;; `</template>`) and comments. Another <template>, an element
+        ;; whose content is not HTML (a <script>, <style>, <title>, …) or
+        ;; a `<!…>` or `<?…>` stops the scan: a browser may not end the
+        ;; outer one where it seems to.
+        deny  (str "(?:template|script|style|title|textarea|xmp|iframe|noembed|noframes|noscript"
+                   "|plaintext)" end)
+        inner (str "(?:[^<]++|<(?![A-Za-z!?/])|" comment "|<(?!" deny ")[A-Za-z][^\\t\\n\\f\\r />]*+" attrs
+                   "|</(?!template[\\t\\n\\f\\r />])[A-Za-z][^\\t\\n\\f\\r />]*+" attrs ")*+")
+        piece (str ws "++|" comment "|" (start "script") body (close "script") "|" (raw "style") "|"
+                   (raw "noscript") "|" (start "template") inner (close "template") "|"
+                   "<(?:link|meta)" end attrs)]
+    {:pieces         (re-pattern (str "(?is)(?:" piece ")*+"))
+     :open           (re-pattern (str "(?i)<(script|style|noscript|template|link|meta)" end))
+     :script-start   (re-pattern (str "(?i)" (start "script")))
+     :script-body    (re-pattern (str "(?is)" body "(?=</" sc ")"))
+     :script-end     (re-pattern (str "(?i)</" sc))
+     :template-start (re-pattern (str "(?i)" (start "template")))
+     :template-body  (re-pattern (str "(?is)" inner))
+     :deny           (re-pattern (str "(?i)<(" deny ")"))
+     :declaration    #"<[!?]|</(?![A-Za-z])"
+     :any-tag        #"<(/?)([A-Za-z][^\t\n\f\r />]*+)"
+     :text           #"(?s).[^<]*+(?:<(?![A-Za-z!?/])[^<]*+)*+"}))
+
+(defn- quoted
+  "`s` in double quotes, as `pr-str` writes it, but with each character
+  that does not show — a control, format or separator character other than
+  a space, such as U+000B or U+FEFF — written as `\\uXXXX`."
+  [s]
+  (str \"
+       (str/replace s #"[\\\"\p{C}\p{Z}]"
+                    (fn [c]
+                      (case c
+                        " " " ", "\\" "\\\\", "\"" "\\\"", "\n" "\\n", "\t" "\\t", "\r" "\\r", "\f" "\\f"
+                        (apply str (map #(format "\\u%04x" (int %)) c)))))
+       \"))
+
+(defn- head-bad
+  "The first thing in `s` that is not head content, named as written —
+  `<div>`, `</link>`, `text \"hi\"`, `an unclosed <script>` — or nil. `s`
+  is read in order, one piece at a time, as HTML's tokenizer reads it:
+  whitespace, a comment, a whole `<script>`, `<style>`, `<noscript>` or
+  `<template>` element (its end tag in any case), or a `<link>` or `<meta>`
+  tag. Anything else is bad: another element (a `<title>` would be a
+  second title, a `<base>` would retarget every #fragment link;
+  `<meta-data>` is not `<meta>`), an end tag, text, and a comment, element
+  or tag that never closes, which would swallow the rest of `<head>`. A
+  `<template>` may hold any HTML but what `head-re` lists; a `<noscript>`
+  is read as a browser with scripting on reads it: as text."
+  [s]
+  (let [n    (count s)
+        at   (fn [k i] (let [m (re-matcher (head-re k) s)]
+                         (.region m (int i) (int n))
+                         (when (.lookingAt m) m)))
+        from (fn [^String p i] (.startsWith ^String s p (int i)))
+        text (fn [i]
+               (let [g    (.group ^java.util.regex.Matcher (at :text i))
+                     k    (min 20 (count g))
+                     t    (str/replace (subs g 0 k) #"[\t\n\f\r ]+$" "")
+                     more (re-find #"[^\t\n\f\r ]" (subs g k))]
+                 (str "text " (quoted (str t (when more "…"))))))
+        i    (.end ^java.util.regex.Matcher (at :pieces 0))]
+    (when (< i n)
+      (if-let [o (at :open i)]
+        (let [t  (.group o 1)
+              no (str "an unclosed <" t ">")]
+          (case (u/lower t)
+            "script"
+            (let [e (some-> (at :script-start i) .end)
+                  m (re-matcher (head-re :script-end) s)]
+              (if (and e (not (at :script-body e)) (.find m (int e)))
+                (str no " (after \"<!--\" and \"<script\", HTML does not end it at \"</script>\")")
+                no))
+            "template"
+            (let [j (some->> (at :template-start i) .end (at :template-body) .end)
+                  d (when j (at :deny j))]
+              (cond
+                (or (nil? j) (= j n))  no
+                d                      (str "<" (.group d 1) "> inside a <" t ">")
+                (from "<!--" j)        "an unclosed <!--"
+                (at :declaration j)    (str (text j) " inside a <" t ">")
+                :else                  no))
+            no))
+        (if-let [tag (at :any-tag i)]
+          (str "<" (.group tag 1) (.group tag 2) ">")
+          (if (from "<!--" i) "an unclosed <!--" (text i)))))))
+
+(defn- check-html-modules!
+  "P4-E1b: `:theme :html-modules`. A slot is a string or a map of language
+  keyword to string (`\"\"` is quiet and suppresses it in that language); a
+  show-mode is :all, :article or :custom, as a keyword or a string; and
+  `:head-extra` is head content only. The check repairs `cfg`, so the
+  renderers (`clogem.theme.modules`) read valid values only. Unknown keys
+  are `check-keys!`'s."
+  [cfg]
+  (let [hint  "See config.example.edn (vdoing's htmlModules)."
+        warn! (fn [msg] (diag/warn! nil msg hint) nil)
+        hm    (get-in cfg [:theme :html-modules])
+        p     (fn [k] (path-str [:theme :html-modules k]))
+        slot  (fn [k v]
+                (cond
+                  (nil? v) nil
+                  (or (string? v)
+                      (and (map? v) (every? keyword? (keys v)) (every? string? (vals v))))
+                  v
+                  :else
+                  (warn! (str (p k) " is " (pr-str v) ", but it must be a string of HTML or a map of "
+                              "language to string, such as {:en \"<p>…</p>\"}; it is ignored."))))
+        head  (fn [v]
+                (let [bad! (fn [lang s]
+                             (when-let [b (head-bad s)]
+                               (warn! (str (p :head-extra) (when lang (str " " lang)) " has " b
+                                           ", but it must be head content only — <link>, <meta>, <script>, "
+                                           "<style>, <noscript>, <template> or a comment; it is ignored."))
+                               b))]
+                  (cond
+                    (string? v) (when-not (bad! nil v) v)
+                    ;; a bad language's value becomes "": suppressed there,
+                    ;; rather than falling back to another language's
+                    (map? v)    (into {} (map (fn [[l s]] [l (if (bad! l s) "" s)])) v)
+                    :else       v)))
+        mode  (fn [k v]
+                (let [m (cond (keyword? v) v
+                              (string? v)  (keyword (u/lower (str/trim v))))]
+                  (cond
+                    (nil? v) nil
+                    (#{:all :article :custom} m) m
+                    :else
+                    (do (warn! (str (p k) " is " (pr-str v) ", but it must be :all, :article or :custom "
+                                    "(vdoing's \"article\" or \"custom\"); using :all."))
+                        :all))))]
+    (cond
+      (or (nil? hm) (and (map? hm) (empty? hm))) cfg
+      (not (map? hm))
+      (do (warn! (str ":theme :html-modules is " (pr-str hm) ", but it must be a map of slots such as "
+                      "{:page-t \"<p>…</p>\"}; nothing is injected."))
+          (update cfg :theme dissoc :html-modules))
+      :else
+      (let [hm' (reduce (fn [m k]
+                          (let [v (some->> (get hm k) (slot k))
+                                v (if (= :head-extra k) (some-> v head) v)]
+                            (if (some? v) (assoc m k v) (dissoc m k))))
+                        hm module-slots)
+            hm' (reduce (fn [m k]
+                          (if-some [v (mode k (get hm k))] (assoc m k v) (dissoc m k)))
+                        hm' (vals show-mode-keys))]
+        (assoc-in cfg [:theme :html-modules] hm')))))
 
 ;; ---------------------------------------------------------------------------
 ;; Article-page parity (Phase 4 Task E2, §11.3 item 16, D-P4-13). Every bad
@@ -1730,6 +1942,8 @@
       check-i18n-comments! check-out-dir! check-no-effect! check-highlight! check-page-chrome!
       ;; Phase 4 Task E1 (P4-E1a)
       check-identity!
+      ;; Task E1b
+      check-html-modules!
       ;; Task E2
       check-article-parity!
       ;; Task F; the static directory after the output directory it must avoid
@@ -1918,15 +2132,43 @@
   (let [v (get-in cfg [:theme :body-bg-img])]
     (when (and (vector? v) (seq v)) v)))
 
+(defn html-module
+  "P4-E1b: an htmlModules slot's value as `check-html-modules!` left it — a
+  string or a per-language map — or nil."
+  [cfg slot]
+  (get-in cfg [:theme :html-modules slot]))
+
+(defn show-mode
+  "P4-E1b: where `:page-t` or `:page-b` shows — :all (the default),
+  :article or :custom (vdoing's pageTshowMode, pageBshowMode)."
+  [cfg slot]
+  (or (get-in cfg [:theme :html-modules (show-mode-keys slot)]) :all))
+
+(defn module-set?
+  "P4-E1b: does `slot` hold any HTML — a non-blank string, or a map with a
+  non-blank value? (A page in a language whose value is \"\" still renders
+  nothing.)"
+  [cfg slot]
+  (let [v (html-module cfg slot)]
+    (boolean (if (map? v)
+               (some #(and (string? %) (not (str/blank? %))) (vals v))
+               (and (string? v) (not (str/blank? v)))))))
+
+(defn windows?
+  "P4-E1b: is either window set? Only then js/window.js ships."
+  [cfg]
+  (or (module-set? cfg :window-lb) (module-set? cfg :window-rb)))
+
 (defn identity-css?
   "P4-E1a: does this site ship and link css/identity.css — the opt-in
   identity rules? Only while something on its pages needs them: a blogger
-  card, social links or a background image (and, in E1b, an htmlModules
-  slot other than :head-extra)."
+  card, social links, a background image, or (P4-E1b) an htmlModules slot
+  other than :head-extra, which is never wrapped."
   [cfg]
   (boolean (or (map? (get-in cfg [:theme :blogger]))
                (seq (get-in cfg [:theme :social :icons]))
-               (body-bg-images cfg))))
+               (body-bg-images cfg)
+               (some #(module-set? cfg %) (remove #{:head-extra} module-slots)))))
 
 (defn edit-link
   "`:content :edit-link` as `check-edit-link!` left it — {:url :branch :dir}

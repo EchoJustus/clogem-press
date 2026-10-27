@@ -517,14 +517,16 @@
       ;; the loader has no host to run on, so it is off, with this warning
       (is (some #(= (str ":analytics :provider :ga4 needs :site :url: the loader runs only on the "
                          "site's own host. Analytics is off.") %) ms))
-      (is (some #(= ":theme :html-modules has no effect in 0.2.0; nothing is injected." %) ms))
+      ;; P4-E1b (deliberate): :html-modules is implemented, so its "no
+      ;; effect" warning is gone — 3 warnings, not 4
+      (is (not-any? #(str/includes? % ":theme :html-modules") ms))
       ;; P4-E1a (deliberate): :blogger and :footer are implemented, so
       ;; their "planned" warnings are gone, and :bodyBgImg's loses "planned"
       (is (not-any? #(str/includes? % ":theme :blogger") ms))
       (is (not-any? #(str/includes? % ":theme :footer") ms))
       (is (some #(= ":theme :bodyBgImg is vdoing's spelling; clogem-press reads :theme :body-bg-img. It is ignored." %) ms))
       (is (some #(= ":seo :indexnow :enabled true has no effect in 0.2.0; nothing is pushed to IndexNow." %) ms))
-      (is (= 4 (count ms)) (pr-str ms)))))
+      (is (= 3 (count ms)) (pr-str ms)))))
 
 (deftest unknown-keys-name-the-path-and-the-nearest-known-key
   (let [[_ ds] (with-site {:footr 1
@@ -553,7 +555,8 @@
                                       :extendFrontmatter {} :searchMaxSuggestions 5}})]
     (doseq [[k target planned?] [[":pageStyle" ":theme :page-style" false]
                                  [":defaultMode" ":theme :default-mode" false]
-                                 [":htmlModules" ":theme :html-modules" true]
+                                 ;; P4-E1b (deliberate): no longer planned
+                                 [":htmlModules" ":theme :html-modules" false]
                                  [":updateBar" ":theme :update-bar" false]
                                  [":categoryText" ":content :category-text" false]
                                  [":extendFrontmatter" ":content :extend-frontmatter" false]]]
@@ -613,8 +616,10 @@
         (is (str/starts-with? (str (:hint w)) "Did you mean :link?") (:hint w))))))
 
 (deftest a-scalar-html-modules-warns-and-never-crashes
+  ;; P4-E1b (deliberate): the warning names the shape it must have
   (doseq [v [false :none true 0]]
-    (is (= [":theme :html-modules has no effect in 0.2.0; nothing is injected."]
+    (is (= [(str ":theme :html-modules is " (pr-str v) ", but it must be a map of slots such as "
+                 "{:page-t \"<p>…</p>\"}; nothing is injected.")]
            (warning-messages {:theme {:html-modules v}}))
         (pr-str v)))
   (doseq [v [nil {}]]
