@@ -525,7 +525,7 @@
       (is (not-any? #(str/includes? % ":theme :blogger") ms))
       (is (not-any? #(str/includes? % ":theme :footer") ms))
       (is (some #(= ":theme :bodyBgImg is vdoing's spelling; clogem-press reads :theme :body-bg-img. It is ignored." %) ms))
-      (is (some #(= ":seo :indexnow :enabled true has no effect in 0.2.0; nothing is pushed to IndexNow." %) ms))
+      (is (some #(= ":seo :indexnow :enabled true has no effect in 0.3.0; nothing is pushed to IndexNow." %) ms))
       (is (= 3 (count ms)) (pr-str ms)))))
 
 (deftest unknown-keys-name-the-path-and-the-nearest-known-key
@@ -561,7 +561,7 @@
                                  [":categoryText" ":content :category-text" false]
                                  [":extendFrontmatter" ":content :extend-frontmatter" false]]]
       (is (some #(= (str ":theme " k " is vdoing's spelling; clogem-press reads " target
-                         (when planned? " — planned, not implemented in 0.2.0") ". It is ignored.") %)
+                         (when planned? " — planned, not implemented in 0.3.0") ". It is ignored.") %)
                 ms)
           k))
     (is (some #(str/starts-with? % ":theme :searchMaxSuggestions is a vdoing option clogem-press does not have") ms))
@@ -591,7 +591,7 @@
     ;; Task G: a SYNTHETIC key, so this test no longer depends on which real
     ;; key is still planned (:cross-language became :ok in G)
     (with-redefs [config/known-keys (assoc-in config/known-keys [[:search] :zz-test] :planned)]
-      (is (= [":search :zz-test is planned, not implemented in 0.2.0; it has no effect."]
+      (is (= [":search :zz-test is planned, not implemented in 0.3.0; it has no effect."]
              (warning-messages {:search {:provider :none :zz-test true}}))))
     (with-redefs [config/known-keys (assoc-in config/known-keys [[:search] :zz-test] :ok)]
       (is (= [] (warning-messages {:search {:provider :none :zz-test true}}))))))

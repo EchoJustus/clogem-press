@@ -464,7 +464,7 @@
        :x-default :primary      ; x-default → the bare identity URL; the only value
        :feeds   true            ; /feed.xml + /<lang>/feed.xml, Atom (§6.6)
        :indexnow {:enabled false :key nil}   ; the push is Phase 5; :enabled true
-                                              ; warns: no effect in 0.2.0. The key
+                                              ; warns: no effect in 0.3.0. The key
                                               ; file is a <key>.txt in :static-dir.
        ;; §11.3 item 15: the search consoles' meta-tag method, on every page —
        ;; a string, or a vector of them for several owners. Each is the tag's

@@ -534,3 +534,24 @@
       (is (= #{":nav 0 :target is not a nav item option and is ignored."
                ":nav 0 :rel is not a nav item option and is ignored."}
              (set (keys ws)))))))
+
+;; ---------------------------------------------------------------------------
+;; Item 2 — the version
+
+(deftest the-version-is-0-3-0
+  (testing "version.edn, and what a build says it was made with"
+    (is (= "0.3.0" (config/generator-version)))
+    (let [dir (fs/create-temp-dir {:prefix "clogem-rel-ver"})]
+      (try
+        (spit (fs/file dir "site.edn") (pr-str {:site {:title "S" :url "https://s.example"}
+                                                :search {:provider :none} :highlight {:provider :none}}))
+        (fs/create-dirs (fs/path dir "content" "01.Guide"))
+        (spit (fs/file dir "content" "01.Guide" "01.a.md") (article "A" "aaaaa8"))
+        (diag/collecting
+         (let [cfg (config/load-config (str dir) nil {:content {:write-front-matter false}})]
+           (render/build! cfg (cli/analyse cfg))))
+        (is (str/includes? (slurp (fs/file dir "dist" "pages" "aaaaa8" "index.html"))
+                           "<meta content=\"clogem-press 0.3.0\" name=\"generator\" />"))
+        (is (str/includes? (slurp (fs/file dir "dist" "feed.xml"))
+                           "<generator version=\"0.3.0\">clogem-press</generator>"))
+        (finally (fs/delete-tree dir))))))

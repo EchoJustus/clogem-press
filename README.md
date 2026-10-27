@@ -18,7 +18,7 @@ The full design rationale, with every external claim verified against primary
 sources, is in [DESIGN.md](DESIGN.md); thirteen research reports back it in
 [`research/`](research/).
 
-> **Status: Phase 3 complete (0.2.0).** The generator scans a content tree,
+> **Status: Phase 4 complete (0.3.0).** The generator scans a content tree,
 > resolves identity groups, normalizes front matter, and renders a five-language
 > site with vdoing's core surface: collapsible sidebar tree, category / tag /
 > archive index pages, a paginated blog homepage with sticky posts, breadcrumbs
@@ -27,9 +27,17 @@ sources, is in [DESIGN.md](DESIGN.md); thirteen research reports back it in
 > `cardImgList`. Phase 3 adds canonical and hreflang links, per-language Atom
 > feeds and a sitemap, Pagefind search with one index per language, a
 > remembered language choice with an "also available in …" banner, and giscus
-> comments with one thread per article across its languages. Phase 4, in
-> progress, adds colour modes and syntax highlighting so far; the rest of the
-> theme follows — see [the implementation plan](DESIGN.md#8-implementation-plan).
+> comments with one thread per article across its languages. Phase 4 completes
+> the theme: colour modes on an accessible palette, syntax highlighting, the
+> card and line page styles, a one-row navbar with a mobile drawer, the page
+> chrome (page buttons, back to top, sidebar collapse), the blog identity and
+> home banner, htmlModules, edit links, last-updated dates and a 404 page,
+> analytics and search-console tags, a static directory, a quicker `bb dev`
+> and cross-language search. Every key of vdoing's `themeConfig`, and every
+> front-matter key vdoing reads, is implemented, deferred or removed; `bb
+> doctor` names each deferred or removed one a site sets. Phase 5 (automation,
+> packaging and documentation) is next — see [the implementation
+> plan](DESIGN.md#8-implementation-plan).
 
 ## Install
 
@@ -918,7 +926,7 @@ repository does that.
 ## Development
 
 ```bash
-bb test                                             # 921 tests / ~63,300 assertions
+bb test                                             # 932 tests / ~64,100 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 
