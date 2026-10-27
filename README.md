@@ -899,7 +899,7 @@ repository does that.
 ## Development
 
 ```bash
-bb test                                             # 906 tests / ~63,100 assertions
+bb test                                             # 921 tests / ~63,300 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 

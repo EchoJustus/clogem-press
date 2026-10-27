@@ -1602,6 +1602,11 @@
         :when v]
     {:label label :path (real-path (fs/path site v))}))
 
+(def ^:private outside-site
+  "How `out-dir-refusal` ends the one refusal `check-out-dir!` gives its own
+  hint."
+  "outside the site directory")
+
 (defn out-dir-refusal
   "Why `out` — an output directory, already real (`real-path`) — is refused
   for the site `site` (real too), or nil (P4-D.3 item 1). A build writes
@@ -1634,7 +1639,7 @@
      (when (some #(= ".git" (str %)) (iterator-seq (.iterator ^java.nio.file.Path out)))
        (str "is " out ", inside a .git directory"))
      (when (and from-file? (not (within? site out)))
-       (str "is " out ", outside the site directory"))
+       (str "is " out ", " outside-site))
      (when (or (fs/exists? (fs/path out "site.edn"))
                (fs/exists? (fs/path out cfg-name)))
        (str "is " out ", which holds a " cfg-name " — another site's directory")))))
@@ -1664,9 +1669,18 @@
           (and (fs/exists? out) (not (fs/directory? out)))
           [(str "is " out ", which is a file, not a directory") own]
           :else
-          [(out-dir-refusal cfg site out (and (:clogem/out-from-file? cfg)
-                                              (not (:clogem/out-from-cli? cfg))))
-           own])]
+          (let [why (out-dir-refusal cfg site out (and (:clogem/out-from-file? cfg)
+                                                       (not (:clogem/out-from-cli? cfg))))]
+            [why
+             ;; "such as the default dist" was no help when the refused
+             ;; value was `dist` itself, a link out of the site (P4
+             ;; follow-ups item 6): the default may point anywhere, a
+             ;; site.edn value may not
+             (if (some-> why (str/ends-with? outside-site))
+               (str "A :build :out written in site.edn must stay inside the site directory. "
+                    "To build elsewhere — through a link such as dist -> /var/www/site, or ../dist — "
+                    "remove :build :out from site.edn (the default \"dist\" may be a link) or pass --out.")
+               own)]))]
     (if why
       (do (diag/error! nil (str ":build :out (" (pr-str out-raw) ")"
                                 (when (:clogem/out-from-cli? cfg) ", given with --out,")

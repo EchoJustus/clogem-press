@@ -473,7 +473,7 @@ img { max-width: 100%; height: auto; }
 /* P4-E2.1/2: a row's title wraps, long words too; its badges (spans) keep one line, on its first */
 .clogem-row { align-items: baseline; }
 .clogem-row > span { white-space: nowrap; }
-.clogem-row > a { min-width: 0; overflow-wrap: anywhere; }
+.clogem-row > a { min-width: 0; }
 .clogem-pagination { display: flex; gap: 1rem; justify-content: center; align-items: center; margin: 1.5rem 0; }
 .clogem-pagination .is-disabled { color: var(--textColorSubtle); }
 .clogem-empty { color: var(--textColorSubtle); font-style: italic; }

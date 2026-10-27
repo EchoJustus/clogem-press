@@ -13,6 +13,8 @@ page chrome (the second half of B2, §11.3 item 9, D-P4-9), then Task E2 —
 article-page parity (§11.3 item 16, D-P4-13), then Task E1a — the blog
 identity and the home banner (the first half of §11.3 item 13, D-P4-13),
 then Task G — cross-language search (§11.3 item 17, D-P4-17, D-P4-18),
+then the Phase 4 follow-ups — Task D's known issues and smaller items, and
+what the E1a and E2 checks left,
 then Task E1b — htmlModules (the second half of §11.3 item 13, D-P4-13).
 The version stays 0.2.0. Every article page now ends with an update bar
 by default, as in vdoing (`:theme :update-bar {:show-to-article false}`
@@ -605,6 +607,171 @@ Pagefind block in `layout.clj`: G's `js/search-all.js` tag closes the
 block, then `(modules/head ctx)` follows, so the head runs Pagefind's
 tags, `search-all.js`, `:head-extra`, `window.js`, then `custom.css`.
 Together: 906 tests, 0 failures.
+
+Then `main` with the Phase 4 follow-ups (#20): only this file's intro and
+block order held both (the follow-ups' sentence before E1b's; E1b's block
+above theirs), and README's count is re-measured. Together: 921 tests, 0
+failures.
+
+**Phase 4 follow-ups** (before 0.3.0: Task D's known issues and smaller
+items, and what the E1a and E2 checks left; tests in
+`clogem.followups-test` unless named):
+
+### Fixed (P4 follow-ups)
+
+- **A file of 1 MB or more deleted mid-request is sent as it was, never
+  http-kit's 500 naming its absolute path** (item 1). It was a `File`
+  body, which http-kit opens only after the handler has returned, so a
+  rebuild deleting it in between answered `500` with the path as the body
+  (reachable with `--host 0.0.0.0`). Every file is now read whole, or from
+  20 MB mapped — what http-kit did with a `File` body — from one open
+  before the response exists; a file gone before that open is a plain 404
+  (`a-large-file-deleted-mid-request-is-sent-whole-never-its-path`,
+  `a-file-gone-before-it-is-opened-is-a-plain-404`; `dev_round2_test`'s
+  `a-file-is-read-whole-or-mapped-from-one-open` replaces
+  `a-small-file-is-read-whole-and-a-big-one-is-a-file`). A read holds the
+  file once: it was read into a buffer and then copied, twice its size
+  (follow-ups.1, `a-whole-read-holds-the-file-once`: a 100 MB read in a
+  150 MB heap).
+- **HEAD sends no body, whatever the status, and the real
+  `Content-Length` where http-kit allows it** (item 2). A HEAD of a 404,
+  a 500, a 403 or a 400 sent its body on babashka 1.13.219, and every HEAD
+  said `Content-Length: 0`. A HEAD is now answered as GET is: on babashka
+  1.13.220 and later (http-kit 2.9.0-beta4) the body is left for http-kit,
+  which drops it and sends GET's `Content-Length`; on 1.13.219, whose
+  http-kit sends any body to HEAD and counts `Content-Length` from the body
+  it sends, the body is dropped here and the length stays 0
+  (`head-reports-the-length-and-sends-no-body`). A HEAD reads none of the
+  file: one under 20 MB was read whole, to be dropped, about 30 times
+  slower than 0.2.0 for 19 MB (follow-ups.1). On 1.13.220 and later its
+  body is the file mapped, whose length http-kit sends without reading a
+  byte (on Windows a file under 20 MB is still read: a mapping would hold
+  it against the next rebuild's replace until a GC); on 1.13.219 there is
+  none; a page dev adds the reload script to is still read, for its length
+  (`head-reads-no-file`).
+- **A fswatcher pod that dies while `bb dev` runs is followed by polling**
+  (item 4). dev stopped watching — nothing rebuilt again — and babashka's
+  pod client printed `ERROR: Pod quit unexpectedly` once per watch (six
+  lines). dev's follower now checks the pod's process on every pass and,
+  once it is gone, prints one line (`the fswatcher pod quit; dev polls
+  every 500 ms for the rest of this session.`) and polls, with one full
+  rebuild once polling starts, as the inotify-limit fallback does; the
+  pod client's lines are dropped, as at Ctrl-C
+  (`a-pod-that-dies-falls-back-to-polling-with-one-line`, with the real
+  pod, kills it; skipped without `CLOGEM_FSWATCHER`. `dev_round3_test`'s
+  `the-real-pod-quitting-at-ctrl-c-is-not-reported` now expects silence
+  either way). Ctrl-C signals the pod with dev, and the pod can die before
+  dev's shutdown hook says it is stopping, so the follower waits up to
+  `signal-grace-ms` (1 s) for that, as the pod's stderr does, before it
+  falls back: a stop never prints the line or starts a poller
+  (follow-ups.1, `a-pod-that-dies-at-ctrl-c-is-no-fallback`).
+- **The polling fallback's first rebuild says `(full rebuild)`** (item 11),
+  not `(6 files changed)`, the count of the watched roots submitted to
+  force it (`the-fallback-s-first-rebuild-says-full-rebuild`), and reloads
+  the page. The marker the poller submits for it is a path on no system,
+  taken out before any path function sees it: the first marker,
+  `"<full rebuild>"`, is no valid Windows path, and the rebuild handed it
+  to `fs/` functions (`gone-temp?`; `theme-namespaces` under
+  `--reload-code`), a false `build failed` there (follow-ups.1,
+  `the-full-rebuild-marker-is-never-a-path`).
+
+- **A `:build :out` in `site.edn` outside the site directory gets a hint
+  that helps** (item 6). With `:build {:out "dist"}` and `dist` a link out
+  of the site, the hint recommended "a directory of its own, such as the
+  default "dist"" — the folder refused. It now says a value in
+  `site.edn` must stay inside the site, and to build elsewhere, through a
+  link or `../dist`, to remove `:build :out` from `site.edn` (the default
+  `dist` may be a link) or pass `--out`; the other refusals keep their
+  hint (`an-out-outside-the-site-gets-a-hint-that-helps`).
+
+- **A pre-encoded `:nav` link ending in `/` is encoded once** (item 8,
+  pre-existing before Task D). A site-page link such as
+  `/%E6%96%87%E6%A1%A3/` or `/my%20docs/` was percent-encoded whole, so
+  its escapes became `%25E6…` and `%2520`. The page part is still encoded
+  segment by segment, except that a valid `%XX` escape is kept
+  (`u/url-encode-path-once`), so `/文档/` and `/%E6%96%87%E6%A1%A3/` give
+  the same href, under any base and language prefix, while `#`, `?` and
+  the sub-delimiters stay encoded: they are part of a page's name, and
+  `/tags/c#/` is the tag page of C#, `/tags/c%23/`. (The first fix encoded
+  it as an owner's href is, `u/url-encode-href`, which keeps them, so
+  `/tags/c#/` became a link to `/tags/c` and `/categories/a?b/` a query;
+  `:theme :update-bar :more-article`, which goes the same way, too —
+  follow-ups.1.) A link without the slash gets the base only and is
+  appended as written, as since P4-D.4, so `/my docs` keeps its raw space,
+  as it did before (`a-pre-encoded-nav-link-is-not-encoded-twice`: `/文档/`,
+  `/my docs/`, pre-encoded forms, `/tags/c#/`, `/categories/a?b/` and
+  `/a&b=c+d/`, with and without the slash, under `/` and `/my docs/`, on an
+  English and a Chinese page; `more-article-is-encoded-as-a-nav-link-is`).
+
+- **An unknown command-line option is a warning** (item 10), one line on
+  stderr for each, naming it and the task's options — `clogem-press: bb
+  build: unknown option --prot (ignored); its options are --site-dir, …,
+  --help.` — and the task runs as before: it was silently ignored, and an
+  error would break scripts that pass one. `bb dev`'s own rebuilds, which
+  hand `build` dev's options, say nothing
+  (`an-unknown-option-is-a-warning-naming-it-and-the-task-s-options`, in
+  process and through `bb.edn`).
+- **`--help` names no fix round or design section** (item 9): `bb clean
+  --help` ended "(P4-D.4 item 3)" and `bb fetch-tool --help` began its
+  parenthesis "§4;". Both moved to code comments
+  (`no-task-s-help-names-an-internal-round`, over every task).
+
+### Changed (P4 follow-ups)
+
+- **`theme.css` drops E2's redundant `overflow-wrap: anywhere`** on a
+  list row's link (item 14): with `min-width: 0` the link shrinks, and the
+  body's `overflow-wrap: break-word` already breaks a long word. 11,970 →
+  11,965 B gzipped (44,918 → 44,893 B). Nothing renders differently: every
+  row link's line boxes and every page's scroll size were the same, with
+  the declaration and without, on the 214 demo pages with rows at 320, 360
+  and 1280 px and with parity's long words ("Configuration", 40 and 60
+  characters) on the zh-Hans home; full-page screenshots were identical
+  wherever two shots of the same page agreed; `layout`, `modes` (the page
+  styles), `parity` and `overflow` browser tests pass.
+
+### Documentation (P4 follow-ups)
+
+- **Task D's entry on `:min-bb-version` said `bb.edn` "requires" babashka
+  1.13.219** (item 7). babashka only warns about an older version and runs
+  the task anyway; the entry now says so.
+
+### Tests (P4 follow-ups)
+
+- **`bb clean` refuses a marked output directory with a `.git` below its
+  top level** (item 5): `dist/deploy/site/.git/` or a worktree's
+  `dist/deploy/.git` file. The code refused both; nothing tested it, and
+  a `clean` that checks only `dist/.git` passed every test
+  (`clean-refuses-a-marked-directory-with-a-git-below-its-top`).
+- **Back to top's mobile placement rule is guarded by its offset check**
+  (item 12, `layout.test.mjs` item 13). The re-pinned check probed only the
+  prev/next links' centres, which back to top covers neither with the
+  mobile placement rule (`@media (max-width: 50rem)`: 16 px from the right,
+  24 from the bottom) nor without it, so it passed with the rule removed.
+  Comparing boxes would not do either: with the rule in place the button
+  still covers the right end of Next's box (about 430 px², 380 without).
+  What fails without the rule, whatever the fonts, is item 13's offset
+  check (`32 px from the right, 40 from the bottom, want 16,24`), and the
+  test now says that is the guard; the prev/next check keeps its centres
+  and says so. A check added first, the update bar's and the footer's
+  links compared rect against rect from there to the page's end, depended
+  on the fonts both ways and is dropped (follow-ups.1): with the rule in
+  place, DejaVu Sans's footer line reaches under the button (5 × 16 px),
+  and without it a serif one clears it, where Liberation Sans missed by
+  4 px.
+- **`parity_test`'s `the-home-s-more-follows-more-article`** (item 13): its
+  first `testing` label still said the right bar's More "goes to the
+  archives as before"; since the merge with E1a it checks that a simple
+  home's right bar has no update bar, and the label says so.
+- **`dev_round2_test`'s `a-replaced-watched-directory-is-registered-again`**,
+  once seen failing under load (item 15), passed `bb test --pattern
+  dev-round2` 10 times in 10, so it is left as it is; it already waits on
+  each condition (`wait-until`), not on a fixed sleep.
+
+### Merged with Task G (P4 follow-ups)
+
+`main` with Task G merged in cleanly apart from this file's intro, where
+both sentences are kept and this block moves below the support page's,
+first among the task blocks. Together: 885 tests, 0 failures.
 
 **Task G — cross-language search** (§11.3 item 17, D-P4-17, D-P4-18):
 
@@ -1975,9 +2142,10 @@ things" sentence in its file; the rest of the paragraph is unchanged.
   the address `--host` resolves to, however it is spelled (`127.1`,
   `127.0.0.2`, `::1`, `localhost`), and the URL printed is always
   answered. With any other `--host` there is no check.
-- **`bb.edn` requires babashka 1.13.219 or later** (`:min-bb-version`; it
-  said 1.13.0, which no one tested). CI runs the tests and the browser
-  tests under 1.13.219 and the latest release (P4-D.4).
+- **`bb.edn` asks for babashka 1.13.219 or later** (`:min-bb-version`; it
+  said 1.13.0, which no one tested). An older babashka prints a warning
+  and runs the task anyway: babashka does not refuse it. CI runs the tests
+  and the browser tests under 1.13.219 and the latest release (P4-D.4).
 - **`permalinks.edn` is written only when it changes.** It was rewritten,
   byte for byte the same, on every build.
 - **A missing UI string key warns once per key and language, in `build`
@@ -2035,7 +2203,10 @@ things" sentence in its file; the rest of the paragraph is unchanged.
   by process id and start time, so a reused pid (dev is often pid 1 in a
   container) is not mistaken for it.
 - **A file renamed while dev served it** is a 404, never a 500 whose body
-  named its absolute path (reachable with `--host 0.0.0.0`). A file under
+  named its absolute path (reachable with `--host 0.0.0.0`) — except, until
+  the Phase 4 follow-ups (item 1), a file of 1 MB or more deleted after the
+  handler answered and before http-kit opened it, which was still that
+  500. A file under
   1 MB — every Pagefind file — is read whole from one open, so a rebuild
   swapping it mid-response cannot mix two versions; a larger one is sent
   as 0.2.0 sent every file, with its `Content-Length`, to HTTP/1.0 and

@@ -605,7 +605,7 @@
    "01.A/04.four.md"  (article "Four" "/pages/fou004/" {:date "2026-01-04"})})
 
 (deftest the-home-s-more-follows-more-article
-  (testing "the simple list gets vdoing's More; the right bar's goes to the archives as before"
+  (testing "the simple list gets vdoing's More, to the archives, and a simple home's right bar has no update bar"
     (let [zh (html "zh-Hans" "index.html")
           simple (second (re-find #"(?s)clogem-list--simple\">(.*?</ul>(?:<p>.*?</p>)?)" zh))]
       (is (str/ends-with? simple "</ul><p><a href=\"/zh-Hans/archives/\">更多 →</a></p>"))
