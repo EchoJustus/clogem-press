@@ -74,6 +74,8 @@
  :search/filter-selected-many "已選擇 [COUNT] 個"
  :search/input-hint           "輸入時將顯示結果"
  :search/loading              "載入中"
+ ;; Task G: the cross-language search checkbox (D-P4-17)
+ :nav/search-all              "搜尋所有語言"
  ;; The "also available" banner (D-P3-14): written in the READER'S chosen
  ;; language, {{lang}} being that language's own :label.
  :banner/available            "本頁也有{{lang}}版本。"

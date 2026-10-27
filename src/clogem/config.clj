@@ -338,13 +338,31 @@
          (str "It has no effect in " (generator-version) " (nothing runs "
               (name id) " yet), so the built-in pin is used."))))
 
+(defn- check-cross-language!
+  "Task G (§11.3 item 17, D-P4-17): `:search :cross-language`, the opt-in
+  \"Search all languages\" checkbox. Only `true` turns it on; nil and
+  `false` are off, and anything else is ONE warning repaired to false —
+  0.2.0 accepted the key as planned and ignored it, so nothing that built
+  before may start failing. `true` under `:provider :none` says nothing:
+  `--no-search` sets that provider, and a site that always wants the
+  checkbox should not have to unset the key to build without search."
+  [cfg]
+  (let [v (get-in cfg [:search :cross-language])]
+    (if (or (nil? v) (boolean? v))
+      cfg
+      (do (diag/warn! nil (str ":search :cross-language is " (pr-str v)
+                               ", but it must be true or false; cross-language search is off.")
+                      "Set it to true for a \"Search all languages\" checkbox (DESIGN.md §6.7, config.example.edn).")
+          (assoc-in cfg [:search :cross-language] false)))))
+
 (defn- check-search!
-  "D-P3-8 / D-P3-12: the search provider, the Pagefind pin, and the Tamil
-  font option."
+  "D-P3-8 / D-P3-12: the search provider, the Pagefind pin, the Tamil
+  font option, and Task G's `:search :cross-language`."
   [cfg]
   (let [cfg (-> cfg
                 (check-enum! [:search :provider] #{:none :pagefind}
                              "Pagefind is the only search provider (DESIGN.md §6.7).")
+                (check-cross-language!)
                 (check-enum! [:theme :fonts :tamil] #{:system :self-hosted}
                              ":self-hosted serves a subset Noto Sans Tamil from the site (DESIGN.md §6.9)."))
         tool-pins {:pagefind  ["1.5.2"  "x86_64-unknown-linux-musl" "aeb1…" "the release's .sha256 file"]
@@ -500,8 +518,8 @@
                            :window-lb :ok :window-rb :ok}
    [:highlight]           {:provider :ok :line-numbers :ok :copy-button :ok :style :ok :dark-style :ok}
    [:search]              {:provider :ok
-                           ;; Phase 4 Task G
-                           :cross-language :planned}
+                           ;; Phase 4 Task G (§11.3 item 17, D-P4-17)
+                           :cross-language :ok}
    [:comments]            (zipmap comments-keys (repeat :ok))
    ;; the provider's own keys, as §5.6 sketches them (D-13), and Task F's
    ;; (§11.3 item 14): `check-analytics!`
@@ -2083,6 +2101,15 @@
     (when (and (map? a) (contains? (disj analytics-providers :none) (:provider a))
                (not (:clogem/dev? cfg)))
       a)))
+
+(defn cross-language?
+  "Task G (§11.3 item 17, D-P4-17): does this site offer the per-reader
+  \"Search all languages\" checkbox? Only a Pagefind site with
+  `:search {:cross-language true}` — `--no-search` (`:provider :none`)
+  turns it off with everything else search does."
+  [cfg]
+  (and (= :pagefind (get-in cfg [:search :provider]))
+       (true? (get-in cfg [:search :cross-language]))))
 
 (defn body-bg-images
   "P4-E1a: the `:theme :body-bg-img` images, a non-empty vector of

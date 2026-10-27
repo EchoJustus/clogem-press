@@ -294,15 +294,32 @@
  :nav [{:text {:en "Home" :zh-Hans "首页"} :link "/"}]
 
  ;; -------------------------------------------------------------- search ----
- :search {:provider :none}   ; :none | :pagefind (§6.7, D-P3-8 … D-P3-10).
+ :search {:provider :none    ; :none | :pagefind (§6.7, D-P3-8 … D-P3-10).
                              ; :pagefind runs the EXTENDED binary over dist/
                              ; at the end of `build` (`--no-search` builds
                              ; with no index and no search UI at all),
                              ; one index per <html lang>, only article and
                              ; catalogue bodies indexed. A failed fetch or a
                              ; non-zero exit fails the build (exit 1).
-                             ; Cross-language search (pagefind.mergeIndex) is
-                             ; deferred to Phase 4 (D-P3-11).
+         :cross-language false}  ; true adds a "Search all languages" checkbox
+                             ; to the search dialog (D-P4-17), off for each
+                             ; reader until they tick it and remembered as
+                             ; `clogem-search-all` in their browser. Ticked, it
+                             ; merges the OTHER languages' indexes at query
+                             ; time (pagefind.mergeIndex, §6.7), weighted far
+                             ; below the page's own language, with a filter to
+                             ; narrow results to one language. The merged
+                             ; indexes keep their own segmentation but stem
+                             ; with the page's own language, and a page whose
+                             ; language has no indexed pages gets no checkbox:
+                             ; Pagefind already searches the largest index
+                             ; there. js/search-all.js and css/search-all.css
+                             ; ship when this is true and :provider is
+                             ; :pagefind (so not under --no-search) — a site
+                             ; with the key on and only one indexed language
+                             ; ships them unlinked. Nothing is merged, and no
+                             ; other index downloaded, until a reader ticks
+                             ; the box.
 
  ;; ----------------------------------------------------------- highlight ----
  ;; §11.3 item 10: code blocks are highlighted by Chroma at build time — ON BY

@@ -1385,10 +1385,62 @@ Verified against Pagefind's docs **and source** ([research/12](research/12-i18n-
   - Note what this is *not*: the Component UI's `lang` attribute swaps **UI strings only**, never the
     index. Reaching for it to change what is searched is the obvious wrong turn here.
 
+  *Found in Phase 4 Task G (§11.3 item 17)*, read in the 1.5.2 bundle the build writes
+  (`pagefind.js`, and `pagefind-worker.js`, where Pagefind searches by default) and measured on the
+  demo, four more facts shape the wiring:
+  - **A merge's `language` must be Pagefind's own key, the lowercased `<html lang>`** (`zh-hans`,
+    not `zh-Hans`). The merged instance looks it up with the same `findIndex` chain, so a key that
+    matches neither exactly nor by its base subtag silently falls back to the largest index: merging
+    `language: "zh-Hans"` on the demo merged `en` a second time and never fetched `zh-hans`.
+  - **Each index segments the query by its own language.** A search reads the instance's
+    `loadedLanguage` — the merge's `language` — and word-segments for `zh`, `ja` and `th`
+    (`needsWordSegmentation`), so a query typed on an English page is still split into words for
+    the merged `zh-hans` index. Stemming is still the primary's (above).
+  - **An absolute merge path gives absolute result URLs unless `baseUrl` is passed.** Without it the
+    instance's `baseUrl` is `getDefaultBaseUrl(basePath)`, the bundle path minus `pagefind/`. The
+    constructor strips the page's origin from `basePath` only where there is a `document`; the
+    worker has none, so a merge keeps the origin and its hrefs come back as
+    `http://127.0.0.1:…/pages/cjk001/`. Passing the site's encoded base as `baseUrl` keeps them
+    site-relative, under a non-root base too. (The primary's own `basePath` has its origin stripped
+    before it reaches the worker, which is why the absolute merge URL passes the `startsWith` guard.)
+  - **The language filter is `mergeFilter`.** `options({mergeFilter})` adds a synthetic filter to
+    every page of that index (`add_synthetic_filter`), so giving the primary and each merge
+    `{"clogem-language": <label>}` makes a `<pagefind-filter-dropdown filter="clogem-language">` list
+    the languages; and `indexWeight` multiplies every score of its index (`score: s * indexWeight`).
+
   This moves from Phase 3's "accepted limitation" to a Phase 3 *feature* — an opt-in
   `:search {:cross-language true}` toggle rendering a "search all languages" checkbox. The risk-table
-  row (§10) is downgraded accordingly. *Deferred to Phase 4 (§11.2 item 43):* it was never in §8's
-  Phase 3 list, and is not implemented.
+  row (§10) is downgraded accordingly. *Deferred to Phase 4 (§11.2 item 43), and built in Task G
+  (§11.3 item 17, D-P4-17):* `:search {:cross-language true}` (off by default; `true` and `false`
+  are the values, and anything else is one warning that turns it off) puts a *Search all languages*
+  checkbox (`:nav/search-all`) at the top of the search dialog — on every page whose own language
+  has indexed pages, when at least one other language has some. "Indexed" is the languages with an
+  article variant, exactly what carries `data-pagefind-body`. The page's `<pagefind-config>` carries
+  `data-clogem-merge`: the encoded base, the labels, and the other indexed languages as {Pagefind
+  key, endonym} in `:langs :priority` order. `js/search-all.js` (deferred, same-origin, budget
+  2,048 B gzipped) configures a second, named instance, `clogem-all`, on the page's own bundle
+  (`mergeFilter` its own language), merging every other indexed language from the absolute bundle
+  URL with `baseUrl`, the lowercased key, `indexWeight` 0.001 — so the reader's own language leads —
+  and a `mergeFilter`. Ticking the box swaps the rendered modal's input, summary, results and
+  keyboard hints for that instance's and adds the language filter; unticking swaps them back; the
+  typed term carries over and focus stays on the box. It augments the modal the page rendered and
+  never builds one: a modal subtree built in JS and then connected initialises its header twice (two
+  close buttons at ≤ 640px). The choice is each reader's, remembered as `clogem-search-all` (`"1"`,
+  removed when unticked; blocked storage means off). The default instance never merges, so a
+  reader who never ticks the box fetches no other index. The Component UI's `__doLoad__` awaits
+  each `mergeIndex` in turn with no isolation, and a merge whose `pf_meta` fails (404, aborted)
+  fails the whole load and every search on that instance, with no `error` event (that one fires
+  only when `pagefind.js` fails to import). `triggerLoad()` does reject, and each search retries
+  it, so the script listens for the instance's `loading` event and, when the load rejects, falls
+  back to the default instance for that page (G.1): the box unticked there, the term and focus
+  kept, the stored choice left for later pages. A stored choice applied after the reader has
+  already typed (the script is deferred) carries the term over the same way. A page whose own
+  language has no indexed pages gets no checkbox and searches Pagefind's fallback, the largest
+  index, as before (on a tie, which one is not knowable at build time: `pagefind-entry.json`'s key
+  order changes between builds). `css/search-all.css` (budget 512 B) lays the row out and widens
+  the filter's wrapper, which Pagefind centres its menu on at ≤ 640px, so the menu stays inside a
+  320 px screen. Merged indexes stem with the page's own language (above). The demo turns it on,
+  and CI's browser job covers it (`test/browser/search-all.test.mjs`, D-P4-18).
 
 ### 6.8 Indexes, comments, and which title is shown
 
@@ -1879,8 +1931,10 @@ Decisions:
    owner's approval again. The translations mirror the English text fact for fact, and change when
    it changes.
    It names every key a built site keeps in its reader's browser (`clogem-mode`, `clogem-lang`,
-   `clogem-banner-dismissed`); `support_page_test` reads the theme's code for `localStorage` keys
-   and fails on one the note doesn't cover.
+   `clogem-banner-dismissed`, and, since Task G, `clogem-search-all`); `support_page_test` reads
+   the theme's code for `localStorage` keys and fails on one the note doesn't cover. *Task G
+   (§11.3 item 17):* "three things" became "up to four", the fourth being the reader's
+   cross-language search choice, on a site that offers it — approved by the owner on 2026-10-26.
 6. **The controls' borders are solid, `#6B8A80` light and `#64847A` dark** (`--control`), heavier
    than the hub's faint card borders, on purpose: WCAG 1.4.11 asks 3:1 for a control's boundary
    against what is around it; these measure at least 3.48:1 in light (on the page's ground) and
@@ -2103,7 +2157,9 @@ order; each builds on A:
   repository link, the last nav item (in the drawer at ≤ 50rem; the title, with a logo, and the
   repo label visually hidden at ≤ 64rem so the row holds — `ms` wrapped at 801–901 px without it);
   `pageClass` on `<body>`; `dist/404.html`.
-- **G — Cross-language search, then release 0.3.0** (2 d) (§11.3 item 17).
+- **G — Cross-language search, then release 0.3.0** (2 d) (§11.3 item 17). Cross-language search
+  is *done* (§6.7 and §11.3 item 17 record what was built). The 0.3.0 release is the next step, a
+  separate one; until it, the version stays 0.2.0.
 - **Exit criterion:** every key of vdoing's `themeConfig`, and every front-matter key vdoing reads, is
   implemented, deferred (below) or removed (below); for a `site.edn` key, `doctor` already says which
   (`config/known-keys`, `config/vdoing-keys`, §11.3 item 16).
@@ -2283,7 +2339,7 @@ the document). D-9 through D-15 are new, surfaced by v2's design work.
 | **i18n complexity** — five languages multiplying every template, index, and URL | **Medium-high (new)** | Contained by one rule: identity-by-permalink. Indexes hold article ids, so dedupe is structural (§5.2). Build cost is per *variant that exists*, not per language, so a mostly-English site pays almost nothing. Chrome language ≡ content language (§6.4) removes the entire class of "which language is this widget in" bugs. The five-language fixture corpus exists from Phase 1, not Phase 3. |
 | **CI front-matter write-back**: bot pushes to `main`, loops, races, protected branches | **Medium (new)** | Three independent loop guards, any one sufficient (§7.2). Race handled by rebase-before-push with a non-fatal failure (site stays correct; repo catches up). Protected-branch behaviour is a documented one-time check (D-9). Auto-fill is surgical and covered by golden-file tests. |
 | **Artifact-flow constraints**: 1 GB site cap, 10-minute deploy timeout, dotfiles excluded by default, deploy is same-repo only | **Low-medium (new; symlink row corrected in v2.1)** | CI **hard-fails** above 500 MB (§7.3); tool cache outside `dist/`; no dotfiles emitted by design. Symlinks are *not* a platform constraint — `upload-pages-artifact` tars with `--dereference --hard-dereference` — but the exporter copies rather than symlinks as a house rule, since a dereferenced link ships its target's full bytes against the 1 GB cap. The same-repo restriction is not a mitigation target — it is the reason the repo split happened. |
-| **Pagefind index fragmentation across languages** — a zh-Hans reader can't find a zh-Hant-only article | Low (new; **downgraded in v2.1**) | No longer an accepted limitation: `pagefind.mergeIndex(absoluteBundleUrl, {language: …})` adds other languages' indexes at query time (§6.7), so this becomes an opt-in "search all languages" affordance rather than a wall. `--force-language` stays rejected. Articles that matter in both scripts should still have both variants; `doctor` can report zh-Hans articles lacking a zh-Hant sibling. *Corrected in Phase 4 (§11.3 item 17):* merged indexes keep their own **segmentation** but stem with the **primary page's** WASM (`load_wasm: false`), not their own stemmer; and a page whose language has no indexed pages searches the **largest** index (`findIndex`: exact language → base subtag → most pages), not nothing. |
+| **Pagefind index fragmentation across languages** — a zh-Hans reader can't find a zh-Hant-only article | Low (new; **downgraded in v2.1**) | No longer an accepted limitation: `pagefind.mergeIndex(absoluteBundleUrl, {language: …})` adds other languages' indexes at query time (§6.7), so this becomes an opt-in "search all languages" affordance rather than a wall. `--force-language` stays rejected. Articles that matter in both scripts should still have both variants; `doctor` can report zh-Hans articles lacking a zh-Hant sibling. *Corrected in Phase 4 (§11.3 item 17):* merged indexes keep their own **segmentation** but stem with the **primary page's** WASM (`load_wasm: false`), not their own stemmer; and a page whose language has no indexed pages searches the **largest** index (`findIndex`: exact language → base subtag → most pages), not nothing. *Done in Phase 4 Task G (§11.3 item 17):* the opt-in checkbox is built — per reader and off by default, the reader's own language leading (`indexWeight` 0.001), with a language filter; such a page gets no checkbox. The 0.3.0 release is the next step. |
 | **Pagefind UI strings for `zh-Hant` silently render Simplified** — UI-string resolution has no language-script key, so `zh-Hant` reaches `zh.json` | Low (**new in v2.1**) | Wiring, not a missing feature: pass Traditional strings via the Default UI `translations` option, the same path already planned for `ms` (§6.7). Caught in the Phase 3 acceptance test by asserting on rendered UI strings, not just on index file names. |
 | **giscus strict mode hides pre-existing discussions** — threads not created by the giscus bot carry no `<!-- sha1: … -->` body marker, so under `data-strict="1"` the widget shows nothing and the next comment opens a duplicate thread | Low, one-time (**new in v2.1**) | Only affects sites with discussions predating the switch. Migration retitles **and** appends the marker (§6.8, §7.4 step 8); `clogem migrate` computes it. Verified on one article before the switch is announced. Not mitigated by disabling strict mode — that reintroduces fuzzy title merging, which is worse. |
 | **Translation drift** — variants silently diverge as the English original is edited | Medium (new) | A staleness check (variant mtime/commit-date vs primary) is designed but deferred; in the meantime the fallback notice (§6.8) at least tells readers when they're seeing an untranslated page. |
@@ -2831,6 +2887,7 @@ and canonical pages, ogp.me, Facebook's locale list, RFC 4287 and sitemaps.org.
     §8's Phase 3 list never included it. It is not implemented: no `mergeIndex`, no toggle, and
     config.example.edn no longer advertises the key. The §6.7 analysis (absolute bundle URL to
     defeat the same-site guard; the page's own language always leads) stands for Phase 4.
+    *Built in Phase 4 Task G (§6.7, §11.3 item 17).*
 44. **An optional self-hosted Tamil font; the default stays `:system` (§6.9, D-P3-12).**
     `:theme {:fonts {:tamil :system}}` is now read (a value other than `:system`/`:self-hosted`
     is a config error). System fonts cover Windows (Nirmala UI), macOS/iOS (Tamil Sangam MN) and
@@ -3850,14 +3907,29 @@ their own findings. Item 19 onward are corrections.
     through `layout/page`, default language, every language's home in its own words, `noindex`, no
     `:seo`; a static root `404.html` replaces it; `bb dev` and `bb serve` answer a miss under the
     base with it, status 404.
-17. **Cross-language search (G).** Opt-in `:search {:cross-language true}`: a named Pagefind
-    instance with absolute `mergeIndex` URLs and `indexWeight` 0.001, so the reader's own language
-    leads; only languages that have indexed pages are merged; a per-reader checkbox, off by default,
-    plus a language filter. Two facts from the 1.5.2 bundle correct §6.7 and §10: `findIndex` falls
-    back from the exact language to its base subtag and then to the **largest** index, so a language
-    with no indexed pages searches the largest one; and a merged instance is initialised with
-    `load_wasm: false`, so **stemming follows the primary page's language** while segmentation (done
-    at index time) still follows each index's.
+17. **Cross-language search (G) — done** (D-P4-17; §6.7 records what was built). Opt-in
+    `:search {:cross-language true}`: a named Pagefind instance with absolute `mergeIndex` URLs and
+    `indexWeight` 0.001, so the reader's own language leads; only languages that have indexed pages
+    are merged; a per-reader checkbox, off by default, plus a language filter. Two facts from the
+    1.5.2 bundle correct §6.7 and §10: `findIndex` falls back from the exact language to its base
+    subtag and then to the **largest** index, so a language with no indexed pages searches the
+    largest one; and a merged instance is initialised with `load_wasm: false`, so **stemming follows
+    the primary page's language** while segmentation (done at index time) still follows each
+    index's. *Findings while building it*, from the bundle and the demo: a merge's `language` must
+    be the lowercased key, or `findIndex` silently falls back to the largest index; each index
+    segments the query by its own language; an absolute merge path gives absolute result hrefs
+    unless `baseUrl` is passed, because the worker has no `document` to strip the origin against;
+    the filter is `mergeFilter`, a synthetic filter on every page of an index, and its values are
+    the languages' endonyms (`:label`); `indexWeight` is load-bearing — without it the zh-Hans home's
+    first result for `permalink` is `/pages/ca4d51/`, with it `/zh-Hans/pages/relocated/`; a modal
+    subtree built in JS and then connected draws two close buttons, so the script swaps single
+    elements inside the rendered modal; Pagefind centres the filter menu on its `inline-flex`
+    wrapper at ≤ 640px (x = −37…251 at 320 px), so `css/search-all.css` makes the wrapper full
+    width, with `!important` against Pagefind's `(3,0,0)` rules; Escape inside the open filter closes
+    the whole modal; and print needs no rule of its own (the row is inside `.clogem-search`).
+    `<pagefind-config>`'s `register` reads no merge attribute, so the data rides in
+    `data-clogem-merge`, which it ignores. A site without the key, with it false, or under
+    `:provider :none` builds a byte-identical `dist/`.
 18. **CI browser job (A, D-P4-18) — done.** A `browser` job builds the demo exactly as `test` does,
     serves it with `python3 -m http.server --bind 127.0.0.1` and runs `test/browser/run.mjs`, which
     executes every `test/browser/*.test.mjs` in one headless Chromium with third-party requests
@@ -3867,6 +3939,8 @@ their own findings. Item 19 onward are corrections.
     passes (908 checks). `CLOGEM_CHROMIUM` launches a preinstalled Chromium of another revision for
     local runs (`test/browser/README.md`). Nothing in `test/browser/` ships, and `bb test` never loads
     it.
+    *G (D-P4-18):* the demo sets `:search {:cross-language true}`, so `search-all.test.mjs` runs in
+    this job against the real index; the job itself needed no change.
 19. **§1.2 corrected: htmlModules and title badges.** vdoing's `htmlModules` has 7 HTML slots
     (`homeSidebarB sidebarT sidebarB pageT pageB windowLB windowRB`) plus 2 show-modes
     (`pageTshowMode pageBshowMode`), not "9 regions" (`vdoing/types/index.ts`, l.165–175). The title

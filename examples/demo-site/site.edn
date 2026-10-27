@@ -82,7 +82,7 @@
          ;; the link resolves under CI's --base /clogem-demo/ too
          :footer {:create-year 2024
                   :copyright-info "<a href=\"{{base}}pages/559f0f/\">clogem-press contributors</a>"}}
- :search   {:provider :pagefind}   ; D-P3-8: CI indexes the demo in all five languages
+ :search   {:provider :pagefind :cross-language true}   ; D-P3-8: CI indexes the demo in all five languages
  ;; D-P3-15: giscus on every article, one thread per identity. The ids are
  ;; well-formed placeholders for a repository that does not exist, so the
  ;; markup is real and testable but the widget itself never loads.

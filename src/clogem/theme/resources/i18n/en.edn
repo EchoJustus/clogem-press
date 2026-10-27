@@ -76,6 +76,8 @@
  :search/filter-selected-many "[COUNT] selected"
  :search/input-hint           "Results will appear as you type"
  :search/loading              "Loading"
+ ;; Task G: the cross-language search checkbox (D-P4-17)
+ :nav/search-all              "Search all languages"
  ;; The "also available" banner (D-P3-14): written in the READER'S chosen
  ;; language, {{lang}} being that language's own :label.
  :banner/available            "This page is also available in {{lang}}."

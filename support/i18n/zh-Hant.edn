@@ -103,6 +103,7 @@
             [:p "安全性問題、關於你的資料的疑問，或法律通知：請寫信至 "
              [:a "mailto:EchoJustus.Studio@outlook.com?subject=clogem-press" "EchoJustus.Studio@outlook.com"] "。"]]}
 
+  ;; Task G: the clogem-search-all clause was approved by the owner on 2026-10-26 (PR #19)
   ;; approved by the owner (2026-10-26): a change to it needs their approval again
   {:id     "privacy"
    :title  "隱私權"
@@ -122,7 +123,7 @@
              "），因此只會下載一次。網站的設定也可以改用自己為某個工具指定的下載來源與雜湊值。已經安裝、並在網站設定或 "
              [:code "CLOGEM_CHROMA"] "、" [:code "CLOGEM_PAGEFIND"] " 或 " [:code "CLOGEM_FSWATCHER"] " 中指定的工具，永遠不會被下載。"]
             [:h3 "你建置的網站"]
-            [:p "用 clogem-press 建置的網站是一個由檔案組成的資料夾，由你決定發布到哪裡。在預設設定下，它不會向其他網站發出任何請求。只有當網站擁有者開啟 giscus 留言或流量分析（Google Analytics 4、Plausible 或 Umami），或把標誌或圖片寫成其他網站上的網址時，它才會這麼做。搜尋引擎網站驗證標籤如果由擁有者加入，只是頁面裡的幾行內容，不會載入任何東西。網站本身會在讀者的瀏覽器中儲存三樣東西（讀者選擇的色彩模式、選擇的語言，以及讀者關閉了哪些「也有其他語言版本」的語言提示列），並且不會把它們傳送到任何地方；giscus 留言和流量分析如果由網站擁有者開啟，會依照各自的條款儲存它們自己的資料。"]]}
+            [:p "用 clogem-press 建置的網站是一個由檔案組成的資料夾，由你決定發布到哪裡。在預設設定下，它不會向其他網站發出任何請求。只有當網站擁有者開啟 giscus 留言或流量分析（Google Analytics 4、Plausible 或 Umami），或把標誌或圖片寫成其他網站上的網址時，它才會這麼做。搜尋引擎網站驗證標籤如果由擁有者加入，只是頁面裡的幾行內容，不會載入任何東西。網站本身最多會在讀者的瀏覽器中儲存四樣東西（讀者選擇的色彩模式、選擇的語言、讀者關閉了哪些「也有其他語言版本」的語言提示列，以及在提供此選項的網站上，讀者是否選擇搜尋所有語言），並且不會把它們傳送到任何地方；giscus 留言和流量分析如果由網站擁有者開啟，會依照各自的條款儲存它們自己的資料。"]]}
 
   {:id     "source"
    :title  "授權與原始碼"

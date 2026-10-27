@@ -528,11 +528,19 @@
                                       (search/ui-translations
                                        {:cfg cfg :lang l :strings strings
                                         :dev? (:clogem/dev? cfg)})))]))
+        ;; Task G: the cross-language merge data, also once per language —
+        ;; it reads the whole model to see which languages have an index
+        search-merge (into {}
+                           (for [l (config/lang-keys cfg)]
+                             [l (delay (search/merge-data
+                                        {:cfg cfg :lang l :strings strings :model model
+                                         :dev? (:clogem/dev? cfg)}))]))
         ctx-for (fn [lang m]
                   (merge {:cfg cfg :lang lang :strings strings :model model
                           :dev? (:clogem/dev? cfg)
                           :index-paths paths
-                          :search-ui (some-> (get search-ui lang) deref)}
+                          :search-ui (some-> (get search-ui lang) deref)
+                          :search-merge (some-> (get search-merge lang) deref)}
                          m))]
     (into
      {}

@@ -107,6 +107,11 @@
     "js/bodybg.js"     (< (count (config/body-bg-images cfg)) 2)
     ;; P4-E1b: the windows' close button, only on a site with a window
     "js/window.js"     (not (config/windows? cfg))
+    ;; Task G: the "Search all languages" checkbox. `skip?` sees only the
+    ;; config, so a site with the key on and a single indexed language
+    ;; ships these unlinked (config.example.edn says so)
+    "js/search-all.js"  (not (config/cross-language? cfg))
+    "css/search-all.css" (not (config/cross-language? cfg))
     false))
 
 (def custom-css
