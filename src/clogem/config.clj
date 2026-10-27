@@ -661,6 +661,11 @@
    "searchMaxSuggestions"    [nil :dropped]
    "displayAllHeaders"       [nil :dropped]
    "sidebarHoverTriggerOpen" [nil :dropped]
+   ;; Release 0.3.0: a nav item's `target` and `rel`, declared by VuePress's
+   ;; default-theme types but read by vdoing nowhere (its NavLink sets both
+   ;; itself); clogem-press's nav links open in the same tab
+   "target"                  [nil :dropped]
+   "rel"                     [nil :dropped]
    "sidebar"                 [nil :implicit
                               "always generates the structured sidebar from the numbered directory tree (vdoing's 'structuring' mode)"
                               (str "Remove it. Custom sidebar arrays and sidebar: 'auto' are not supported "

@@ -266,8 +266,8 @@
                 (DESIGN.md §8) — `doctor` names it either way;
     [:in k]     a key inside the value of `k`, which `doctor` does not
                 walk: `k`'s own status covers it;
-    :unread     declared, but never read by vdoing — not classified (see
-                the NavItem group).
+    :unread     declared, but never read by vdoing, and not classified
+                (none is left: the owner dropped `target` and `rel`).
 
   vdoing's `VdoingThemeConfig` (types/index.ts l.9) extends the default
   theme's `DefaultThemeConfig` minus `sidebar` (l.3), from @vuepress/types
@@ -358,8 +358,8 @@
    ["text"              [:nav :* :text]                       "theme-default.ts:10"]
    ["link"              [:nav :* :link]                       "theme-default.ts:14"]
    ["ariaLabel"         [:nav :* :aria-label]                 "theme-default.ts:18"]
-   ["target"            :unread                               "theme-default.ts:22"]
-   ["rel"               :unread                               "theme-default.ts:26"]
+   ["target"            :dropped                              "theme-default.ts:22"]
+   ["rel"               :dropped                              "theme-default.ts:26"]
    ["items"             [:nav :* :items]                      "theme-default.ts:30"]
    ;; -- read by vdoing, declared in neither
    ["sidebarDepth"      [:theme :sidebar-depth]               "components/SidebarLink.vue:38"]
@@ -520,7 +520,7 @@
         says     {:implicit " is not needed: clogem-press "
                   :deferred " is a vdoing option clogem-press defers past v1 (DESIGN.md §8)"
                   :dropped  " is a vdoing option clogem-press does not have (dropped in Phase 4, DESIGN.md §8)"}]
-    (is (= 14 (count statused)) (pr-str statused))
+    (is (= 16 (count statused)) (pr-str statused))
     (doseq [[k what] statused]
       (is (= 1 (count (filter #(str/starts-with? % (str ":" k (says what))) (keys ws))))
           (str k " " what)))
@@ -529,10 +529,10 @@
         (is (not-any? #(str/includes? % (str ":" c " ")) (keys ws)) c)))
     (testing "no other warning"
       (is (= (count statused) (count ws)) (pr-str (keys ws)))))
-  (testing "NavItem's target and rel, which vdoing never reads: doctor names them too"
+  (testing "NavItem's target and rel, which vdoing never reads: doctor names them as dropped"
     (let [ws (doctor-warnings {:nav [{:text "A" :link "/a/" :target "_blank" :rel "noopener"}]})]
-      (is (= #{":nav 0 :target is not a nav item option and is ignored."
-               ":nav 0 :rel is not a nav item option and is ignored."}
+      (is (= #{":nav 0 :target is a vdoing option clogem-press does not have (dropped in Phase 4, DESIGN.md §8); it is ignored."
+               ":nav 0 :rel is a vdoing option clogem-press does not have (dropped in Phase 4, DESIGN.md §8); it is ignored."}
              (set (keys ws)))))))
 
 ;; ---------------------------------------------------------------------------

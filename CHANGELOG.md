@@ -449,6 +449,9 @@ five marked implicit — then the exit criterion, asserted, and the version:
 - vdoing's site-wide **`navbar`** switch is **deferred** past v1 with front
   matter `navbar: false` (DESIGN.md §8): a `site.edn` that sets it is told
   so, and that every page shows the navbar.
+- A nav item's **`target`** and **`rel`**, which VuePress's types declare
+  but vdoing never reads, are **dropped** (DESIGN.md §8): a `site.edn` that
+  sets one is told so. clogem-press's nav links open in the same tab.
 - **Implicit** — a `site.edn` that sets one is told what clogem-press does
   instead and to remove it: `searchPlaceholder` (the i18n string
   `:search/placeholder`), `locales` and `label` (`:langs :locales` and

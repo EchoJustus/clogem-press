@@ -2183,7 +2183,9 @@ order; each builds on A:
   1.12.9 (§11.3 item 22).
 - **Removed, not deferred:** `displayAllHeaders`, `sidebarHoverTriggerOpen`, `searchMaxSuggestions`,
   custom `sidebar` arrays and `sidebar: 'auto'` — the sidebar is always generated from the directory
-  tree, and search is Pagefind's. A site that sets one gets a warning naming it.
+  tree, and search is Pagefind's — and a nav item's `target` and `rel`, which VuePress's types
+  declare but vdoing never reads (clogem-press's nav links open in the same tab). A site that sets
+  one gets a warning naming it.
 
 ### Phase 5 — Automation, packaging, documentation (7 days)
 
