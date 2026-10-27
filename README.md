@@ -341,9 +341,10 @@ in a dropdown (`:items`). A nav item's `:aria-label` (vdoing's
 `ariaLabel`; a string or a map by language) names its link, or its
 dropdown, for screen readers. vdoing's `navbar` switch, site-wide or in
 front matter (`navbar: false`), is deferred: every page shows the navbar,
-and a site that sets it in `site.edn` gets a warning. Every jump to a fragment — a link, the TOC, a
-fresh load of `…/#id` — and every focus move by Tab lands 0.75rem below the
-navbar (a `scroll-margin-top` on every element outside the navbar, so an
+and a site that sets it in `site.edn` gets a warning. Every jump to a
+fragment — a link, the TOC, a fresh load of `…/#id` — and every focus move
+by Tab lands 0.75rem below the navbar (a `scroll-margin-top` on every
+element outside the navbar, so an
 `<a name>` target and `scrollIntoView()` too; with JavaScript the navbar's
 own controls never scroll the page), headings or not. Scrolling is smooth
 unless the reader's system asks for reduced motion, except the browser's

@@ -24,7 +24,7 @@ nothing in the generator or in a built site.
 
 A 0.2.0 site gets, without changing anything, what vdoing has on by
 default: page buttons, a back-to-top button, title badges and an update bar
-under every article — each with a `false` to turn it off — and every build
+under every article — each of which a site can turn off — and every build
 writes `dist/404.html` (a root `404.html` in the static directory replaces
 it). Its code is highlighted, and the reader can choose a colour mode
 (Upgrading, below). It can opt into the rest: the line page style
@@ -58,7 +58,7 @@ planned now takes effect.
   it, or set `:provider :none`, to keep it off); `:content :static-dir` is
   copied, and a file in it that collides with the build's own output is an
   error; `:theme :html-modules` is injected; `:theme :page-style :line`,
-  the five page-chrome keys, the E1a identity keys and `:search
+  B2b's five page-chrome keys, the E1a identity keys and `:search
   :cross-language` do what they say.
 - **Warnings, never errors**: an unknown `site.edn` key, or vdoing's
   spelling of one, warns, naming its path and the key to write (Task A);
@@ -82,9 +82,10 @@ planned now takes effect.
   task's *Needs native review* section lists its own.
 - `HEAD` reports `Content-Length: 0` from `bb dev` and `bb serve` on
   babashka 1.13.219 (1.13.220 and later send GET's length).
-- Two browser layout checks depend on the fonts: under DejaVu Sans or a
-  serif font, the navbar on `/ms/` is not one row at 1031–1061 px, and the
-  long nav at 850 px. They pass with CI's fonts.
+- Two browser layout checks depend on the fonts, and can fail under DejaVu
+  Sans or a serif font: the navbar staying one row on `/ms/` at 1031–1061
+  px, and the long nav at 850 px (`layout.test.mjs`). Both pass on CI and
+  passed in this release's local run.
 
 **Support page** (DESIGN.md §7.5): clogem-press's page on the Clogem
 support site, https://echojustus.github.io/clogem-support/clogem-press/,
