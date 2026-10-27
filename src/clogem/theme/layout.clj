@@ -399,6 +399,12 @@
   [ctx]
   (if (contains? ctx :search-ui) (:search-ui ctx) (search/ui-translations ctx)))
 
+(defn search-merge-data
+  "Task G: the page's `search/merge-data`, precomputed per language by
+  `render/page-map` (`:search-merge`) or computed here."
+  [ctx]
+  (if (contains? ctx :search-merge) (:search-merge ctx) (search/merge-data ctx)))
+
 (defn search-config
   "D-P3-10: `<pagefind-config>`, emitted FIRST in `<body>` on every page.
   Pagefind 1.5.2 can render its first component before the language is
@@ -406,14 +412,20 @@
   #1332). `bundle-path` is base-inclusive; `lang` is `search/ui-lang` (UI
   strings only — the index follows `<html lang>`); a language Pagefind has
   no strings for carries them in `data-clogem-translations`, which
-  js/search.js hands to `setTranslations`."
+  js/search.js hands to `setTranslations`.
+
+  Task G: a page that offers the \"Search all languages\" checkbox also
+  carries `data-clogem-merge`, which js/search-all.js reads; the Component
+  UI's own `register` ignores every attribute it does not know."
   [{:keys [cfg lang] :as ctx}]
   (when (search/enabled? cfg)
-    (let [strings (search-ui-strings ctx)]
+    (let [strings (search-ui-strings ctx)
+          merge-data (search-merge-data ctx)]
       [:pagefind-config
        (cond-> {:bundle-path (search-href ctx "")
                 :lang (search/ui-lang cfg lang)}
-         strings (assoc :data-clogem-translations (json/generate-string strings)))])))
+         strings (assoc :data-clogem-translations (json/generate-string strings))
+         merge-data (assoc :data-clogem-merge (json/generate-string merge-data)))])))
 
 (defn search-box
   "The navbar's search button and the dialog it opens (D-P3-10), labelled
@@ -1158,11 +1170,18 @@
       (when (search/enabled? cfg)
         (list
          [:link {:rel "stylesheet" :href (search-href ctx "pagefind-component-ui.css")}]
+         ;; Task G: the checkbox row's rules, after Pagefind's own
+         (when (search-merge-data ctx)
+           [:link {:rel "stylesheet" :href (asset-href ctx "css/search-all.css")}])
          [:script {:src (search-href ctx "pagefind-component-ui.js") :type "module"}]
          ;; a module script is deferred, and deferred scripts run in document
          ;; order, so this runs after the components are defined
          (when (search-ui-strings ctx)
-           [:script {:src (asset-href ctx "js/search.js") :defer true}])))
+           [:script {:src (asset-href ctx "js/search.js") :defer true}])
+         ;; Task G: after the module and after search.js's setTranslations,
+         ;; which on `ms` is what creates the modal this augments
+         (when (search-merge-data ctx)
+           [:script {:src (asset-href ctx "js/search-all.js") :defer true}])))
       ;; D-P4-8: the site's own stylesheet, LAST, after Pagefind's — so a
       ;; rule of the same specificity overrides anything above it
       (when (assets/version cfg assets/custom-css)

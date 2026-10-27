@@ -1,0 +1,7 @@
+/* clogem-press: the "Search all languages" row (Task G, D-P4-17). Its
+ * colours are Pagefind's --pf-*, which theme.css maps, so dark and read
+ * follow with nothing more; print hides it with .clogem-search. */
+.clogem-search-all{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 1rem;padding-top:.75rem;font-size:.875rem}
+.clogem-search-all pagefind-filter-dropdown{flex:1 1 12rem}
+/* Pagefind centres its menu on the wrapper at <= 640px; its rules carry (3,0,0), hence !important */
+.clogem-search-all .pf-dropdown-wrapper{width:100%!important}

@@ -102,6 +102,7 @@
             [:p "安全问题、关于你的数据的问题，或者法律通知：请发邮件至 "
              [:a "mailto:EchoJustus.Studio@outlook.com?subject=clogem-press" "EchoJustus.Studio@outlook.com"] "。"]]}
 
+  ;; Task G: the clogem-search-all clause was approved by the owner on 2026-10-26 (PR #19)
   ;; approved by the owner (2026-10-26): a change to it needs their approval again
   {:id     "privacy"
    :title  "隐私"
@@ -121,7 +122,7 @@
              "），因此只下载一次。网站的配置也可以改用自己为某个工具指定的下载来源和哈希值。已经安装、并在网站配置或 "
              [:code "CLOGEM_CHROMA"] "、" [:code "CLOGEM_PAGEFIND"] " 或 " [:code "CLOGEM_FSWATCHER"] " 中指定的工具，永远不会被下载。"]
             [:h3 "你构建的网站"]
-            [:p "用 clogem-press 构建的网站是一个文件夹，由你决定发布到哪里。默认情况下，它不会向其他网站发出任何请求。只有当网站所有者开启 giscus 评论或统计分析（Google Analytics 4、Plausible 或 Umami），或者把徽标或图片写成其他网站上的地址时，它才会这样做。搜索引擎站长平台的验证标签如果由所有者添加，只是页面里的几行内容，不会加载任何东西。网站本身会在读者的浏览器中保存三样东西（读者选择的配色模式、选择的语言，以及读者关闭了哪些“也有其他语言版本”的语言提示条），并且不会把它们发送到任何地方；giscus 评论和统计分析如果由网站所有者开启，会按照各自的条款保存它们自己的数据。"]]}
+            [:p "用 clogem-press 构建的网站是一个文件夹，由你决定发布到哪里。默认情况下，它不会向其他网站发出任何请求。只有当网站所有者开启 giscus 评论或统计分析（Google Analytics 4、Plausible 或 Umami），或者把徽标或图片写成其他网站上的地址时，它才会这样做。搜索引擎站长平台的验证标签如果由所有者添加，只是页面里的几行内容，不会加载任何东西。网站本身最多会在读者的浏览器中保存四样东西（读者选择的配色模式、选择的语言、读者关闭了哪些“也有其他语言版本”的语言提示条，以及在提供此选项的网站上，读者是否选择搜索所有语言），并且不会把它们发送到任何地方；giscus 评论和统计分析如果由网站所有者开启，会按照各自的条款保存它们自己的数据。"]]}
 
   {:id     "source"
    :title  "许可证与源代码"

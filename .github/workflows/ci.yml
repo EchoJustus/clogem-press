@@ -321,7 +321,7 @@ jobs:
           fail() { echo "::error::$1"; exit 1; }
           test ! -e dist-nosearch/pagefind       || fail "--no-search wrote a pagefind/ bundle"
           # markup, not prose: the demo's articles mention Pagefind by name
-          if grep -rlE 'data-pagefind-|<pagefind-|(href|src)="[^"]*(/pagefind/|/js/search\.js)' dist-nosearch --include='*.html' \
+          if grep -rlE 'data-pagefind-|<pagefind-|(href|src)="[^"]*(/pagefind/|/js/search(-all)?\.js|/css/search-all\.css)' dist-nosearch --include='*.html' \
                | head -n 3 | grep .; then
             fail "--no-search pages still carry search markup"
           fi

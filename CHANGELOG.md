@@ -12,6 +12,7 @@ B2, §11.3 item 1), then Task F — analytics, verification and a static root
 page chrome (the second half of B2, §11.3 item 9, D-P4-9), then Task E2 —
 article-page parity (§11.3 item 16, D-P4-13), then Task E1a — the blog
 identity and the home banner (the first half of §11.3 item 13, D-P4-13),
+then Task G — cross-language search (§11.3 item 17, D-P4-17, D-P4-18),
 then the Phase 4 follow-ups — Task D's known issues and smaller items, and
 what the E1a and E2 checks left.
 The version stays 0.2.0. Every article page now ends with an update bar
@@ -26,161 +27,10 @@ Likewise a site that set any of the five keys 0.2.0 listed as planned —
 buttons and a back-to-top button now appear by default, as in vdoing.
 Likewise for E1a's keys (`:theme :blogger`, `:social`, `:footer`,
 `:banner-bg`, `:body-bg-img*`, `:title-badge*`): a site that set one now
-gets it, and title badges appear by default, as in vdoing.
-
-**Phase 4 follow-ups** (before 0.3.0: Task D's known issues and smaller
-items, and what the E1a and E2 checks left; tests in
-`clogem.followups-test` unless named):
-
-### Fixed (P4 follow-ups)
-
-- **A file of 1 MB or more deleted mid-request is sent as it was, never
-  http-kit's 500 naming its absolute path** (item 1). It was a `File`
-  body, which http-kit opens only after the handler has returned, so a
-  rebuild deleting it in between answered `500` with the path as the body
-  (reachable with `--host 0.0.0.0`). Every file is now read whole, or from
-  20 MB mapped — what http-kit did with a `File` body — from one open
-  before the response exists; a file gone before that open is a plain 404
-  (`a-large-file-deleted-mid-request-is-sent-whole-never-its-path`,
-  `a-file-gone-before-it-is-opened-is-a-plain-404`; `dev_round2_test`'s
-  `a-file-is-read-whole-or-mapped-from-one-open` replaces
-  `a-small-file-is-read-whole-and-a-big-one-is-a-file`). A read holds the
-  file once: it was read into a buffer and then copied, twice its size
-  (follow-ups.1, `a-whole-read-holds-the-file-once`: a 100 MB read in a
-  150 MB heap).
-- **HEAD sends no body, whatever the status, and the real
-  `Content-Length` where http-kit allows it** (item 2). A HEAD of a 404,
-  a 500, a 403 or a 400 sent its body on babashka 1.13.219, and every HEAD
-  said `Content-Length: 0`. A HEAD is now answered as GET is: on babashka
-  1.13.220 and later (http-kit 2.9.0-beta4) the body is left for http-kit,
-  which drops it and sends GET's `Content-Length`; on 1.13.219, whose
-  http-kit sends any body to HEAD and counts `Content-Length` from the body
-  it sends, the body is dropped here and the length stays 0
-  (`head-reports-the-length-and-sends-no-body`). A HEAD reads none of the
-  file: one under 20 MB was read whole, to be dropped, about 30 times
-  slower than 0.2.0 for 19 MB (follow-ups.1). On 1.13.220 and later its
-  body is the file mapped, whose length http-kit sends without reading a
-  byte (on Windows a file under 20 MB is still read: a mapping would hold
-  it against the next rebuild's replace until a GC); on 1.13.219 there is
-  none; a page dev adds the reload script to is still read, for its length
-  (`head-reads-no-file`).
-- **A fswatcher pod that dies while `bb dev` runs is followed by polling**
-  (item 4). dev stopped watching — nothing rebuilt again — and babashka's
-  pod client printed `ERROR: Pod quit unexpectedly` once per watch (six
-  lines). dev's follower now checks the pod's process on every pass and,
-  once it is gone, prints one line (`the fswatcher pod quit; dev polls
-  every 500 ms for the rest of this session.`) and polls, with one full
-  rebuild once polling starts, as the inotify-limit fallback does; the
-  pod client's lines are dropped, as at Ctrl-C
-  (`a-pod-that-dies-falls-back-to-polling-with-one-line`, with the real
-  pod, kills it; skipped without `CLOGEM_FSWATCHER`. `dev_round3_test`'s
-  `the-real-pod-quitting-at-ctrl-c-is-not-reported` now expects silence
-  either way). Ctrl-C signals the pod with dev, and the pod can die before
-  dev's shutdown hook says it is stopping, so the follower waits up to
-  `signal-grace-ms` (1 s) for that, as the pod's stderr does, before it
-  falls back: a stop never prints the line or starts a poller
-  (follow-ups.1, `a-pod-that-dies-at-ctrl-c-is-no-fallback`).
-- **The polling fallback's first rebuild says `(full rebuild)`** (item 11),
-  not `(6 files changed)`, the count of the watched roots submitted to
-  force it (`the-fallback-s-first-rebuild-says-full-rebuild`), and reloads
-  the page. The marker the poller submits for it is a path on no system,
-  taken out before any path function sees it: the first marker,
-  `"<full rebuild>"`, is no valid Windows path, and the rebuild handed it
-  to `fs/` functions (`gone-temp?`; `theme-namespaces` under
-  `--reload-code`), a false `build failed` there (follow-ups.1,
-  `the-full-rebuild-marker-is-never-a-path`).
-
-- **A `:build :out` in `site.edn` outside the site directory gets a hint
-  that helps** (item 6). With `:build {:out "dist"}` and `dist` a link out
-  of the site, the hint recommended "a directory of its own, such as the
-  default "dist"" — the folder refused. It now says a value in
-  `site.edn` must stay inside the site, and to build elsewhere, through a
-  link or `../dist`, to remove `:build :out` from `site.edn` (the default
-  `dist` may be a link) or pass `--out`; the other refusals keep their
-  hint (`an-out-outside-the-site-gets-a-hint-that-helps`).
-
-- **A pre-encoded `:nav` link ending in `/` is encoded once** (item 8,
-  pre-existing before Task D). A site-page link such as
-  `/%E6%96%87%E6%A1%A3/` or `/my%20docs/` was percent-encoded whole, so
-  its escapes became `%25E6…` and `%2520`. The page part is still encoded
-  segment by segment, except that a valid `%XX` escape is kept
-  (`u/url-encode-path-once`), so `/文档/` and `/%E6%96%87%E6%A1%A3/` give
-  the same href, under any base and language prefix, while `#`, `?` and
-  the sub-delimiters stay encoded: they are part of a page's name, and
-  `/tags/c#/` is the tag page of C#, `/tags/c%23/`. (The first fix encoded
-  it as an owner's href is, `u/url-encode-href`, which keeps them, so
-  `/tags/c#/` became a link to `/tags/c` and `/categories/a?b/` a query;
-  `:theme :update-bar :more-article`, which goes the same way, too —
-  follow-ups.1.) A link without the slash gets the base only and is
-  appended as written, as since P4-D.4, so `/my docs` keeps its raw space,
-  as it did before (`a-pre-encoded-nav-link-is-not-encoded-twice`: `/文档/`,
-  `/my docs/`, pre-encoded forms, `/tags/c#/`, `/categories/a?b/` and
-  `/a&b=c+d/`, with and without the slash, under `/` and `/my docs/`, on an
-  English and a Chinese page; `more-article-is-encoded-as-a-nav-link-is`).
-
-- **An unknown command-line option is a warning** (item 10), one line on
-  stderr for each, naming it and the task's options — `clogem-press: bb
-  build: unknown option --prot (ignored); its options are --site-dir, …,
-  --help.` — and the task runs as before: it was silently ignored, and an
-  error would break scripts that pass one. `bb dev`'s own rebuilds, which
-  hand `build` dev's options, say nothing
-  (`an-unknown-option-is-a-warning-naming-it-and-the-task-s-options`, in
-  process and through `bb.edn`).
-- **`--help` names no fix round or design section** (item 9): `bb clean
-  --help` ended "(P4-D.4 item 3)" and `bb fetch-tool --help` began its
-  parenthesis "§4;". Both moved to code comments
-  (`no-task-s-help-names-an-internal-round`, over every task).
-
-### Changed (P4 follow-ups)
-
-- **`theme.css` drops E2's redundant `overflow-wrap: anywhere`** on a
-  list row's link (item 14): with `min-width: 0` the link shrinks, and the
-  body's `overflow-wrap: break-word` already breaks a long word. 11,970 →
-  11,965 B gzipped (44,918 → 44,893 B). Nothing renders differently: every
-  row link's line boxes and every page's scroll size were the same, with
-  the declaration and without, on the 214 demo pages with rows at 320, 360
-  and 1280 px and with parity's long words ("Configuration", 40 and 60
-  characters) on the zh-Hans home; full-page screenshots were identical
-  wherever two shots of the same page agreed; `layout`, `modes` (the page
-  styles), `parity` and `overflow` browser tests pass.
-
-### Documentation (P4 follow-ups)
-
-- **Task D's entry on `:min-bb-version` said `bb.edn` "requires" babashka
-  1.13.219** (item 7). babashka only warns about an older version and runs
-  the task anyway; the entry now says so.
-
-### Tests (P4 follow-ups)
-
-- **`bb clean` refuses a marked output directory with a `.git` below its
-  top level** (item 5): `dist/deploy/site/.git/` or a worktree's
-  `dist/deploy/.git` file. The code refused both; nothing tested it, and
-  a `clean` that checks only `dist/.git` passed every test
-  (`clean-refuses-a-marked-directory-with-a-git-below-its-top`).
-- **Back to top's mobile placement rule is guarded by its offset check**
-  (item 12, `layout.test.mjs` item 13). The re-pinned check probed only the
-  prev/next links' centres, which back to top covers neither with the
-  mobile placement rule (`@media (max-width: 50rem)`: 16 px from the right,
-  24 from the bottom) nor without it, so it passed with the rule removed.
-  Comparing boxes would not do either: with the rule in place the button
-  still covers the right end of Next's box (about 430 px², 380 without).
-  What fails without the rule, whatever the fonts, is item 13's offset
-  check (`32 px from the right, 40 from the bottom, want 16,24`), and the
-  test now says that is the guard; the prev/next check keeps its centres
-  and says so. A check added first, the update bar's and the footer's
-  links compared rect against rect from there to the page's end, depended
-  on the fonts both ways and is dropped (follow-ups.1): with the rule in
-  place, DejaVu Sans's footer line reaches under the button (5 × 16 px),
-  and without it a serif one clears it, where Liberation Sans missed by
-  4 px.
-- **`parity_test`'s `the-home-s-more-follows-more-article`** (item 13): its
-  first `testing` label still said the right bar's More "goes to the
-  archives as before"; since the merge with E1a it checks that a simple
-  home's right bar has no update bar, and the label says so.
-- **`dev_round2_test`'s `a-replaced-watched-directory-is-registered-again`**,
-  once seen failing under load (item 15), passed `bb test --pattern
-  dev-round2` 10 times in 10, so it is left as it is; it already waits on
-  each condition (`wait-until`), not on a fixed sleep.
+gets it, and title badges appear by default, as in vdoing. And a site that
+set `:search :cross-language true` (0.2.0 warned that it was planned and
+had no effect) now gets a "Search all languages" checkbox in its search
+dialog, off for each reader until they tick it.
 
 **Support page** (DESIGN.md §7.5): clogem-press's page on the Clogem
 support site, https://echojustus.github.io/clogem-support/clogem-press/,
@@ -189,10 +39,11 @@ nothing in `src/clogem/` changes, and a built site is unaffected.
 Languages (SP.2): English (the default) at `clogem-press/`; Simplified
 Chinese at `zh-Hans/`; Traditional Chinese, with Taiwan wording, at
 `zh-Hant/`; Brazilian Portuguese at `pt-BR/` (also for `pt`); European
-Spanish at `es-ES/` (also for `es`). Five pages, **178,640 bytes** in all
-(as of SP.8): `index.html` 34,804, `zh-Hant/index.html` 36,181,
-`zh-Hans/index.html` 36,066, `pt-BR/index.html` 35,733, `es-ES/index.html`
-35,856 (each within the 64 KB budget), plus, on the English and Chinese
+Spanish at `es-ES/` (also for `es`). Five pages, **179,039 bytes** in all
+(as of Task G's privacy clause, below; 178,640 as of SP.8): `index.html`
+34,880, `zh-Hant/index.html` 36,259, `zh-Hans/index.html` 36,144,
+`pt-BR/index.html` 35,820, `es-ES/index.html` 35,936 (each within the
+64 KB budget), plus, on the English and Chinese
 pages, the fonts they use (SP.8 and SP.7, below; README).
 
 ### Added (support page)
@@ -506,6 +357,376 @@ after publication, and whenever `en.edn` changes:
 
 Once it is live, the hub's own session links it from the front page's
 clogem-press card and its README's table.
+
+**Phase 4 follow-ups** (before 0.3.0: Task D's known issues and smaller
+items, and what the E1a and E2 checks left; tests in
+`clogem.followups-test` unless named):
+
+### Fixed (P4 follow-ups)
+
+- **A file of 1 MB or more deleted mid-request is sent as it was, never
+  http-kit's 500 naming its absolute path** (item 1). It was a `File`
+  body, which http-kit opens only after the handler has returned, so a
+  rebuild deleting it in between answered `500` with the path as the body
+  (reachable with `--host 0.0.0.0`). Every file is now read whole, or from
+  20 MB mapped — what http-kit did with a `File` body — from one open
+  before the response exists; a file gone before that open is a plain 404
+  (`a-large-file-deleted-mid-request-is-sent-whole-never-its-path`,
+  `a-file-gone-before-it-is-opened-is-a-plain-404`; `dev_round2_test`'s
+  `a-file-is-read-whole-or-mapped-from-one-open` replaces
+  `a-small-file-is-read-whole-and-a-big-one-is-a-file`). A read holds the
+  file once: it was read into a buffer and then copied, twice its size
+  (follow-ups.1, `a-whole-read-holds-the-file-once`: a 100 MB read in a
+  150 MB heap).
+- **HEAD sends no body, whatever the status, and the real
+  `Content-Length` where http-kit allows it** (item 2). A HEAD of a 404,
+  a 500, a 403 or a 400 sent its body on babashka 1.13.219, and every HEAD
+  said `Content-Length: 0`. A HEAD is now answered as GET is: on babashka
+  1.13.220 and later (http-kit 2.9.0-beta4) the body is left for http-kit,
+  which drops it and sends GET's `Content-Length`; on 1.13.219, whose
+  http-kit sends any body to HEAD and counts `Content-Length` from the body
+  it sends, the body is dropped here and the length stays 0
+  (`head-reports-the-length-and-sends-no-body`). A HEAD reads none of the
+  file: one under 20 MB was read whole, to be dropped, about 30 times
+  slower than 0.2.0 for 19 MB (follow-ups.1). On 1.13.220 and later its
+  body is the file mapped, whose length http-kit sends without reading a
+  byte (on Windows a file under 20 MB is still read: a mapping would hold
+  it against the next rebuild's replace until a GC); on 1.13.219 there is
+  none; a page dev adds the reload script to is still read, for its length
+  (`head-reads-no-file`).
+- **A fswatcher pod that dies while `bb dev` runs is followed by polling**
+  (item 4). dev stopped watching — nothing rebuilt again — and babashka's
+  pod client printed `ERROR: Pod quit unexpectedly` once per watch (six
+  lines). dev's follower now checks the pod's process on every pass and,
+  once it is gone, prints one line (`the fswatcher pod quit; dev polls
+  every 500 ms for the rest of this session.`) and polls, with one full
+  rebuild once polling starts, as the inotify-limit fallback does; the
+  pod client's lines are dropped, as at Ctrl-C
+  (`a-pod-that-dies-falls-back-to-polling-with-one-line`, with the real
+  pod, kills it; skipped without `CLOGEM_FSWATCHER`. `dev_round3_test`'s
+  `the-real-pod-quitting-at-ctrl-c-is-not-reported` now expects silence
+  either way). Ctrl-C signals the pod with dev, and the pod can die before
+  dev's shutdown hook says it is stopping, so the follower waits up to
+  `signal-grace-ms` (1 s) for that, as the pod's stderr does, before it
+  falls back: a stop never prints the line or starts a poller
+  (follow-ups.1, `a-pod-that-dies-at-ctrl-c-is-no-fallback`).
+- **The polling fallback's first rebuild says `(full rebuild)`** (item 11),
+  not `(6 files changed)`, the count of the watched roots submitted to
+  force it (`the-fallback-s-first-rebuild-says-full-rebuild`), and reloads
+  the page. The marker the poller submits for it is a path on no system,
+  taken out before any path function sees it: the first marker,
+  `"<full rebuild>"`, is no valid Windows path, and the rebuild handed it
+  to `fs/` functions (`gone-temp?`; `theme-namespaces` under
+  `--reload-code`), a false `build failed` there (follow-ups.1,
+  `the-full-rebuild-marker-is-never-a-path`).
+
+- **A `:build :out` in `site.edn` outside the site directory gets a hint
+  that helps** (item 6). With `:build {:out "dist"}` and `dist` a link out
+  of the site, the hint recommended "a directory of its own, such as the
+  default "dist"" — the folder refused. It now says a value in
+  `site.edn` must stay inside the site, and to build elsewhere, through a
+  link or `../dist`, to remove `:build :out` from `site.edn` (the default
+  `dist` may be a link) or pass `--out`; the other refusals keep their
+  hint (`an-out-outside-the-site-gets-a-hint-that-helps`).
+
+- **A pre-encoded `:nav` link ending in `/` is encoded once** (item 8,
+  pre-existing before Task D). A site-page link such as
+  `/%E6%96%87%E6%A1%A3/` or `/my%20docs/` was percent-encoded whole, so
+  its escapes became `%25E6…` and `%2520`. The page part is still encoded
+  segment by segment, except that a valid `%XX` escape is kept
+  (`u/url-encode-path-once`), so `/文档/` and `/%E6%96%87%E6%A1%A3/` give
+  the same href, under any base and language prefix, while `#`, `?` and
+  the sub-delimiters stay encoded: they are part of a page's name, and
+  `/tags/c#/` is the tag page of C#, `/tags/c%23/`. (The first fix encoded
+  it as an owner's href is, `u/url-encode-href`, which keeps them, so
+  `/tags/c#/` became a link to `/tags/c` and `/categories/a?b/` a query;
+  `:theme :update-bar :more-article`, which goes the same way, too —
+  follow-ups.1.) A link without the slash gets the base only and is
+  appended as written, as since P4-D.4, so `/my docs` keeps its raw space,
+  as it did before (`a-pre-encoded-nav-link-is-not-encoded-twice`: `/文档/`,
+  `/my docs/`, pre-encoded forms, `/tags/c#/`, `/categories/a?b/` and
+  `/a&b=c+d/`, with and without the slash, under `/` and `/my docs/`, on an
+  English and a Chinese page; `more-article-is-encoded-as-a-nav-link-is`).
+
+- **An unknown command-line option is a warning** (item 10), one line on
+  stderr for each, naming it and the task's options — `clogem-press: bb
+  build: unknown option --prot (ignored); its options are --site-dir, …,
+  --help.` — and the task runs as before: it was silently ignored, and an
+  error would break scripts that pass one. `bb dev`'s own rebuilds, which
+  hand `build` dev's options, say nothing
+  (`an-unknown-option-is-a-warning-naming-it-and-the-task-s-options`, in
+  process and through `bb.edn`).
+- **`--help` names no fix round or design section** (item 9): `bb clean
+  --help` ended "(P4-D.4 item 3)" and `bb fetch-tool --help` began its
+  parenthesis "§4;". Both moved to code comments
+  (`no-task-s-help-names-an-internal-round`, over every task).
+
+### Changed (P4 follow-ups)
+
+- **`theme.css` drops E2's redundant `overflow-wrap: anywhere`** on a
+  list row's link (item 14): with `min-width: 0` the link shrinks, and the
+  body's `overflow-wrap: break-word` already breaks a long word. 11,970 →
+  11,965 B gzipped (44,918 → 44,893 B). Nothing renders differently: every
+  row link's line boxes and every page's scroll size were the same, with
+  the declaration and without, on the 214 demo pages with rows at 320, 360
+  and 1280 px and with parity's long words ("Configuration", 40 and 60
+  characters) on the zh-Hans home; full-page screenshots were identical
+  wherever two shots of the same page agreed; `layout`, `modes` (the page
+  styles), `parity` and `overflow` browser tests pass.
+
+### Documentation (P4 follow-ups)
+
+- **Task D's entry on `:min-bb-version` said `bb.edn` "requires" babashka
+  1.13.219** (item 7). babashka only warns about an older version and runs
+  the task anyway; the entry now says so.
+
+### Tests (P4 follow-ups)
+
+- **`bb clean` refuses a marked output directory with a `.git` below its
+  top level** (item 5): `dist/deploy/site/.git/` or a worktree's
+  `dist/deploy/.git` file. The code refused both; nothing tested it, and
+  a `clean` that checks only `dist/.git` passed every test
+  (`clean-refuses-a-marked-directory-with-a-git-below-its-top`).
+- **Back to top's mobile placement rule is guarded by its offset check**
+  (item 12, `layout.test.mjs` item 13). The re-pinned check probed only the
+  prev/next links' centres, which back to top covers neither with the
+  mobile placement rule (`@media (max-width: 50rem)`: 16 px from the right,
+  24 from the bottom) nor without it, so it passed with the rule removed.
+  Comparing boxes would not do either: with the rule in place the button
+  still covers the right end of Next's box (about 430 px², 380 without).
+  What fails without the rule, whatever the fonts, is item 13's offset
+  check (`32 px from the right, 40 from the bottom, want 16,24`), and the
+  test now says that is the guard; the prev/next check keeps its centres
+  and says so. A check added first, the update bar's and the footer's
+  links compared rect against rect from there to the page's end, depended
+  on the fonts both ways and is dropped (follow-ups.1): with the rule in
+  place, DejaVu Sans's footer line reaches under the button (5 × 16 px),
+  and without it a serif one clears it, where Liberation Sans missed by
+  4 px.
+- **`parity_test`'s `the-home-s-more-follows-more-article`** (item 13): its
+  first `testing` label still said the right bar's More "goes to the
+  archives as before"; since the merge with E1a it checks that a simple
+  home's right bar has no update bar, and the label says so.
+- **`dev_round2_test`'s `a-replaced-watched-directory-is-registered-again`**,
+  once seen failing under load (item 15), passed `bb test --pattern
+  dev-round2` 10 times in 10, so it is left as it is; it already waits on
+  each condition (`wait-until`), not on a fixed sleep.
+
+### Merged with Task G (P4 follow-ups)
+
+`main` with Task G merged in cleanly apart from this file's intro, where
+both sentences are kept and this block moves below the support page's,
+first among the task blocks. Together: 885 tests, 0 failures.
+
+**Task G — cross-language search** (§11.3 item 17, D-P4-17, D-P4-18):
+
+### Added (G)
+
+- **Config**: `:search {:cross-language true}` is read
+  (`clogem.config/cross-language?`, `check-search!`). 0.2.0 accepted the
+  key as planned and ignored it; it now turns on the "Search all
+  languages" checkbox. `true` and `false` are the values — nil is off, and
+  anything else is one warning naming it, repaired to false, so no site
+  that built before starts failing. `true` under `:provider :none` (what
+  `--no-search` sets) says nothing and does nothing.
+- **Merge data on the page** (`clogem.search/indexed-langs`,
+  `merge-data`; `render/page-map`, `theme/layout`): a page that offers the
+  checkbox carries `data-clogem-merge` on its `<pagefind-config>` — the
+  encoded base (so `base + "pagefind/"` is the element's own
+  `bundle-path`), its own language's label, the two labels the row shows,
+  and the OTHER indexed languages as {Pagefind key, label} in
+  `:langs :priority` order. "Indexed" is the languages with an article
+  variant, which is exactly what carries `data-pagefind-body`. No
+  attribute where the page's own language has no indexed pages (there
+  Pagefind already falls back to the largest index) or where no other
+  language has any. The data is computed once per language, beside the
+  search UI strings, so articles, homes, indexes and `404.html` all get
+  it; `css/search-all.css` follows Pagefind's stylesheet in the head and
+  `js/search-all.js` follows `js/search.js`.
+- **`js/search-all.js`** (new, 1,844 B gzipped; budget 2,048): the
+  checkbox row inside the search dialog, built from elements and text
+  nodes (no `innerHTML`), and a second, named Pagefind instance
+  (`clogem-all`) that merges the other languages' indexes at query time —
+  absolute merge URLs with `baseUrl`, Pagefind's own lowercased language
+  keys, `indexWeight` 0.001 and a `clogem-language` `mergeFilter` per
+  index. Ticking the box swaps the rendered modal's input, summary,
+  results and keyboard hints for that instance's and adds a language
+  filter; unticking swaps them back. The typed term carries over, focus
+  stays on the checkbox, and the choice is remembered as
+  `clogem-search-all` (`"1"`, removed when unticked; every storage access
+  in a try/catch, blocked storage meaning off). The default instance
+  never merges, so a reader who never ticks the box downloads no other
+  index.
+- **`css/search-all.css`** (new, 368 B gzipped; budget 512): the row's
+  layout, and the full-width dropdown wrapper that keeps Pagefind's filter
+  menu inside the viewport at 320 px (its own rules carry (3,0,0), hence
+  one `!important`). Colours are Pagefind's `--pf-*`, which the theme
+  already maps, so dark and read follow; print hides the row with
+  `.clogem-search`. `theme.css` is untouched (11,970 B gzipped, as before).
+- **`:nav/search-all`** ("Search all languages") in all five theme i18n
+  files; the filter's label reuses `:nav/language`.
+- Both files ship only where `:search :cross-language` is true
+  (`assets/skip?`).
+
+### Changed (G)
+
+- `config.example.edn` documents `:cross-language` and drops "deferred to
+  Phase 4 (D-P3-11)".
+- **The demo turns the feature on** (`examples/demo-site/site.edn`:
+  `:search {:provider :pagefind :cross-language true}`), so CI's browser
+  job covers it (D-P4-18); its `doctor` is unchanged at one warning.
+  CI's `--no-search` step greps for `js/search-all.js` and
+  `css/search-all.css` too.
+- **DESIGN** §6.7 records what was built and four more facts of the 1.5.2
+  bundle, re-read in `pagefind.js` and `pagefind-worker.js`: a merge's
+  `language` must be Pagefind's lowercased key, or `findIndex` silently
+  falls back to the largest index; each index segments the query by its
+  own language; an absolute merge path gives absolute result URLs unless
+  `baseUrl` is passed (the worker has no `document`, so the same-origin
+  strip never runs there); and the language filter is `mergeFilter`. §8,
+  §10 and §11.3 items 17 and 18 mark cross-language search done, with
+  the 0.3.0 release the next, separate step; §11.2 item 43 points to it.
+- **README**: a *Cross-language search* paragraph in Theme; the CSP
+  paragraph names `js/search-all.js` (same-origin; merges need nothing
+  beyond Pagefind's `worker-src 'self'` and `'wasm-unsafe-eval'`); the
+  support page's approval step records the owner's approval of the new
+  clause; the
+  test count.
+- **The support page's privacy note** now says a site keeps **up to four**
+  things in its reader's browser, the fourth being the cross-language
+  search choice on a site that offers it, in all five languages
+  (`support/i18n/*.edn`). **The owner approved the new clause on
+  2026-10-26** (below); the approval mark stays where it is. DESIGN §7.5 item 5 lists
+  `clogem-search-all`. The rebuilt pages are 34,880 / 36,259 / 36,144 /
+  35,820 / 35,936 bytes, 179,039 in all (README, above).
+
+### Tests (G)
+
+- `search_test.clj`'s Task G section, on the five-language fixture: each
+  page's attribute parses back to its own label plus the other four
+  languages' lowercased keys, in priority order; `base` + `pagefind/`
+  equals `bundle-path` under `--base /x/` and `/文/`; with no `ms`
+  variant, `ms` pages carry nothing and the others exclude `ms`; with one
+  indexed language nothing is emitted (though both files still ship); the
+  key absent, false, or true under `:provider :none` gives a byte-identical
+  `dist/`; the head's order; `404.html`; `check_search.clj`'s `<body>`
+  regex still matches; and, with `CLOGEM_PAGEFIND`, each page's keys plus
+  its own equal `pagefind-entry.json`'s (that one passes the binary on, as
+  `the-real-pagefind-indexes-five-languages` does: `with-site` binds
+  `search/*env*` to `{}`, so it had run whatever the tools cache held, and
+  failed on a machine with an empty cache). The head's order is held on a
+  build that has `overrides/custom.css` and an analytics loader, so
+  "custom.css the last stylesheet, analytics last of all" is checked, not
+  assumed.
+- `test/clogem/search_all_test.clj` (new): the two files' gzip budgets,
+  printed as `nav.js`'s are; no `innerHTML` and no modal built in JS; the
+  stored key written the way `support_page_test`'s scan reads it, with
+  every access wrapped; the dropdown-wrapper rule and no colour of its
+  own; the row hidden in print by `theme.css`'s `.clogem-search` rule; the
+  string in all five languages. The same file holds item 1's config
+  tests: `"yes"`, `1` and `:true` each give exactly one warning and leave
+  the feature off; nil and false are silent; `:cross-language true` draws
+  no "planned" warning; `:crossLanguage`'s hint lists `:cross-language`
+  among the options; the example config and the demo stay quiet. `config_test.clj`'s
+  `a-new-key-is-registered-in-one-place` now uses a synthetic `:zz-test`
+  key (`with-redefs`), so it no longer depends on which real key is still
+  planned. Each failed first on `f44fcf6`.
+- `support_page_test.clj`'s `the-privacy-note-names-every-stored-key` now
+  pins four keys, and `the-privacy-note-keeps-to-what-clogem-press-stores`
+  the new openings; the first failed as soon as `js/search-all.js`
+  existed, and passed with the note.
+
+- `test/browser/search-all.test.mjs` (new, 45 checks): the English home
+  finds no `百分号` unticked and fetches only the English `pf_meta`;
+  ticking it finds `/pages/cjk001/`, stores `"1"` and survives a reload,
+  and unticking undoes both. The zh-Hans home's first `permalink` result
+  is `/zh-Hans/pages/relocated/` (the merges' weight). Malay and
+  Traditional Chinese keep their own summary strings in both states, with
+  no nested dialog. The filter's values are the language names, and
+  *Bahasa Melayu* leaves `/pages/1bd8ea/`. At 320 and 360 px, ticked and
+  with the menu open: no overflow, the menu inside the viewport, one
+  close button. Tab reaches the box and Space toggles it, focus staying
+  on it; blocked storage leaves it off and working; no request under
+  `pagefind/` fails, no result href is absolute; print draws no row. A
+  temp build under `--base /clogem-demo/`, served with `bb serve`, gives
+  `/clogem-demo/pages/cjk001/`.
+
+### Fixed (G.1)
+
+- **A merged index that fails to load no longer breaks the ticked
+  search** (item 1). Pagefind 1.5.2's Component UI awaits each
+  `mergeIndex` in turn with no isolation, so one other language's
+  `pf_meta` answering 404 (a partial or stale deploy) or a dropped request
+  left every ticked search at "Searching for …" with no results, the
+  reader's own language included — and with `"1"` stored, every later
+  page opened ticked and broken. The named instance has no `error` event
+  for this (it fires only when `pagefind.js` itself fails to import), but
+  its `triggerLoad()` rejects while a merge cannot load, and each search
+  retries the load: `js/search-all.js` now listens for the instance's
+  `loading` event, and when its load rejects, that page falls back to the
+  default instance — its components swapped back, the box unticked there,
+  the typed term carried over and focus kept in the input (or on the
+  box). The stored choice is left as it is, since a later page may load.
+  `search-all.test.mjs`: with `"1"` stored and the zh-Hans `pf_meta`
+  routed to 404, and again with every foreign `pf_meta` aborted,
+  `pagefind` finds `/pages/e19a7c/` on the English home, the box ends
+  unticked, storage is still `"1"`, the term is kept and focus is in the
+  input (14 checks; the search and untick checks failed on `b35ca17`).
+- **A dialog opened before `js/search-all.js` runs keeps its search**
+  (item 2). With `"1"` stored, the start-up swap put the named instance's
+  empty input in place of one the reader had already typed in: the term
+  and results were lost and focus dropped to `<body>` with the dialog
+  open. The start-up path and the checkbox now share one swap, which
+  carries the term over and, when focus was in the outgoing components,
+  moves it to the incoming input. `search-all.test.mjs` holds the
+  script's response back (`page.route`), opens the dialog and types
+  `pagefind`, then releases it: the box is ticked, the term and
+  `/pages/e19a7c/` survive, and focus is on the input in the open dialog
+  (7 checks; the term, results and focus checks failed on `b35ca17`).
+- **`config.example.edn` says when the two files ship** (item 3): with
+  the key on *and* `:provider :pagefind`, so not under `--no-search`, as
+  `assets/skip?` decides through `config/cross-language?`; it said
+  "whenever this is true". `search_all_test.clj`
+  `the-example-says-when-the-files-ship` checks `skip?` both ways and the
+  sentence (failed on `b35ca17`).
+- `js/search-all.js` is 1,935 B gzipped (it was 1,844; budget 2,048,
+  unchanged): the header comment is shorter. `bb test`: 870 tests
+  (README's count).
+
+### Needs native review (G)
+
+Machine-made, to be read by a native speaker:
+
+- `:nav/search-all` in `src/clogem/theme/resources/i18n/ms.edn`
+  ("Cari dalam semua bahasa") and `ta.edn`
+  ("எல்லா மொழிகளிலும் தேடு"), marked in each file.
+- The support page's new privacy clause in `support/i18n/zh-Hans.edn`,
+  `zh-Hant.edn`, `pt-BR.edn` and `es-ES.edn` (the sentences below).
+
+### Approved by the owner (G)
+
+The privacy note's wording is the owner's (DESIGN §7.5 item 5). The owner
+approved these five sentences on 2026-10-26 (PR #19); a push to `main` that
+touches `support/**` publishes the page. Each replaces the "three
+things" sentence in its file; the rest of the paragraph is unchanged.
+
+- **en**: "Of its own, a site keeps up to four things in its reader's
+  browser (the colour mode they chose, the language they chose, which
+  “also available in …” language banners they dismissed, and, on a site
+  that offers it, whether they chose to search all languages) and sends
+  none of them anywhere; …"
+- **zh-Hans**:
+  "网站本身最多会在读者的浏览器中保存四样东西（读者选择的配色模式、选择的语言、读者关闭了哪些“也有其他语言版本”的语言提示条，以及在提供此选项的网站上，读者是否选择搜索所有语言），并且…"
+- **zh-Hant**:
+  "網站本身最多會在讀者的瀏覽器中儲存四樣東西（讀者選擇的色彩模式、選擇的語言、讀者關閉了哪些「也有其他語言版本」的語言提示列，以及在提供此選項的網站上，讀者是否選擇搜尋所有語言），並且…"
+- **pt-BR**: "Por conta própria, um site guarda até quatro coisas no
+  navegador do leitor (o modo de cor escolhido, o idioma escolhido, quais
+  avisos de idioma “também disponível em…” o leitor fechou e, em um site
+  que oferece essa opção, se escolheu pesquisar em todos os idiomas) e…"
+- **es-ES**: "Por sí mismo, un sitio guarda hasta cuatro cosas en el
+  navegador del lector (el modo de color elegido, el idioma elegido, qué
+  avisos de idioma «también disponible en…» ha cerrado el lector y, en un
+  sitio que lo ofrezca, si ha elegido buscar en todos los idiomas) y…"
 
 **Task E1a — blog identity and banner** (§11.3 item 13, first half; D-P4-13):
 

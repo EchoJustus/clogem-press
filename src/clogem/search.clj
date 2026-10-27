@@ -199,6 +199,45 @@
             [(str/replace (name k) "-" "_") (i18n/tr ctx k)]))))
 
 ;; ---------------------------------------------------------------------------
+;; Cross-language search (Task G, §11.3 item 17, D-P4-17)
+
+(defn indexed-langs
+  "The languages Pagefind has an index for: the ones with at least one
+  article variant. Only article and catalogue pages carry
+  `data-pagefind-body` (`page/article`, `catalogue`), and a catalogue is
+  an article, so this set is exactly the keys of `pagefind-entry.json`."
+  [model]
+  (into #{} (mapcat #(keys (:variants %))) (vals (:articles model))))
+
+(defn merge-data
+  "What `js/search-all.js` needs, as the JSON of `data-clogem-merge`, or
+  nil when this page offers no checkbox — which is whenever the site has
+  not asked for one, the page's own language has no indexed pages (there
+  Pagefind already falls back to the largest index, and a merge would
+  only add a second fallback), or no OTHER language has any.
+
+  `base` is the encoded site base, so `base + \"pagefind/\"` is the
+  `bundle-path` the same element carries; each merged language's `key` is
+  Pagefind's own, the lowercased `<html lang>`, and its `label` is the
+  locale's `:label` — the endonym the language switcher shows, which is
+  also the value of the `clogem-language` filter. The other languages come
+  in `:langs :priority` order.
+
+  nil without a `:model`: a layout test may build a ctx by hand."
+  [{:keys [cfg lang model] :as ctx}]
+  (when (and model (config/cross-language? cfg))
+    (let [indexed (indexed-langs model)
+          others  (filter #(and (not= % lang) (contains? indexed %)) (config/lang-keys cfg))]
+      (when (and (contains? indexed lang) (seq others))
+        {"base"   (u/url-encode-path (config/base-path cfg))
+         "own"    (:label (config/locale cfg lang))
+         "label"  (i18n/tr ctx :nav/search-all)
+         "filter" (i18n/tr ctx :nav/language)
+         "langs"  (vec (for [l others]
+                         {"key"   (str/lower-case (config/html-lang cfg l))
+                          "label" (:label (config/locale cfg l))}))}))))
+
+;; ---------------------------------------------------------------------------
 ;; Run
 
 (defn enabled? [cfg] (= :pagefind (get-in cfg [:search :provider])))
