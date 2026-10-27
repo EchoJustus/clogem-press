@@ -46,7 +46,7 @@
 
   {:id     "status"
    :title  "Qué hace hoy"
-   :blocks [[:p "La última versión publicada es la " [:strong "0.2.0"] ". El trabajo en la siguiente fase está en curso en la rama main y aún no se ha publicado. El "
+   :blocks [[:p "La última versión publicada es la " [:strong "0.3.0"] ". Los cambios posteriores llegan primero a la rama main, y el "
              [:a "https://github.com/EchoJustus/clogem-press/blob/main/CHANGELOG.md" "registro de cambios"]
              " recoge cada cambio a medida que llega."]
             [:cards
@@ -56,11 +56,11 @@
              {:chip  "Publicado · 0.2.0"
               :title "Idiomas y descubrimiento"
               :text  ["Cinco idiomas con una dirección por artículo, enlaces canonical y hreflang, un feed Atom por idioma, un mapa del sitio, búsqueda con Pagefind con un índice por idioma y comentarios opcionales con giscus, con un hilo por artículo."]}
-             {:chip  "En curso · sin publicar"
-              :title "El tema, en la rama main"
-              :text  ["Ya incluido: modos de color claro, oscuro y de lectura, resaltado de código, estilos de página de tarjetas y de líneas, una barra de navegación con menú lateral en el móvil, enlaces de edición y fechas de última actualización, una página 404, la tarjeta de perfil y el banner de portada del blog, etiquetas opcionales de analítica y de verificación para consolas de búsqueda, y un "
+             {:chip  "Publicado · 0.3.0"
+              :title "El tema"
+              :text  ["Modos de color claro, oscuro y de lectura, resaltado de código, estilos de página de tarjetas y de líneas, una barra de navegación con menú lateral en el móvil, enlaces de edición y fechas de última actualización, una página 404, la tarjeta de perfil y el banner de portada del blog, espacios para HTML personalizado, etiquetas opcionales de analítica y de verificación para consolas de búsqueda, búsqueda opcional entre idiomas y un "
                       [:code "bb dev"]
-                      " más ágil: una sola recompilación por cada tanda de guardados, los errores de compilación mostrados en el navegador, el tema recargado al cambiar y la ruta base del sitio servida tal como se publicará. Falta en esta fase: espacios para HTML personalizado y búsqueda entre idiomas; después, la siguiente versión."]}]]}
+                      " más ágil: una sola recompilación por cada tanda de guardados, los errores de compilación mostrados en el navegador, el tema recargado al cambiar y la ruta base del sitio servida tal como se publicará."]}]]}
 
   {:id     "start"
    :title  "Primeros pasos"

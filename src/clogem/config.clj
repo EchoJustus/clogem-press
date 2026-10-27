@@ -108,7 +108,10 @@
              :content-bg-style nil :back-to-top true
              ;; P4-E1a (`check-identity!`): scalars only — a map default
              ;; would make 0.2.0's `:footer "x"` a check-shapes! error
-             :title-badge true :body-bg-img-opacity 0.5 :body-bg-img-interval 15}
+             :title-badge true :body-bg-img-opacity 0.5 :body-bg-img-interval 15
+             ;; Release 0.3.0 (`check-page-chrome!`): vdoing's prevLinks and
+             ;; nextLinks, on by default as in vdoing
+             :prev-links true :next-links true}
    :nav     []
    :search   {:provider :none}           ; :none | :pagefind (§6.7, D-P3-8)
    :highlight highlight-defaults          ; :provider :chroma | :none (§11.3 item 10)
@@ -499,7 +502,9 @@
                            :update-bar :ok :right-menu-bar :ok :page-button :ok
                            :content-bg-style :ok :last-updated :ok
                            :sidebar-collapsed :ok :back-to-top :ok :logo :ok
-                           :repo :ok :repo-label :ok}
+                           :repo :ok :repo-label :ok
+                           ;; Release 0.3.0: vdoing's prevLinks / nextLinks
+                           :prev-links :ok :next-links :ok}
    [:theme :fonts]        {:tamil :ok}
    ;; Phase 4 Task E1: `:name`, `:slogan`, `:title` and `:copyright-info`
    ;; may be per-language user maps, and are not walked; `:icons` is a
@@ -541,9 +546,10 @@
    [:tools :pagefind]     {:version :ok :sha256 :ok :path :ok :url :ok}
    [:tools :chroma]       {:version :ok :sha256 :ok :path :ok :url :ok}
    [:tools :fswatcher]    {:version :ok :sha256 :ok :path :ok :url :ok}
-   ;; one `:nav` item, at `:nav 0`, `:nav 1 :items 0`, … (`check-nav!`);
-   ;; `:text` is a per-language user map and is not walked
-   [:nav :*]              {:text :ok :link :ok :items :ok}})
+   ;; one `:nav` item, at `:nav 0`, `:nav 1 :items 0`, … (`check-items!`);
+   ;; `:text` and `:aria-label` (release 0.3.0, vdoing's `ariaLabel`) are
+   ;; per-language user maps and are not walked
+   [:nav :*]              {:text :ok :link :ok :items :ok :aria-label :ok}})
 
 (def author-keys
   "The keys of `:site :author`'s named shape, as `i18n/resolve-author` reads
@@ -633,6 +639,11 @@
    "logo"                    [[:theme :logo] :ok]
    "repoLabel"               [[:theme :repo-label] :ok]
    "repo"                    [[:theme :repo] :ok]
+   ;; Release 0.3.0: vdoing's PageNav.vue reads both from themeConfig
+   "prevLinks"               [[:theme :prev-links] :ok]
+   "nextLinks"               [[:theme :next-links] :ok]
+   ;; Release 0.3.0: a nav item's (DropdownLink.vue); by name, at any path
+   "ariaLabel"               [[:aria-label] :ok "a :nav item's label for screen readers"]
    "editLinks"               [[:content :edit-link] :ok "a map {:repo :branch :dir}; absent is off"]
    "editLinkText"            [nil :implicit "labels the edit link with the i18n string :page/edit"
                               "Remove it; to change the label, set :page/edit in i18n/<lang>.edn."]
@@ -644,9 +655,17 @@
    "showToArticle"           [[:theme :update-bar :show-to-article] :ok]
    "moreArticle"             [[:theme :update-bar :more-article] :ok]
    "algolia"                 [nil :deferred "search is Pagefind's (:search :provider :pagefind)"]
+   ;; Release 0.3.0: the site-wide navbar switch (Layout.vue), deferred
+   ;; with front matter `navbar: false`
+   "navbar"                  [nil :deferred "every page shows the navbar"]
    "searchMaxSuggestions"    [nil :dropped]
    "displayAllHeaders"       [nil :dropped]
    "sidebarHoverTriggerOpen" [nil :dropped]
+   ;; Release 0.3.0: a nav item's `target` and `rel`, declared by VuePress's
+   ;; default-theme types but read by vdoing nowhere (its NavLink sets both
+   ;; itself); clogem-press's nav links open in the same tab
+   "target"                  [nil :dropped]
+   "rel"                     [nil :dropped]
    "sidebar"                 [nil :implicit
                               "always generates the structured sidebar from the numbered directory tree (vdoing's 'structuring' mode)"
                               (str "Remove it. Custom sidebar arrays and sidebar: 'auto' are not supported "
@@ -655,7 +674,25 @@
    ;; no key for it (P4-B2b)
    "smoothScroll"            [nil :implicit
                               "always scrolls smoothly unless the reader asks for reduced motion"
-                              "Remove it. In-page jumps are smooth unless the reader's system asks for reduced motion."]})
+                              "Remove it. In-page jumps are smooth unless the reader's system asks for reduced motion."]
+   ;; Release 0.3.0: the default theme's search box, language menu and
+   ;; header-link keys, which clogem-press's i18n strings and :langs cover
+   "searchPlaceholder"       [nil :implicit
+                              "takes the search box's placeholder from the i18n string :search/placeholder"
+                              "Remove it; to change the placeholder, set :search/placeholder in i18n/<lang>.edn."]
+   "locales"                 [nil :implicit
+                              "sets each language under :langs :locales, and its words in i18n/<lang>.edn"
+                              (str "Remove it; give each language its :label under :langs :locales, and its "
+                                   "words in i18n/<lang>.edn (config.example.edn).")]
+   "label"                   [nil :implicit
+                              "names each language with :langs :locales <lang> :label"
+                              "Remove it; set :label under :langs :locales <lang>."]
+   "selectText"              [nil :implicit
+                              "labels the language menu with the i18n string :nav/language"
+                              "Remove it; to change the label, set :nav/language in i18n/<lang>.edn."]
+   "activeHeaderLinks"       [nil :implicit
+                              "always marks the heading being read in the table of contents"
+                              "Remove it. The table of contents marks the heading being read (js/toc.js)."]})
 
 (defn a-or-an
   "`word` with its indefinite article: \"an analytics\", \"a locale\"."
@@ -840,12 +877,16 @@
 
 (def page-chrome-keys
   "P4-B2b: the page chrome's `:theme` keys, as [key valid? what-it-must-be
-  vdoing's-key]; their defaults are in `defaults`."
+  vdoing's-key]; their defaults are in `defaults`. Release 0.3.0 adds
+  vdoing's prevLinks and nextLinks (`render/neighbour` reads them)."
   [[:sidebar-collapsed boolean? "true or false" "sidebarOpen, inverted"]
    [:right-menu-bar    boolean? "true or false" "rightMenuBar"]
    [:page-button       boolean? "true or false" "pageButton"]
    [:content-bg-style  #(and (integer? %) (<= 1 % 6)) "nil or an integer from 1 to 6" "contentBgStyle"]
-   [:back-to-top       boolean? "true or false" nil]])
+   [:back-to-top       boolean? "true or false" nil]
+   ;; Release 0.3.0: the previous and next links, site-wide
+   [:prev-links        boolean? "true or false" "prevLinks"]
+   [:next-links        boolean? "true or false" "nextLinks"]])
 
 (defn- check-page-chrome!
   "`page-chrome-keys`: nil is the default, silently; anything else that is

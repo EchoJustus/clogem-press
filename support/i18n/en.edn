@@ -72,7 +72,7 @@
 
   {:id     "status"
    :title  "What it does today"
-   :blocks [[:p "The latest release is " [:strong "0.2.0"] ". Work on the next phase is in progress on the main branch and is not released yet. The "
+   :blocks [[:p "The latest release is " [:strong "0.3.0"] ". Changes after it land on the main branch first, and the "
              [:a "https://github.com/EchoJustus/clogem-press/blob/main/CHANGELOG.md" "changelog"]
              " lists every change as it lands."]
             [:cards
@@ -82,11 +82,11 @@
              {:chip  "Released · 0.2.0"
               :title "Languages and discovery"
               :text  ["Five languages with one address per article, canonical and hreflang links, an Atom feed per language, a sitemap, Pagefind search with an index per language, and optional giscus comments with one thread per article."]}
-             {:chip  "In progress · unreleased"
-              :title "The theme, on the main branch"
-              :text  ["Landed so far: light, dark and reading colour modes, code highlighting, card and line page styles, a navbar with a mobile drawer, edit links and last-updated dates, a 404 page, the blog's profile card and home banner, optional analytics and search-console tags, and a quicker "
+             {:chip  "Released · 0.3.0"
+              :title "The theme"
+              :text  ["Light, dark and reading colour modes, code highlighting, card and line page styles, a navbar with a mobile drawer, edit links and last-updated dates, a 404 page, the blog's profile card and home banner, custom HTML slots, optional analytics and search-console tags, optional search across languages, and a quicker "
                       [:code "bb dev"]
-                      ": one rebuild per burst of saves, build errors shown in the browser, the theme reloaded as it changes, and a site's base path served as it will be published. Still to come in this phase: custom HTML slots and search across languages, then the next release."]}]]}
+                      ": one rebuild per burst of saves, build errors shown in the browser, the theme reloaded as it changes, and a site's base path served as it will be published."]}]]}
 
   {:id     "start"
    :title  "Getting started"

@@ -586,8 +586,8 @@
                         ["ms/index.html" "Dikuasakan oleh <a href=\"https://github.com/EchoJustus/clogem-press\">clogem-press</a>"]
                         ["ta/index.html" "<a href=\"https://github.com/EchoJustus/clogem-press\">clogem-press</a> மூலம் இயக்கப்படுகிறது"]]]
       (is (str/includes? (footer-of (pages rel)) (str "<p class=\"clogem-footer__powered\">" want "</p>")) rel)
-      (is (not (str/includes? (footer-of (pages rel)) "0.2.0")) "the version leaves the footer")
-      (is (str/includes? (pages rel) "<meta content=\"clogem-press 0.2.0\" name=\"generator\" />") "…and stays in the head")))
+      (is (not (str/includes? (footer-of (pages rel)) "0.3.0")) "the version leaves the footer")
+      (is (str/includes? (pages rel) "<meta content=\"clogem-press 0.3.0\" name=\"generator\" />") "…and stays in the head")))
   (testing ":powered-by false and nothing else: no footer at all"
     (let [{:keys [pages]} (build (assoc one-lang :theme {:footer {:powered-by false}}) {"index.md" "# Home\n"})]
       (is (not (str/includes? (pages "index.html") "clogem-footer")))

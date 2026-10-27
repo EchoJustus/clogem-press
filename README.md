@@ -18,7 +18,7 @@ The full design rationale, with every external claim verified against primary
 sources, is in [DESIGN.md](DESIGN.md); thirteen research reports back it in
 [`research/`](research/).
 
-> **Status: Phase 3 complete (0.2.0).** The generator scans a content tree,
+> **Status: Phase 4 complete (0.3.0).** The generator scans a content tree,
 > resolves identity groups, normalizes front matter, and renders a five-language
 > site with vdoing's core surface: collapsible sidebar tree, category / tag /
 > archive index pages, a paginated blog homepage with sticky posts, breadcrumbs
@@ -27,9 +27,17 @@ sources, is in [DESIGN.md](DESIGN.md); thirteen research reports back it in
 > `cardImgList`. Phase 3 adds canonical and hreflang links, per-language Atom
 > feeds and a sitemap, Pagefind search with one index per language, a
 > remembered language choice with an "also available in …" banner, and giscus
-> comments with one thread per article across its languages. Phase 4, in
-> progress, adds colour modes and syntax highlighting so far; the rest of the
-> theme follows — see [the implementation plan](DESIGN.md#8-implementation-plan).
+> comments with one thread per article across its languages. Phase 4 completes
+> the theme: colour modes on an accessible palette, syntax highlighting, the
+> card and line page styles, a one-row navbar with a mobile drawer, the page
+> chrome (page buttons, back to top, sidebar collapse), the blog identity and
+> home banner, htmlModules, edit links, last-updated dates and a 404 page,
+> analytics and search-console tags, a static directory, a quicker `bb dev`
+> and cross-language search. Every key of vdoing's `themeConfig`, and every
+> front-matter key vdoing reads, is implemented, deferred or removed; `bb
+> doctor` names each deferred or removed one a site sets. Phase 5 (automation,
+> packaging and documentation) is next — see [the implementation
+> plan](DESIGN.md#8-implementation-plan).
 
 ## Install
 
@@ -171,6 +179,10 @@ content/
 - **Hyphenated words are titles, not language tags.** `02.api-design.md` is an
   article titled `api-design`; only confusables (`zh-CN`), one-edit misspellings
   (`zh-Hanz`) and configured-primary-plus-region shapes (`en-us`) are errors.
+- **A catalogue page** — front matter `pageComponent: {name: Catalogue, data:
+  {path: 01.Guide}}` — shows the card grid of that directory instead of its
+  body. vdoing's `data.key` works as `data.path` does; `path` wins when both
+  are set.
 
 `examples/demo-site/` exercises all of it and is built by CI on every push,
 which makes it the executable specification rather than prose that can drift.
@@ -325,9 +337,14 @@ the navbar, which grows taller rather than spill over the page, and keeps
 the languages, search and mode on the row's end. With JavaScript the jump
 offset below follows the navbar's real height (`js/nav.js` measures it);
 without, it assumes one row, so keep the top level short and put the rest
-in a dropdown (`:items`). Every jump to a fragment — a link, the TOC, a
-fresh load of `…/#id` — and every focus move by Tab lands 0.75rem below the
-navbar (a `scroll-margin-top` on every element outside the navbar, so an
+in a dropdown (`:items`). A nav item's `:aria-label` (vdoing's
+`ariaLabel`; a string or a map by language) names its link, or its
+dropdown, for screen readers. vdoing's `navbar` switch, site-wide or in
+front matter (`navbar: false`), is deferred: every page shows the navbar,
+and a site that sets it in `site.edn` gets a warning. Every jump to a
+fragment — a link, the TOC, a fresh load of `…/#id` — and every focus move
+by Tab lands 0.75rem below the navbar (a `scroll-margin-top` on every
+element outside the navbar, so an
 `<a name>` target and `scrollIntoView()` too; with JavaScript the navbar's
 own controls never scroll the page), headings or not. Scrolling is smooth
 unless the reader's system asks for reduced motion, except the browser's
@@ -387,7 +404,9 @@ reader's choice holds while they stay on the page, across resizes, but it
 is **not kept across pages**: each page starts as `:theme
 :sidebar-collapsed` says (default `false`; vdoing's `sidebarOpen`,
 inverted). The button needs JavaScript; without it the sidebar always
-shows. In the mobile drawer the sidebar always shows.
+shows. In the mobile drawer the sidebar always shows. Front matter
+`sidebar: false`, or vdoing's `showSidebar: false`, on an article's
+primary variant drops its sidebar altogether; the table of contents stays.
 
 **Page buttons.** On by default, as in vdoing (`pageButton`): an article
 or catalogue page with a previous or next page repeats those two links as
@@ -397,6 +416,15 @@ enough for them to cover nothing, and print never shows them. They are
 duplicates for the mouse: screen readers and the keyboard use the
 previous/next links at the end of the article. `:theme :page-button false`
 omits them.
+
+**Previous and next links.** Every article and catalogue page ends with
+links to the previous and next page: in its top directory's sidebar order,
+or, for a post, newer and older. `:theme :prev-links false` drops every
+previous link, and `:theme :next-links false` every next one (vdoing's
+`prevLinks` and `nextLinks`), with their page buttons. A page's own front
+matter wins over both: `prev: false` (or `next: false`) hides its link,
+`prev: true` shows the usual one, and a permalink or a `.md` path
+(`prev: /pages/a1b2c3/`) links that page instead.
 
 **Background patterns.** `:theme :content-bg-style` (vdoing's
 `contentBgStyle`) draws a faint pattern on the column of articles and
@@ -746,11 +774,11 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
 
 | Language | Address | Built file | Size |
 | --- | --- | --- | --- |
-| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 34,880 bytes |
-| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 36,259 bytes |
-| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 36,144 bytes |
-| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 35,820 bytes |
-| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 35,936 bytes |
+| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 34,761 bytes |
+| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 36,157 bytes |
+| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 36,036 bytes |
+| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 35,728 bytes |
+| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 35,821 bytes |
 
 - **The words** are `support/i18n/<tag>.edn`, one file per language:
   `en.edn` (English, which was `support/page.edn`), `zh-Hant.edn`,
@@ -828,18 +856,18 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
   | --- | --- | --- |
   | `wenkai-latin-400` | en, zh-Hant, zh-Hans | 22,884 bytes |
   | `wenkai-latin-500` | en, zh-Hant, zh-Hans | 22,520 bytes |
-  | `wenkai-hant-400` | zh-Hant | 103,400 bytes |
-  | `wenkai-hant-500` | zh-Hant | 17,700 bytes |
-  | `wenkai-sc-400` | zh-Hans | 87,548 bytes |
-  | `wenkai-sc-500` | zh-Hans | 14,920 bytes |
+  | `wenkai-hant-400` | zh-Hant | 102,804 bytes |
+  | `wenkai-hant-500` | zh-Hant | 17,088 bytes |
+  | `wenkai-sc-400` | zh-Hans | 86,972 bytes |
+  | `wenkai-sc-500` | zh-Hans | 14,192 bytes |
   | `wenkai-names-500` | en's dropdown (繁體中文, 简体中文) | 3,416 bytes |
 
   The Latin lists are built from the English page and the Latin of the
   Chinese pages only (product names, commands and the like); each Chinese
   page's list holds its own Chinese, the other script's dropdown name
   included. A page's download, HTML and fonts, when it opens and with the
-  language list opened: English 80,208 / 83,624 bytes; zh-Hant 202,685
-  (both); zh-Hans 183,938 (both); pt-BR 35,733 and es-ES 35,856, the HTML
+  language list opened: English 80,165 / 83,581 bytes; zh-Hant 201,453
+  (both); zh-Hans 182,604 (both); pt-BR 35,728 and es-ES 35,821, the HTML
   alone.
 - **The licence**: LXGW WenKai is under the SIL Open Font License 1.1; its
   `OFL.txt`, from the same tag, is published beside the subsets as
@@ -854,7 +882,7 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
   is written in `support/support_page.clj` (`copyright-holder`), not in the
   words, so no translation changes it.
 - **The built pages** go to `dist-support/` (ignored): built HTML is never
-  committed. They are **179,039 bytes** in all; each page is within the
+  committed. They are **178,503 bytes** in all; each page is within the
   64 KB budget `bb test` holds it to.
 - **Publishing:** `.github/workflows/support-page.yml`, on pushes to `main`
   that touch `support/`, its test, the workflow or `bb.edn`, and by hand
@@ -899,7 +927,7 @@ repository does that.
 ## Development
 
 ```bash
-bb test                                             # 921 tests / ~63,300 assertions
+bb test                                             # 932 tests / ~64,000 assertions
 cd examples/demo-site && bb --config ../../bb.edn build
 ```
 

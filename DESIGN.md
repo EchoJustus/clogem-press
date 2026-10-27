@@ -1851,11 +1851,11 @@ Design points worth stating:
 
 ### 7.5 The support page
 
-*Added October 2026, before 0.3.0; the version stays 0.2.0.* clogem-press has a page on the Clogem
+*Added October 2026, before 0.3.0, while the version was 0.2.0.* clogem-press has a page on the Clogem
 support site, **https://echojustus.github.io/clogem-support/clogem-press/**. The site is the `gh-pages`
 branch of EchoJustus/clogem-support: its front page is built there (`portal.yml`, from `site/site.edn`),
 and each product publishes its own folder from its own repository, Wmark Pro's `wmark-pro/` first.
-clogem-press publishes `clogem-press/` (README, "Support page"; CHANGELOG, Unreleased).
+clogem-press publishes `clogem-press/` (README, "Support page"; CHANGELOG, 0.3.0).
 
 Decisions:
 
@@ -1936,7 +1936,8 @@ Decisions:
    - **Native review.** The four translations are listed in the CHANGELOG for a native speaker's
      review before or soon after publication.
 4. **Six sections, in this order** (ours, pinned by `support_page_test`): what clogem-press is; what it
-   does today (0.2.0 released, Phase 4 in progress and unreleased, following the CHANGELOG, no dates);
+   does today (0.3.0 the latest release, later changes landing on `main` first; a card each for what
+   0.2.0 released and for the theme 0.3.0 released; following the CHANGELOG, no dates);
    getting started; help and feedback (issues and pull requests here, questions and ideas in the hub's
    Discussions, since this repository's are off, and the hub's address for what shouldn't be public);
    privacy; licence and source. No commerce: no store, price, trial or Pro edition.
@@ -2003,10 +2004,11 @@ Decisions:
      Chinese sets it; in English it should sit on the baseline. The Latin subsets' `unicode-range`
      leaves it out, so the system's font draws it; Chinese text takes WenKai's own from its page's
      Chinese subset.
-   - **Sizes** (v1.530, SP.8): Latin 22,884 and 22,520 bytes; zh-Hant 103,400 and 17,700; zh-Hans
-     87,548 and 14,920; the names 3,416. A page as it opens, HTML and fonts: English 80,208 bytes
-     (83,624 with the list open), zh-Hant 202,685, zh-Hans 183,938; pt-BR 35,733 and es-ES 35,856,
-     the HTML alone. Each subset's cap in the plan is about twice its size.
+   - **Sizes** (v1.530, as of 0.3.0's status text; SP.8's are in the CHANGELOG): Latin 22,884 and
+     22,520 bytes; zh-Hant 102,804 and 17,088; zh-Hans 86,972 and 14,192; the names 3,416. A page as
+     it opens, HTML and fonts: English 80,165 bytes (83,581 with the list open), zh-Hant 201,453,
+     zh-Hans 182,604; pt-BR 35,728 and es-ES 35,821, the HTML alone. Each subset's cap in the plan
+     is about twice its size.
    - **The character lists come from the generator.** `bb support-page` writes
      `dist-support/glyphs/<subset>.txt` (outside `clogem-press/`, never published): every character
      the pages set in that subset, read from the page's body as the stylesheet sets it (headings
@@ -2173,14 +2175,19 @@ order; each builds on A:
   repo label visually hidden at ≤ 64rem so the row holds — `ms` wrapped at 801–901 px without it);
   `pageClass` on `<body>`; `dist/404.html`.
 - **G — Cross-language search, then release 0.3.0** (2 d) (§11.3 item 17). Cross-language search
-  is *done* (§6.7 and §11.3 item 17 record what was built). The 0.3.0 release is the next step, a
-  separate one; until it, the version stays 0.2.0.
+  is *done* (§6.7 and §11.3 item 17 record what was built), and so is the 0.3.0 release (§11.3
+  item 22): the last vdoing keys, the exit criterion below asserted in CI, and `version.edn` at
+  `0.3.0`.
 - **Exit criterion:** every key of vdoing's `themeConfig`, and every front-matter key vdoing reads, is
   implemented, deferred (below) or removed (below); for a `site.edn` key, `doctor` already says which
   (`config/known-keys`, `config/vdoing-keys`, §11.3 item 16).
+- **Status (0.3.0):** met, and asserted in CI on every push by `clogem.release-test`, against vdoing
+  1.12.9 (§11.3 item 22).
 - **Removed, not deferred:** `displayAllHeaders`, `sidebarHoverTriggerOpen`, `searchMaxSuggestions`,
   custom `sidebar` arrays and `sidebar: 'auto'` — the sidebar is always generated from the directory
-  tree, and search is Pagefind's. A site that sets one gets a warning naming it.
+  tree, and search is Pagefind's — and a nav item's `target` and `rel`, which VuePress's types
+  declare but vdoing never reads (clogem-press's nav links open in the same tab). A site that sets
+  one gets a warning naming it.
 
 ### Phase 5 — Automation, packaging, documentation (7 days)
 
@@ -2200,7 +2207,8 @@ localized *assets* (mkdocs-static-i18n's `image.fr.png` trick), machine-translat
 translation-staleness tracking (comparing variant mtimes to flag drift), RTL layout support (none of
 en/zh/ms/ta is RTL, so the `:dir` config key is present but exercises only `:ltr`), Jawi script for
 Malay, comment providers other than giscus, and the front-matter keys `navbar: false` and
-`search: false` (added in Phase 4's rebaseline, §11.3 item 1). The `clogem migrate` report names any
+`search: false` (added in Phase 4's rebaseline, §11.3 item 1), with vdoing's site-wide `navbar`
+switch beside the first (release 0.3.0, §11.3 item 22). The `clogem migrate` report names any
 of these it finds in an imported site.
 
 ### Dependencies summary (the entire footprint)
@@ -2334,7 +2342,7 @@ the document). D-9 through D-15 are new, surfaced by v2's design work.
   generator reads it. `:ref` is therefore **removed from `site.edn`**. What remains there is
   documentation (`:repo`, used for edit links and the doctor report) plus an optional **compatibility
   floor**, `:generator {:min-version "0.3.0"}`: the generator knows its own version (baked into
-  `src/clogem/version.edn` at release, falling back to `bb.edn`'s `:version` in a dev checkout) and
+  `src/clogem/version.edn` at release, which every checkout carries; `0.0.0-unknown` without it) and
   **hard-fails the build with a clear error** when it is older than the floor. That is a genuine
   assertion rather than a duplicated pin — it catches "content started using a convention the pinned
   generator doesn't have yet", which is the actual skew this project can suffer, and it stays correct
@@ -3972,7 +3980,36 @@ their own findings. Item 19 onward are corrections.
     listed an `icons/` resource directory to copy from Phase 1 on, though none existed; with the
     vendored sources there now, copying it would have shipped them raw, so it is gone and the sprite is
     a generated file instead (item 6).
-
+22. **The Phase 4 exit criterion is asserted, and Phase 4 is released as 0.3.0 (§8).** First the
+    last vdoing keys, as the owner decided (2026-10-27) after the release's audit of vdoing 1.12.9
+    found them unclassified. *Implemented:* `:theme :prev-links` and `:next-links` (vdoing's
+    `prevLinks`/`nextLinks`; page-chrome keys, default `true`), which drop that link and its page
+    button from every page — a page's own `prev`/`next` wins whenever it is set, and `true` is the
+    usual neighbour, as in vdoing's `PageNav.vue`; front matter `showSidebar: false` (vdoing's
+    `Layout.vue`), which drops the sidebar as `sidebar: false` does, the TOC staying;
+    `pageComponent.data.key` (`Catalogue.vue`'s `data.path || data.key`), an alias of `data.path`,
+    which wins (`model/catalogue-path`); and a nav item's `:aria-label` (`DropdownLink.vue`'s
+    `ariaLabel`), a string or a per-language map on a dropdown's `<summary>` or a link. *Deferred:*
+    the site-wide `navbar` switch, with front matter `navbar: false` (§8). *Implicit:*
+    `searchPlaceholder` (`:search/placeholder`), `locales` and `label` (`:langs :locales` and the
+    i18n strings), `selectText` (`:nav/language`) and `activeHeaderLinks` (the TOC always marks the
+    heading being read). Then `clogem.release-test` asserts the criterion against
+    xugaoyi/vuepress-theme-vdoing at `d77b420`, each key cited by file and line. Its 83 `themeConfig`
+    keys — `VdoingThemeConfig`'s own (`types/index.ts`), the `DefaultThemeConfig` keys it inherits
+    from @vuepress/types 1.9.5 (`src/theme-default.ts`, `nav` items' `NavItem` included), and
+    `sidebarDepth`, `displayAllHeaders` and `sidebarHoverTriggerOpen`, which vdoing reads and neither
+    declares — are each known at their clogem path in `config/known-keys`, with `config/vdoing-keys`
+    agreeing (61), or `:implicit`, `:deferred` or `:dropped` there (16: 9, 2 and 5), or inside such
+    a key's value, which `doctor` does not walk (6: `sidebar`'s `mode` and `collapsable`, `algolia`'s
+    four); no key is `:planned` any more, and §8's lists name every deferred and dropped one. Its 45
+    front-matter keys are read by the clogem source the test names (42) or listed in §8 as deferred
+    (`navbar: false`, `search: false`) or removed (`sidebar: 'auto'`); `categories` is written by
+    auto-fill from the primary variant's directory, which the indexes use (§6.2), as vdoing writes it
+    from the path. `doctor`, on a `site.edn` that sets the 16, names each once. `NavItem`'s `target`
+    and `rel`, declared but never read by vdoing (its `NavLink.vue` sets both, for external links),
+    are dropped (§8): on a nav item, `doctor` names each as dropped. `version.edn` is `0.3.0`,
+    which a build's `<meta name="generator">` and Atom `<generator>` carry; D-14's `ref: v0.3.0` and
+    `:min-version "0.3.0"` hold once the owner tags `v0.3.0`.
 
 ### Known limitations (Phase 5)
 

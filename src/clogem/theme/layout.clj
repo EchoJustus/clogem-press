@@ -387,12 +387,20 @@
       :else (with-base link))))
 
 (defn- nav-item
-  [ctx {:keys [text link items]}]
+  "One `:nav` item. Its `:aria-label` (vdoing's `ariaLabel`, release 0.3.0;
+  a string or a per-language map, like `:text`) names a dropdown's
+  `<summary>` — the control vdoing's DropdownLink.vue labels — or a link."
+  [ctx {:keys [text link items aria-label]}]
   (let [label (i18n/resolve-str ctx text)
-        a     (if link [:a {:href (nav-href ctx link)} label] [:span label])]
-    (if (seq items)
+        aria  (some-> aria-label (->> (i18n/resolve-str ctx)) str u/blank->nil)
+        dd?   (seq items)
+        a     (if link
+                [:a (cond-> {:href (nav-href ctx link)} (and aria (not dd?)) (assoc :aria-label aria)) label]
+                [:span label])]
+    (if dd?
       [:li.clogem-navbar__item.has-items
-       [:details [:summary a (icons/icon ctx :chevron-down {:class "clogem-navbar__caret"})]
+       [:details [:summary (when aria {:aria-label aria})
+                  a (icons/icon ctx :chevron-down {:class "clogem-navbar__caret"})]
         (into [:ul.clogem-navbar__menu] (map #(nav-item ctx %) items))]]
       [:li.clogem-navbar__item a])))
 
@@ -587,10 +595,13 @@
     (set (map #(str "/" (str/join "/" (take % segs))) (range 1 (inc (count segs)))))))
 
 (defn- sidebar-node-of
-  "The sidebar tree node a page shows (`sidebar`), or nil."
+  "The sidebar tree node a page shows (`sidebar`), or nil: none when the
+  primary variant's front matter says `sidebar: false` or, as in vdoing's
+  Layout.vue (`shouldShowSidebar`, release 0.3.0), `showSidebar: false`."
   [{:keys [model group]}]
   (when-let [top (and group
-                      (not (false? (get-in group [:variants (:primary group) :front-matter :sidebar])))
+                      (let [fm (get-in group [:variants (:primary group) :front-matter])]
+                        (not (or (false? (:sidebar fm)) (false? (:showSidebar fm)))))
                       (model/top-dir group))]
     (get-in model [:sidebar top])))
 
@@ -604,7 +615,8 @@
 
     - an article page shows ONLY its own top-level directory's tree;
     - a post (`sidebar: auto`) has no structured position and gets no tree;
-    - `sidebar: false` on the primary variant hides the panel;
+    - `sidebar: false` or `showSidebar: false` on the primary variant
+      hides the panel;
     - home, index and catalogue pages show none (they use `page`).
 
   Every directory is a <details> group; [:theme :sidebar-open true] opens all

@@ -1,40 +1,111 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — Phase 4: theme polish and advanced features
 
-Phase 4, Task B1 — colour modes, an accessible palette, the mode toggle and
-icons (DESIGN.md §8, §11.3 items 2–6 and 8), then Task A — foundations
-(§11.3 items 7, 11, 16, 18), then Task C — code highlighting (§11.3 item
-10), then Task D — the dev loop (§11.3 item 12), then Task B2a — the card
-and line page styles, focus rings and B1's follow-ups (the first half of
-B2, §11.3 item 1), then Task F — analytics, verification and a static root
-(§11.3 items 14, 15), then Task B2b — the navbar, the mobile drawer and the
-page chrome (the second half of B2, §11.3 item 9, D-P4-9), then Task E2 —
-article-page parity (§11.3 item 16, D-P4-13), then Task E1a — the blog
-identity and the home banner (the first half of §11.3 item 13, D-P4-13),
-then Task G — cross-language search (§11.3 item 17, D-P4-17, D-P4-18),
-then the Phase 4 follow-ups — Task D's known issues and smaller items, and
-what the E1a and E2 checks left,
-then Task E1b — htmlModules (the second half of §11.3 item 13, D-P4-13).
-The version stays 0.2.0. Every article page now ends with an update bar
-by default, as in vdoing (`:theme :update-bar {:show-to-article false}`
-drops it), an article's `titleTag` badge now shows in every list row, and
-every build now writes `dist/404.html` (a root `404.html` in the static
-directory replaces it). A site that already set `:theme :page-style :line` now gets
-that look: 0.2.0 and B1 accepted the value but drew card and line the same.
-Likewise a site that set any of the five keys 0.2.0 listed as planned —
-`:theme :sidebar-collapsed`, `:right-menu-bar`, `:page-button`,
-`:content-bg-style` or `:back-to-top` — now gets that behaviour, and page
-buttons and a back-to-top button now appear by default, as in vdoing.
-Likewise for E1a's keys (`:theme :blogger`, `:social`, `:footer`,
-`:banner-bg`, `:body-bg-img*`, `:title-badge*`): a site that set one now
-gets it, and title badges appear by default, as in vdoing. And a site that
-set `:search :cross-language true` (0.2.0 warned that it was planned and
-had no effect) now gets a "Search all languages" checkbox in its search
-dialog, off for each reader until they tick it.
-A site that set `:theme :html-modules` now gets its HTML injected, in the
-seven vdoing slots and in clogem-press's own `:head-extra`; it used to warn
-that the key had "no effect".
+Phase 4 is complete, and its exit criterion is asserted in CI (DESIGN.md §8,
+§11.3 item 22): every key of vdoing's `themeConfig`, and every front-matter
+key vdoing reads, is implemented, deferred or removed. `clogem.release-test`
+checks each against vdoing 1.12.9, cited by file and line, and runs `doctor`
+on a `site.edn` that sets every deferred, implicit and removed key: each is
+named. The tasks, in the order they landed: Task A — foundations (§11.3
+items 7, 11, 16, 18); Task B1 — colour modes, an accessible palette, the
+mode toggle and icons (items 2–6 and 8); Task C — code highlighting (item
+10); Task D — the dev loop, and its follow-up (item 12); Task B2a — the card
+and line page styles, focus rings and B1's follow-ups (item 1, first half);
+Task F — analytics, verification and a static root (items 14, 15); Task B2b
+— the navbar, the mobile drawer and the page chrome (item 9, D-P4-9); Task
+E2 — article-page parity (item 16, D-P4-13); Task E1a — the blog identity
+and the home banner (item 13, first half; D-P4-13); Task G — cross-language
+search (item 17, D-P4-17, D-P4-18); the Phase 4 follow-ups — Task D's known
+issues and what the E1a and E2 checks left; Task E1b — htmlModules (item 13,
+second half; D-P4-13); and the release's own block, the last vdoing keys
+(item 22). The support page, the first block below, is a separate tool built
+from `support/`: it changes nothing in the generator or in a built site.
+
+A 0.2.0 site gets, without changing anything, what vdoing has on by
+default: page buttons, a back-to-top button, title badges and an update bar
+under every article — each of which a site can turn off — and every build
+writes `dist/404.html` (a root `404.html` in the static directory replaces
+it). Its code is highlighted, and the reader can choose a colour mode
+(Upgrading, below). It can opt into the rest: the line page style
+(`:theme :page-style :line`), a sidebar that starts collapsed, background
+patterns (`:content-bg-style`), the blog identity (`:blogger`, `:social`,
+`:footer`, the home banner, `:body-bg-img`), htmlModules (`:theme
+:html-modules`), an edit link and last-updated dates (`:content :edit-link`,
+`:theme :last-updated`), a navbar logo and repository link, analytics
+(`:analytics`), search-console verification (`:seo :verification`), a
+static directory (`:content :static-dir`) and cross-language search
+(`:search {:cross-language true}`). A key it set while 0.2.0 listed it as
+planned now takes effect.
+
+### Upgrading from 0.2.0
+
+- **Code is highlighted by default** (Task C): the first build of a site
+  with a code block fetches Chroma (a 3 MB download, verified and cached
+  outside the site), and a failed fetch or run fails the build;
+  `--no-highlight` or `:highlight {:provider :none}` gives 0.2.0's plain
+  `<pre><code>`. A bad `:tools :chroma` pin is now an error, like
+  Pagefind's.
+- **On by default, as in vdoing**: page buttons (`:theme :page-button`),
+  back to top (`:back-to-top`; both Task B2b), title badges
+  (`:title-badge`; Task E1a) and the update bar under every article
+  (`:update-bar {:show-to-article false}` drops it; Task E2). The previous
+  and next links, as before, now with `:prev-links` and `:next-links` to
+  drop them site-wide; front matter `prev: true` / `next: true` now shows
+  the usual link instead of warning (the release's own block).
+- **`dist/404.html`** is written by every build (Task E2).
+- **A key 0.2.0 listed as planned now takes effect** — with no change to
+  `site.edn`: `:analytics` loads its provider on the deployed site (remove
+  it, or set `:provider :none`, to keep it off); `:content :static-dir` is
+  copied, and a file in it that collides with the build's own output is an
+  error; `:theme :html-modules` is injected; `:theme :page-style :line`,
+  B2b's five page-chrome keys, E2's `:content :edit-link`, `:theme
+  :last-updated` and `:theme :repo`, the E1a identity keys and `:search
+  :cross-language` do what they say.
+- **Warnings, never errors**: an unknown `site.edn` key, or vdoing's
+  spelling of one, warns, naming its path and the key to write (Task A);
+  an unknown command-line option warns and is ignored (the follow-ups;
+  it was ignored silently); a missing UI string key warns in `build` too,
+  once per key and language (Task D; `:i18n {:missing-key :silent}` turns
+  it off).
+- **New errors, before anything is written** (Task A): a directory left in
+  an existing `dist/` where a file now belongs, or a file where a directory
+  now belongs (remove it, or `bb clean`); a permalink with a `.` or `..`
+  segment or a backslash, even `/./tags/`, which 0.2.0 built.
+- **What `assets/` publishes** (Task F): a link whose target is outside
+  the site is skipped, with a warning; editor and OS leftovers (`*.tmp`,
+  `Thumbs.db`, `CNAME~`, …) are no longer copied.
+- **The page**: the mode and page-style classes moved from `<body>` to
+  `<html>`, so CSS written as `body.theme-mode-dark` no longer matches
+  (Task B1); dark mode's page background is lighter than its card,
+  `#22252b`, and the mode button reads `:mode/current`, not `:mode/label`
+  (Task B2a); the navbar is one row — brand, nav, languages, search, mode —
+  with a drawer at 50rem and below, and beside a sidebar the TOC shows from
+  80rem (Task B2b); the footer reads *Powered by clogem-press* where it
+  said `clogem-press 0.2.0`, and the version stays in `<meta
+  name="generator">` (Task E1a); site CSS that styled `.clogem-main` or a
+  code block's `<pre>` may need adjusting (Tasks B2a, C).
+- **A home with `postList: simple`** no longer shows *Recently updated*,
+  as 0.2.0's always did: its list is the recent articles already (Task
+  E1a).
+- **`bb dev` and `bb serve` listen on 127.0.0.1** (`--host 0.0.0.0`
+  restores every interface), and `bb.edn` asks for babashka 1.13.219 or
+  later (Task D).
+- **The output directory** (Task D): `:build :out` in `site.edn` is
+  honoured (0.2.0's `--out` default overrode it); a build deletes a file
+  under `dist/clogem/` it did not write; `bb clean` deletes only a
+  directory a build has marked (`.clogem-output`).
+
+### Known issues
+
+- The Malay (`ms`) and Tamil (`ta`) strings await native review; each
+  task's *Needs native review* section lists its own.
+- `HEAD` reports `Content-Length: 0` from `bb dev` and `bb serve` on
+  babashka 1.13.219 (1.13.220 and later send GET's length).
+- Two browser layout checks depend on the fonts, and can fail under DejaVu
+  Sans or a serif font: the navbar staying one row on `/ms/` at 1031–1061
+  px, and the long nav at 850 px (`layout.test.mjs`). Both pass on CI and
+  passed in this release's local run.
 
 **Support page** (DESIGN.md §7.5): clogem-press's page on the Clogem
 support site, https://echojustus.github.io/clogem-support/clogem-press/,
@@ -43,11 +114,12 @@ nothing in `src/clogem/` changes, and a built site is unaffected.
 Languages (SP.2): English (the default) at `clogem-press/`; Simplified
 Chinese at `zh-Hans/`; Traditional Chinese, with Taiwan wording, at
 `zh-Hant/`; Brazilian Portuguese at `pt-BR/` (also for `pt`); European
-Spanish at `es-ES/` (also for `es`). Five pages, **179,039 bytes** in all
-(as of Task G's privacy clause, below; 178,640 as of SP.8): `index.html`
-34,880, `zh-Hant/index.html` 36,259, `zh-Hans/index.html` 36,144,
-`pt-BR/index.html` 35,820, `es-ES/index.html` 35,936 (each within the
-64 KB budget), plus, on the English and Chinese
+Spanish at `es-ES/` (also for `es`). Five pages, **178,503 bytes** in all
+(as of the release's status text, below; 179,039 as of Task G's privacy
+clause; 178,640 as of SP.8): `index.html` 34,761, `zh-Hant/index.html`
+36,157, `zh-Hans/index.html` 36,036, `pt-BR/index.html` 35,728,
+`es-ES/index.html` 35,821 (each within the 64 KB budget), plus, on the
+English and Chinese
 pages, the fonts they use (SP.8 and SP.7, below; README).
 
 ### Added (support page)
@@ -66,7 +138,8 @@ pages, the fonts they use (SP.8 and SP.7, below; README).
   Auto, remembers nothing), with clogem-press's jade as the accent: a darker
   jade for text in light mode, a lighter one in dark, every pair WCAG AA.
   Six sections, in this order: what clogem-press is, what it does today
-  (0.2.0, and Phase 4 as in progress and unreleased), getting started, help
+  (0.2.0, and Phase 4 as in progress and unreleased, until the release's
+  block, below, made it 0.3.0), getting started, help
   and feedback, privacy, licence and source.
 - Five languages (SP.2): the words in `support/i18n/` (`en.edn`, which was
   `support/page.edn`; `zh-Hans.edn`, `zh-Hant.edn`, `pt-BR.edn`,
@@ -243,7 +316,8 @@ pages, the fonts they use (SP.8 and SP.7, below; README).
   beside the pages as `clogem-press/fonts/*.woff2`, the CSP gains
   `font-src 'self'` and nothing else, and subsetting runs `pyftsubset` in
   GitHub Actions with no Python in the repository. (SP.7 narrowed this
-  to English and Chinese; the current sizes are SP.8's, above, and the README's.)
+  to English and Chinese; the current sizes are the README's and this
+  block's opening paragraph's, above.)
 - **WenKai TC's emphasis is Medium, not Bold**: v1.530 of WenKai TC has
   Light, Regular and Medium and no Bold.
 - **Subsets by script and weight**, each page declaring only those it uses
@@ -361,6 +435,113 @@ after publication, and whenever `en.edn` changes:
 
 Once it is live, the hub's own session links it from the front page's
 clogem-press card and its README's table.
+
+**Release 0.3.0 — the last vdoing keys** (§8's exit criterion, §11.3 item
+22): what an audit of vdoing 1.12.9 (`d77b420`) found unclassified, as the
+owner decided on 2026-10-27 — four small keys implemented, one deferred,
+five marked implicit, and a nav item's `target` and `rel` dropped — then the
+exit criterion, asserted, the version, and the support page's status:
+
+### Added (release 0.3.0)
+
+- **`:theme :prev-links` / `:next-links`** (vdoing's `prevLinks` /
+  `nextLinks`, `PageNav.vue`): `true` by default, as in vdoing; `false`
+  drops that link — the one at the end of the page and its page button —
+  from every article and catalogue page. A page's own front matter wins
+  whenever it sets one, as in vdoing: `prev: false` hides its link, a
+  permalink or `.md` path links that page, and **`prev: true` / `next:
+  true` now shows the usual neighbour** (it used to warn "front matter
+  prev/next names an unknown page: true"). Both are page-chrome keys
+  (`config/page-chrome-keys`): any other value warns and is repaired to
+  `true`; `prevLinks` and `nextLinks` warn with the kebab spelling.
+- **Front matter `showSidebar: false`** (vdoing's `Layout.vue`) drops the
+  sidebar as `sidebar: false` does: read from the primary variant, it
+  leaves the table of contents in place, and the page gets the
+  single-column shell and no collapse button.
+- **`pageComponent.data.key`** (vdoing's `Catalogue.vue`, `data.path ||
+  data.key`): a Catalogue page names its directory with `data.path` or,
+  when that is absent or blank, `data.key` (`model/catalogue-path`). The
+  warning for neither now says "has no data.path (or data.key)".
+- **A nav item's `:aria-label`** (vdoing's `ariaLabel`, `DropdownLink.vue`):
+  a string or a map by language, like `:text`, rendered as the
+  `aria-label` of the item's dropdown `<summary>` — the control vdoing's
+  dropdown button is — or of its link. A known nav item option, not walked
+  as options; `ariaLabel` warns with the kebab spelling.
+
+### Changed (release 0.3.0)
+
+- vdoing's site-wide **`navbar`** switch is **deferred** past v1 with front
+  matter `navbar: false` (DESIGN.md §8): a `site.edn` that sets it is told
+  so, and that every page shows the navbar.
+- A nav item's **`target`** and **`rel`**, which VuePress's types declare
+  but vdoing never reads, are **dropped** (DESIGN.md §8): a `site.edn` that
+  sets one is told so. clogem-press's nav links open in the same tab.
+- **Implicit** — a `site.edn` that sets one is told what clogem-press does
+  instead and to remove it: `searchPlaceholder` (the i18n string
+  `:search/placeholder`), `locales` and `label` (`:langs :locales` and
+  `i18n/<lang>.edn`), `selectText` (`:nav/language`) and
+  `activeHeaderLinks` (the table of contents always marks the heading
+  being read). `:label` under `:langs :locales <lang>` is still a locale
+  option, and quiet.
+- README (the conventions, page buttons, the navbar, sidebar collapse) and
+  `config.example.edn` document the four keys.
+- `src/clogem/version.edn` is `0.3.0`; its comment adds "0.3.0 = Phase 4
+  (theme polish and advanced features) complete" and drops "No release tag
+  has been pushed yet": each release is tagged on `main` once merged.
+  Pinned as the current version, 0.2.0 became 0.3.0 in `identity_test`
+  (the generator meta, and the footer without it), `config_test` (three
+  "in 0.2.0" warnings, which name the running version) and
+  `config.example.edn`'s IndexNow note.
+- README's status line says Phase 4 is complete (0.3.0); DESIGN §8 marks
+  the release done and §11.3 item 22 records it.
+- **The support page's *What it does today*** (`support/i18n/*.edn`, all
+  five languages; DESIGN.md §7.5 item 4; the owner chose to change it in
+  this release): the latest release is 0.3.0, and changes after it land on
+  the main branch first. The third card is *Released · 0.3.0*, "The
+  theme": what Phase 4 built, custom HTML slots and search across
+  languages included. It no longer says Phase 4 is in progress, or what
+  is still to come. The first two cards stay *Released · 0.2.0*; the
+  privacy section is unchanged. The pages are 34,761 / 36,157 / 36,036 /
+  35,728 / 35,821 bytes, 178,503 in all (README), and the Chinese
+  subsets shrink a little (README's font table); merging this
+  republishes them.
+
+### Tests (release 0.3.0)
+
+- New `test/clogem/release_test.clj`: one test per key above — the two
+  switches on and off, with `prev: true`, `next: true` and a permalink
+  overriding them, and their warnings; `showSidebar: false` beside
+  `sidebar: false`; `data.key` alone, blank `data.path`, and both; a nav
+  link's and a dropdown's label, per language; the `navbar` and the five
+  implicit warnings. Each failed before its change (44 failed assertions in
+  7 tests).
+- **The exit criterion** (DESIGN.md §8), in the same namespace:
+  `vdoing-theme-keys` lists vdoing's 83 themeConfig keys — `types/index.ts`'s
+  own, the `DefaultThemeConfig` keys it inherits (@vuepress/types 1.9.5,
+  `nav` items' included) and the three it reads that neither declares —
+  each with its vdoing file and line: 61 are known where clogem-press reads
+  them (and `config/vdoing-keys` agrees), 16 are implicit, deferred or
+  removed (9, 2 and 5), and 6 sit inside one of those. A `nav` item's
+  `target` and `rel`, declared by @vuepress/types but never read by vdoing
+  (its `NavLink.vue` sets both itself), are among the 5 removed.
+  `vdoing-front-matter-keys` lists the 45 front-matter keys vdoing reads:
+  42 are read by the clogem source named, and DESIGN §8 lists `navbar:
+  false` and `search: false` as deferred and `sidebar: 'auto'` as removed.
+  `doctor`, on a `site.edn` that sets the 16, names each once, and on a
+  `nav` item with `target` and `rel` names both as dropped. Nothing is
+  `:planned` any more.
+- `the-version-is-0-3-0`: `version.edn`, and a build's `<meta
+  name="generator">` and Atom `<generator version>`.
+- `support_page_test`'s `the-status-follows-the-changelog`: every page's
+  status section names 0.3.0 (and 0.2.0, its first two cards), and none
+  says the theme is in progress or unreleased, in its own language; the
+  no-dates check is kept. It failed on the old words.
+
+### Needs native review (release 0.3.0)
+
+Machine-made, to be read by a native speaker: the support page's new
+status text — the lead and the third card of *What it does today* — in
+`support/i18n/zh-Hans.edn`, `zh-Hant.edn`, `pt-BR.edn` and `es-ES.edn`.
 
 **Task E1b — htmlModules** (§11.3 item 13, second half; D-P4-13):
 

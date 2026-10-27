@@ -49,7 +49,9 @@
     ;; The support page (support/, DESIGN.md §7.5)
     clogem.support-page-test
     ;; Phase 4's follow-ups
-    clogem.followups-test])
+    clogem.followups-test
+    ;; Release 0.3.0: the last vdoing keys and the Phase 4 exit criterion
+    clogem.release-test])
 
 (defn- highlighting-off-by-default!
   "§11.3 item 10 turns highlighting on by default, which would make every
