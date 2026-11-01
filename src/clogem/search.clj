@@ -219,9 +219,11 @@
   `base` is the encoded site base, so `base + \"pagefind/\"` is the
   `bundle-path` the same element carries; each merged language's `key` is
   Pagefind's own, the lowercased `<html lang>`, and its `label` is the
-  locale's `:label` — the endonym the language switcher shows, which is
-  also the value of the `clogem-language` filter. The other languages come
-  in `:langs :priority` order.
+  language as the switcher names it (`i18n/lang-label-text`: its `:label`,
+  then its name in the page's language), which is also its value of the
+  `clogem-language` filter. `own`, the page's own language, is its `:label`
+  alone, as in the switcher. The other languages come in `:langs
+  :priority` order.
 
   nil without a `:model`: a layout test may build a ctx by hand."
   [{:keys [cfg lang model] :as ctx}]
@@ -235,7 +237,7 @@
          "filter" (i18n/tr ctx :nav/language)
          "langs"  (vec (for [l others]
                          {"key"   (str/lower-case (config/html-lang cfg l))
-                          "label" (:label (config/locale cfg l))}))}))))
+                          "label" (i18n/lang-label-text ctx l)}))}))))
 
 ;; ---------------------------------------------------------------------------
 ;; Run

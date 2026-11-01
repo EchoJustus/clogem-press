@@ -155,7 +155,19 @@
                              (map (fn [[k v]] [k (merge {:dir :ltr
                                                          :label (name k)
                                                          :html-lang (name k)}
-                                                        v)])))
+                                                        v)]))
+                             ;; a :label that is not a name would be an empty
+                             ;; link in the switcher (2026-11-01): the code
+                             ;; stands in, as for an absent one, and says so
+                             (map (fn [[k v]]
+                                    (let [l (:label v)]
+                                      (if (and (string? l) (not (str/blank? l)))
+                                        [k v]
+                                        (do (diag/warn! nil (str ":langs :locales " k " :label is " (pr-str l)
+                                                                 ", which is not a language's name; using "
+                                                                 (pr-str (name k)) ".")
+                                                        "Set :label to the language's own name, as in \"English\" or \"简体中文\".")
+                                            [k (assoc v :label (name k))]))))))
                        locales)
         known    (set (keys locales))
         priority (vec (concat (filterv known priority)

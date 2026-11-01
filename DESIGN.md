@@ -1239,18 +1239,28 @@ asserts it — so the chain only ever reaches the end for a site-added key. `doc
 on a site key that is a near-miss of a theme key, and on a site-added key missing for some configured
 language (§11.2 item 35), so the gap is a report rather than a surprise.
 
-**Language names (the owner's format, 2026-11-01).** A language list, meaning the navbar switcher
-and an article's variant bar, names each language other than the page's by its own `:label`, then
-its name in the page's language in brackets. On an English page that is `简体中文 (Simplified
-Chinese)`; on a Simplified Chinese page, `English (英文)`. The page's own language is its `:label`
-alone. The bracketed names are `:lang/names`, a map from language code to name, in each string file.
-It is the one value that is a map, so a site's `i18n/<lang>.edn` adds or changes a name by the deep
-merge (`{:lang/names {:ja "Japanese"}}`) and removes one with `nil`. The map is read from the page
-language's own file only, never along the fallback chain: an English name on a Japanese page would
-not help its reader. So a language the page has no name for shows its `:label` alone, as does a
-language whose name there is its `:label`. The `:label` sits in a `<span lang>`, with `dir` when that
-differs from the page's; the link, and the bracket, are in the page's language. Prose that names a
-language ("Also available in {{lang}}", the banner, the fallback notice) keeps the `:label` alone.
+**Language names (the owner's format, 2026-11-01).** A language list names each language other
+than the page's by its own `:label`, then by its name in the page's language, in brackets. The lists
+are the navbar switcher, an article's variant bar and the cross-language search's language filter.
+On an English page that is `简体中文 (Simplified Chinese)`; on a Simplified Chinese page,
+`English (英文)`. The page's own language is its `:label` alone.
+
+- **Where the names live.** The bracketed names are `:lang/names`, a map from language code to name,
+  in each string file. It is the one value that is a map, so a site's `i18n/<lang>.edn` adds or
+  changes a name by the deep merge (`{:lang/names {:ja "Japanese"}}`) and removes one with `nil`.
+- **Only the page language's file.** The map is read from that file alone, never along the fallback
+  chain: an English name on a Japanese page is not the name in the reader's language.
+- **When there is no bracket.** The `:label` stands alone where the page's language has no name for
+  the language, where the name is not a non-blank string, and where the `:label` already holds the
+  name as a whole word (a label of `简体中文 (Simplified Chinese)`, but "Malay" is not a word of
+  "Malaysia").
+- **What `doctor` reports.** A key that is no configured language (with the code meant, when it
+  differs only in case), a name that is not a string, a `:lang/names` that is not a map, and a
+  `:lang/name` that is not a string.
+- **Markup.** In the switcher and the variant bar, the `:label` sits in a `<span lang>`, with `dir`
+  when that differs from the page's. The link and the bracket are in the page's language.
+- **Prose keeps the `:label`.** Text that names a language ("Also available in {{lang}}", the
+  banner, the fallback notice) uses the `:label` alone.
 
 **No pluralization machinery.** Keys use a single form with `{{n}}` interpolated. English "1 articles"
 is the cost; the alternative is a CLDR plural-rule engine for five languages with three different

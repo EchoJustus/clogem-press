@@ -148,6 +148,48 @@
         named? (assoc :link (or (:link a) (get a "link")))))))
 
 ;; ---------------------------------------------------------------------------
+;; Language names (the owner's format, 2026-11-01; DESIGN.md §6.5)
+
+(defn lang-name
+  "Language `l`'s name in the page's language: `l` in the page language's
+  `:lang/names` (the theme's string file and the site's, merged). Not along
+  the fallback chain: the bracket is the name in the language the reader
+  chose, and a name in another language is not that. nil unless it is a
+  non-blank string."
+  [{:keys [strings lang]} l]
+  (let [v (get-in strings [lang :lang/names l])]
+    (when (string? v) (u/blank->nil (str/trim v)))))
+
+(defn- holds-word?
+  "Does `s` hold `w` as a whole word: case-insensitively, with no letter,
+  mark or digit on either side? \"Malay\" is not a word of \"Malaysia\"."
+  [s w]
+  (boolean (re-find (re-pattern (str "(?iu)(?<![\\p{L}\\p{M}\\p{N}])"
+                                     (java.util.regex.Pattern/quote w)
+                                     "(?![\\p{L}\\p{M}\\p{N}])"))
+                    s)))
+
+(defn lang-gloss
+  "What a language list adds in brackets after language `l`'s `:label` on
+  this page: `l`'s name in the page's language (`lang-name`). nil for the
+  page's own language, for a language the page's has no name for, and for
+  one whose `:label` already holds that name as a whole word (a label set
+  to `简体中文 (Simplified Chinese)`, or to the name itself)."
+  [{:keys [cfg lang] :as ctx} l]
+  (when (not= l lang)
+    (when-let [n (lang-name ctx l)]
+      (when-not (holds-word? (str (get-in cfg [:langs :locales l :label])) n)
+        n))))
+
+(defn lang-label-text
+  "Language `l` as the language lists name it, as text: its `:label`, then
+  `lang-gloss` in brackets. `简体中文 (Simplified Chinese)` on an English
+  page, `English (英文)` on a Simplified Chinese one."
+  [{:keys [cfg] :as ctx} l]
+  (let [own (str (get-in cfg [:langs :locales l :label]))]
+    (if-let [g (lang-gloss ctx l)] (str own " (" g ")") own)))
+
+;; ---------------------------------------------------------------------------
 ;; Site string checks (D-P3-6)
 
 (def ^:private theme-langs
@@ -169,6 +211,47 @@
              (map (fn [t] [(u/damerau-levenshtein s (u/lower (str t))) (str t) t]))
              (filter #(<= (first %) 2))
              sort first peek)))
+
+(defn- check-lang-names!
+  "The language names in one site string file (2026-11-01): `:lang/names`
+  is a map from configured language codes to non-blank strings, and
+  `:lang/name`, this language's own name, is a string. Anything else is
+  silently never shown, so it is reported, with the code meant when a
+  configured one is that key in another case, or, for a key of five
+  characters or more, within two edits of it (two-letter codes are all
+  within two edits of one another)."
+  [cfg file m]
+  (let [langs (config/lang-keys cfg)
+        named (get m :lang/names ::absent)]
+    (when (and (contains? m :lang/name) (not (string? (:lang/name m))))
+      (diag/warn! file (str "`:lang/name` in " file " is " (pr-str (:lang/name m))
+                            ", but it is this language's own name, a string.")
+                  "The names of the other languages go in `:lang/names`, a map: {:lang/names {:en \"English\"}}."))
+    (cond
+      (or (= ::absent named) (nil? named)) nil
+      (not (map? named))
+      (diag/warn! file (str "`:lang/names` in " file " is " (pr-str named) ", not a map; no names are taken from it.")
+                  "Write it as a map from language code to name: {:lang/names {:en \"English\" :zh-Hans \"Simplified Chinese\"}}.")
+      :else
+      (doseq [[k n] (sort-by (comp str key) named)]
+        (when-not (some #{k} langs)
+          (let [code  (when (or (keyword? k) (string? k)) (name k))
+                near  (fn [c] (->> langs
+                                   (map (fn [l] [(u/damerau-levenshtein (u/lower c) (u/lower (name l))) (name l) l]))
+                                   (filter (fn [[d]] (<= d 2)))
+                                   sort first peek))
+                meant (when code
+                        (or (config/lang-for-suffix cfg code)
+                            (when (>= (count code) 5) (near code))))]
+            (diag/warn! file (str "`:lang/names` in " file " names " (pr-str k)
+                                  ", which is not a configured language"
+                                  (if meant (str " — did you mean " meant "?") "."))
+                        (str "Its keys are the codes under :langs :locales: "
+                             (str/join ", " (map str langs)) "."))))
+        (when (and (some? n) (not (and (string? n) (not (str/blank? n)))))
+          (diag/warn! file (str "`:lang/names` in " file " gives " (pr-str k) " the name " (pr-str n)
+                                ", not a non-blank string, so its :label stands alone.")
+                      "Give it the language's name in this file's language, or nil to show the :label alone."))))))
 
 (defn check-site-strings!
   "Two warnings over the site's `i18n/<lang>.edn` files (D-P3-6), raised in
@@ -193,6 +276,9 @@
                                   " — did you mean `" near "`?")
                     "No theme template reads this key, so the string is never shown.")
         (swap! added update k (fnil conj []) l)))
+    (doseq [l langs
+            :let [m (get site l)]]
+      (check-lang-names! cfg (file l) m))
     (doseq [[k have] @added
             :let [missing (remove (set have) langs)]
             :when (seq missing)]

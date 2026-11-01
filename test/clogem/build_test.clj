@@ -1486,6 +1486,43 @@
       (fn [dir _]
         (is (empty? (doctor-warnings dir)))))))
 
+(deftest the-site-s-language-names-are-checked
+  (testing "2026-11-01: :lang/names keys that are no configured language (in
+            another case, a string, or unknown), a name that is not a
+            non-blank string, a :lang/names that is not a map, and a
+            :lang/name that is not a string are each one warning"
+    (with-strings {"en" {:lang/names {:zh-hans "Simplified Chinese" "ms" "Malay" :ja "Japanese" :ta false}}
+                   "ms" {:lang/names ["Inggeris"]}
+                   "ta" {:lang/name {:en "Tamil"}}}
+      (fn [dir _]
+        (let [ws (filter #(re-find #":lang/name" %) (map :message (doctor-warnings dir)))]
+          (is (= #{"`:lang/names` in i18n/en.edn names :zh-hans, which is not a configured language — did you mean :zh-Hans?"
+                   "`:lang/names` in i18n/en.edn names \"ms\", which is not a configured language — did you mean :ms?"
+                   "`:lang/names` in i18n/en.edn names :ja, which is not a configured language."
+                   "`:lang/names` in i18n/en.edn gives :ta the name false, not a non-blank string, so its :label stands alone."
+                   "`:lang/names` in i18n/ms.edn is [\"Inggeris\"], not a map; no names are taken from it."
+                   "`:lang/name` in i18n/ta.edn is {:en \"Tamil\"}, but it is this language's own name, a string."}
+                 (set ws)))
+          (is (= 6 (count ws)) "each once")))))
+  (testing "names changed and removed (nil) are quiet"
+    (with-strings {"en" {:lang/names {:ms "Malaysian" :zh-Hant nil}} "ta" {:lang/names nil}}
+      (fn [dir _]
+        (is (not-any? #(re-find #":lang/name" (:message %)) (doctor-warnings dir)))))))
+
+(deftest a-label-that-is-not-a-name-falls-back-to-the-code
+  (testing "2026-11-01: a blank or non-string :label would be an empty link in
+            the switcher; the code stands in, with a warning"
+    (with-cli-site {"01.Guide/01.t.md" a-tree}
+      (fn [dir _]
+        (let [ws (map :message (doctor-warnings dir))]
+          (is (some #{":langs :locales :ms :label is \"\", which is not a language's name; using \"ms\"."} ws) (pr-str ws))
+          (is (some #{":langs :locales :ta :label is nil, which is not a language's name; using \"ta\"."} ws) (pr-str ws))))
+      (assoc url-site :langs {:locales {:ms {:label ""} :ta {:label nil}}}))
+    (let [cfg (first (diag/collecting (config/load-config "examples/demo-site" nil
+                                                          {:langs {:locales {:ms {:label " "}}}})))]
+      (is (= "ms" (get-in cfg [:langs :locales :ms :label])))
+      (is (= "English" (get-in cfg [:langs :locales :en :label])) "a name is kept"))))
+
 (deftest the-sitemap-and-hreflang-switches
   (testing ":seo :sitemap false → no sitemap; :seo :hreflang false → no
             alternates in heads or sitemap, canonical kept"

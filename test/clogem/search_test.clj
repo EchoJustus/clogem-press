@@ -970,12 +970,19 @@
                [["tags"]                  "English"       ["zh-hans" "zh-hant" "ms" "ta"]]]
               :let [d (merge-attr (apply html out parts))]]
         (testing (pr-str parts)
-          (is (= own (get d "own")) "its own language's label, the endonym the switcher shows")
+          (is (= own (get d "own")) "its own language's label, as the switcher shows the current one")
           (is (= others (map #(get % "key") (get d "langs")))
               "Pagefind's own keys, lowercased, in :langs :priority order, never its own")
-          (is (= ["English" "简体中文" "繁體中文" "Bahasa Melayu" "தமிழ்"]
-                 (sort-by #(.indexOf ["English" "简体中文" "繁體中文" "Bahasa Melayu" "தமிழ்"] %)
-                          (conj (mapv #(get % "label") (get d "langs")) own))))))
+          ;; 2026-11-01: the others as the switcher names them, :label (name)
+          (let [page-lang (keyword (or (first parts) "en"))
+                page-lang (if (#{:tags} page-lang) :en page-lang)
+                names     (:lang/names (i18n/theme-strings page-lang))
+                label     (fn [k] (get-in config/default-locales [k :label]))
+                want      (for [k (remove #{page-lang} [:en :zh-Hans :zh-Hant :ms :ta])]
+                            (str (label k) " (" (get names k) ")"))]
+            (is (= want (map #(get % "label") (get d "langs")))))))
+      (testing "the owner's example, on the Simplified Chinese home"
+        (is (= "English (英文)" (get-in (merge-attr (html out "zh-Hans")) ["langs" 0 "label"]))))
       (testing "the strings are the page's own"
         (is (= "Search all languages" (get (merge-attr (html out)) "label")))
         (is (= "Language" (get (merge-attr (html out)) "filter")))

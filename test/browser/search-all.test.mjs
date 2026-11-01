@@ -163,7 +163,9 @@ export default async function (t) {
     await dropdown.locator('button').first().click();
     const menu = p.locator('.pf-dropdown-menu');
     const options = (await menu.innerText()).split('\n').map((s) => s.trim()).filter(Boolean);
-    t.check(options.includes('English') && options.includes('Bahasa Melayu'),
+    // 2026-11-01: the page's own language by its own name, the others as
+    // the switcher names them, own name (name in the page's language)
+    t.check(options.includes('English (Bahasa Inggeris)') && options.includes('Bahasa Melayu'),
             `the values are the language names: ${options.join(' / ')}`);
     await menu.getByText('Bahasa Melayu', { exact: true }).first().click();
     await sleep(SETTLE);

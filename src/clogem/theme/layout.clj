@@ -301,31 +301,22 @@
   [{:keys [group]} l]
   (boolean (and group (not (contains? (:variants group) l)))))
 
-(defn lang-name
-  "Language `l`'s name in the page's language: `l` in the page language's
-  `:lang/names` (the theme's string file and the site's, merged). Not along
-  the fallback chain, since a name in another language would not help this
-  reader. nil when the page's language has no name for `l`."
-  [{:keys [strings lang]} l]
-  (some-> (get-in strings [lang :lang/names l]) str str/trim u/blank->nil))
-
 (defn lang-label
   "How a language list names `l` (the owner's format, 2026-11-01): its own
-  `:label`, then its name in the page's language in brackets.
-  `简体中文 (Simplified Chinese)` on an English page; `English (英文)` on a
-  Simplified Chinese one. The `:label` stands alone for the page's own
-  language, and for a language the page has no other name for (`lang-name`).
-  The `:label` is marked with `l`'s lang (and its dir, when that differs from
-  the page's); the bracket is in the page's language."
+  `:label`, then, in brackets, its name in the page's language
+  (`i18n/lang-gloss`): `简体中文 (Simplified Chinese)` on an English page,
+  `English (英文)` on a Simplified Chinese one. No bracket for the page's
+  own language, or where there is no other name to add. The `:label` is
+  marked with `l`'s lang (and its dir, when that differs from the page's);
+  the bracket is in the page's language. `i18n/lang-label-text` is the
+  same, as text."
   [{:keys [cfg lang] :as ctx} l]
-  (let [own   (get-in cfg [:langs :locales l :label])
-        other (when (not= l lang) (lang-name ctx l))
-        dir   #(name (or (:dir (config/locale cfg %)) :ltr))]
+  (let [dir #(name (or (:dir (config/locale cfg %)) :ltr))]
     (list [:span (cond-> {:lang (config/html-lang cfg l)}
                    (not= (dir l) (dir lang)) (assoc :dir (dir l)))
-           own]
-          (when (and other (not= other (str/trim (str own))))
-            (str " (" other ")")))))
+           (get-in cfg [:langs :locales l :label])]
+          (when-let [g (i18n/lang-gloss ctx l)]
+            (str " (" g ")")))))
 
 (defn lang-switcher
   "Navbar language switcher — site-wide, on every page, listing every

@@ -4,55 +4,99 @@
 
 ### Changed
 
-- **Language names, in the owner's format (2026-11-01).** The navbar
-  language switcher and an article's variant bar name each language other
-  than the page's by its own `:label`, then by its name in the page's
-  language, in brackets. On an English page that is `简体中文 (Simplified
-  Chinese)`; on a Simplified Chinese page, `English (英文)`. The page's own
-  language is its `:label` alone. The names are `:lang/names` in each theme
-  string file. It is a map, so a site's `i18n/<lang>.edn` adds or changes a
-  name and `nil` removes one. It is read from the page language's file
-  only, not along the fallback chain, so a language the page has no name
-  for keeps its `:label` alone (DESIGN.md §6.5).
-- **The link no longer carries the target's `lang`.** Its text is now in two
-  languages, so the `:label` carries it, in a `<span lang>` (with `dir` when
-  it differs from the page's), and the link and its bracket are in the
-  page's language. The untranslated notice inside the link needs no `lang`
-  of its own any more.
-- **The language list in the mobile drawer** (50rem and below) is one name
-  a line, under its label, as the nav's links are; it used to wrap several
-  to a line. Above 50rem the dropdown is as wide as its longest name, up to
-  22rem.
+- **Language names, in the owner's format (2026-11-01).**
+  - Where: the navbar language switcher, an article's variant bar and the
+    cross-language search's language filter.
+  - How: each language other than the page's is its own `:label`, then its
+    name in the page's language, in brackets. On an English page that is
+    `简体中文 (Simplified Chinese)`; on a Simplified Chinese page,
+    `English (英文)`. The page's own language is its `:label` alone.
+  - Where the names come from: `:lang/names` in each theme string file. It
+    is a map, so a site's `i18n/<lang>.edn` adds or changes a name, and `nil`
+    removes one. It is read from the page language's file only, not along
+    the fallback chain.
+  - When there is no bracket: a language the page has no name for, a name
+    that is not a non-blank string, and a `:label` that already holds the
+    name as a whole word all keep the `:label` alone (DESIGN.md §6.5).
+- **The link no longer carries the target's `lang`.**
+  - Its text is now in two languages, so the `:label` carries it, in a
+    `<span lang>`, with `dir` when that differs from the page's.
+  - The link and its bracket are in the page's language.
+  - The untranslated notice inside the link no longer needs a `lang` of its
+    own.
+- **Layout.**
+  - In the mobile drawer (50rem and below) the language list is one name a
+    line, under its label, as the nav's links are. It used to wrap several
+    to a line.
+  - Above 50rem the dropdown is as wide as its longest name, up to 22rem.
+  - The variant bar's links wrap. Each is wider now: on a 320 px Tamil page,
+    five of them overflowed the page by 33 px.
+- **`doctor` and `build` check a site's language names.** Each of these is
+  a warning that says what is wrong:
+  - a `:lang/names` key that is no configured language (naming the code
+    meant when it differs only in case);
+  - a name that is not a non-blank string;
+  - a `:lang/names` that is not a map;
+  - a `:lang/name` that is not a string (the singular is this language's
+    own name).
+
+### Fixed
+
+- A blank or non-string `:langs :locales <lang> :label` made an empty link
+  in the switcher. The code now stands in, as it does for an absent
+  `:label`, with a warning.
 
 ### Upgrading
 
-A site with the five theme languages gets the new names without changes.
-A site that adds a language shows that language's `:label` alone until it
-names it: `{:lang/names {:xx "…"}}` in each page language's
-`i18n/<lang>.edn`, and the other languages' names in `i18n/xx.edn`. A
-stylesheet or script that found switcher or variant-bar links by `a[lang]`
-should use `a[hreflang]` or `a[data-clogem-lang]`.
+- **Sites with the five theme languages** get the new names without
+  changes.
+- **A site that adds a language** shows that language's `:label` alone
+  until it names it: `{:lang/names {:xx "…"}}` in each page language's
+  `i18n/<lang>.edn`, and the other languages' names in `i18n/xx.edn`.
+- **A `:label` that carries its own gloss**, such as `Bahasa Melayu
+  (Malaysia, Singapura)`, gets a second bracket, `(Malay)`, unless the
+  page's language sets that name to `nil`.
+- **Selectors:** a stylesheet or script that found switcher or variant-bar
+  links by `a[lang]` should use `a[hreflang]` or `a[data-clogem-lang]`.
 
 ### Tests
 
-- `lang_test`: the owner's two examples; for each of the five page
-  languages, each other language is its `:label` and its name from that
-  language's theme file; the current language is its `:label` alone; the
-  `lang` is on the `:label`, and on no link; the variant bar's links; a
-  site's names merged in, one changed, one removed with `nil` and one equal
-  to its `:label`; a site-added right-to-left language with and without
-  names. Each theme file names the five theme languages, no two alike.
-- The two tests that pinned the old link markup (`build_test`'s untranslated
-  entry and `lang_test`'s variant bar) pin the new one.
+- **`lang_test`:**
+  - the owner's two examples;
+  - for each of the five page languages, each other language is its
+    `:label` plus its name from that language's theme file;
+  - the current language is its `:label` alone;
+  - the `lang` is on the `:label`, and on no link;
+  - the variant bar's links;
+  - a site's names merged in, one changed, one removed with `nil`, one
+    equal to its `:label`, and one not a string;
+  - a `:label` that already holds the name;
+  - a site-added right-to-left language, with and without names. Its page
+    shows no name from the fallback chain;
+  - the variant bar's links wrap;
+  - each theme file names the five theme languages, no two alike.
+- **`build_test`:** the six language-name warnings (each once), quiet
+  overrides, and a blank or nil `:label`.
+- **`search_test`:** the filter's labels, in every page language.
+- **Old markup pins updated.** Three tests pinned the old link markup:
+  `build_test` (the untranslated entry), `lang_test` (the variant bar) and
+  `parity_test` (the 404 page). `search-all.test.mjs` pinned the filter's
+  old value. All four now pin the new form.
 
 ### Needs native review
 
-- `:lang/names` in `ms.edn` ("Bahasa Inggeris", "Bahasa Cina Ringkas",
-  "Bahasa Cina Tradisional", "Bahasa Tamil") and in `ta.edn` ("ஆங்கிலம்",
-  "எளிதாக்கப்பட்ட சீனம்", "பாரம்பரிய சீனம்", "மலாய்").
-- The Chinese names follow the owner's "英文" with the 文 form, and the
-  support page's 泰米尔 / 泰米爾: "马来文", "泰米尔文", "繁体中文" and
-  "馬來文", "泰米爾文", "簡體中文".
+- **Malay and Tamil:** `:lang/names` in `ms.edn` ("Bahasa Inggeris", "Bahasa
+  Cina Ringkas", "Bahasa Cina Tradisional", "Bahasa Tamil") and in `ta.edn`
+  ("ஆங்கிலம்", "எளிதாக்கப்பட்ட சீனம்", "பாரம்பரிய சீனம்", "மலாய்").
+- **Chinese:** the names follow the owner's "英文", using 文, and each
+  file's own wording.
+  - Mainland in `zh-Hans`: "马来文", "泰米尔文".
+  - Taiwan in `zh-Hant`: "馬來文", "坦米爾文".
+  - Malaysia and Singapore write Tamil as 淡米尔文 / 淡米爾文.
+  - The support page has 泰米尔语 / 泰米爾語.
+- **The other Chinese script:** taken literally, the format names it twice
+  on a Chinese page. That gives "繁體中文 (繁体中文)" on a Simplified
+  Chinese page and "简体中文 (簡體中文)" on a Traditional one.
 
 ## 0.3.0 — Phase 4: theme polish and advanced features
 

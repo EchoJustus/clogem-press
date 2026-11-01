@@ -368,7 +368,10 @@
       (is (not (re-find #"clogem-lang-banner[^{]*\{[^}]*nowrap" css)))
       (testing "and the navbar switcher listing the same label wraps too"
         (is (re-find #"\.clogem-langs ul \{[^}]*flex-wrap: wrap" css))
-        (is (re-find #"\.clogem-langs \{[^}]*min-width: 0" css))))))
+        (is (re-find #"\.clogem-langs \{[^}]*min-width: 0" css)))
+      (testing "and so do the variant bar's links, each \"own (page's)\" since
+                2026-11-01: five of them overflowed a 320 px Tamil page by 33 px"
+        (is (re-find #"\.clogem-variants__links \{[^}]*flex-wrap: wrap" css))))))
 
 ;; ---------------------------------------------------------------------------
 ;; The language lists' names (the owner's format, 2026-11-01)
@@ -449,10 +452,28 @@
           (is (= "Xxish" (entry en "xx")))
           (is (str/includes? en "<span dir=\"rtl\" lang=\"x-xx\">Xxish</span></a>"))
           (is (= "English" (entry xx "en")) "the xx page has no strings: no name to add")
+          (is (= "简体中文" (entry xx "zh-Hans"))
+              "not along the fallback chain: English's \"Simplified Chinese\" is no name in Xxish")
           (is (str/includes? xx "<span dir=\"ltr\" lang=\"en\">English</span></a>")))))
     (with-built (assoc corpus "01.Guide/01.t.xx.md" (variant "Xx title")) sixth-lang
       (fn [out]
         (is (= "Xxish (Exish)" (entry (switcher (html out "/")) "xx")))
         (is (= "English (Inglix)" (entry (switcher (html out "/xx/")) "en"))))
       :strings {:en {:lang/names {:xx "Exish"}}
-                :xx {:lang/names {:en "Inglix"}}})))
+                :xx {:lang/names {:en "Inglix"}}}))
+  (testing "a name that is not a string is no name"
+    (with-built corpus url-site
+      (fn [out]
+        (is (= "Bahasa Melayu" (entry (switcher (html out "/")) "ms"))))
+      :strings {:en {:lang/names {:ms false}}}))
+  (testing "a :label that already holds the name, as a whole word, is not
+            glossed again; \"Malay\" is not a word of \"Malaysia\""
+    (with-built corpus (assoc url-site :langs {:locales {:zh-Hans {:label "简体中文 (Simplified Chinese)"}
+                                                         :ms      {:label "Bahasa Melayu (Malaysia, Singapura)"}}})
+      (fn [out]
+        (let [en (switcher (html out "/"))]
+          (is (= "简体中文 (Simplified Chinese)" (entry en "zh-Hans")))
+          (is (= "Bahasa Melayu (Malaysia, Singapura) (Malay)" (entry en "ms"))))
+        (is (= "简体中文 (Simplified Chinese) (簡體中文)" (entry (switcher (html out "/zh-Hant/")) "zh-Hans"))
+            "on a page whose language names it otherwise, the name is added")))))
+
