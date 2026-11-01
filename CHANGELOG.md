@@ -25,26 +25,34 @@
   - The untranslated notice inside the link no longer needs a `lang` of its
     own.
 - **Layout.**
-  - In the mobile drawer (50rem and below) the language list is one name a
-    line, under its label, as the nav's links are. It used to wrap several
-    to a line.
+  - At 50rem and below the language list is one name a line, under its
+    label, as the nav's links are. That holds in the drawer and without
+    JS; it used to wrap several to a line.
   - Above 50rem the dropdown is as wide as its longest name, up to 22rem.
   - The variant bar's links wrap. Each is wider now: on a 320 px Tamil page,
-    five of them overflowed the page by 33 px.
+    four of them overflowed the page by 33 px.
+  - The search filter's labels wrap (Pagefind's `wrap`) instead of ending
+    in "…". Under WCAG 1.4.12 text spacing, Malay and English names were cut
+    at 320 and 360 px, and the Malay menu ran past the dialog on desktop.
 - **`doctor` and `build` check a site's language names.** Each of these is
   a warning that says what is wrong:
-  - a `:lang/names` key that is no configured language (naming the code
-    meant when it differs only in case);
+  - a `:lang/names` key that is no configured language, with the code meant
+    when it differs only in case or, for a key of five characters or more,
+    by two edits;
   - a name that is not a non-blank string;
   - a `:lang/names` that is not a map;
-  - a `:lang/name` that is not a string (the singular is this language's
-    own name).
+  - a `:lang/name` (the singular, this language's own name) that is neither
+    a string nor nil.
 
 ### Fixed
 
-- A blank or non-string `:langs :locales <lang> :label` made an empty link
-  in the switcher. The code now stands in, as it does for an absent
-  `:label`, with a warning.
+- A blank or nil `:langs :locales <lang> :label` made an empty link in the
+  switcher, and another non-string one showed its printed form. Each is now
+  what an absent `:label` would be, with a warning: the shipped name for
+  the five default languages, else the code.
+- At 640 px and below, the cross-language search's filter starts a row of
+  its own. Beside a short label (搜索所有语言 at 360 px) its menu ran 46 px
+  off-screen (since 0.3.0).
 
 ### Upgrading
 
@@ -58,6 +66,9 @@
   page's language sets that name to `nil`.
 - **Selectors:** a stylesheet or script that found switcher or variant-bar
   links by `a[lang]` should use `a[hreflang]` or `a[data-clogem-lang]`.
+- **Non-string labels:** a `:label` given as a keyword or a number used to
+  show its printed form. It now shows the shipped name or the code, with a
+  warning.
 
 ### Tests
 
@@ -69,14 +80,24 @@
   - the `lang` is on the `:label`, and on no link;
   - the variant bar's links;
   - a site's names merged in, one changed, one removed with `nil`, one
-    equal to its `:label`, and one not a string;
-  - a `:label` that already holds the name;
+    equal to its `:label`, and ones that are `false`, a number, blank or a
+    keyword;
+  - a `:label` that already holds the name, in another case; a name inside
+    a longer word (中文 in 繁體中文), and one followed by a combining mark
+    (தமிழ in தமிழ்), are not held;
   - a site-added right-to-left language, with and without names. Its page
     shows no name from the fallback chain;
   - the variant bar's links wrap;
   - each theme file names the five theme languages, no two alike.
-- **`build_test`:** the six language-name warnings (each once), quiet
-  overrides, and a blank or nil `:label`.
+- **`build_test`:** the nine language-name warnings (each once; an
+  unconfigured key with a bad name gets one), quiet overrides, a `:lang/name`
+  of nil, a string file that is `()`, and blank, nil and numeric `:label`s
+  on default and site-added languages.
+- **`layout_test`:** the language lists' CSS (a name a line at 50rem and
+  below, the dropdown's width, and no rule undoing the variant bar's wrap).
+- **`search-all.test.mjs`:** on `/ms/` at 320 and 360 px, with and without
+  text spacing, no filter label is cut or kept on one line; the filter
+  menu fits on the zh-Hans and zh-Hant homes at 360 px too.
 - **`search_test`:** the filter's labels, in every page language.
 - **Old markup pins updated.** Three tests pinned the old link markup:
   `build_test` (the untranslated entry), `lang_test` (the variant bar) and

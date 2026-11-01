@@ -6,7 +6,7 @@
  :nav/language         "Bahasa"
  :nav/home             "Laman utama"
  ;; P4-B2b: the mobile menu toggle. Awaiting native review (CHANGELOG,
- ;; Unreleased, "Needs native review (B2b)").
+ ;; 0.3.0, "Needs native review (B2b)").
  :nav/menu             "Menu"
  :page/last-updated    "Dikemas kini {{date}}"
  :page/prev            "Sebelumnya"
@@ -43,12 +43,12 @@
  :page/tags            "Tag"
  :page/sidebar         "Bar sisi"
  ;; P4-B2b: the back-to-top button. Awaiting native review (CHANGELOG,
- ;; Unreleased, "Needs native review (B2b)").
+ ;; 0.3.0, "Needs native review (B2b)").
  :page/back-to-top     "Kembali ke atas"
  ;; Task E2: the navbar's repository link. Awaiting native review
- ;; (CHANGELOG, Unreleased, "Needs native review (E2)").
+ ;; (CHANGELOG, 0.3.0, "Needs native review (E2)").
  :nav/source           "Kod sumber"
- ;; Task E2: the 404 page. Awaiting native review (CHANGELOG, Unreleased,
+ ;; Task E2: the 404 page. Awaiting native review (CHANGELOG, 0.3.0,
  ;; "Needs native review (E2)").
  :not-found/title      "Halaman tidak ditemui"
  :not-found/message    "Tiada halaman di alamat ini. Halaman itu mungkin telah dipindahkan, atau pautannya salah."
@@ -91,29 +91,29 @@
  :banner/read                 "Baca dalam {{lang}} →"
  :banner/dismiss              "Tutup"
  ;; The colour-mode toggle (D-P4-3): its button label and the four modes,
- ;; in vdoing's order. Awaiting native review (CHANGELOG, Unreleased).
+ ;; in vdoing's order. Awaiting native review (CHANGELOG, 0.3.0).
  :mode/label                  "Mod warna"
  :mode/auto                   "Ikut sistem"
  :mode/light                  "Cerah"
  :mode/dark                   "Gelap"
  :mode/read                   "Bacaan"
  ;; P4-B2a: the toggle's name, {{mode}} being the current mode's label above.
- ;; Awaiting native review (CHANGELOG, Unreleased, "Needs native review (B2a)").
+ ;; Awaiting native review (CHANGELOG, 0.3.0, "Needs native review (B2a)").
  :mode/current                "Mod warna: {{mode}}"
 
- ;; Code blocks (Phase 4 C), the copy button. Awaiting native review (CHANGELOG, Unreleased).
+ ;; Code blocks (Phase 4 C), the copy button. Awaiting native review (CHANGELOG, 0.3.0).
  :code/copy                   "Salin"
  :code/copied                 "Disalin"
 
  ;; Phase 4 Task E1a: the blogger card's name, the social links' list, and
  ;; the footer's credit, {{name}} being the generator's linked name.
- ;; Awaiting native review (CHANGELOG, Unreleased, "Needs native review (E1a)").
+ ;; Awaiting native review (CHANGELOG, 0.3.0, "Needs native review (E1a)").
  :blogger/label               "Tentang penulis"
  :social/label                "Pautan sosial"
  :footer/powered-by           "Dikuasakan oleh {{name}}"
 
  ;; Phase 4 Task E1b: the htmlModules windows' close button.
- ;; Awaiting native review (CHANGELOG, Unreleased, "Needs native review (E1b)").
+ ;; Awaiting native review (CHANGELOG, 0.3.0, "Needs native review (E1b)").
  :window/close                "Tutup"
 
  ;; The language lists (2026-11-01; see en.edn). Awaiting native review

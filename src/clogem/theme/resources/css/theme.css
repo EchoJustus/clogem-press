@@ -317,6 +317,9 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
   .clogem-navbar { position: static; flex-wrap: wrap; gap: 0.25rem 1rem; padding: 0.5rem 1.25rem; }
   .clogem-navbar__brand { max-width: 100%; }
   .clogem-navbar__menu { position: static; }
+  /* the language list: a name a line, under its label, as in the drawer */
+  .clogem-langs { flex-direction: column; align-items: flex-start; }
+  .clogem-langs ul { flex-direction: column; }
 }
 /* with scripting: one sticky row (toggle, brand, search, mode) and a drawer
  * below it, shown while the toggle is open. Absolute, not fixed: the
@@ -335,9 +338,8 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
     background: var(--mainBg); border: 1px solid var(--borderColor); border-width: 0 1px 1px 0;
   }
   .clogem-navbar__drawer .clogem-navbar__nav > ul { flex-direction: column; }
-  .clogem-navbar__drawer .clogem-langs { flex-direction: column; align-items: flex-start; margin-top: 0.5rem;
-    padding-top: 0.5rem; border-top: 1px solid var(--borderColor); }
-  .clogem-navbar__drawer .clogem-langs ul { flex-direction: column; }   /* a name a line, as the nav's */
+  .clogem-navbar__drawer .clogem-langs { margin-top: 0.5rem; padding-top: 0.5rem;
+    border-top: 1px solid var(--borderColor); }
   .clogem-navbar__drawer > .clogem-sidebar { margin-top: 0.75rem; }
 }
 

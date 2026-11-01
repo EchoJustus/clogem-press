@@ -178,20 +178,43 @@ export default async function (t) {
   // ---------------------------------------------------------------- 5
   // 320 and 360 px: the row, and the open filter menu, fit
   {
-    for (const width of [320, 360]) {
+    // the Chinese homes too: beside their short label the filter shared a
+    // row, and its menu ran 46 px off a 360 px screen (0.3.0)
+    for (const [width, rel] of [[320, ''], [360, ''], [360, 'zh-Hans/'], [360, 'zh-Hant/']]) {
       const p = await page({ viewport: { width, height: 720 } });
-      await openSearch(p, t.baseURL);
+      await openSearch(p, `${t.baseURL}${rel}`);
       await box(p).check();
       await search(p, 'pagefind');
       await p.locator('.clogem-search-all pagefind-filter-dropdown button').first().click();
       await sleep(300);
       const over = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-      t.check(over <= 0, `${width}px: no sideways scroll (scrollWidth - innerWidth = ${over})`);
+      t.check(over <= 0, `${width}px /${rel}: no sideways scroll (scrollWidth - innerWidth = ${over})`);
       const rect = await p.locator('.pf-dropdown-menu').boundingBox();
       t.check(rect && rect.x >= 0 && rect.x + rect.width <= width,
-              `${width}px: the filter menu is inside the viewport (${rect && Math.round(rect.x)}…${rect && Math.round(rect.x + rect.width)})`);
+              `${width}px /${rel}: the filter menu is inside the viewport (${rect && Math.round(rect.x)}…${rect && Math.round(rect.x + rect.width)})`);
       t.check(await p.locator('.pf-modal-close').count() === 1,
-              `${width}px: exactly one close button (a modal built in JS draws two)`);
+              `${width}px /${rel}: exactly one close button (a modal built in JS draws two)`);
+      await p.close();
+    }
+    // 2026-11-01: each name is "own (page's)", the longest Malay; the labels
+    // wrap (Pagefind's `wrap`) rather than end in an ellipsis, also under
+    // WCAG 1.4.12 text spacing
+    for (const width of [320, 360]) {
+      for (const spacing of [false, true]) {
+        const p = await page({ viewport: { width, height: 720 } });
+        await openSearch(p, `${t.baseURL}ms/`);
+        if (spacing) await p.addStyleTag({ content: '* { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; }' });
+        await box(p).check();
+        await search(p, 'pagefind');
+        await p.locator('.clogem-search-all pagefind-filter-dropdown button').first().click();
+        await sleep(300);
+        const cut = await p.evaluate(() => [...document.querySelectorAll('.pf-dropdown-menu .pf-dropdown-option-label')]
+          .filter((l) => { const r = document.createRange(); r.selectNodeContents(l);
+                           return getComputedStyle(l).whiteSpace === 'nowrap' || r.getBoundingClientRect().width > l.getBoundingClientRect().width + 0.5; })
+          .map((l) => l.textContent.trim()));
+        t.check(cut.length === 0, `${width}px /ms/${spacing ? ' with text spacing' : ''}: filter labels cut or kept on one line: ${cut.join(' / ')}`);
+        await p.close();
+      }
     }
   }
 

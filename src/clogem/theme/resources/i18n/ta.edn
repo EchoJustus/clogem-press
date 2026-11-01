@@ -4,7 +4,7 @@
  :nav/language         "மொழி"
  :nav/home             "முகப்பு"
  ;; P4-B2b: the mobile menu toggle. Awaiting native review (CHANGELOG,
- ;; Unreleased, "Needs native review (B2b)").
+ ;; 0.3.0, "Needs native review (B2b)").
  :nav/menu             "மெனு"
  :page/last-updated    "கடைசியாக {{date}} அன்று புதுப்பிக்கப்பட்டது"
  :page/prev            "முந்தையது"
@@ -41,12 +41,12 @@
  :page/tags            "குறிச்சொற்கள்"
  :page/sidebar         "பக்கப்பட்டை"
  ;; P4-B2b: the back-to-top button. Awaiting native review (CHANGELOG,
- ;; Unreleased, "Needs native review (B2b)").
+ ;; 0.3.0, "Needs native review (B2b)").
  :page/back-to-top     "மேலே செல்"
  ;; Task E2: the navbar's repository link. Awaiting native review
- ;; (CHANGELOG, Unreleased, "Needs native review (E2)").
+ ;; (CHANGELOG, 0.3.0, "Needs native review (E2)").
  :nav/source           "மூலக் குறியீடு"
- ;; Task E2: the 404 page. Awaiting native review (CHANGELOG, Unreleased,
+ ;; Task E2: the 404 page. Awaiting native review (CHANGELOG, 0.3.0,
  ;; "Needs native review (E2)").
  :not-found/title      "பக்கம் கிடைக்கவில்லை"
  :not-found/message    "இந்த முகவரியில் பக்கம் இல்லை. அது நகர்த்தப்பட்டிருக்கலாம், அல்லது இணைப்பு தவறாக இருக்கலாம்."
@@ -89,29 +89,29 @@
  :banner/read                 "{{lang}} மொழியில் படிக்க →"
  :banner/dismiss              "மூடு"
  ;; The colour-mode toggle (D-P4-3): its button label and the four modes,
- ;; in vdoing's order. Awaiting native review (CHANGELOG, Unreleased).
+ ;; in vdoing's order. Awaiting native review (CHANGELOG, 0.3.0).
  :mode/label                  "வண்ணப் பயன்முறை"
  :mode/auto                   "கணினியைப் பின்பற்று"
  :mode/light                  "வெளிர்"
  :mode/dark                   "இருள்"
  :mode/read                   "வாசிப்பு"
  ;; P4-B2a: the toggle's name, {{mode}} being the current mode's label above.
- ;; Awaiting native review (CHANGELOG, Unreleased, "Needs native review (B2a)").
+ ;; Awaiting native review (CHANGELOG, 0.3.0, "Needs native review (B2a)").
  :mode/current                "வண்ணப் பயன்முறை: {{mode}}"
 
- ;; Code blocks (Phase 4 C), the copy button. Awaiting native review (CHANGELOG, Unreleased).
+ ;; Code blocks (Phase 4 C), the copy button. Awaiting native review (CHANGELOG, 0.3.0).
  :code/copy                   "நகலெடு"
  :code/copied                 "நகலெடுக்கப்பட்டது"
 
  ;; Phase 4 Task E1a: the blogger card's name, the social links' list, and
  ;; the footer's credit, {{name}} being the generator's linked name.
- ;; Awaiting native review (CHANGELOG, Unreleased, "Needs native review (E1a)").
+ ;; Awaiting native review (CHANGELOG, 0.3.0, "Needs native review (E1a)").
  :blogger/label               "ஆசிரியர் பற்றி"
  :social/label                "சமூக ஊடக இணைப்புகள்"
  :footer/powered-by           "{{name}} மூலம் இயக்கப்படுகிறது"
 
  ;; Phase 4 Task E1b: the htmlModules windows' close button.
- ;; Awaiting native review (CHANGELOG, Unreleased, "Needs native review (E1b)").
+ ;; Awaiting native review (CHANGELOG, 0.3.0, "Needs native review (E1b)").
  :window/close                "மூடு"
 
  ;; The language lists (2026-11-01; see en.edn). Awaiting native review

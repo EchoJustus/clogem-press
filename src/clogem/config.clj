@@ -156,18 +156,22 @@
                                                          :label (name k)
                                                          :html-lang (name k)}
                                                         v)]))
-                             ;; a :label that is not a name would be an empty
-                             ;; link in the switcher (2026-11-01): the code
-                             ;; stands in, as for an absent one, and says so
+                             ;; a :label that is not a name (2026-11-01): a
+                             ;; blank or nil one was an empty link in the
+                             ;; switcher, any other its printed form. What an
+                             ;; absent one would be stands in (the shipped
+                             ;; name of a default language, else the code),
+                             ;; and says so
                              (map (fn [[k v]]
                                     (let [l (:label v)]
                                       (if (and (string? l) (not (str/blank? l)))
                                         [k v]
-                                        (do (diag/warn! nil (str ":langs :locales " k " :label is " (pr-str l)
-                                                                 ", which is not a language's name; using "
-                                                                 (pr-str (name k)) ".")
-                                                        "Set :label to the language's own name, as in \"English\" or \"简体中文\".")
-                                            [k (assoc v :label (name k))]))))))
+                                        (let [use (get-in default-locales [k :label] (name k))]
+                                          (diag/warn! nil (str ":langs :locales " k " :label is " (pr-str l)
+                                                               ", which is not a language's name; using "
+                                                               (pr-str use) ".")
+                                                      "Set :label to the language's own name, as in \"English\" or \"简体中文\".")
+                                          [k (assoc v :label use)]))))))
                        locales)
         known    (set (keys locales))
         priority (vec (concat (filterv known priority)

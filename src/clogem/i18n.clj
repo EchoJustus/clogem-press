@@ -222,20 +222,21 @@
   within two edits of one another)."
   [cfg file m]
   (let [langs (config/lang-keys cfg)
-        named (get m :lang/names ::absent)]
-    (when (and (contains? m :lang/name) (not (string? (:lang/name m))))
-      (diag/warn! file (str "`:lang/name` in " file " is " (pr-str (:lang/name m))
+        named (when (map? m) (get m :lang/names ::absent))
+        own   (when (map? m) (:lang/name m))]
+    (when (and (some? own) (not (string? own)))
+      (diag/warn! file (str "`:lang/name` in " file " is " (pr-str own)
                             ", but it is this language's own name, a string.")
                   "The names of the other languages go in `:lang/names`, a map: {:lang/names {:en \"English\"}}."))
     (cond
-      (or (= ::absent named) (nil? named)) nil
+      (or (nil? named) (= ::absent named)) nil
       (not (map? named))
       (diag/warn! file (str "`:lang/names` in " file " is " (pr-str named) ", not a map; no names are taken from it.")
                   "Write it as a map from language code to name: {:lang/names {:en \"English\" :zh-Hans \"Simplified Chinese\"}}.")
       :else
       (doseq [[k n] (sort-by (comp str key) named)]
-        (when-not (some #{k} langs)
-          (let [code  (when (or (keyword? k) (string? k)) (name k))
+        (if-not (some #{k} langs)
+          (let [code  (when (or (keyword? k) (string? k) (symbol? k)) (name k))
                 near  (fn [c] (->> langs
                                    (map (fn [l] [(u/damerau-levenshtein (u/lower c) (u/lower (name l))) (name l) l]))
                                    (filter (fn [[d]] (<= d 2)))
@@ -247,21 +248,25 @@
                                   ", which is not a configured language"
                                   (if meant (str " — did you mean " meant "?") "."))
                         (str "Its keys are the codes under :langs :locales: "
-                             (str/join ", " (map str langs)) "."))))
-        (when (and (some? n) (not (and (string? n) (not (str/blank? n)))))
-          (diag/warn! file (str "`:lang/names` in " file " gives " (pr-str k) " the name " (pr-str n)
-                                ", not a non-blank string, so its :label stands alone.")
-                      "Give it the language's name in this file's language, or nil to show the :label alone."))))))
+                             (str/join ", " (map str langs)) ".")))
+          (when (and (some? n) (not (and (string? n) (not (str/blank? n)))))
+            (diag/warn! file (str "`:lang/names` in " file " gives " (pr-str k) " the name " (pr-str n)
+                                  ", not a non-blank string, so its :label stands alone.")
+                        "Give it the language's name in this file's language, or nil to show the :label alone.")))))))
 
 (defn check-site-strings!
-  "Two warnings over the site's `i18n/<lang>.edn` files (D-P3-6), raised in
+  "Warnings over the site's `i18n/<lang>.edn` files (D-P3-6), raised in
   analyse so `build` and `doctor` both report them:
 
     - a key no theme file defines and that is within two edits of one that
       does is a typo — it would silently never be read;
     - any other key no theme file defines is site-added, and is reported
       when some configured language lacks it, since only the fallback chain
-      would stand between that language and a `⟦key⟧`."
+      would stand between that language and a `⟦key⟧`;
+    - the language names (2026-11-01, `check-lang-names!`): a `:lang/names`
+      that is not a map, a key of it that is no configured language, a name
+      that is not a non-blank string, and a `:lang/name` that is not a
+      string."
   [cfg]
   (let [known (theme-keys cfg)
         langs (config/lang-keys cfg)

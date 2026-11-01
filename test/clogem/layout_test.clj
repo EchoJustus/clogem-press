@@ -152,6 +152,28 @@
     (testing "the new <details> render closed"
       (is (not-any? #(re-find #"<details class=\"clogem-langs__toggle\"[^>]*open" (val %)) ps)))))
 
+(deftest the-language-lists-css
+  (let [rules (cp/parse (slurp theme-css))
+        decl  (fn [media sel prop]
+                (some (fn [r] (when (and (= media (:media r)) (some #{sel} (:selectors r)))
+                                (some (fn [[p v]] (when (= p prop) v)) (:decls r))))
+                      rules))]
+    (testing "2026-11-01: at 50rem and below, with JS (the drawer) or without,
+              the language list is a name a line, under its label"
+      (is (= "column" (decl ["(max-width: 50rem)"] ".clogem-langs" "flex-direction")))
+      (is (= "column" (decl ["(max-width: 50rem)"] ".clogem-langs ul" "flex-direction"))))
+    (testing "above 50rem the dropdown is as wide as its longest name, up to 22rem"
+      (is (= "max-content" (decl ["not all and (max-width: 50rem)"] ".clogem-langs ul" "width")))
+      (is (= "22rem" (decl ["not all and (max-width: 50rem)"] ".clogem-langs ul" "max-width"))))
+    (testing "the variant bar's links wrap, and no rule anywhere undoes it"
+      (let [fw (for [r rules
+                     :when (some #(str/includes? % "clogem-variants__links") (:selectors r))
+                     [p v] (:decls r)
+                     :when (= p "flex-wrap")]
+                 v)]
+        (is (seq fw))
+        (is (every? #{"wrap"} fw) (pr-str fw))))))
+
 (deftest the-desktop-navbar-css
   (let [css (slurp theme-css)
         rules (cp/parse css)
