@@ -102,4 +102,12 @@
  :footer/powered-by           "由 {{name}} 驅動"
 
  ;; Phase 4 Task E1b: the htmlModules windows' close button.
- :window/close                "關閉"}
+ :window/close                "關閉"
+
+ ;; 語言列表（2026-11-01）：其他語言寫作它自己的 :label，後接括號裡本檔案給它的
+ ;; 名稱，例如 "English (英文)"（見 en.edn）。
+ :lang/names                  {:en      "英文"
+                               :zh-Hans "簡體中文"
+                               :zh-Hant "繁體中文"
+                               :ms      "馬來文"
+                               :ta      "坦米爾文"}}

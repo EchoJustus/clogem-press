@@ -986,7 +986,9 @@
 (deftest the-switcher-marks-an-untranslated-target
   (testing "fix 14: on an English-only article the ta entry lands on /ta/ and says why"
     (let [html (slurp-out "pages" "3ce486" "index.html")]
-      (is (re-find #"<a class=\"is-untranslated\" data-clogem-lang=\"ta\" href=\"/ta/\" hreflang=\"ta\" lang=\"ta\">தமிழ்<span class=\"clogem-visually-hidden\" lang=\"en\"> \(Shown in English — not yet translated\)</span></a>" html))
+      ;; 2026-11-01: named "own (page's)", the own name marked with its lang;
+      ;; the link, and the notice in it, are in the page's language
+      (is (re-find #"<a class=\"is-untranslated\" data-clogem-lang=\"ta\" href=\"/ta/\" hreflang=\"ta\"><span lang=\"ta\">தமிழ்</span> \(Tamil\)<span class=\"clogem-visually-hidden\"> \(Shown in English — not yet translated\)</span></a>" html))
       (is (= 1 (count (re-seq #"Shown in English — not yet translated" (re-find #"(?s)<a class=\"is-untranslated\" data-clogem-lang=\"ta\" href=\"/ta/\".*?</a>" html))))
           "fix F: the notice is said once — visually-hidden text, no duplicate `title`")
       (is (not (re-find #"is-untranslated[^>]* title=" html)))
@@ -1483,6 +1485,63 @@
     (with-strings (into {} (for [l ["en" "zh-Hans" "zh-Hant" "ms" "ta"]] [l {:site/banner "x" :page/toc "y"}]))
       (fn [dir _]
         (is (empty? (doctor-warnings dir)))))))
+
+(deftest the-site-s-language-names-are-checked
+  (testing "2026-11-01: :lang/names keys that are no configured language (in
+            another case, a string, or unknown), a name that is not a
+            non-blank string, a :lang/names that is not a map, and a
+            :lang/name that is not a string are each one warning"
+    (with-strings {"en" {:lang/names {:zh-hans "Simplified Chinese" "ms" "Malay" 'ta "Tamil" :ja false
+                                      :zh-Hnas "Chinese" :zh-Hant "  " :en 42
+                                      :taml "Tamil" :zh-Hentt "Chinese" 42 "x"}}
+                   "ms" {:lang/names ["Inggeris"]}
+                   "ta" {:lang/name {:en "Tamil"}}
+                   "zh-Hant" {:lang/name false}}
+      (fn [dir _]
+        (let [ws (filter #(re-find #":lang/name" %) (map :message (doctor-warnings dir)))]
+          (is (= #{"`:lang/names` in i18n/en.edn names :zh-hans, which is not a configured language — did you mean :zh-Hans?"
+                   "`:lang/names` in i18n/en.edn names \"ms\", which is not a configured language — did you mean :ms?"
+                   "`:lang/names` in i18n/en.edn names ta, which is not a configured language — did you mean :ta?"
+                   "`:lang/names` in i18n/en.edn names :zh-Hnas, which is not a configured language — did you mean :zh-Hans?"
+                   "`:lang/names` in i18n/en.edn names :ja, which is not a configured language."
+                   "`:lang/names` in i18n/en.edn gives :zh-Hant the name \"  \", not a non-blank string, so its :label stands alone."
+                   "`:lang/names` in i18n/en.edn gives :en the name 42, not a non-blank string, so its :label stands alone."
+                   "`:lang/names` in i18n/ms.edn is [\"Inggeris\"], not a map; no names are taken from it."
+                   "`:lang/name` in i18n/ta.edn is {:en \"Tamil\"}, but it is this language's own name, a string."
+                   "`:lang/names` in i18n/en.edn names :taml, which is not a configured language."
+                   "`:lang/names` in i18n/en.edn names :zh-Hentt, which is not a configured language — did you mean :zh-Hant?"
+                   "`:lang/names` in i18n/en.edn names 42, which is not a configured language."
+                   "`:lang/name` in i18n/zh-Hant.edn is false, but it is this language's own name, a string."}
+                 (set ws))
+              "a key under five characters gets no edit-distance guess (:taml); one of five or more within two edits does (:zh-Hentt)")
+          (is (= 13 (count ws)) "each once: :ja, unconfigured, is not also told its name is false")))))
+  (testing "names changed and removed (nil), and a :lang/name of nil, are quiet;
+            a string file that is not a map does not stop the check"
+    (with-strings {"en" {:lang/names {:ms "Malaysian" :zh-Hant nil}} "ta" {:lang/names nil}
+                   "zh-Hans" {:lang/name nil} "ms" ()}
+      (fn [dir _]
+        (is (not-any? #(re-find #":lang/name" (:message %)) (doctor-warnings dir)))))))
+
+(deftest a-label-that-is-not-a-name-falls-back-as-if-absent
+  (testing "2026-11-01: a blank or nil :label was an empty link in the switcher,
+            another non-string one its printed form; what an absent :label
+            would be stands in (a default language's shipped name, else the
+            code), with a warning"
+    (with-cli-site {"01.Guide/01.t.md" a-tree}
+      (fn [dir _]
+        (let [ws (map :message (doctor-warnings dir))]
+          (is (some #{":langs :locales :ms :label is \"\", which is not a language's name; using \"Bahasa Melayu\"."} ws) (pr-str ws))
+          (is (some #{":langs :locales :ta :label is nil, which is not a language's name; using \"தமிழ்\"."} ws) (pr-str ws))
+          (is (some #{":langs :locales :zh-Hant :label is 42, which is not a language's name; using \"繁體中文\"."} ws) (pr-str ws))
+          (is (some #{":langs :locales :xx :label is \"\", which is not a language's name; using \"xx\"."} ws)
+              (str "a site-added language has no shipped name: its code " (pr-str ws)))
+          (is (not-any? #(str/includes? % ":yy :label") ws) "an absent :label is quiet")))
+      (assoc url-site :langs {:locales {:ms {:label ""} :ta {:label nil} :zh-Hant {:label 42}
+                                        :xx {:label "" :html-lang "x-xx"} :yy {:html-lang "x-yy"}}}))
+    (let [cfg (first (diag/collecting (config/load-config "examples/demo-site" nil
+                                                          {:langs {:locales {:ms {:label " "}}}})))]
+      (is (= "Bahasa Melayu" (get-in cfg [:langs :locales :ms :label])) "what an absent :label would be")
+      (is (= "English" (get-in cfg [:langs :locales :en :label])) "a name is kept"))))
 
 (deftest the-sitemap-and-hreflang-switches
   (testing ":seo :sitemap false → no sitemap; :seo :hreflang false → no

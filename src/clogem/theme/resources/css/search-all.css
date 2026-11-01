@@ -5,3 +5,5 @@
 .clogem-search-all pagefind-filter-dropdown{flex:1 1 12rem}
 /* Pagefind centres its menu on the wrapper at <= 640px; its rules carry (3,0,0), hence !important */
 .clogem-search-all .pf-dropdown-wrapper{width:100%!important}
+/* there the menu is nearly the viewport's width: a row of its own (CHANGELOG) */
+@media (max-width:640px){.clogem-search-all pagefind-filter-dropdown{flex-basis:100%}}

@@ -160,8 +160,8 @@ jobs:
           # The Tamil-only article must be served at its BARE identity URL, in
           # Tamil — §6.3's per-article primary, and the case the requirement
           # explicitly allows. Asserted on the <html> element of that one page:
-          # a bare `lang="ta"` grep also matched the switcher's
-          # `hreflang="ta" lang="ta"`, which every page carries.
+          # a bare `lang="ta"` grep also matched the switcher's Tamil entry
+          # (`<span lang="ta">` since 2026-11-01), which every page carries.
           grep -qE '<html [^>]*lang="ta"' dist/pages/171a98/index.html \
                                                    || fail "the Tamil-only article is not <html lang=\"ta\"> at its bare URL"
           if grep -qE '<html [^>]*lang="ta"' dist/pages/643259/index.html; then

@@ -104,4 +104,15 @@
  :footer/powered-by           "Powered by {{name}}"
 
  ;; Phase 4 Task E1b: the htmlModules windows' close button.
- :window/close                "Close"}
+ :window/close                "Close"
+
+ ;; The language lists (2026-11-01): another language is named by its own
+ ;; :label and then, in brackets, by its name below, in this file's language
+ ;; — "简体中文 (Simplified Chinese)". Only this file is read for it, not the
+ ;; fallback chain: with no name here, the :label stands alone. A site that
+ ;; adds a language adds its name to the map in i18n/<lang>.edn.
+ :lang/names                  {:en      "English"
+                               :zh-Hans "Simplified Chinese"
+                               :zh-Hant "Traditional Chinese"
+                               :ms      "Malay"
+                               :ta      "Tamil"}}

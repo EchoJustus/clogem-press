@@ -301,6 +301,23 @@
   [{:keys [group]} l]
   (boolean (and group (not (contains? (:variants group) l)))))
 
+(defn lang-label
+  "How a language list names `l` (the owner's format, 2026-11-01): its own
+  `:label`, then, in brackets, its name in the page's language
+  (`i18n/lang-gloss`): `简体中文 (Simplified Chinese)` on an English page,
+  `English (英文)` on a Simplified Chinese one. No bracket for the page's
+  own language, or where there is no other name to add. The `:label` is
+  marked with `l`'s lang (and its dir, when that differs from the page's);
+  the bracket is in the page's language. `i18n/lang-label-text` is the
+  same, as text."
+  [{:keys [cfg lang] :as ctx} l]
+  (let [dir #(name (or (:dir (config/locale cfg %)) :ltr))]
+    (list [:span (cond-> {:lang (config/html-lang cfg l)}
+                   (not= (dir l) (dir lang)) (assoc :dir (dir l)))
+           (get-in cfg [:langs :locales l :label])]
+          (when-let [g (i18n/lang-gloss ctx l)]
+            (str " (" g ")")))))
+
 (defn lang-switcher
   "Navbar language switcher — site-wide, on every page, listing every
   configured language (§6.4 rule 3, D-P2-13). Every target is a real URL to a
@@ -315,7 +332,10 @@
   the `:nav/language` label, `chevron-down`): a closed `<details>` whose
   list is its NEXT SIBLING, not its content, so that CSS can show the list
   wherever the summary is not rendered (the drawer, no JS) — a closed
-  `<details>` hides its content on every browser before `::details-content`."
+  `<details>` hides its content on every browser before `::details-content`.
+
+  Each entry but the current one is named by `lang-label`: its own name,
+  then its name in the page's language (2026-11-01)."
   [{:keys [cfg lang] :as ctx}]
   (let [locales (get-in cfg [:langs :locales])
         langs   (config/lang-keys cfg)]
@@ -336,21 +356,20 @@
                             notice    (when (and fallback? (get-in cfg [:i18n :show-fallback-notice]))
                                         (i18n/tr ctx :page/fallback-notice
                                                  {:lang (get-in locales [lang :label])}))]
+                        ;; no `lang` on the link: its text is in two
+                        ;; languages, and `lang-label` marks the target's
                         [:a (cond-> {:href (href ctx (switch-target ctx l))
-                                     :lang (config/html-lang cfg l)
                                      :hreflang (config/html-lang cfg l)
                                      ;; D-P3-13: js/lang.js stores this code as
                                      ;; the reader's preference on click
                                      :data-clogem-lang (name l)}
                               fallback? (assoc :class "is-untranslated"))
-                         (get-in locales [l :label])
+                         (lang-label ctx l)
                          ;; the notice is in the PAGE's language (§6.4 rule 2),
-                         ;; and said ONCE: a `title` as well made screen readers
-                         ;; announce it twice, from an element whose `lang` is
-                         ;; the target language's rather than the notice's
+                         ;; as the link is, and said ONCE: a `title` as well
+                         ;; made screen readers announce it twice
                          (when notice
-                           [:span.clogem-visually-hidden {:lang (config/html-lang cfg lang)}
-                            (str " (" notice ")")])]))]))])))
+                           [:span.clogem-visually-hidden (str " (" notice ")")])]))]))])))
 
 (defn nav-href
   "Where a `:nav` link goes on a page in `lang` (D-P2-11):
@@ -707,13 +726,13 @@
        (into [:span.clogem-variants__links]
              (for [l others]
                [:a {:href (href ctx (model/variant-url cfg group l))
-                    :lang (config/html-lang cfg l)
                     :hreflang (config/html-lang cfg l)
                     ;; D-P3-13, §11.2 item 47: a language choice like the
                     ;; switcher's — without it, under :redirect, the link to
                     ;; the bare primary bounced straight back
                     :data-clogem-lang (name l)}
-                (get-in cfg [:langs :locales l :label])]))])))
+                ;; named as the switcher names it (2026-11-01)
+                (lang-label ctx l)]))])))
 
 (defn pagination
   "Previous / `Page n of total` / next. `url-for` maps a page number to its

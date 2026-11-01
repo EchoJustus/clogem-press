@@ -158,6 +158,9 @@
       (is (str/includes? css ".clogem-search-all .pf-dropdown-wrapper{width:100%!important}"))
       (is (str/includes? css ".clogem-search-all{display:flex"))
       (is (str/includes? css ".clogem-search-all pagefind-filter-dropdown{flex:1 1 12rem}"))
+      (is (str/includes? css "@media (max-width:640px){.clogem-search-all pagefind-filter-dropdown{flex-basis:100%}}")
+          "2026-11-01: there the menu is nearly the viewport's width, so the filter starts a row of its
+          own; beside 搜索所有语言 at 360px its menu ran 46px off-screen")
       (is (not (re-find #"(?m)^\s*(color|background)\s*:" css))
           "colours come from Pagefind's --pf-*, which theme.css maps"))))
 
@@ -169,7 +172,7 @@
       (is (re-find #"\.clogem-search,[^}]*display: none !important" block) "print hides .clogem-search")
       (is (str/includes? (slurp search-all-js) "\".clogem-search pagefind-modal\"")
           "the row goes into the modal inside .clogem-search")
-      (is (not (str/includes? (slurp search-all-css) "@media")) "no rule of its own for print"))))
+      (is (not (re-find #"@media\s*print" (slurp search-all-css))) "no rule of its own for print"))))
 
 (deftest the-strings-are-in-every-language
   (doseq [[l s] {"en" "Search all languages" "zh-Hans" "搜索所有语言" "zh-Hant" "搜尋所有語言"

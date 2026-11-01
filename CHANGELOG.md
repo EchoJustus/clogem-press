@@ -1,5 +1,131 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Language names, in the owner's format (2026-11-01).**
+  - Where: the navbar language switcher, an article's variant bar and the
+    cross-language search's language filter.
+  - How: each language other than the page's is its own `:label`, then its
+    name in the page's language, in brackets. On an English page that is
+    `简体中文 (Simplified Chinese)`; on a Simplified Chinese page,
+    `English (英文)`. The page's own language is its `:label` alone.
+  - Where the names come from: `:lang/names` in each theme string file. It
+    is a map, so a site's `i18n/<lang>.edn` adds or changes a name, and `nil`
+    removes one. It is read from the page language's file only, not along
+    the fallback chain.
+  - When there is no bracket: a language the page has no name for, a name
+    that is not a non-blank string, and a `:label` that already holds the
+    name as a whole word all keep the `:label` alone (DESIGN.md §6.5).
+- **The link no longer carries the target's `lang`.**
+  - Its text is now in two languages, so the `:label` carries it, in a
+    `<span lang>`, with `dir` when that differs from the page's.
+  - The link and its bracket are in the page's language.
+  - The untranslated notice inside the link no longer needs a `lang` of its
+    own.
+- **Layout.**
+  - At 50rem and below the language list is one name a line, under its
+    label: in the drawer, like the nav's links there, and without JS too.
+    It used to wrap several to a line.
+  - Above 50rem the dropdown is as wide as its longest name, up to 22rem.
+  - The variant bar's links wrap. Each is wider now: on a 320 px Tamil page,
+    four of them overflowed the page by 33 px.
+  - The search filter's labels wrap (Pagefind's `wrap`) instead of ending
+    in "…". Under WCAG 1.4.12 text spacing, Malay and English names were cut
+    at 320 and 360 px, and the Malay menu ran past the dialog on desktop.
+- **`doctor` and `build` check a site's language names.** Each of these is
+  a warning that says what is wrong:
+  - a `:lang/names` key that is no configured language, with the code meant
+    when it differs only in case or, for a key of five characters or more,
+    by two edits;
+  - a name that is not a non-blank string;
+  - a `:lang/names` that is not a map;
+  - a `:lang/name` (the singular, this language's own name) that is neither
+    a string nor nil.
+
+### Fixed
+
+- A blank or nil `:langs :locales <lang> :label` made an empty link in the
+  switcher, and another non-string one showed its printed form. Each is now
+  what an absent `:label` would be, with a warning: the shipped name for
+  the five default languages, else the code.
+- At 640 px and below, the cross-language search's filter starts a row of
+  its own. Wherever it shared the label's row (361–640 px, in every
+  language), its menu ran 46–100 px off-screen (since 0.3.0).
+
+### Upgrading
+
+- **Sites with the five theme languages** get the new names without
+  changes.
+- **A site that adds a language** shows that language's `:label` alone
+  until it names it: `{:lang/names {:xx "…"}}` in each page language's
+  `i18n/<lang>.edn`, and the other languages' names in `i18n/xx.edn`.
+- **A `:label` that carries its own gloss**, such as `Bahasa Melayu
+  (Malaysia, Singapura)`, gets a second bracket, `(Malay)`, unless the
+  page's language sets that name to `nil`.
+- **Selectors:** a stylesheet or script that found switcher or variant-bar
+  links by `a[lang]` should use `a[hreflang]` or `a[data-clogem-lang]`.
+- **Non-string labels:** a `:label` given as a keyword or a number used to
+  show its printed form. It now shows the shipped name or the code, with a
+  warning.
+
+### Tests
+
+- **`lang_test`:**
+  - the owner's two examples;
+  - for each of the five page languages, each other language is its
+    `:label` plus its name from that language's theme file;
+  - the current language is its `:label` alone;
+  - the `lang` is on the `:label`, and on no link;
+  - the variant bar's links;
+  - a site's names merged in, one changed, one removed with `nil`, one
+    equal to its `:label`, and ones that are `false`, a number, blank or a
+    keyword;
+  - a `:label` that already holds the name, in another case; a name inside
+    a longer word (中文 in 繁體中文), and one followed by a combining mark
+    (தமிழ in தமிழ்), are not held;
+  - a site-added right-to-left language, with and without names. Its page
+    shows no name from the fallback chain;
+  - the variant bar's links wrap;
+  - each theme file names the five theme languages, no two alike.
+- **`build_test`:**
+  - the thirteen language-name warnings, each once; an unconfigured key
+    with a bad name gets one;
+  - the "did you mean" guesses: none by edit distance under five
+    characters;
+  - quiet overrides, a `:lang/name` of nil, and a string file that is `()`;
+  - blank, nil and numeric `:label`s on default languages, a blank one on a
+    site-added language, and an absent one, which is quiet.
+- **`layout_test`:** the language lists' CSS:
+  - a name a line at 50rem and below, under its label, with no rule there
+    undoing it, the drawer's included;
+  - the dropdown's width;
+  - no rule undoing the variant bar's wrap.
+- **`search-all.test.mjs`:** on `/ms/` at 320 and 360 px, with and without
+  text spacing, no filter label is cut or kept on one line. The filter menu
+  fits on the zh-Hans and zh-Hant homes at 360 px, and at 480 px, too.
+- **`search_test`:** the filter's labels, in every page language.
+- **Old markup pins updated.** Three tests pinned the old link markup:
+  `build_test` (the untranslated entry), `lang_test` (the variant bar) and
+  `parity_test` (the 404 page). `search-all.test.mjs` pinned the filter's
+  old value. All four now pin the new form.
+
+### Needs native review
+
+- **Malay and Tamil:** `:lang/names` in `ms.edn` ("Bahasa Inggeris", "Bahasa
+  Cina Ringkas", "Bahasa Cina Tradisional", "Bahasa Tamil") and in `ta.edn`
+  ("ஆங்கிலம்", "எளிதாக்கப்பட்ட சீனம்", "பாரம்பரிய சீனம்", "மலாய்").
+- **Chinese:** the names follow the owner's "英文", using 文, and each
+  file's own wording.
+  - Mainland in `zh-Hans`: "马来文", "泰米尔文".
+  - Taiwan in `zh-Hant`: "馬來文", "坦米爾文".
+  - Malaysia and Singapore write Tamil as 淡米尔文 / 淡米爾文.
+  - The support page has 泰米尔语 / 泰米爾語.
+- **The other Chinese script:** taken literally, the format names it twice
+  on a Chinese page. That gives "繁體中文 (繁体中文)" on a Simplified
+  Chinese page and "简体中文 (簡體中文)" on a Traditional one.
+
 ## 0.3.0 — Phase 4: theme polish and advanced features
 
 Phase 4 is complete, and its exit criterion is asserted in CI (DESIGN.md §8,

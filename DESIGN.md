@@ -1239,6 +1239,36 @@ asserts it — so the chain only ever reaches the end for a site-added key. `doc
 on a site key that is a near-miss of a theme key, and on a site-added key missing for some configured
 language (§11.2 item 35), so the gap is a report rather than a surprise.
 
+**Language names (the owner's format, 2026-11-01).** A language list names each language other
+than the page's by its own `:label`, then by its name in the page's language, in brackets. The lists
+are the navbar switcher, an article's variant bar and the cross-language search's language filter.
+On an English page that is `简体中文 (Simplified Chinese)`; on a Simplified Chinese page,
+`English (英文)`. The page's own language is its `:label` alone.
+
+- **Where the names live.** The bracketed names are `:lang/names`, a map from language code to name,
+  in each string file. It is the one value that is a map, so a site's `i18n/<lang>.edn` adds or
+  changes a name by the deep merge (`{:lang/names {:ja "Japanese"}}`) and removes one with `nil`.
+- **Only the page language's file.** The map is read from that file alone, never along the fallback
+  chain: an English name on a Japanese page is not the name in the reader's language.
+- **When there is no bracket.** The `:label` stands alone where the page's language has no name for
+  the language, where the name is not a non-blank string, and where the `:label` already holds the
+  name as a whole word, case-insensitively. A label of `简体中文 (Simplified Chinese)` holds
+  "Simplified Chinese"; "Malay" is not a word of "Malaysia", nor 中文 of 简体中文.
+- **What `doctor` reports.** Four things, as warnings:
+  - a key that is no configured language, with the code meant when it differs only in case or, for a
+    key of five characters or more, by two edits;
+  - a name that is not a non-blank string;
+  - a `:lang/names` that is not a map;
+  - a `:lang/name` (this language's own name) that is neither a string nor nil.
+- **Markup.** In the switcher and the variant bar, the `:label` sits in a `<span lang>`, with `dir`
+  when that differs from the page's. The link and the bracket are in the page's language.
+- **Layout.** The longer names wrap rather than overflow or end in "…":
+  - at 50rem and below, with JS (the drawer) or without, the switcher lists a name a line;
+  - the variant bar's links wrap;
+  - the search filter's labels use Pagefind's `wrap`.
+- **Prose keeps the `:label`.** Text that names a language ("Also available in {{lang}}", the
+  banner, the fallback notice) uses the `:label` alone.
+
 **No pluralization machinery.** Keys use a single form with `{{n}}` interpolated. English "1 articles"
 is the cost; the alternative is a CLDR plural-rule engine for five languages with three different
 plural systems (Chinese and Malay have no plural inflection, Tamil does, English does), which is a
@@ -1432,7 +1462,7 @@ Verified against Pagefind's docs **and source** ([research/12](research/12-i18n-
   has indexed pages, when at least one other language has some. "Indexed" is the languages with an
   article variant, exactly what carries `data-pagefind-body`. The page's `<pagefind-config>` carries
   `data-clogem-merge`: the encoded base, the labels, and the other indexed languages as {Pagefind
-  key, endonym} in `:langs :priority` order. `js/search-all.js` (deferred, same-origin, budget
+  key, the name the switcher gives it (§6.5)} in `:langs :priority` order. `js/search-all.js` (deferred, same-origin, budget
   2,048 B gzipped) configures a second, named instance, `clogem-all`, on the page's own bundle
   (`mergeFilter` its own language), merging every other indexed language from the absolute bundle
   URL with `baseUrl`, the lowercased key, `indexWeight` 0.001 — so the reader's own language leads —
@@ -1454,7 +1484,9 @@ Verified against Pagefind's docs **and source** ([research/12](research/12-i18n-
   index, as before (on a tie, which one is not knowable at build time: `pagefind-entry.json`'s key
   order changes between builds). `css/search-all.css` (budget 512 B) lays the row out and widens
   the filter's wrapper, which Pagefind centres its menu on at ≤ 640px, so the menu stays inside a
-  320 px screen. Merged indexes stem with the page's own language (above). The demo turns it on,
+  320 px screen. There the filter also starts a row of its own (2026-11-01): wherever it shared the label's
+  row (361–640 px), its near-viewport-wide menu ran 46–100 px off-screen. Its labels wrap
+  (Pagefind's `wrap`), since each is a name and a bracket (§6.5). Merged indexes stem with the page's own language (above). The demo turns it on,
   and CI's browser job covers it (`test/browser/search-all.test.mjs`, D-P4-18).
 
 ### 6.8 Indexes, comments, and which title is shown

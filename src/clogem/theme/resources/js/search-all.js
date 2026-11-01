@@ -61,6 +61,8 @@
   var drop = mine("pagefind-filter-dropdown");
   drop.setAttribute("filter", F);
   drop.setAttribute("label", data.filter);
+  // labels wrap rather than end in "…": each name is "own (page's)"
+  drop.setAttribute("wrap", "");
 
   var body = modal.querySelector("pagefind-modal-body");
   if (!body) return;

@@ -286,7 +286,8 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
   .clogem-langs__label, .clogem-langs__toggle:not([open]) + ul { display: none; }
   .clogem-langs ul { position: absolute; top: calc(100% + 0.6rem); inset-inline-end: 0; z-index: 20;
     flex-direction: column; flex-wrap: nowrap; min-width: 10rem; padding: 0.4rem 0.8rem;
-    background: var(--mainBg); border: 1px solid var(--borderColor); border-radius: 6px; }
+    background: var(--mainBg); border: 1px solid var(--borderColor); border-radius: 6px;
+    width: max-content; max-width: 22rem; }   /* one line per name, "own (page's)" */
 }
 /* the trigger is its icon alone (Pagefind's rules are (3,1,0); the dialog
  * has a .pf-trigger-shortcut too) */
@@ -316,6 +317,9 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
   .clogem-navbar { position: static; flex-wrap: wrap; gap: 0.25rem 1rem; padding: 0.5rem 1.25rem; }
   .clogem-navbar__brand { max-width: 100%; }
   .clogem-navbar__menu { position: static; }
+  /* the language list: a name a line, under its label, as in the drawer */
+  .clogem-langs { flex-direction: column; align-items: flex-start; }
+  .clogem-langs ul { flex-direction: column; }
 }
 /* with scripting: one sticky row (toggle, brand, search, mode) and a drawer
  * below it, shown while the toggle is open. Absolute, not fixed: the
@@ -334,7 +338,7 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
     background: var(--mainBg); border: 1px solid var(--borderColor); border-width: 0 1px 1px 0;
   }
   .clogem-navbar__drawer .clogem-navbar__nav > ul { flex-direction: column; }
-  .clogem-navbar__drawer .clogem-langs { flex-wrap: wrap; margin-top: 0.5rem; padding-top: 0.5rem;
+  .clogem-navbar__drawer .clogem-langs { margin-top: 0.5rem; padding-top: 0.5rem;
     border-top: 1px solid var(--borderColor); }
   .clogem-navbar__drawer > .clogem-sidebar { margin-top: 0.75rem; }
 }
@@ -364,7 +368,7 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
 .clogem-variants { font-size: 0.9rem; display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: baseline; }
-.clogem-variants__links { display: flex; gap: 0.6rem; }
+.clogem-variants__links { display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; }   /* "own (page's)" names */
 
 /* D-P3-14: the "also available" note js/lang.js inserts at the top of the
  * main column — in the flow, so it moves the page down by its own height and
