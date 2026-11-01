@@ -214,9 +214,9 @@
 
 (defn- check-lang-names!
   "The language names in one site string file (2026-11-01): `:lang/names`
-  is a map from configured language codes to non-blank strings, and
-  `:lang/name`, this language's own name, is a string. Anything else is
-  silently never shown, so it is reported, with the code meant when a
+  is a map from configured language codes to non-blank strings (or nil, to
+  remove one), and `:lang/name`, this language's own name, is a string or
+  nil. Anything else is silently never shown, so it is reported, with the code meant when a
   configured one is that key in another case, or, for a key of five
   characters or more, within two edits of it (two-letter codes are all
   within two edits of one another)."
@@ -264,9 +264,9 @@
       when some configured language lacks it, since only the fallback chain
       would stand between that language and a `⟦key⟧`;
     - the language names (2026-11-01, `check-lang-names!`): a `:lang/names`
-      that is not a map, a key of it that is no configured language, a name
-      that is not a non-blank string, and a `:lang/name` that is not a
-      string."
+      that is not a map, a key of it that is no configured language, a name,
+      other than nil, that is not a non-blank string, and a `:lang/name`
+      that is neither a string nor nil."
   [cfg]
   (let [known (theme-keys cfg)
         langs (config/lang-keys cfg)

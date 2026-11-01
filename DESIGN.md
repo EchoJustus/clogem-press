@@ -1484,8 +1484,8 @@ Verified against Pagefind's docs **and source** ([research/12](research/12-i18n-
   index, as before (on a tie, which one is not knowable at build time: `pagefind-entry.json`'s key
   order changes between builds). `css/search-all.css` (budget 512 B) lays the row out and widens
   the filter's wrapper, which Pagefind centres its menu on at ≤ 640px, so the menu stays inside a
-  320 px screen. There the filter also starts a row of its own (2026-11-01): beside a short label,
-  搜索所有语言 at 360 px, its near-viewport-wide menu ran 46 px off-screen. Its labels wrap
+  320 px screen. There the filter also starts a row of its own (2026-11-01): wherever it shared the label's
+  row (361–640 px), its near-viewport-wide menu ran 46–100 px off-screen. Its labels wrap
   (Pagefind's `wrap`), since each is a name and a bracket (§6.5). Merged indexes stem with the page's own language (above). The demo turns it on,
   and CI's browser job covers it (`test/browser/search-all.test.mjs`, D-P4-18).
 

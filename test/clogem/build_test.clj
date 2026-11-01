@@ -1492,9 +1492,11 @@
             non-blank string, a :lang/names that is not a map, and a
             :lang/name that is not a string are each one warning"
     (with-strings {"en" {:lang/names {:zh-hans "Simplified Chinese" "ms" "Malay" 'ta "Tamil" :ja false
-                                      :zh-Hnas "Chinese" :zh-Hant "  " :en 42}}
+                                      :zh-Hnas "Chinese" :zh-Hant "  " :en 42
+                                      :taml "Tamil" :zh-Hentt "Chinese" 42 "x"}}
                    "ms" {:lang/names ["Inggeris"]}
-                   "ta" {:lang/name {:en "Tamil"}}}
+                   "ta" {:lang/name {:en "Tamil"}}
+                   "zh-Hant" {:lang/name false}}
       (fn [dir _]
         (let [ws (filter #(re-find #":lang/name" %) (map :message (doctor-warnings dir)))]
           (is (= #{"`:lang/names` in i18n/en.edn names :zh-hans, which is not a configured language — did you mean :zh-Hans?"
@@ -1505,9 +1507,14 @@
                    "`:lang/names` in i18n/en.edn gives :zh-Hant the name \"  \", not a non-blank string, so its :label stands alone."
                    "`:lang/names` in i18n/en.edn gives :en the name 42, not a non-blank string, so its :label stands alone."
                    "`:lang/names` in i18n/ms.edn is [\"Inggeris\"], not a map; no names are taken from it."
-                   "`:lang/name` in i18n/ta.edn is {:en \"Tamil\"}, but it is this language's own name, a string."}
-                 (set ws)))
-          (is (= 9 (count ws)) "each once: :ja, unconfigured, is not also told its name is false")))))
+                   "`:lang/name` in i18n/ta.edn is {:en \"Tamil\"}, but it is this language's own name, a string."
+                   "`:lang/names` in i18n/en.edn names :taml, which is not a configured language."
+                   "`:lang/names` in i18n/en.edn names :zh-Hentt, which is not a configured language — did you mean :zh-Hant?"
+                   "`:lang/names` in i18n/en.edn names 42, which is not a configured language."
+                   "`:lang/name` in i18n/zh-Hant.edn is false, but it is this language's own name, a string."}
+                 (set ws))
+              "a key under five characters gets no edit-distance guess (:taml); one of five or more within two edits does (:zh-Hentt)")
+          (is (= 13 (count ws)) "each once: :ja, unconfigured, is not also told its name is false")))))
   (testing "names changed and removed (nil), and a :lang/name of nil, are quiet;
             a string file that is not a map does not stop the check"
     (with-strings {"en" {:lang/names {:ms "Malaysian" :zh-Hant nil}} "ta" {:lang/names nil}
@@ -1527,9 +1534,10 @@
           (is (some #{":langs :locales :ta :label is nil, which is not a language's name; using \"தமிழ்\"."} ws) (pr-str ws))
           (is (some #{":langs :locales :zh-Hant :label is 42, which is not a language's name; using \"繁體中文\"."} ws) (pr-str ws))
           (is (some #{":langs :locales :xx :label is \"\", which is not a language's name; using \"xx\"."} ws)
-              (str "a site-added language has no shipped name: its code " (pr-str ws)))))
+              (str "a site-added language has no shipped name: its code " (pr-str ws)))
+          (is (not-any? #(str/includes? % ":yy :label") ws) "an absent :label is quiet")))
       (assoc url-site :langs {:locales {:ms {:label ""} :ta {:label nil} :zh-Hant {:label 42}
-                                        :xx {:label "" :html-lang "x-xx"}}}))
+                                        :xx {:label "" :html-lang "x-xx"} :yy {:html-lang "x-yy"}}}))
     (let [cfg (first (diag/collecting (config/load-config "examples/demo-site" nil
                                                           {:langs {:locales {:ms {:label " "}}}})))]
       (is (= "Bahasa Melayu" (get-in cfg [:langs :locales :ms :label])) "what an absent :label would be")

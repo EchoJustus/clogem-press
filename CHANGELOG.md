@@ -26,8 +26,8 @@
     own.
 - **Layout.**
   - At 50rem and below the language list is one name a line, under its
-    label, as the nav's links are. That holds in the drawer and without
-    JS; it used to wrap several to a line.
+    label: in the drawer, like the nav's links there, and without JS too.
+    It used to wrap several to a line.
   - Above 50rem the dropdown is as wide as its longest name, up to 22rem.
   - The variant bar's links wrap. Each is wider now: on a 320 px Tamil page,
     four of them overflowed the page by 33 px.
@@ -51,8 +51,8 @@
   what an absent `:label` would be, with a warning: the shipped name for
   the five default languages, else the code.
 - At 640 px and below, the cross-language search's filter starts a row of
-  its own. Beside a short label (搜索所有语言 at 360 px) its menu ran 46 px
-  off-screen (since 0.3.0).
+  its own. Wherever it shared the label's row (361–640 px, in every
+  language), its menu ran 46–100 px off-screen (since 0.3.0).
 
 ### Upgrading
 
@@ -89,15 +89,22 @@
     shows no name from the fallback chain;
   - the variant bar's links wrap;
   - each theme file names the five theme languages, no two alike.
-- **`build_test`:** the nine language-name warnings (each once; an
-  unconfigured key with a bad name gets one), quiet overrides, a `:lang/name`
-  of nil, a string file that is `()`, and blank, nil and numeric `:label`s
-  on default and site-added languages.
-- **`layout_test`:** the language lists' CSS (a name a line at 50rem and
-  below, the dropdown's width, and no rule undoing the variant bar's wrap).
+- **`build_test`:**
+  - the thirteen language-name warnings, each once; an unconfigured key
+    with a bad name gets one;
+  - the "did you mean" guesses: none by edit distance under five
+    characters;
+  - quiet overrides, a `:lang/name` of nil, and a string file that is `()`;
+  - blank, nil and numeric `:label`s on default languages, a blank one on a
+    site-added language, and an absent one, which is quiet.
+- **`layout_test`:** the language lists' CSS:
+  - a name a line at 50rem and below, under its label, with no rule there
+    undoing it, the drawer's included;
+  - the dropdown's width;
+  - no rule undoing the variant bar's wrap.
 - **`search-all.test.mjs`:** on `/ms/` at 320 and 360 px, with and without
-  text spacing, no filter label is cut or kept on one line; the filter
-  menu fits on the zh-Hans and zh-Hant homes at 360 px too.
+  text spacing, no filter label is cut or kept on one line. The filter menu
+  fits on the zh-Hans and zh-Hant homes at 360 px, and at 480 px, too.
 - **`search_test`:** the filter's labels, in every page language.
 - **Old markup pins updated.** Three tests pinned the old link markup:
   `build_test` (the untranslated entry), `lang_test` (the variant bar) and

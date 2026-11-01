@@ -471,7 +471,7 @@
           (is (= "简体中文" (entry en "zh-Hans")) "a keyword")))
       :strings {:en {:lang/names {:ms false :ta 42 :zh-Hant "  " :zh-Hans :simplified}}}))
   (testing "a whole word, case-insensitively: the :label's own case does not
-            matter; a name inside a longer word (中文 in 简体中文), or one
+            matter; a name inside a longer word (中文 in 繁體中文), or one
             followed by a combining mark (தமிழ in தமிழ்), is not held"
     (with-built corpus (assoc url-site :langs {:locales {:zh-Hans {:label "简体中文 (simplified chinese)"}}})
       (fn [out]
@@ -479,7 +479,19 @@
           (is (= "简体中文 (simplified chinese)" (entry en "zh-Hans")))
           (is (= "繁體中文 (中文)" (entry en "zh-Hant")))
           (is (= "தமிழ் (தமிழ)" (entry en "ta")))))
-      :strings {:en {:lang/names {:zh-Hant "中文" :ta "தமிழ"}}}))
+      :strings {:en {:lang/names {:zh-Hant "中文" :ta "தமிழ"}}})
+    (testing "case folds beyond ASCII; a combining mark before the name, or a
+              digit after it, makes it part of a longer word"
+      (with-built corpus (assoc url-site :langs {:locales {:ms {:label "Малайский"}
+                                                           :ta {:label "செந்தமிழ்"}
+                                                           :en {:label "English2"}}})
+        (fn [out]
+          (let [en (switcher (html out "/"))]
+            (is (= "Малайский" (entry en "ms")) "МАЛАЙСКИЙ is held: (?u)")
+            (is (= "செந்தமிழ் (தமிழ்)" (entry en "ta")) "தமிழ் follows a virama in செந்தமிழ்"))
+          (is (= "English2 (English)" (entry (switcher (html out "/zh-Hans/")) "en")) "English is followed by 2"))
+        :strings {:en {:lang/names {:ms "МАЛАЙСКИЙ" :ta "தமிழ்"}}
+                  :zh-Hans {:lang/names {:en "English"}}})))
   (testing "a :label that already holds the name, as a whole word, is not
             glossed again; \"Malay\" is not a word of \"Malaysia\""
     (with-built corpus (assoc url-site :langs {:locales {:zh-Hans {:label "简体中文 (Simplified Chinese)"}

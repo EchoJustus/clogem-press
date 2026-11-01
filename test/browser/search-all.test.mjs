@@ -178,9 +178,9 @@ export default async function (t) {
   // ---------------------------------------------------------------- 5
   // 320 and 360 px: the row, and the open filter menu, fit
   {
-    // the Chinese homes too: beside their short label the filter shared a
-    // row, and its menu ran 46 px off a 360 px screen (0.3.0)
-    for (const [width, rel] of [[320, ''], [360, ''], [360, 'zh-Hans/'], [360, 'zh-Hant/']]) {
+    // the Chinese homes too, and 480 px: wherever the filter shared the
+    // label's row (361–640 px), its menu ran 46–100 px off-screen (0.3.0)
+    for (const [width, rel] of [[320, ''], [360, ''], [360, 'zh-Hans/'], [360, 'zh-Hant/'], [480, ''], [480, 'ms/']]) {
       const p = await page({ viewport: { width, height: 720 } });
       await openSearch(p, `${t.baseURL}${rel}`);
       await box(p).check();
