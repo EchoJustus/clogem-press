@@ -22,6 +22,12 @@
  :lang-name   "繁體中文"
  :lang-label  "語言："
  :langs-label "語言"
+ :lang-gloss  "（{{name}}）"
+ :lang-names  {"en"      "英文"
+               "zh-Hant" "繁體中文"
+               "zh-Hans" "簡體中文"
+               "pt-BR"   "葡萄牙文"
+               "es-ES"   "西班牙文"}
  :en-note     "（英文）"
  :theme       {:legend "色彩主題"
                :system ["自動" "跟隨系統設定"]

@@ -4,6 +4,74 @@
 
 ### Changed
 
+- **The current language heads the switcher** (the owner, 2026-11-02). It
+  shows its own name alone, first, above a light divider
+  (`.clogem-langs__current`); the others follow in `:langs :priority`
+  order. It used to sit in that order with the rest.
+- **The bracket is the page language's.** Each theme string file has a new
+  `:lang/gloss`, with `{{name}}`:
+  - ` ({{name}})`, half-width after a space, in English, Malay and Tamil;
+  - `（{{name}}）`, full-width and closed up, in both Chinese files, as in
+    the owner's examples: `English（英文）`, `繁體中文（繁体中文）`.
+  A site can set it in its `i18n/<lang>.edn`. The switcher, the variant
+  bar and the search filter all use it.
+- **Tamil in Simplified Chinese** is `淡米尔文/泰米尔文`, with the Malaysian
+  and Singaporean name first (the owner, 2026-11-02). Traditional Chinese
+  keeps `坦米爾文`.
+- **The support page's language menu** follows the theme's (the owner,
+  2026-11-02):
+  - the current language first, alone, above a light divider;
+  - then the others, each as its own name and then its name in the page's
+    language, in the page's bracket: `简体中文 (Simplified Chinese)`,
+    `English（英文）`.
+  - Its words gain `:lang-names` and `:lang-gloss`, which `check-page`
+    requires in every language.
+  - Português (Brasil) and Español (España) already name their region, so
+    their bracket names the language alone: `Português (Brasil)
+    (Portuguese)`.
+  - The menu is as wide as its longest name.
+  - Five pages, **179,821 bytes** in all (178,503 before).
+
+### Upgrading
+
+- A site's own `:lang/names` stay as they were.
+- For the half-width bracket on Chinese pages, set `{:lang/gloss " ({{name}})"}`
+  in `i18n/zh-Hans.edn` and `i18n/zh-Hant.edn`.
+
+### Tests
+
+- **`lang_test`:**
+  - the Chinese pages' bracket, for English and for the other script;
+  - Tamil on both Chinese pages;
+  - every page language × every other language in that language's
+    bracket;
+  - each file's `:lang/gloss`;
+  - the current language first, the others in priority order, on all five
+    homes.
+- **`search_test`:** the filter's labels in the page's bracket.
+- **`layout_test`:** the divider.
+- **`support_page_test`:**
+  - the menu's order (current first, then the owner's), its names and
+    brackets, and where `lang` sits;
+  - the current entry at the top, and the divider and width CSS;
+  - `check-page`'s new keys;
+  - the pages' sizes.
+
+### Needs native review
+
+- **Spanish** (`support/i18n/es-ES.edn`): "inglés", "chino tradicional",
+  "chino simplificado", "portugués".
+- **Portuguese** (`pt-BR.edn`): "inglês", "chinês tradicional", "chinês
+  simplificado", "espanhol".
+- **Chinese** (both Chinese files): "西班牙文", "葡萄牙文".
+
+## 0.3.0 addendum: language names (2026-11-01)
+
+The `v0.3.0` tag (5126ddb) holds these changes; the earlier `0.3.0` tag
+(7b37045) does not.
+
+### Changed
+
 - **Language names, in the owner's format (2026-11-01).**
   - Where: the navbar language switcher, an article's variant bar and the
     cross-language search's language filter.

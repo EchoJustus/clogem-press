@@ -111,6 +111,10 @@
  ;; — "简体中文 (Simplified Chinese)". Only this file is read for it, not the
  ;; fallback chain: with no name here, the :label stands alone. A site that
  ;; adds a language adds its name to the map in i18n/<lang>.edn.
+ ;; :lang/gloss is the bracket itself, {{name}} being that name: half-width,
+ ;; after a space, here; full-width and closed up in the Chinese files
+ ;; (the owner's examples, 2026-11-01: 繁體中文（繁体中文）).
+ :lang/gloss                  " ({{name}})"
  :lang/names                  {:en      "English"
                                :zh-Hans "Simplified Chinese"
                                :zh-Hant "Traditional Chinese"

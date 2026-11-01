@@ -117,7 +117,8 @@
  :window/close                "Tutup"
 
  ;; The language lists (2026-11-01; see en.edn). Awaiting native review
- ;; (CHANGELOG, Unreleased, "Needs native review").
+ ;; (CHANGELOG, "0.3.0 addendum", "Needs native review").
+ :lang/gloss                  " ({{name}})"
  :lang/names                  {:en      "Bahasa Inggeris"
                                :zh-Hans "Bahasa Cina Ringkas"
                                :zh-Hant "Bahasa Cina Tradisional"

@@ -292,7 +292,7 @@
     (with-built corpus (assoc url-site :i18n {:preference :redirect})
       (fn [out]
         (let [zh (variant-bar (html out "/zh-Hans/pages/t00001/"))]
-          (is (re-find #"<a data-clogem-lang=\"en\" href=\"/pages/t00001/\" hreflang=\"en\"><span lang=\"en\">English</span> \(英文\)</a>" zh)
+          (is (re-find #"<a data-clogem-lang=\"en\" href=\"/pages/t00001/\" hreflang=\"en\"><span lang=\"en\">English</span>（英文）</a>" zh)
               "the link back to the bare primary, named as the switcher names it")
           (is (str/includes? zh "data-clogem-lang=\"ta\" href=\"/ta/pages/t00001/\"")))
         (let [en (variant-bar (html out "/pages/t00001/"))]
@@ -378,10 +378,19 @@
 
 (def ^:private theme-langs ["en" "zh-Hans" "zh-Hant" "ms" "ta"])
 
+(defn- theme-strings*
+  [l]
+  (clojure.edn/read-string (slurp (str "src/clogem/theme/resources/i18n/" l ".edn"))))
+
 (defn- theme-names
   "`:lang/names` of the theme's string file for `l`."
   [l]
-  (:lang/names (clojure.edn/read-string (slurp (str "src/clogem/theme/resources/i18n/" l ".edn")))))
+  (:lang/names (theme-strings* l)))
+
+(defn- gloss
+  "`name` in the bracket of the theme's string file for `l` (`:lang/gloss`)."
+  [l name]
+  (str/replace (:lang/gloss (theme-strings* l)) "{{name}}" name))
 
 (defn- switcher [h]
   (re-find #"(?s)<nav aria-label=\"[^\"]+\" class=\"clogem-langs\">.*?</ul></nav>" h))
@@ -406,18 +415,40 @@
     (fn [out]
       (let [home #(switcher (html out (if (= "en" %) "/" (str "/" % "/"))))]
         (testing "the owner's examples: on an English page another language is
-                  `own (English name)`, on a Chinese page English is `English (英文)`"
+                  `own (English name)`; on a Chinese page English is
+                  `English（英文）`, in the full-width bracket of the owner's
+                  examples (2026-11-02), and so is the other Chinese script"
           (is (= "简体中文 (Simplified Chinese)" (entry (home "en") "zh-Hans")))
-          (is (= "English (英文)" (entry (home "zh-Hans") "en")))
-          (is (= "English (英文)" (entry (home "zh-Hant") "en"))))
+          (is (= "English（英文）" (entry (home "zh-Hans") "en")))
+          (is (= "English（英文）" (entry (home "zh-Hant") "en")))
+          (is (= "繁體中文（繁体中文）" (entry (home "zh-Hans") "zh-Hant")))
+          (is (= "简体中文（簡體中文）" (entry (home "zh-Hant") "zh-Hans"))))
+        (testing "Tamil: 淡米尔文/泰米尔文 on a Simplified Chinese page, 坦米爾文 on a
+                  Traditional one (the owner, 2026-11-02)"
+          (is (= "தமிழ்（淡米尔文/泰米尔文）" (entry (home "zh-Hans") "ta")))
+          (is (= "தமிழ்（坦米爾文）" (entry (home "zh-Hant") "ta"))))
         (testing "every page language, every other language: its :label, then
-                  the page language's name for it"
+                  the page language's name for it, in that language's bracket"
           (doseq [p theme-langs
                   l theme-langs
                   :when (not= p l)
                   :let [label (get-in config/default-locales [(keyword l) :label])
                         other (get (theme-names p) (keyword l))]]
-            (is (= (str label " (" other ")") (entry (home p) l)) (str p " → " l))))
+            (is (= (str label (gloss p other)) (entry (home p) l)) (str p " → " l))))
+        (testing "the bracket: half-width after a space, full-width and closed up in Chinese"
+          (is (= {"en" " ({{name}})" "ms" " ({{name}})" "ta" " ({{name}})"
+                  "zh-Hans" "（{{name}}）" "zh-Hant" "（{{name}}）"}
+                 (into {} (for [l theme-langs] [l (:lang/gloss (theme-strings* l))])))))
+        (testing "the current language heads the list, above the divider; the
+                  others follow in :langs :priority order (the owner, 2026-11-02)"
+          (doseq [p theme-langs
+                  :let [items (re-seq #"<li[ >].*?</li>" (re-find #"(?s)<ul>.*</ul>" (home p)))]]
+            (is (str/starts-with? (first items) "<li class=\"clogem-langs__current\"><span aria-current=\"true\"")
+                (str p ": the first entry is the current language"))
+            (is (= 1 (count (filter #(str/includes? % "clogem-langs__current") items))) p)
+            (is (= (remove #{p} theme-langs)
+                   (map #(second (re-find #"data-clogem-lang=\"([^\"]+)\"" %)) (rest items)))
+                p)))
         (testing "the current language is its own name alone"
           (is (str/includes? (home "en") "<span aria-current=\"true\" class=\"is-current\" lang=\"en\">English</span></li>"))
           (is (str/includes? (home "zh-Hans") "<span aria-current=\"true\" class=\"is-current\" lang=\"zh-Hans\">简体中文</span></li>")))
@@ -489,7 +520,7 @@
           (let [en (switcher (html out "/"))]
             (is (= "Малайский" (entry en "ms")) "МАЛАЙСКИЙ is held: (?u)")
             (is (= "செந்தமிழ் (தமிழ்)" (entry en "ta")) "தமிழ் follows a virama in செந்தமிழ்"))
-          (is (= "English2 (English)" (entry (switcher (html out "/zh-Hans/")) "en")) "English is followed by 2"))
+          (is (= "English2（English）" (entry (switcher (html out "/zh-Hans/")) "en")) "English is followed by 2"))
         :strings {:en {:lang/names {:ms "МАЛАЙСКИЙ" :ta "தமிழ்"}}
                   :zh-Hans {:lang/names {:en "English"}}})))
   (testing "a :label that already holds the name, as a whole word, is not
@@ -500,5 +531,5 @@
         (let [en (switcher (html out "/"))]
           (is (= "简体中文 (Simplified Chinese)" (entry en "zh-Hans")))
           (is (= "Bahasa Melayu (Malaysia, Singapura) (Malay)" (entry en "ms"))))
-        (is (= "简体中文 (Simplified Chinese) (簡體中文)" (entry (switcher (html out "/zh-Hant/")) "zh-Hans"))
+        (is (= "简体中文 (Simplified Chinese)（簡體中文）" (entry (switcher (html out "/zh-Hant/")) "zh-Hans"))
             "on a page whose language names it otherwise, the name is added")))))

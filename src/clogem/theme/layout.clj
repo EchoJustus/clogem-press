@@ -316,7 +316,7 @@
                    (not= (dir l) (dir lang)) (assoc :dir (dir l)))
            (get-in cfg [:langs :locales l :label])]
           (when-let [g (i18n/lang-gloss ctx l)]
-            (str " (" g ")")))))
+            (i18n/gloss-text ctx g)))))
 
 (defn lang-switcher
   "Navbar language switcher — site-wide, on every page, listing every
@@ -335,7 +335,9 @@
   `<details>` hides its content on every browser before `::details-content`.
 
   Each entry but the current one is named by `lang-label`: its own name,
-  then its name in the page's language (2026-11-01)."
+  then its name in the page's language (2026-11-01). The current one, its
+  own name alone, comes first, above a divider (the owner, 2026-11-02);
+  the rest keep `:langs :priority` order."
   [{:keys [cfg lang] :as ctx}]
   (let [locales (get-in cfg [:langs :locales])
         langs   (config/lang-keys cfg)]
@@ -346,9 +348,10 @@
         [:summary (icons/icon ctx :languages) [:span (i18n/tr ctx :nav/language)]
          (icons/icon ctx :chevron-down {:class "clogem-navbar__caret"})]]
        (into [:ul]
-             (for [l langs
+             (for [l (cons lang (remove #{lang} langs))
                    :let [current? (= l lang)]]
-               [:li (if current?
+               [:li (when current? {:class "clogem-langs__current"})
+                (if current?
                       [:span.is-current {:lang (config/html-lang cfg l)
                                          :aria-current "true"}
                        (get-in locales [l :label])]

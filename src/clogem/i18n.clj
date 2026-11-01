@@ -181,13 +181,20 @@
       (when-not (holds-word? (str (get-in cfg [:langs :locales l :label])) n)
         n))))
 
+(defn gloss-text
+  "The bracket after a `:label`, around the name `g`: the page language's
+  `:lang/gloss` (2026-11-02), half-width after a space ` (Simplified
+  Chinese)` in most, full-width and closed up `（英文）` in Chinese."
+  [ctx g]
+  (tr ctx :lang/gloss {:name g}))
+
 (defn lang-label-text
   "Language `l` as the language lists name it, as text: its `:label`, then
-  `lang-gloss` in brackets. `简体中文 (Simplified Chinese)` on an English
-  page, `English (英文)` on a Simplified Chinese one."
+  `lang-gloss` in the page language's bracket. `简体中文 (Simplified
+  Chinese)` on an English page, `English（英文）` on a Simplified Chinese one."
   [{:keys [cfg] :as ctx} l]
   (let [own (str (get-in cfg [:langs :locales l :label]))]
-    (if-let [g (lang-gloss ctx l)] (str own " (" g ")") own)))
+    (if-let [g (lang-gloss ctx l)] (str own (gloss-text ctx g)) own)))
 
 ;; ---------------------------------------------------------------------------
 ;; Site string checks (D-P3-6)

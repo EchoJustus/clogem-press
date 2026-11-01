@@ -774,11 +774,11 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
 
 | Language | Address | Built file | Size |
 | --- | --- | --- | --- |
-| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 34,761 bytes |
-| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 36,157 bytes |
-| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 36,036 bytes |
-| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 35,728 bytes |
-| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 35,821 bytes |
+| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 35,025 bytes |
+| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 36,421 bytes |
+| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 36,300 bytes |
+| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 35,992 bytes |
+| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 36,083 bytes |
 
 - **The words** are `support/i18n/<tag>.edn`, one file per language:
   `en.edn` (English, which was `support/page.edn`), `zh-Hant.edn`,
@@ -809,8 +809,11 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
 - **To add a language**, add its tag to `support-page/languages` (its
   folder is the tag, with its case), copy `en.edn` to `<tag>.edn` and
   translate it (`:url` is its own page's address, `:lang-name` its name in
-  itself, `:lang-label` its word for "Language", `:en-note` the note after an English-only link), add its tag to
-  `langs` in `test/clogem/support_page_test.clj`, and add its row above.
+  itself, `:lang-label` its word for "Language", `:lang-names` every language's
+  name in it and `:lang-gloss` its bracket around one, `:en-note` the note after
+  an English-only link), add the new language's name to every other file's
+  `:lang-names`, add its tag to `langs` in `test/clogem/support_page_test.clj`,
+  and add its row above.
 - **The font**: on the English, Traditional Chinese and Simplified Chinese
   pages, all text that is not a heading is set in
   [LXGW WenKai](https://github.com/lxgw/LxgwWenKai) (霞鹜文楷), v1.530, Regular
@@ -882,7 +885,7 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
   is written in `support/support_page.clj` (`copyright-holder`), not in the
   words, so no translation changes it.
 - **The built pages** go to `dist-support/` (ignored): built HTML is never
-  committed. They are **178,503 bytes** in all; each page is within the
+  committed. They are **179,821 bytes** in all; each page is within the
   64 KB budget `bb test` holds it to.
 - **Publishing:** `.github/workflows/support-page.yml`, on pushes to `main`
   that touch `support/`, its test, the workflow or `bb.edn`, and by hand
