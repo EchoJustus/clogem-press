@@ -986,7 +986,9 @@
 (deftest the-switcher-marks-an-untranslated-target
   (testing "fix 14: on an English-only article the ta entry lands on /ta/ and says why"
     (let [html (slurp-out "pages" "3ce486" "index.html")]
-      (is (re-find #"<a class=\"is-untranslated\" data-clogem-lang=\"ta\" href=\"/ta/\" hreflang=\"ta\" lang=\"ta\">தமிழ்<span class=\"clogem-visually-hidden\" lang=\"en\"> \(Shown in English — not yet translated\)</span></a>" html))
+      ;; 2026-11-01: named "own (page's)", the own name marked with its lang;
+      ;; the link, and the notice in it, are in the page's language
+      (is (re-find #"<a class=\"is-untranslated\" data-clogem-lang=\"ta\" href=\"/ta/\" hreflang=\"ta\"><span lang=\"ta\">தமிழ்</span> \(Tamil\)<span class=\"clogem-visually-hidden\"> \(Shown in English — not yet translated\)</span></a>" html))
       (is (= 1 (count (re-seq #"Shown in English — not yet translated" (re-find #"(?s)<a class=\"is-untranslated\" data-clogem-lang=\"ta\" href=\"/ta/\".*?</a>" html))))
           "fix F: the notice is said once — visually-hidden text, no duplicate `title`")
       (is (not (re-find #"is-untranslated[^>]* title=" html)))

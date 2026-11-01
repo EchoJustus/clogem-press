@@ -292,8 +292,8 @@
     (with-built corpus (assoc url-site :i18n {:preference :redirect})
       (fn [out]
         (let [zh (variant-bar (html out "/zh-Hans/pages/t00001/"))]
-          (is (re-find #"<a data-clogem-lang=\"en\" href=\"/pages/t00001/\" hreflang=\"en\" lang=\"en\">English</a>" zh)
-              "the link back to the bare primary")
+          (is (re-find #"<a data-clogem-lang=\"en\" href=\"/pages/t00001/\" hreflang=\"en\"><span lang=\"en\">English</span> \(英文\)</a>" zh)
+              "the link back to the bare primary, named as the switcher names it")
           (is (str/includes? zh "data-clogem-lang=\"ta\" href=\"/ta/pages/t00001/\"")))
         (let [en (variant-bar (html out "/pages/t00001/"))]
           (doseq [l ["zh-Hans" "zh-Hant" "ta"]]
@@ -369,3 +369,90 @@
       (testing "and the navbar switcher listing the same label wraps too"
         (is (re-find #"\.clogem-langs ul \{[^}]*flex-wrap: wrap" css))
         (is (re-find #"\.clogem-langs \{[^}]*min-width: 0" css))))))
+
+;; ---------------------------------------------------------------------------
+;; The language lists' names (the owner's format, 2026-11-01)
+
+(def ^:private theme-langs ["en" "zh-Hans" "zh-Hant" "ms" "ta"])
+
+(defn- theme-names
+  "`:lang/names` of the theme's string file for `l`."
+  [l]
+  (:lang/names (clojure.edn/read-string (slurp (str "src/clogem/theme/resources/i18n/" l ".edn")))))
+
+(defn- switcher [h]
+  (re-find #"(?s)<nav aria-label=\"[^\"]+\" class=\"clogem-langs\">.*?</ul></nav>" h))
+
+(defn- entry
+  "The text of the link to `l` in `h` (a switcher or a variant bar), with
+  its visually-hidden notice and its tags removed."
+  [h l]
+  (some-> (re-find (re-pattern (str "(?s)<a [^>]*data-clogem-lang=\"" l "\"[^>]*>(.*?)</a>")) h)
+          second
+          (str/replace #"<span class=\"clogem-visually-hidden\">.*?</span>" "")
+          (str/replace #"<[^>]+>" "")))
+
+(deftest each-language-is-named-by-its-own-name-then-the-pages
+  (testing "every theme string file names the five theme languages"
+    (doseq [l theme-langs
+            :let [names (theme-names l)]]
+      (is (= (set (map keyword theme-langs)) (set (keys names))) l)
+      (is (every? #(and (string? %) (not (str/blank? %))) (vals names)) l)
+      (is (= (count names) (count (set (vals names)))) (str l ": no two languages share a name"))))
+  (with-built corpus url-site
+    (fn [out]
+      (let [home #(switcher (html out (if (= "en" %) "/" (str "/" % "/"))))]
+        (testing "the owner's examples: on an English page another language is
+                  `own (English name)`, on a Chinese page English is `English (英文)`"
+          (is (= "简体中文 (Simplified Chinese)" (entry (home "en") "zh-Hans")))
+          (is (= "English (英文)" (entry (home "zh-Hans") "en")))
+          (is (= "English (英文)" (entry (home "zh-Hant") "en"))))
+        (testing "every page language, every other language: its :label, then
+                  the page language's name for it"
+          (doseq [p theme-langs
+                  l theme-langs
+                  :when (not= p l)
+                  :let [label (get-in config/default-locales [(keyword l) :label])
+                        other (get (theme-names p) (keyword l))]]
+            (is (= (str label " (" other ")") (entry (home p) l)) (str p " → " l))))
+        (testing "the current language is its own name alone"
+          (is (str/includes? (home "en") "<span aria-current=\"true\" class=\"is-current\" lang=\"en\">English</span></li>"))
+          (is (str/includes? (home "zh-Hans") "<span aria-current=\"true\" class=\"is-current\" lang=\"zh-Hans\">简体中文</span></li>")))
+        (testing "the own name carries its lang; the link and its bracket are in the page's language"
+          (is (str/includes? (home "en") "hreflang=\"zh-Hans\"><span lang=\"zh-Hans\">简体中文</span> (Simplified Chinese)</a>"))
+          (is (not (re-find #"<a [^>]*\slang=" (home "en")))))
+        (testing "the variant bar's links are named the same way"
+          (let [bar (variant-bar (html out "/pages/t00001/"))]
+            (is (= "简体中文 (Simplified Chinese)" (entry bar "zh-Hans")))
+            (is (= "தமிழ் (Tamil)" (entry bar "ta"))))
+          (is (= "English (ஆங்கிலம்)" (entry (variant-bar (html out "/ta/pages/t00001/")) "en"))))))))
+
+(deftest a-site-names-the-languages-in-its-own-strings
+  (testing "the site's i18n/<lang>.edn merges into :lang/names: one name
+            changed, the rest the theme's; nil removes one; a name that is
+            the :label is not repeated"
+    (with-built corpus url-site
+      (fn [out]
+        (let [en (switcher (html out "/"))]
+          (is (= "Bahasa Melayu (Malaysian)" (entry en "ms")))
+          (is (= "简体中文 (Simplified Chinese)" (entry en "zh-Hans")))
+          (is (= "繁體中文" (entry en "zh-Hant")))
+          (is (= "தமிழ்" (entry en "ta")))))
+      :strings {:en {:lang/names {:ms "Malaysian" :zh-Hant nil :ta "தமிழ்"}}}))
+  (testing "a site-added language: its :label alone where the page's
+            language has no name for it, marked with its own dir when that
+            differs from the page's; named once the site names it"
+    (with-built (assoc corpus "01.Guide/01.t.xx.md" (variant "Xx title")) sixth-lang
+      (fn [out]
+        (let [en (switcher (html out "/"))
+              xx (switcher (html out "/xx/"))]
+          (is (= "Xxish" (entry en "xx")))
+          (is (str/includes? en "<span dir=\"rtl\" lang=\"x-xx\">Xxish</span></a>"))
+          (is (= "English" (entry xx "en")) "the xx page has no strings: no name to add")
+          (is (str/includes? xx "<span dir=\"ltr\" lang=\"en\">English</span></a>")))))
+    (with-built (assoc corpus "01.Guide/01.t.xx.md" (variant "Xx title")) sixth-lang
+      (fn [out]
+        (is (= "Xxish (Exish)" (entry (switcher (html out "/")) "xx")))
+        (is (= "English (Inglix)" (entry (switcher (html out "/xx/")) "en"))))
+      :strings {:en {:lang/names {:xx "Exish"}}
+                :xx {:lang/names {:en "Inglix"}}})))

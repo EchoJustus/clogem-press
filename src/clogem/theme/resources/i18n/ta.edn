@@ -112,4 +112,12 @@
 
  ;; Phase 4 Task E1b: the htmlModules windows' close button.
  ;; Awaiting native review (CHANGELOG, Unreleased, "Needs native review (E1b)").
- :window/close                "மூடு"}
+ :window/close                "மூடு"
+
+ ;; The language lists (2026-11-01; see en.edn). Awaiting native review
+ ;; (CHANGELOG, Unreleased, "Needs native review").
+ :lang/names                  {:en      "ஆங்கிலம்"
+                               :zh-Hans "எளிதாக்கப்பட்ட சீனம்"
+                               :zh-Hant "பாரம்பரிய சீனம்"
+                               :ms      "மலாய்"
+                               :ta      "தமிழ்"}}

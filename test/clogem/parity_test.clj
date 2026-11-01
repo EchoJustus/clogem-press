@@ -878,7 +878,8 @@
       (is (not (str/includes? (slurp (fs/file *out* "sitemap.xml")) "404")))
       (is (= ["404.html"] (mapv #(str (fs/relativize *out* %)) (fs/glob *out* "**404*")))))
     (testing "the switcher sends each language to its home"
-      (is (str/includes? page "<a data-clogem-lang=\"zh-Hans\" href=\"/zh-Hans/\" hreflang=\"zh-Hans\" lang=\"zh-Hans\">")))
+      (is (str/includes? page (str "<a data-clogem-lang=\"zh-Hans\" href=\"/zh-Hans/\" hreflang=\"zh-Hans\">"
+                                   "<span lang=\"zh-Hans\">简体中文</span> (Simplified Chinese)</a>"))))
     (testing "the default language's page is the only noindex page but the stubs"
       (doseq [p (fs/glob *out* "**.html")
               :let [h (slurp (fs/file p))]

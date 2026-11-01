@@ -1,5 +1,59 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Language names, in the owner's format (2026-11-01).** The navbar
+  language switcher and an article's variant bar name each language other
+  than the page's by its own `:label`, then by its name in the page's
+  language, in brackets. On an English page that is `简体中文 (Simplified
+  Chinese)`; on a Simplified Chinese page, `English (英文)`. The page's own
+  language is its `:label` alone. The names are `:lang/names` in each theme
+  string file. It is a map, so a site's `i18n/<lang>.edn` adds or changes a
+  name and `nil` removes one. It is read from the page language's file
+  only, not along the fallback chain, so a language the page has no name
+  for keeps its `:label` alone (DESIGN.md §6.5).
+- **The link no longer carries the target's `lang`.** Its text is now in two
+  languages, so the `:label` carries it, in a `<span lang>` (with `dir` when
+  it differs from the page's), and the link and its bracket are in the
+  page's language. The untranslated notice inside the link needs no `lang`
+  of its own any more.
+- **The language list in the mobile drawer** (50rem and below) is one name
+  a line, under its label, as the nav's links are; it used to wrap several
+  to a line. Above 50rem the dropdown is as wide as its longest name, up to
+  22rem.
+
+### Upgrading
+
+A site with the five theme languages gets the new names without changes.
+A site that adds a language shows that language's `:label` alone until it
+names it: `{:lang/names {:xx "…"}}` in each page language's
+`i18n/<lang>.edn`, and the other languages' names in `i18n/xx.edn`. A
+stylesheet or script that found switcher or variant-bar links by `a[lang]`
+should use `a[hreflang]` or `a[data-clogem-lang]`.
+
+### Tests
+
+- `lang_test`: the owner's two examples; for each of the five page
+  languages, each other language is its `:label` and its name from that
+  language's theme file; the current language is its `:label` alone; the
+  `lang` is on the `:label`, and on no link; the variant bar's links; a
+  site's names merged in, one changed, one removed with `nil` and one equal
+  to its `:label`; a site-added right-to-left language with and without
+  names. Each theme file names the five theme languages, no two alike.
+- The two tests that pinned the old link markup (`build_test`'s untranslated
+  entry and `lang_test`'s variant bar) pin the new one.
+
+### Needs native review
+
+- `:lang/names` in `ms.edn` ("Bahasa Inggeris", "Bahasa Cina Ringkas",
+  "Bahasa Cina Tradisional", "Bahasa Tamil") and in `ta.edn` ("ஆங்கிலம்",
+  "எளிதாக்கப்பட்ட சீனம்", "பாரம்பரிய சீனம்", "மலாய்").
+- The Chinese names follow the owner's "英文" with the 文 form, and the
+  support page's 泰米尔 / 泰米爾: "马来文", "泰米尔文", "繁体中文" and
+  "馬來文", "泰米爾文", "簡體中文".
+
 ## 0.3.0 — Phase 4: theme polish and advanced features
 
 Phase 4 is complete, and its exit criterion is asserted in CI (DESIGN.md §8,

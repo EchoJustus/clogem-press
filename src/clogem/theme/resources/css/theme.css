@@ -286,7 +286,8 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
   .clogem-langs__label, .clogem-langs__toggle:not([open]) + ul { display: none; }
   .clogem-langs ul { position: absolute; top: calc(100% + 0.6rem); inset-inline-end: 0; z-index: 20;
     flex-direction: column; flex-wrap: nowrap; min-width: 10rem; padding: 0.4rem 0.8rem;
-    background: var(--mainBg); border: 1px solid var(--borderColor); border-radius: 6px; }
+    background: var(--mainBg); border: 1px solid var(--borderColor); border-radius: 6px;
+    width: max-content; max-width: 22rem; }   /* one line per name, "own (page's)" */
 }
 /* the trigger is its icon alone (Pagefind's rules are (3,1,0); the dialog
  * has a .pf-trigger-shortcut too) */
@@ -334,8 +335,9 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
     background: var(--mainBg); border: 1px solid var(--borderColor); border-width: 0 1px 1px 0;
   }
   .clogem-navbar__drawer .clogem-navbar__nav > ul { flex-direction: column; }
-  .clogem-navbar__drawer .clogem-langs { flex-wrap: wrap; margin-top: 0.5rem; padding-top: 0.5rem;
-    border-top: 1px solid var(--borderColor); }
+  .clogem-navbar__drawer .clogem-langs { flex-direction: column; align-items: flex-start; margin-top: 0.5rem;
+    padding-top: 0.5rem; border-top: 1px solid var(--borderColor); }
+  .clogem-navbar__drawer .clogem-langs ul { flex-direction: column; }   /* a name a line, as the nav's */
   .clogem-navbar__drawer > .clogem-sidebar { margin-top: 0.75rem; }
 }
 
