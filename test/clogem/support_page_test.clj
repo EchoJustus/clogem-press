@@ -167,7 +167,10 @@
                       "img-src data:; " (when (wenkai-langs l) "font-src 'self'; ") "base-uri 'none'; form-action 'none'")
                  content))
           (is (not (str/includes? (str content) "script-src")))
-          (is (not (re-find #"https?:|\*|//" (str content))) "no other origin")
+          ;; the style's hash is base64, which may hold "//" (or "*" never,
+          ;; but "+" and "/" yes): it is taken out before looking for an origin
+          (is (not (re-find #"https?:|\*|//" (str/replace (str content) #"'sha256-[A-Za-z0-9+/=]+'" "")))
+              "no other origin")
           (if (wenkai-langs l)
             (is (= ["font-src 'self'"] (re-seq #"font-src[^;]*" (str content))) "fonts from the site alone, never data:")
             (is (not (str/includes? (str content) "font-src")) "the hub's own policy: this page loads no font"))))
@@ -329,15 +332,36 @@
             (is (= 2 (count svgs)) "a globe and a chevron")
             (is (every? #(and (str/includes? % "aria-hidden=\"true\"") (str/includes? % "focusable=\"false\"")) svgs)))
           (is (not (re-find #"<a[ >]" (str summary))))))
-      (let [links (for [[_ a text] (re-seq #"<a ([^>]*)>([^<]*)</a>" (str nav))] (assoc (attrs a) :text (unescape text)))]
-        (testing "the owner's order (SP.6): English, Traditional Chinese, Simplified Chinese, Portuguese, Spanish"
-          (is (= ["en" "zh-Hant" "zh-Hans" "pt-BR" "es-ES"] (map #(get % "hreflang") links))))
-        (testing "all five, in order, each named in its own language and marked as such"
-          (is (= langs (map #(get % "hreflang") links)))
-          (is (= langs (map #(get % "lang") links)))
-          (is (= (map (comp :lang-name words) langs) (map :text links))))
-        (testing "the current one marked aria-current=\"page\", and only it"
-          (is (= [l] (keep #(when (= "page" (get % "aria-current")) (get % "hreflang")) links))))
+      (let [links (for [[_ a inner] (re-seq #"(?s)<a ([^>]*)>(.*?)</a>" (str nav))]
+                    (assoc (attrs a)
+                           :text (unescape (str/replace inner #"<[^>]+>" ""))
+                           :own-lang (second (re-find #"^<span lang=\"([^\"]+)\">" inner))))
+            ;; 2026-11-02: the current one first, then the owner's order
+            order (cons l (remove #{l} langs))
+            mine  (words l)]
+        (testing "the current one first, then the owner's order (SP.6): English, Traditional Chinese, Simplified Chinese, Portuguese, Spanish"
+          (is (= ["en" "zh-Hant" "zh-Hans" "pt-BR" "es-ES"] langs))
+          (is (= order (map #(get % "hreflang") links))))
+        (testing "all five, the own name marked with its language; the link, and the bracket, in the page's"
+          (is (= order (map :own-lang links)))
+          (is (not-any? #(contains? % "lang") links))
+          (is (= (for [t order]
+                   (str (:lang-name (words t))
+                        (when-not (= t l)
+                          (str/replace (:lang-gloss mine) "{{name}}" (get-in mine [:lang-names t])))))
+                 (map :text links))))
+        (testing "the owner's examples, verbatim"
+          (case l
+            "zh-Hans" (do (is (some #{"English（英文）"} (map :text links)))
+                          (is (some #{"繁體中文（繁体中文）"} (map :text links))))
+            "zh-Hant" (do (is (some #{"English（英文）"} (map :text links)))
+                          (is (some #{"简体中文（簡體中文）"} (map :text links))))
+            "en"      (is (some #{"简体中文 (Simplified Chinese)"} (map :text links)))
+            nil))
+        (testing "the current one marked aria-current=\"page\", and only it, at the top above the divider"
+          (is (= [l] (keep #(when (= "page" (get % "aria-current")) (get % "hreflang")) links)))
+          (is (re-find #"(?s)<ul><li class=\"current\"><a aria-current=\"page\"" (str nav)))
+          (is (= 1 (count (re-seq #"class=\"current\"" (str nav))))))
         (testing "each relative href leads from this page's folder to the right page"
           (doseq [{target "hreflang" href "href"} links]
             (is (not (re-find #"^(?:[a-z]+:|/)" (str href))) "relative")
@@ -366,6 +390,12 @@
   (testing "the chevron turns when open, unless the reader asked for less motion"
     (is (re-find #"\.langs\[open\] \.chev\{transform:rotate\(180deg\)\}" style))
     (is (re-find #"prefers-reduced-motion:reduce\)\{[^}]*\.chev[^}]*\{transition:none" style)))
+  (testing "2026-11-02: the current one heads the list above a light divider; the panel is as wide as its longest name"
+    (is (re-find #"\.langs \.current\{[^}]*border-bottom:1px solid var\(--border\)" style)
+        "--border, the quiet line, not --control, the controls' outline")
+    (is (= 1 (count (re-seq #"\.langs \.current\{" style))) "one rule, which nothing undoes")
+    (is (re-find #"\.langs a\{[^}]*word-break:keep-all" style) "a Chinese name breaks before its （, never inside it")
+    (is (re-find #"\.langs ul\{[^}]*width:max-content;min-width:12rem;max-width:calc\(100vw - 2rem\)" style)))
   (testing "the current one is styled as current; focus is visible"
     (is (re-find #"\.langs a\[aria-current=page\]\{[^}]*background:var\(--chip\)" style))
     (is (str/includes? style ".langs summary:focus-visible{outline:3px solid var(--focus)"))
@@ -574,8 +604,8 @@
           (is (not-any? all theirs) (apply str (map char (filter all theirs)))))))
     (testing "the dropdown's Portuguese and Spanish names carry their lang, on every page"
       (doseq [l langs :let [sw (str (switcher (html l)))]]
-        (is (str/includes? sw "lang=\"pt-BR\">Português (Brasil)</a>") l)
-        (is (str/includes? sw "lang=\"es-ES\">Español (España)</a>") l)))
+        (is (str/includes? sw "<span lang=\"pt-BR\">Português (Brasil)</span>") l)
+        (is (str/includes? sw "<span lang=\"es-ES\">Español (España)</span>") l)))
     (testing "the Latin lists hold no … (English leaves it to the system's font), and always hold printable ASCII"
       (doseq [id ["wenkai-latin-400" "wenkai-latin-500"]]
         (is (not (contains? (get lists id) 0x2026)) id)
@@ -681,6 +711,11 @@
     (doseq [sel [".chip" ".button" ".eyebrow" ".theme label" ".langs summary" ".jump a" "footer" "strong" ".lead" ".sub"]]
       (is (not (re-find #"font-family|font:" (str (rule sel)))) sel))
     (is (str/includes? (rule ".langs a") "font-family:var(--text-font)") "a name in another language takes its own language's font")
+    ;; 2026-11-02: the name's lang moved to a <span> inside the link, whose
+    ;; stack, resolved on the link, was the page's: "Português (Brasil)" in
+    ;; WenKai with its ê from the system's font (seen in Chromium)
+    (is (= "font-family:var(--text-font)" (rule ".langs a [lang]"))
+        "each name's stack resolves on the element that carries its lang")
     ;; without it, on the zh-Hant page "Português (Brasil)" inherited the
     ;; zh-Hant stack and its ê came from the system (seen in Chromium, SP.6)
     (is (str/includes? style (str ":lang(en){--text-font:\"LXGW WenKai\"," system-text ",sans-serif;"))
@@ -898,7 +933,8 @@
         (is (= #{(esc note)} (set (map second (re-seq #"<span class=\"en-note\">([^<]*)</span>" h)))) "one form"))))
   (testing "English needs no note"
     (is (not (str/includes? (html "en") "class=\"en-note\"")))
-    (is (not (str/includes? (html "en") "hreflang=\"en\">")) "nor hreflang on its own links")))
+    (is (not (str/includes? (str/replace (html "en") (str (switcher (html "en"))) "") "hreflang=\"en\">"))
+        "nor hreflang on its own links (the switcher's entries are language choices, each with its hreflang)")))
 
 (deftest anyone-may-write-in-these-languages
   (doseq [l langs]
@@ -1152,7 +1188,11 @@
                              [":url must be"               identity "zh-Hans"]
                              [":lead must be text"         #(assoc % :lead " ") "en"]
                              [":en-note must be text"      #(dissoc % :en-note) "pt-BR"]
-                             [":lang-name must be text"    #(dissoc % :lang-name) "en"]]]
+                             [":lang-name must be text"    #(dissoc % :lang-name) "en"]
+                             [":lang-gloss must hold {{name}}" #(assoc % :lang-gloss " (name)") "en"]
+                             [":lang-gloss must be text"   #(dissoc % :lang-gloss) "en"]
+                             [":lang-names must name each of" #(update % :lang-names dissoc "es-ES") "en"]
+                             [":lang-names must name each of" #(assoc-in % [:lang-names "zh-Hans"] " ") "zh-Hans"]]]
         (let [problems (sp/check-page (f (if (= l "zh-Hans") en (words l))) l)]
           (is (some #(str/includes? % problem) problems) (str problem ": " (pr-str problems))))))))
 

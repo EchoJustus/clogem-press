@@ -156,10 +156,15 @@
   ([{:keys [url hub sections theme footer] :as page} tag]
   (concat
    (for [k (cond-> [:url :hub :title :description :eyebrow :name :subtitle :icon-alt :lead :jump-label
-                    :lang-name :lang-label :langs-label]
+                    :lang-name :lang-label :langs-label :lang-gloss]
              (not= tag "en") (conj :en-note))
          :when (not (text? (get page k)))]
      (str k " must be text"))
+   (when (and (text? (:lang-gloss page)) (not (str/includes? (:lang-gloss page) "{{name}}")))
+     [":lang-gloss must hold {{name}}, where the language's name goes"])
+   (let [names (:lang-names page)]
+     (when-not (and (map? names) (= (set tags) (set (keys names))) (every? text? (vals names)))
+       [(str ":lang-names must name each of " (str/join ", " tags) " in text")]))
    (when-not (= url (page-url tag))
      [(str ":url must be " (page-url tag) ", its page's address")])
    (when-not (and (string? hub) (str/starts-with? hub "https://") (str/ends-with? hub "/"))
@@ -622,12 +627,18 @@
        ".langs svg{flex:none;width:1rem;height:1rem}"
        ".chev{transition:transform .2s ease}"
        ".langs[open] .chev{transform:rotate(180deg)}"
-       (str ".langs ul{position:absolute;z-index:2;top:calc(100% + .4rem);inset-inline-end:0;min-width:12rem;max-width:calc(100vw - 2rem);"
+       (str ".langs ul{position:absolute;z-index:2;top:calc(100% + .4rem);inset-inline-end:0;width:max-content;min-width:12rem;max-width:calc(100vw - 2rem);"
             "margin:0;padding:.35rem;list-style:none;background:var(--surface);border:1px solid var(--control);border-radius:1rem;box-shadow:var(--shadow)}")
        (str ".langs a{display:block;padding:.45rem .8rem;border-radius:.65rem;"
-            "font-family:var(--text-font);font-size:.9rem;font-weight:" (w "600") ";color:var(--text);text-decoration:none}")
+            "font-family:var(--text-font);font-size:.9rem;font-weight:" (w "600") ";color:var(--text);text-decoration:none;word-break:keep-all}")
        ".langs a:hover{color:var(--link);text-decoration:underline}"
        ".langs a[aria-current=page]{background:var(--chip);color:var(--chip-ink)}"
+       ;; the current one heads the list, above a light divider (2026-11-02):
+       ;; --border, the quiet line of the footer and the cards
+       ".langs .current{margin-bottom:.35rem;padding-bottom:.35rem;border-bottom:1px solid var(--border)}"
+       ;; each name's font is its own language's: the stack resolves on the
+       ;; <span lang>, so Portuguese and Spanish keep the system's (SP.7)
+       ".langs a [lang]{font-family:var(--text-font)}"
        ;; the theme switcher: radios as a segmented control
        (str ".theme{display:inline-flex;gap:2px;min-width:0;max-width:100%;margin:0;padding:3px;border:1px solid var(--control);"
             "border-radius:999px;background:var(--surface);box-shadow:var(--shadow)}")
@@ -732,18 +743,27 @@
   "<svg class=\"chev\" viewBox=\"0 0 16 16\" aria-hidden=\"true\" focusable=\"false\"><path d=\"m4 6 4 4 4-4\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>")
 
 (defn- language-switcher
-  "The five versions as plain links, each named in its own language, in a
-  <details> dropdown: the browser opens and closes it, so no script, and
-  no redirect by the browser's language (DESIGN.md §7.5)."
+  "The five versions as plain links in a <details> dropdown: the browser
+  opens and closes it, so no script, and no redirect by the browser's
+  language (DESIGN.md §7.5). As in the theme's switcher (the owner,
+  2026-11-02): the current one first, in its own language alone, above a
+  divider; then the others in the owner's order, each in its own language,
+  then its name in this page's language in this page's bracket,
+  `简体中文 (Simplified Chinese)`, `English（英文）`. The own name carries
+  its language; the link and the bracket are in the page's."
   [pages tag]
   [:nav {:aria-label (get-in pages [tag :langs-label])}
    [:details.langs
     [:summary (h/raw globe) [:span.vh (str (get-in pages [tag :lang-label]) " ")]
      [:span (get-in pages [tag :lang-name])] (h/raw chevron)]
-    [:ul (for [t tags]
-           [:li [:a (cond-> {:href (relative-href tag t) :hreflang t :lang t}
-                      (= t tag) (assoc :aria-current "page"))
-                 (get-in pages [t :lang-name])]])]]])
+    [:ul (for [t (cons tag (remove #{tag} tags))
+               :let [current? (= t tag)]]
+           [:li (when current? {:class "current"})
+            [:a (cond-> {:href (relative-href tag t) :hreflang t}
+                  current? (assoc :aria-current "page"))
+             [:span {:lang t} (get-in pages [t :lang-name])]
+             (when-not current?
+               (str/replace (get-in pages [tag :lang-gloss]) "{{name}}" (get-in pages [tag :lang-names t])))]])]]])
 
 (defn- alternates
   "Every version's address, for each tag it is offered for, and English as

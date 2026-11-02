@@ -1243,7 +1243,17 @@ language (§11.2 item 35), so the gap is a report rather than a surprise.
 than the page's by its own `:label`, then by its name in the page's language, in brackets. The lists
 are the navbar switcher, an article's variant bar and the cross-language search's language filter.
 On an English page that is `简体中文 (Simplified Chinese)`; on a Simplified Chinese page,
-`English (英文)`. The page's own language is its `:label` alone.
+`English（英文）`. The page's own language is its `:label` alone.
+
+- **The bracket is the page language's.** `:lang/gloss`, with `{{name}}`, is ` ({{name}})`
+  (half-width, after a space) in English, Malay and Tamil, and `（{{name}}）` (full-width, closed
+  up) in both Chinese files, as in the owner's examples (2026-11-02). Like the names, it comes
+  from the page language's own file, not the fallback chain. A language with none, or with one that
+  lacks `{{name}}` (a warning), gets ` ({{name}})`. A Chinese name breaks before its `（`, never
+  inside it: `word-break: keep-all` on the lists' links and the search filter's labels, and a
+  word joiner after a slash in a name (淡米尔文/泰米尔文).
+- **The current language comes first.** In the switcher it heads the list, in its own name alone,
+  above a light divider (`.clogem-langs__current`); the rest keep `:langs :priority` order.
 
 - **Where the names live.** The bracketed names are `:lang/names`, a map from language code to name,
   in each string file. It is the one value that is a map, so a site's `i18n/<lang>.edn` adds or
@@ -1254,12 +1264,13 @@ On an English page that is `简体中文 (Simplified Chinese)`; on a Simplified 
   the language, where the name is not a non-blank string, and where the `:label` already holds the
   name as a whole word, case-insensitively. A label of `简体中文 (Simplified Chinese)` holds
   "Simplified Chinese"; "Malay" is not a word of "Malaysia", nor 中文 of 简体中文.
-- **What `doctor` reports.** Four things, as warnings:
+- **What `doctor` reports.** Five things, as warnings:
   - a key that is no configured language, with the code meant when it differs only in case or, for a
     key of five characters or more, by two edits;
   - a name that is not a non-blank string;
   - a `:lang/names` that is not a map;
-  - a `:lang/name` (this language's own name) that is neither a string nor nil.
+  - a `:lang/name` (this language's own name) that is neither a string nor nil;
+  - a `:lang/gloss` with no `{{name}}` (the bracket falls back to ` ({{name}})`).
 - **Markup.** In the switcher and the variant bar, the `:label` sits in a `<span lang>`, with `dir`
   when that differs from the page's. The link and the bracket are in the page's language.
 - **Layout.** The longer names wrap rather than overflow or end in "…":
@@ -1938,10 +1949,17 @@ Decisions:
    - **A switcher, no redirect.** A `<nav>` in the header's top row, beside the theme switcher,
      holds a `<details>` dropdown (SP.3): its `<summary>` shows a globe, the current language's
      name in itself and a chevron, with the word for "Language" visually hidden (`:lang-label`) so
-     its accessible name says what it is; its panel lists the five, each named in its own
-     language, as plain relative links, the current one `aria-current="page"`, in the owner's
-     order (2026-10-26): English, 繁體中文, 简体中文, Português (Brasil), Español (España)
-     (`support-page/languages`; the `hreflang` alternates follow it). Five links laid out
+     its accessible name says what it is; its panel lists the five as plain relative links. The
+     current one comes first, `aria-current="page"`, named in its own language alone, above a
+     light divider. Then come the others, each named in its own language and then, in brackets, in
+     the page's: "简体中文 (Simplified Chinese)", or "English（英文）" with the full-width bracket
+     on the Chinese pages (the owner, 2026-11-02; `:lang-names`, `:lang-gloss`, as in the
+     theme's switcher, §6.5). Both follow the owner's order (2026-10-26): English, 繁體中文, 简体中文,
+     Português (Brasil), Español (España) (`support-page/languages`; the `hreflang` alternates
+     follow it). Since those two names already name their region, their bracket names the
+     language alone: "Português (Brasil) (Portuguese)". Each name sits in a `<span lang>`, and
+     `.langs a [lang]` resolves the font stack there, so Portuguese and Spanish keep the system's
+     font on the WenKai pages (item 8). Five links laid out
      flat crowded the header; `<details>` folds them away with no script and no CSP change, since
      the browser itself opens and closes it (click, Enter or Space). The cost of no script: it does
      not close on Escape or on a click outside (a second click on the summary closes it). It is

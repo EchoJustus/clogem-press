@@ -23,6 +23,12 @@
  :lang-name   "Español (España)"
  :lang-label  "Idioma:"
  :langs-label "Idiomas"
+ :lang-gloss  " ({{name}})"
+ :lang-names  {"en"      "inglés"
+               "zh-Hant" "chino tradicional"
+               "zh-Hans" "chino simplificado"
+               "pt-BR"   "portugués"
+               "es-ES"   "español"}
  :en-note     " (en inglés)"
  :theme       {:legend "Tema de color"
                :system ["Automático" "Seguir el ajuste del sistema"]

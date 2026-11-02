@@ -105,7 +105,8 @@
  :window/close                "關閉"
 
  ;; 語言列表（2026-11-01）：其他語言寫作它自己的 :label，後接括號裡本檔案給它的
- ;; 名稱，例如 "English (英文)"（見 en.edn）。
+ ;; 名稱，例如 "English（英文）"（見 en.edn）。括號用全形，前面不空格（:lang/gloss）。
+ :lang/gloss                  "（{{name}}）"
  :lang/names                  {:en      "英文"
                                :zh-Hans "簡體中文"
                                :zh-Hant "繁體中文"

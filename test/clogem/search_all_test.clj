@@ -161,6 +161,8 @@
       (is (str/includes? css "@media (max-width:640px){.clogem-search-all pagefind-filter-dropdown{flex-basis:100%}}")
           "2026-11-01: there the menu is nearly the viewport's width, so the filter starts a row of its
           own; beside 搜索所有语言 at 360px its menu ran 46px off-screen")
+      (is (str/includes? css ".clogem-search-all .pf-dropdown-option-label{word-break:keep-all!important}")
+          "2026-11-02: a Chinese name breaks before its （, never inside it")
       (is (not (re-find #"(?m)^\s*(color|background)\s*:" css))
           "colours come from Pagefind's --pf-*, which theme.css maps"))))
 

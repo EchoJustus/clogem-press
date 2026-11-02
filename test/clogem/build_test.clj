@@ -1495,10 +1495,11 @@
                                       :zh-Hnas "Chinese" :zh-Hant "  " :en 42
                                       :taml "Tamil" :zh-Hentt "Chinese" 42 "x"}}
                    "ms" {:lang/names ["Inggeris"]}
-                   "ta" {:lang/name {:en "Tamil"}}
-                   "zh-Hant" {:lang/name false}}
+                   "ta" {:lang/name {:en "Tamil"} :lang/gloss 42}
+                   "zh-Hant" {:lang/name false}
+                   "zh-Hans" {:lang/gloss "（name）"}}
       (fn [dir _]
-        (let [ws (filter #(re-find #":lang/name" %) (map :message (doctor-warnings dir)))]
+        (let [ws (filter #(re-find #":lang/(?:name|gloss)" %) (map :message (doctor-warnings dir)))]
           (is (= #{"`:lang/names` in i18n/en.edn names :zh-hans, which is not a configured language — did you mean :zh-Hans?"
                    "`:lang/names` in i18n/en.edn names \"ms\", which is not a configured language — did you mean :ms?"
                    "`:lang/names` in i18n/en.edn names ta, which is not a configured language — did you mean :ta?"
@@ -1511,16 +1512,19 @@
                    "`:lang/names` in i18n/en.edn names :taml, which is not a configured language."
                    "`:lang/names` in i18n/en.edn names :zh-Hentt, which is not a configured language — did you mean :zh-Hant?"
                    "`:lang/names` in i18n/en.edn names 42, which is not a configured language."
-                   "`:lang/name` in i18n/zh-Hant.edn is false, but it is this language's own name, a string."}
+                   "`:lang/name` in i18n/zh-Hant.edn is false, but it is this language's own name, a string."
+                   "`:lang/gloss` in i18n/zh-Hans.edn is \"（name）\", with no {{name}}; the bracket \" ({{name}})\" is used instead."
+                   "`:lang/gloss` in i18n/ta.edn is 42, with no {{name}}; the bracket \" ({{name}})\" is used instead."}
                  (set ws))
               "a key under five characters gets no edit-distance guess (:taml); one of five or more within two edits does (:zh-Hentt)")
-          (is (= 13 (count ws)) "each once: :ja, unconfigured, is not also told its name is false")))))
-  (testing "names changed and removed (nil), and a :lang/name of nil, are quiet;
-            a string file that is not a map does not stop the check"
-    (with-strings {"en" {:lang/names {:ms "Malaysian" :zh-Hant nil}} "ta" {:lang/names nil}
-                   "zh-Hans" {:lang/name nil} "ms" ()}
+          (is (= 15 (count ws)) "each once: :ja, unconfigured, is not also told its name is false")))))
+  (testing "names changed and removed (nil), a :lang/name of nil, a
+            :lang/gloss of nil or with {{ name }} spaced are quiet; a string
+            file that is not a map does not stop the check"
+    (with-strings {"en" {:lang/names {:ms "Malaysian" :zh-Hant nil} :lang/gloss nil} "ta" {:lang/names nil}
+                   "zh-Hans" {:lang/name nil :lang/gloss "（{{ name }}）"} "ms" ()}
       (fn [dir _]
-        (is (not-any? #(re-find #":lang/name" (:message %)) (doctor-warnings dir)))))))
+        (is (not-any? #(re-find #":lang/(?:name|gloss)" (:message %)) (doctor-warnings dir)))))))
 
 (deftest a-label-that-is-not-a-name-falls-back-as-if-absent
   (testing "2026-11-01: a blank or nil :label was an empty link in the switcher,

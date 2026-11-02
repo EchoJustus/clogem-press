@@ -22,6 +22,12 @@
  :lang-name   "Português (Brasil)"
  :lang-label  "Idioma:"
  :langs-label "Idiomas"
+ :lang-gloss  " ({{name}})"
+ :lang-names  {"en"      "inglês"
+               "zh-Hant" "chinês tradicional"
+               "zh-Hans" "chinês simplificado"
+               "pt-BR"   "português"
+               "es-ES"   "espanhol"}
  :en-note     " (em inglês)"
  :theme       {:legend "Tema de cores"
                :system ["Automático" "Seguir a configuração do sistema"]

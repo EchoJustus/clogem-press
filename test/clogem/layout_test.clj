@@ -173,6 +173,8 @@
                                   v))]
           (is (every? #{"column"} (set-by "flex-direction")) (pr-str (set-by "flex-direction")))
           (is (every? #{"flex-start"} (set-by "align-items")) (pr-str (set-by "align-items"))))))
+    (testing "the current language heads the list, above a light divider (2026-11-02)"
+      (is (= "1px solid var(--borderColor)" (decl [] ".clogem-langs__current" "border-bottom"))))
     (testing "above 50rem the dropdown is as wide as its longest name, up to 22rem"
       (is (= "max-content" (decl ["not all and (max-width: 50rem)"] ".clogem-langs ul" "width")))
       (is (= "22rem" (decl ["not all and (max-width: 50rem)"] ".clogem-langs ul" "max-width"))))

@@ -275,6 +275,10 @@ a:hover { color: var(--textLightenColor); text-decoration: underline; }
 .clogem-langs__label { color: var(--textColorSubtle); font-size: 0.85rem; }
 .clogem-langs ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; margin: 0; padding: 0; }
 .clogem-langs .is-current { color: var(--textColorSubtle); font-weight: 600; }
+/* the current language heads the list, above a light divider (2026-11-02);
+ * a Chinese name breaks before its （, never inside it */
+.clogem-langs__current { padding-bottom: 0.3rem; margin-bottom: 0.15rem; border-bottom: 1px solid var(--borderColor); }
+.clogem-langs a, .clogem-variants__links a { word-break: keep-all; }
 .clogem-langs__toggle { display: none; }
 .clogem-langs__toggle > summary { display: flex; align-items: center; gap: 0.3rem; list-style: none; cursor: pointer;
   white-space: nowrap; color: var(--textColor); }
