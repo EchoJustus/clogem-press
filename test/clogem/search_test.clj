@@ -981,7 +981,8 @@
                 names     (:lang/names strings)
                 label     (fn [k] (get-in config/default-locales [k :label]))
                 want      (for [k (remove #{page-lang} [:en :zh-Hans :zh-Hant :ms :ta])]
-                            (str (label k) (str/replace (:lang/gloss strings) "{{name}}" (get names k))))]
+                            (str (label k) (str/replace (:lang/gloss strings) "{{name}}"
+                                                        (str/replace (get names k) "/" "/\u2060"))))]
             (is (= want (map #(get % "label") (get d "langs")))))))
       (testing "the owner's example, on the Simplified Chinese home"
         (is (= "English（英文）" (get-in (merge-attr (html out "zh-Hans")) ["langs" 0 "label"]))))

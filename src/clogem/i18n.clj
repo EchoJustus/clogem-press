@@ -186,6 +186,14 @@
   space."
   " ({{name}})")
 
+(def ^:private name-slot
+  "`{{name}}` as `interpolate` reads it, spaces inside the braces allowed."
+  #"\{\{\s*name\s*\}\}")
+
+(defn- gloss-format?
+  [fmt]
+  (boolean (and (string? fmt) (re-find name-slot fmt))))
+
 (defn gloss-text
   "The bracket after a `:label`, around the name `g`: the page language's
   `:lang/gloss` (2026-11-02), half-width after a space ` (Simplified
@@ -195,8 +203,10 @@
   default); with none there, or one without `{{name}}`, `default-gloss`."
   [{:keys [strings lang]} g]
   (let [fmt (get-in strings [lang :lang/gloss])]
-    (interpolate (if (and (string? fmt) (str/includes? fmt "{{name}}")) fmt default-gloss)
-                 {:name g})))
+    ;; a slash joins the names around it (U+2060 WORD JOINER after it): the
+    ;; owner's 淡米尔文/泰米尔文 never breaks there, inside its bracket
+    (interpolate (if (gloss-format? fmt) fmt default-gloss)
+                 {:name (str/replace g "/" "/\u2060")})))
 
 (defn lang-label-text
   "Language `l` as the language lists name it, as text: its `:label`, then
@@ -246,7 +256,7 @@
                             ", but it is this language's own name, a string.")
                   "The names of the other languages go in `:lang/names`, a map: {:lang/names {:en \"English\"}}."))
     (let [gloss (when (map? m) (:lang/gloss m))]
-      (when (and (some? gloss) (not (and (string? gloss) (str/includes? gloss "{{name}}"))))
+      (when (and (some? gloss) (not (gloss-format? gloss)))
         (diag/warn! file (str "`:lang/gloss` in " file " is " (pr-str gloss)
                               ", with no {{name}}; the bracket " (pr-str default-gloss) " is used instead.")
                     "It is the bracket around a language's name, {{name}} being the name: \" ({{name}})\" or \"（{{name}}）\".")))

@@ -425,7 +425,8 @@
           (is (= "简体中文（簡體中文）" (entry (home "zh-Hant") "zh-Hans"))))
         (testing "Tamil: 淡米尔文/泰米尔文 on a Simplified Chinese page, 坦米爾文 on a
                   Traditional one (the owner, 2026-11-02)"
-          (is (= "தமிழ்（淡米尔文/泰米尔文）" (entry (home "zh-Hans") "ta")))
+          (is (= "தமிழ்（淡米尔文/\u2060泰米尔文）" (entry (home "zh-Hans") "ta"))
+              "a word joiner after the slash: the name never breaks there")
           (is (= "தமிழ்（坦米爾文）" (entry (home "zh-Hant") "ta"))))
         (testing "every page language, every other language: its :label, then
                   the page language's name for it, in that language's bracket"
@@ -434,7 +435,7 @@
                   :when (not= p l)
                   :let [label (get-in config/default-locales [(keyword l) :label])
                         other (get (theme-names p) (keyword l))]]
-            (is (= (str label (gloss p other)) (entry (home p) l)) (str p " → " l))))
+            (is (= (str label (gloss p (str/replace other "/" "/\u2060"))) (entry (home p) l)) (str p " → " l))))
         (testing "the bracket: half-width after a space, full-width and closed up in Chinese;
                   a Chinese name breaks before its （, never inside it"
           (is (re-find #"\.clogem-langs a, \.clogem-variants__links a \{ word-break: keep-all; \}"
@@ -506,7 +507,12 @@
         (is (= "English (Inglix)" (entry (switcher (html out "/xx/")) "en")))
         (is (= "English (英文)" (entry (switcher (html out "/zh-Hant/")) "en")) "zh-Hant's gloss without {{name}}"))
       :strings {:xx {:lang/names {:en "Inglix"}}
-                :zh-Hant {:lang/gloss "（英文）"}}))
+                :zh-Hant {:lang/gloss "（英文）"}})
+    (with-built corpus url-site
+      (fn [out]
+        (is (= "English【英文】" (entry (switcher (html out "/zh-Hans/")) "en"))
+            "{{ name }} with spaces, as interpolate reads it everywhere"))
+      :strings {:zh-Hans {:lang/gloss "【{{ name }}】"}}))
   (testing "a name that is not a non-blank string is no name"
     (with-built corpus url-site
       (fn [out]

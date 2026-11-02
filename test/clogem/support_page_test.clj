@@ -167,7 +167,10 @@
                       "img-src data:; " (when (wenkai-langs l) "font-src 'self'; ") "base-uri 'none'; form-action 'none'")
                  content))
           (is (not (str/includes? (str content) "script-src")))
-          (is (not (re-find #"https?:|\*|//" (str content))) "no other origin")
+          ;; the style's hash is base64, which may hold "//" (or "*" never,
+          ;; but "+" and "/" yes): it is taken out before looking for an origin
+          (is (not (re-find #"https?:|\*|//" (str/replace (str content) #"'sha256-[A-Za-z0-9+/=]+'" "")))
+              "no other origin")
           (if (wenkai-langs l)
             (is (= ["font-src 'self'"] (re-seq #"font-src[^;]*" (str content))) "fonts from the site alone, never data:")
             (is (not (str/includes? (str content) "font-src")) "the hub's own policy: this page loads no font"))))

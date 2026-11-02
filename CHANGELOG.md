@@ -19,8 +19,11 @@
     along the fallback chain. A language with none, such as one a site
     adds, gets ` ({{name}})`; so does one whose `:lang/gloss` has no
     `{{name}}`, and `doctor` and `build` warn about that.
-  - A Chinese name breaks before its `（`, never inside it
-    (`word-break: keep-all` on the lists' links).
+  - A Chinese name breaks before its `（`, never inside it:
+    `word-break: keep-all` on the lists' links and on the search filter's
+    labels, and a word joiner (U+2060) after a slash in a name, so
+    `淡米尔文/泰米尔文` never breaks at its slash.
+  - `{{ name }}` with spaces inside the braces is read as everywhere else.
 - **Tamil in Simplified Chinese** is `淡米尔文/泰米尔文`, with the Malaysian
   and Singaporean name first, the slashed form the owner chose
   (2026-11-02). Traditional Chinese keeps `坦米爾文`.
@@ -66,8 +69,15 @@
     homes.
 - **`lang_test`, more:** a site-added language whose chain runs through
   zh-Hans keeps the half-width bracket; a `:lang/gloss` without `{{name}}`
-  falls back to it; the lists' `word-break`.
-- **`build_test`:** the `:lang/gloss` warning (fourteen in all).
+  falls back to it, and one with `{{ name }}` spaced works; the lists'
+  `word-break`; the word joiner after the Tamil name's slash.
+- **`build_test`:** the `:lang/gloss` warnings, for a string with no
+  `{{name}}` and for a number (fifteen in all); a `nil` one, and one with
+  `{{ name }}` spaced, are quiet.
+- **`search_all_test`:** the filter labels' `word-break`.
+- **`support_page_test`, its CSP check:** the style's base64 hash is taken
+  out before looking for another origin's `//`. A hash holding `//` (about
+  one CSS change in a hundred) failed it for nothing.
 - **`search_test`:** the filter's labels in the page's bracket.
 - **`layout_test`:** the divider.
 - **`support_page_test`:**

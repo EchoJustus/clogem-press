@@ -1250,7 +1250,8 @@ On an English page that is `简体中文 (Simplified Chinese)`; on a Simplified 
   up) in both Chinese files, as in the owner's examples (2026-11-02). Like the names, it comes
   from the page language's own file, not the fallback chain. A language with none, or with one that
   lacks `{{name}}` (a warning), gets ` ({{name}})`. A Chinese name breaks before its `（`, never
-  inside it (`word-break: keep-all`).
+  inside it: `word-break: keep-all` on the lists' links and the search filter's labels, and a
+  word joiner after a slash in a name (淡米尔文/泰米尔文).
 - **The current language comes first.** In the switcher it heads the list, in its own name alone,
   above a light divider (`.clogem-langs__current`); the rest keep `:langs :priority` order.
 
@@ -1263,12 +1264,13 @@ On an English page that is `简体中文 (Simplified Chinese)`; on a Simplified 
   the language, where the name is not a non-blank string, and where the `:label` already holds the
   name as a whole word, case-insensitively. A label of `简体中文 (Simplified Chinese)` holds
   "Simplified Chinese"; "Malay" is not a word of "Malaysia", nor 中文 of 简体中文.
-- **What `doctor` reports.** Four things, as warnings:
+- **What `doctor` reports.** Five things, as warnings:
   - a key that is no configured language, with the code meant when it differs only in case or, for a
     key of five characters or more, by two edits;
   - a name that is not a non-blank string;
   - a `:lang/names` that is not a map;
-  - a `:lang/name` (this language's own name) that is neither a string nor nil.
+  - a `:lang/name` (this language's own name) that is neither a string nor nil;
+  - a `:lang/gloss` with no `{{name}}` (the bracket falls back to ` ({{name}})`).
 - **Markup.** In the switcher and the variant bar, the `:label` sits in a `<span lang>`, with `dir`
   when that differs from the page's. The link and the bracket are in the page's language.
 - **Layout.** The longer names wrap rather than overflow or end in "…":
