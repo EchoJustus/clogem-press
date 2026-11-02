@@ -305,7 +305,7 @@
   "How a language list names `l` (the owner's format, 2026-11-01): its own
   `:label`, then, in brackets, its name in the page's language
   (`i18n/lang-gloss`): `简体中文 (Simplified Chinese)` on an English page,
-  `English (英文)` on a Simplified Chinese one. No bracket for the page's
+  `English（英文）` on a Simplified Chinese one. No bracket for the page's
   own language, or where there is no other name to add. The `:label` is
   marked with `l`'s lang (and its dir, when that differs from the page's);
   the bracket is in the page's language. `i18n/lang-label-text` is the

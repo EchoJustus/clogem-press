@@ -181,12 +181,22 @@
       (when-not (holds-word? (str (get-in cfg [:langs :locales l :label])) n)
         n))))
 
+(def default-gloss
+  "The bracket of a language whose strings give none: half-width, after a
+  space."
+  " ({{name}})")
+
 (defn gloss-text
   "The bracket after a `:label`, around the name `g`: the page language's
   `:lang/gloss` (2026-11-02), half-width after a space ` (Simplified
-  Chinese)` in most, full-width and closed up `（英文）` in Chinese."
-  [ctx g]
-  (tr ctx :lang/gloss {:name g}))
+  Chinese)` in most, full-width and closed up `（英文）` in Chinese. Like
+  `:lang/names`, it is the page language's own, not taken along the
+  fallback chain (a French page would get a Chinese bracket on a Chinese
+  default); with none there, or one without `{{name}}`, `default-gloss`."
+  [{:keys [strings lang]} g]
+  (let [fmt (get-in strings [lang :lang/gloss])]
+    (interpolate (if (and (string? fmt) (str/includes? fmt "{{name}}")) fmt default-gloss)
+                 {:name g})))
 
 (defn lang-label-text
   "Language `l` as the language lists name it, as text: its `:label`, then
@@ -222,8 +232,8 @@
 (defn- check-lang-names!
   "The language names in one site string file (2026-11-01): `:lang/names`
   is a map from configured language codes to non-blank strings (or nil, to
-  remove one), and `:lang/name`, this language's own name, is a string or
-  nil. Anything else is silently never shown, so it is reported, with the code meant when a
+  remove one), `:lang/name`, this language's own name, is a string or nil,
+  and `:lang/gloss`, the bracket, holds `{{name}}`. Anything else is silently never shown, so it is reported, with the code meant when a
   configured one is that key in another case, or, for a key of five
   characters or more, within two edits of it (two-letter codes are all
   within two edits of one another)."
@@ -235,6 +245,11 @@
       (diag/warn! file (str "`:lang/name` in " file " is " (pr-str own)
                             ", but it is this language's own name, a string.")
                   "The names of the other languages go in `:lang/names`, a map: {:lang/names {:en \"English\"}}."))
+    (let [gloss (when (map? m) (:lang/gloss m))]
+      (when (and (some? gloss) (not (and (string? gloss) (str/includes? gloss "{{name}}"))))
+        (diag/warn! file (str "`:lang/gloss` in " file " is " (pr-str gloss)
+                              ", with no {{name}}; the bracket " (pr-str default-gloss) " is used instead.")
+                    "It is the bracket around a language's name, {{name}} being the name: \" ({{name}})\" or \"（{{name}}）\".")))
     (cond
       (or (nil? named) (= ::absent named)) nil
       (not (map? named))
@@ -272,8 +287,8 @@
       would stand between that language and a `⟦key⟧`;
     - the language names (2026-11-01, `check-lang-names!`): a `:lang/names`
       that is not a map, a key of it that is no configured language, a name,
-      other than nil, that is not a non-blank string, and a `:lang/name`
-      that is neither a string nor nil."
+      other than nil, that is not a non-blank string, a `:lang/name` that is
+      neither a string nor nil, and a `:lang/gloss` with no `{{name}}`."
   [cfg]
   (let [known (theme-keys cfg)
         langs (config/lang-keys cfg)

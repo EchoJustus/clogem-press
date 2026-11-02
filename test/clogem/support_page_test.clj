@@ -347,6 +347,14 @@
                         (when-not (= t l)
                           (str/replace (:lang-gloss mine) "{{name}}" (get-in mine [:lang-names t])))))
                  (map :text links))))
+        (testing "the owner's examples, verbatim"
+          (case l
+            "zh-Hans" (do (is (some #{"English（英文）"} (map :text links)))
+                          (is (some #{"繁體中文（繁体中文）"} (map :text links))))
+            "zh-Hant" (do (is (some #{"English（英文）"} (map :text links)))
+                          (is (some #{"简体中文（簡體中文）"} (map :text links))))
+            "en"      (is (some #{"简体中文 (Simplified Chinese)"} (map :text links)))
+            nil))
         (testing "the current one marked aria-current=\"page\", and only it, at the top above the divider"
           (is (= [l] (keep #(when (= "page" (get % "aria-current")) (get % "hreflang")) links)))
           (is (re-find #"(?s)<ul><li class=\"current\"><a aria-current=\"page\"" (str nav)))
@@ -380,7 +388,10 @@
     (is (re-find #"\.langs\[open\] \.chev\{transform:rotate\(180deg\)\}" style))
     (is (re-find #"prefers-reduced-motion:reduce\)\{[^}]*\.chev[^}]*\{transition:none" style)))
   (testing "2026-11-02: the current one heads the list above a light divider; the panel is as wide as its longest name"
-    (is (re-find #"\.langs \.current\{[^}]*border-bottom:1px solid var\(--control\)" style))
+    (is (re-find #"\.langs \.current\{[^}]*border-bottom:1px solid var\(--border\)" style)
+        "--border, the quiet line, not --control, the controls' outline")
+    (is (= 1 (count (re-seq #"\.langs \.current\{" style))) "one rule, which nothing undoes")
+    (is (re-find #"\.langs a\{[^}]*word-break:keep-all" style) "a Chinese name breaks before its （, never inside it")
     (is (re-find #"\.langs ul\{[^}]*width:max-content;min-width:12rem;max-width:calc\(100vw - 2rem\)" style)))
   (testing "the current one is styled as current; focus is visible"
     (is (re-find #"\.langs a\[aria-current=page\]\{[^}]*background:var\(--chip\)" style))
@@ -697,6 +708,11 @@
     (doseq [sel [".chip" ".button" ".eyebrow" ".theme label" ".langs summary" ".jump a" "footer" "strong" ".lead" ".sub"]]
       (is (not (re-find #"font-family|font:" (str (rule sel)))) sel))
     (is (str/includes? (rule ".langs a") "font-family:var(--text-font)") "a name in another language takes its own language's font")
+    ;; 2026-11-02: the name's lang moved to a <span> inside the link, whose
+    ;; stack, resolved on the link, was the page's: "Português (Brasil)" in
+    ;; WenKai with its ê from the system's font (seen in Chromium)
+    (is (= "font-family:var(--text-font)" (rule ".langs a [lang]"))
+        "each name's stack resolves on the element that carries its lang")
     ;; without it, on the zh-Hant page "Português (Brasil)" inherited the
     ;; zh-Hant stack and its ê came from the system (seen in Chromium, SP.6)
     (is (str/includes? style (str ":lang(en){--text-font:\"LXGW WenKai\"," system-text ",sans-serif;"))
@@ -1171,6 +1187,7 @@
                              [":en-note must be text"      #(dissoc % :en-note) "pt-BR"]
                              [":lang-name must be text"    #(dissoc % :lang-name) "en"]
                              [":lang-gloss must hold {{name}}" #(assoc % :lang-gloss " (name)") "en"]
+                             [":lang-gloss must be text"   #(dissoc % :lang-gloss) "en"]
                              [":lang-names must name each of" #(update % :lang-names dissoc "es-ES") "en"]
                              [":lang-names must name each of" #(assoc-in % [:lang-names "zh-Hans"] " ") "zh-Hans"]]]
         (let [problems (sp/check-page (f (if (= l "zh-Hans") en (words l))) l)]

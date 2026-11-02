@@ -435,7 +435,11 @@
                   :let [label (get-in config/default-locales [(keyword l) :label])
                         other (get (theme-names p) (keyword l))]]
             (is (= (str label (gloss p other)) (entry (home p) l)) (str p " → " l))))
-        (testing "the bracket: half-width after a space, full-width and closed up in Chinese"
+        (testing "the bracket: half-width after a space, full-width and closed up in Chinese;
+                  a Chinese name breaks before its （, never inside it"
+          (is (re-find #"\.clogem-langs a, \.clogem-variants__links a \{ word-break: keep-all; \}"
+                       (slurp (fs/file "src/clogem/theme/resources/css/theme.css")))))
+        (testing "the bracket's strings"
           (is (= {"en" " ({{name}})" "ms" " ({{name}})" "ta" " ({{name}})"
                   "zh-Hans" "（{{name}}）" "zh-Hant" "（{{name}}）"}
                  (into {} (for [l theme-langs] [l (:lang/gloss (theme-strings* l))])))))
@@ -492,6 +496,17 @@
         (is (= "English (Inglix)" (entry (switcher (html out "/xx/")) "en"))))
       :strings {:en {:lang/names {:xx "Exish"}}
                 :xx {:lang/names {:en "Inglix"}}}))
+  (testing "the bracket is the page language's own, not the fallback chain's:
+            a site-added language whose file has names but no :lang/gloss
+            gets the half-width default even when its chain runs through
+            zh-Hans; a :lang/gloss without {{name}} falls back to it too"
+    (with-built (assoc corpus "01.Guide/01.t.xx.md" (variant "Xx title"))
+      (-> sixth-lang (assoc-in [:i18n :fallback] [:zh-Hans :en]) (assoc-in [:langs :locales :xx :dir] :ltr))
+      (fn [out]
+        (is (= "English (Inglix)" (entry (switcher (html out "/xx/")) "en")))
+        (is (= "English (英文)" (entry (switcher (html out "/zh-Hant/")) "en")) "zh-Hant's gloss without {{name}}"))
+      :strings {:xx {:lang/names {:en "Inglix"}}
+                :zh-Hant {:lang/gloss "（英文）"}}))
   (testing "a name that is not a non-blank string is no name"
     (with-built corpus url-site
       (fn [out]

@@ -774,11 +774,11 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
 
 | Language | Address | Built file | Size |
 | --- | --- | --- | --- |
-| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 35,025 bytes |
-| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 36,421 bytes |
-| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 36,300 bytes |
-| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 35,992 bytes |
-| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 36,083 bytes |
+| English (default) | [`clogem-press/`](https://echojustus.github.io/clogem-support/clogem-press/) | `clogem-press/index.html` | 35,090 bytes |
+| 繁體中文 (Traditional Chinese, Taiwan wording) | [`clogem-press/zh-Hant/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hant/) | `clogem-press/zh-Hant/index.html` | 36,486 bytes |
+| 简体中文 (Simplified Chinese) | [`clogem-press/zh-Hans/`](https://echojustus.github.io/clogem-support/clogem-press/zh-Hans/) | `clogem-press/zh-Hans/index.html` | 36,365 bytes |
+| Português (Brasil) | [`clogem-press/pt-BR/`](https://echojustus.github.io/clogem-support/clogem-press/pt-BR/) | `clogem-press/pt-BR/index.html` | 36,057 bytes |
+| Español (España) | [`clogem-press/es-ES/`](https://echojustus.github.io/clogem-support/clogem-press/es-ES/) | `clogem-press/es-ES/index.html` | 36,148 bytes |
 
 - **The words** are `support/i18n/<tag>.edn`, one file per language:
   `en.edn` (English, which was `support/page.edn`), `zh-Hant.edn`,
@@ -788,10 +788,16 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
   master, embedded as a `data:` URI in the header and as the favicon.
 - **The languages** are offered by a dropdown in each page's header, beside
   the theme switcher: a `<details>` whose summary shows a globe, the current
-  language's name and a chevron, and whose panel lists the five as plain
-  links, in this order: English, 繁體中文, 简体中文, Português (Brasil),
-  Español (España) (the table's, `support-page/languages`; Traditional
-  Chinese before Simplified is the owner's order). Five links laid out flat crowded the header; a `<details>` folds
+  language's name and a chevron. Its panel lists the five as plain links:
+  - first the current language, in its own name alone, above a light
+    divider;
+  - then the others, each in its own name and then, in brackets, in the
+    page's language: "简体中文 (Simplified Chinese)", or "English（英文）"
+    with the full-width bracket on the Chinese pages (the owner, 2026-11-02;
+    `:lang-names` and `:lang-gloss` in each language's words);
+  - in this order: English, 繁體中文, 简体中文, Português (Brasil), Español
+    (España) (the table's, `support-page/languages`; Traditional Chinese
+    before Simplified is the owner's order). Five links laid out flat crowded the header; a `<details>` folds
   them away with no script, since the browser opens and closes it (click,
   Enter or Space). Without a script it does not close on Escape or on a
   click outside; a second click on the summary closes it. They are also offered and by `hreflang` alternates in each `<head>` (the
@@ -860,17 +866,17 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
   | `wenkai-latin-400` | en, zh-Hant, zh-Hans | 22,884 bytes |
   | `wenkai-latin-500` | en, zh-Hant, zh-Hans | 22,520 bytes |
   | `wenkai-hant-400` | zh-Hant | 102,804 bytes |
-  | `wenkai-hant-500` | zh-Hant | 17,088 bytes |
+  | `wenkai-hant-500` | zh-Hant | 19,320 bytes |
   | `wenkai-sc-400` | zh-Hans | 86,972 bytes |
-  | `wenkai-sc-500` | zh-Hans | 14,192 bytes |
+  | `wenkai-sc-500` | zh-Hans | 16,124 bytes |
   | `wenkai-names-500` | en's dropdown (繁體中文, 简体中文) | 3,416 bytes |
 
   The Latin lists are built from the English page and the Latin of the
   Chinese pages only (product names, commands and the like); each Chinese
   page's list holds its own Chinese, the other script's dropdown name
   included. A page's download, HTML and fonts, when it opens and with the
-  language list opened: English 80,165 / 83,581 bytes; zh-Hant 201,453
-  (both); zh-Hans 182,604 (both); pt-BR 35,728 and es-ES 35,821, the HTML
+  language list opened: English 80,494 / 83,910 bytes; zh-Hant 204,014
+  (both); zh-Hans 184,865 (both); pt-BR 36,057 and es-ES 36,148, the HTML
   alone.
 - **The licence**: LXGW WenKai is under the SIL Open Font License 1.1; its
   `OFL.txt`, from the same tag, is published beside the subsets as
@@ -885,7 +891,7 @@ bb test --pattern support-page # the pages' rules and the workflow's publishing 
   is written in `support/support_page.clj` (`copyright-holder`), not in the
   words, so no translation changes it.
 - **The built pages** go to `dist-support/` (ignored): built HTML is never
-  committed. They are **179,821 bytes** in all; each page is within the
+  committed. They are **180,146 bytes** in all; each page is within the
   64 KB budget `bb test` holds it to.
 - **Publishing:** `.github/workflows/support-page.yml`, on pushes to `main`
   that touch `support/`, its test, the workflow or `bb.edn`, and by hand

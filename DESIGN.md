@@ -1247,7 +1247,10 @@ On an English page that is `简体中文 (Simplified Chinese)`; on a Simplified 
 
 - **The bracket is the page language's.** `:lang/gloss`, with `{{name}}`, is ` ({{name}})`
   (half-width, after a space) in English, Malay and Tamil, and `（{{name}}）` (full-width, closed
-  up) in both Chinese files, as in the owner's examples (2026-11-02).
+  up) in both Chinese files, as in the owner's examples (2026-11-02). Like the names, it comes
+  from the page language's own file, not the fallback chain. A language with none, or with one that
+  lacks `{{name}}` (a warning), gets ` ({{name}})`. A Chinese name breaks before its `（`, never
+  inside it (`word-break: keep-all`).
 - **The current language comes first.** In the switcher it heads the list, in its own name alone,
   above a light divider (`.clogem-langs__current`); the rest keep `:langs :priority` order.
 
@@ -1952,7 +1955,9 @@ Decisions:
      theme's switcher, §6.5). Both follow the owner's order (2026-10-26): English, 繁體中文, 简体中文,
      Português (Brasil), Español (España) (`support-page/languages`; the `hreflang` alternates
      follow it). Since those two names already name their region, their bracket names the
-     language alone: "Português (Brasil) (Portuguese)". Five links laid out
+     language alone: "Português (Brasil) (Portuguese)". Each name sits in a `<span lang>`, and
+     `.langs a [lang]` resolves the font stack there, so Portuguese and Spanish keep the system's
+     font on the WenKai pages (item 8). Five links laid out
      flat crowded the header; `<details>` folds them away with no script and no CSP change, since
      the browser itself opens and closes it (click, Enter or Space). The cost of no script: it does
      not close on Escape or on a click outside (a second click on the summary closes it). It is

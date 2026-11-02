@@ -113,7 +113,8 @@
  ;; adds a language adds its name to the map in i18n/<lang>.edn.
  ;; :lang/gloss is the bracket itself, {{name}} being that name: half-width,
  ;; after a space, here; full-width and closed up in the Chinese files
- ;; (the owner's examples, 2026-11-01: 繁體中文（繁体中文）).
+ ;; (the owner's examples, 2026-11-02: 繁體中文（繁体中文）). A language whose
+ ;; file has none gets this one; it is not taken along the fallback chain.
  :lang/gloss                  " ({{name}})"
  :lang/names                  {:en      "English"
                                :zh-Hans "Simplified Chinese"

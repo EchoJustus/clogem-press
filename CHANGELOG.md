@@ -15,9 +15,15 @@
     the owner's examples: `English（英文）`, `繁體中文（繁体中文）`.
   A site can set it in its `i18n/<lang>.edn`. The switcher, the variant
   bar and the search filter all use it.
+  - Like `:lang/names`, it is the page language's own and is not looked up
+    along the fallback chain. A language with none, such as one a site
+    adds, gets ` ({{name}})`; so does one whose `:lang/gloss` has no
+    `{{name}}`, and `doctor` and `build` warn about that.
+  - A Chinese name breaks before its `（`, never inside it
+    (`word-break: keep-all` on the lists' links).
 - **Tamil in Simplified Chinese** is `淡米尔文/泰米尔文`, with the Malaysian
-  and Singaporean name first (the owner, 2026-11-02). Traditional Chinese
-  keeps `坦米爾文`.
+  and Singaporean name first, the slashed form the owner chose
+  (2026-11-02). Traditional Chinese keeps `坦米爾文`.
 - **The support page's language menu** follows the theme's (the owner,
   2026-11-02):
   - the current language first, alone, above a light divider;
@@ -30,7 +36,17 @@
     their bracket names the language alone: `Português (Brasil)
     (Portuguese)`.
   - The menu is as wide as its longest name.
-  - Five pages, **179,821 bytes** in all (178,503 before).
+  - The divider is `--border`, the page's quiet line.
+  - A Chinese name breaks before its `（`, never inside it.
+  - Each name's font is still its own language's: `lang` sits on a span
+    inside the link now, so `.langs a [lang]` resolves the stack there.
+    Without it, "Português (Brasil)" was set in WenKai with its ê from the
+    system's font, the mix SP.7 removed.
+  - Five pages, **180,146 bytes** in all (178,503 before).
+  - The bracketed Chinese names add Medium glyphs to the Chinese pages'
+    subsets: `wenkai-hant-500` grows to 19,320 bytes (from 17,088) and
+    `wenkai-sc-500` to 16,124 (from 14,192). Both are well under their
+    caps.
 
 ### Upgrading
 
@@ -48,12 +64,19 @@
   - each file's `:lang/gloss`;
   - the current language first, the others in priority order, on all five
     homes.
+- **`lang_test`, more:** a site-added language whose chain runs through
+  zh-Hans keeps the half-width bracket; a `:lang/gloss` without `{{name}}`
+  falls back to it; the lists' `word-break`.
+- **`build_test`:** the `:lang/gloss` warning (fourteen in all).
 - **`search_test`:** the filter's labels in the page's bracket.
 - **`layout_test`:** the divider.
 - **`support_page_test`:**
   - the menu's order (current first, then the owner's), its names and
     brackets, and where `lang` sits;
   - the current entry at the top, and the divider and width CSS;
+  - the owner's examples, verbatim: `English（英文）` and
+    `繁體中文（繁体中文）` on zh-Hans, `简体中文（簡體中文）` on zh-Hant;
+  - each name's font resolved on its `lang` (`.langs a [lang]`);
   - `check-page`'s new keys;
   - the pages' sizes.
 

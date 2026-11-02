@@ -630,11 +630,15 @@
        (str ".langs ul{position:absolute;z-index:2;top:calc(100% + .4rem);inset-inline-end:0;width:max-content;min-width:12rem;max-width:calc(100vw - 2rem);"
             "margin:0;padding:.35rem;list-style:none;background:var(--surface);border:1px solid var(--control);border-radius:1rem;box-shadow:var(--shadow)}")
        (str ".langs a{display:block;padding:.45rem .8rem;border-radius:.65rem;"
-            "font-family:var(--text-font);font-size:.9rem;font-weight:" (w "600") ";color:var(--text);text-decoration:none}")
+            "font-family:var(--text-font);font-size:.9rem;font-weight:" (w "600") ";color:var(--text);text-decoration:none;word-break:keep-all}")
        ".langs a:hover{color:var(--link);text-decoration:underline}"
        ".langs a[aria-current=page]{background:var(--chip);color:var(--chip-ink)}"
-       ;; the current one heads the list, above a light divider (2026-11-02)
-       ".langs .current{margin-bottom:.35rem;padding-bottom:.35rem;border-bottom:1px solid var(--control)}"
+       ;; the current one heads the list, above a light divider (2026-11-02):
+       ;; --border, the quiet line of the footer and the cards
+       ".langs .current{margin-bottom:.35rem;padding-bottom:.35rem;border-bottom:1px solid var(--border)}"
+       ;; each name's font is its own language's: the stack resolves on the
+       ;; <span lang>, so Portuguese and Spanish keep the system's (SP.7)
+       ".langs a [lang]{font-family:var(--text-font)}"
        ;; the theme switcher: radios as a segmented control
        (str ".theme{display:inline-flex;gap:2px;min-width:0;max-width:100%;margin:0;padding:3px;border:1px solid var(--control);"
             "border-radius:999px;background:var(--surface);box-shadow:var(--shadow)}")
